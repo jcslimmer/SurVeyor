@@ -28,8 +28,8 @@ add_executable(insurveyor_add_filtering_info INSurVeyor/add_filtering_info.cpp)
 add_executable(insurveyor_filter INSurVeyor/filter.cpp)
 add_executable(insurveyor_normalise INSurVeyor/normalise.cpp)
 
-add_executable(compare-del libs/ssw.c libs/ssw_cpp.cpp utils/compare-del.cpp)
-add_executable(compare-ins libs/ssw.c libs/ssw_cpp.cpp utils/compare-ins.cpp)
+add_executable(reads_categorizer src/reads_categorizer.cpp)
+
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
 find_library(HTS_LIB hts PATHS htslib-1.18/lib NO_DEFAULT_PATH)
@@ -47,6 +47,6 @@ target_link_libraries(insurveyor_add_filtering_info "${HTS_LIB}")
 target_link_libraries(insurveyor_filter "${HTS_LIB}")
 target_link_libraries(insurveyor_normalise "${HTS_LIB}")
 
-target_link_libraries(compare-del "${HTS_LIB}")
-target_link_libraries(compare-ins "${HTS_LIB}")
+target_link_libraries(reads_categorizer "${HTS_LIB}")
+
 target_link_libraries(compare "${HTS_LIB}")

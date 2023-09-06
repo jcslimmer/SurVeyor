@@ -26,7 +26,6 @@ struct config_t {
     int threads, seed;
     int min_is, max_is; // find a way to move this to stats_t
     int min_sv_size;
-    int match_score;
     int read_len; // this is not exactly "config", but it is more convenient to place it here
     int min_clip_len;
     double max_seq_error;
@@ -54,7 +53,6 @@ struct config_t {
         min_is = std::stoi(config_params["min_is"]);
         max_is = std::stoi(config_params["max_is"]);
         min_sv_size = std::stoi(config_params["min_sv_size"]);
-        match_score = std::stoi(config_params["match_score"]);
         min_clip_len = std::stoi(config_params["min_clip_len"]);
         read_len = std::stod(config_params["read_len"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
@@ -689,16 +687,16 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* dup_alt_tag = "##ALT=<ID=DUP,Description=\"Tandem Duplication\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dup_alt_tag, &len));
 
-	std::string cmd_tag = "##SurVIndel2Command=" + command;
+	std::string cmd_tag = "##SurVeyorCommand=" + command;
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
 
 	auto now = std::chrono::system_clock::now();
 	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-	std::string version_tag = "##SurVIndel2Version=" + config.version + "; Date=" + std::ctime(&now_time);
+	std::string version_tag = "##SurVeyor=" + config.version + "; Date=" + std::ctime(&now_time);
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, version_tag.c_str(), &len));
 
 	std::stringstream called_by_ss;
-	called_by_ss << "##calledBy=SurVIndel2 " << config.version << "; ";
+	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
 	called_by_ss << "seed: " << config.seed << "; ";
 	called_by_ss << "min_sv_size: " << config.min_sv_size << "; ";
 	called_by_ss << "min_clip_len: " << config.min_clip_len << "; ";

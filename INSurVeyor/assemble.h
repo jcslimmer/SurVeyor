@@ -546,11 +546,11 @@ std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> rema
 		int tot_ins_sum = 0;
 		for (uint32_t c : aln.cigar) {
 			if (cigar_int_to_op(c) == 'I') {
-				if (cigar_int_to_len(c) >= config.min_insertion_size) return false;
+				if (cigar_int_to_len(c) >= config.min_sv_size) return false;
 				tot_ins_sum += cigar_int_to_len(c);
 			}
 		}
-		if (tot_ins_sum >= config.min_insertion_size) return false;
+		if (tot_ins_sum >= config.min_sv_size) return false;
 		return true;
 	};
 
@@ -803,7 +803,7 @@ insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& contig
 		assembly_failed_mh_too_long << remap_region_start + rh_aln.ref_begin << " " << remap_region_start + rh_aln.ref_end << " " << rh_aln.cigar_string << " ";
 		assembly_failed_mh_too_long << contig_name << ":" << remap_region_start << "-" << remap_region_end << std::endl;
 		return NULL;
-	} else if (ins->ins_seq.length() < config.min_insertion_size) {
+	} else if (ins->ins_seq.length() < config.min_sv_size) {
 		assembly_failed_lt50bp << ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
 		assembly_failed_lt50bp << contig_name << " " << l_cluster->start() << " - INS " << ins->ins_seq << std::endl;
 		return NULL;

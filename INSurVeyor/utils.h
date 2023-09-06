@@ -19,7 +19,7 @@ struct config_t {
 
 	int threads, seed;
     bool per_contig_stats;
-    int min_insertion_size, max_trans_size;
+    int min_sv_size, max_trans_size;
     int max_clipped_pos_dist, min_clip_len, min_stable_mapq;
     double max_seq_error;
     std::string sampling_regions;
@@ -43,7 +43,7 @@ struct config_t {
         seed = stoi(config_params["seed"]);
         per_contig_stats = stoi(config_params["per_contig_stats"]);
 
-        min_insertion_size = stoi(config_params["min_insertion_size"]);
+        min_sv_size = stoi(config_params["min_sv_size"]);
         max_trans_size = stoi(config_params["max_trans_size"]);
         max_clipped_pos_dist = stoi(config_params["max_clipped_pos_dist"]);
         min_clip_len = stoi(config_params["min_clip_len"]);

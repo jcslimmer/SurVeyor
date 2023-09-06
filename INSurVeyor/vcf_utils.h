@@ -41,7 +41,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	// add FILTER
 	char size_flt_tag[1000];
-	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"Insertion smaller than %d bp.\">", config.min_insertion_size);
+	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"Insertion smaller than %d bp.\">", config.min_sv_size);
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
 
 	const char* anomalous_sc_flt_tag = "##FILTER=<ID=ANOMALOUS_SC_NUMBER,Description=\"The number of soft-clipped reads supporting this call is too large.\">";
@@ -163,19 +163,19 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ins_alt_tag = "##ALT=<ID=INS,Description=\"Insertion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ins_alt_tag, &len));
 
-	std::string cmd_tag = "##INSurVeyorCommand=" + command;
+	std::string cmd_tag = "##SurVeyorCommand=" + command;
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
 
 	auto now = std::chrono::system_clock::now();
 	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-	std::string version_tag = "##INSurVeyorVersion=" + config.version + "; Date=" + std::ctime(&now_time);
+	std::string version_tag = "##SurVeyorVersion=" + config.version + "; Date=" + std::ctime(&now_time);
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, version_tag.c_str(), &len));
 
 	std::stringstream called_by_ss;
-	called_by_ss << "##calledBy=INSurVeyor " << config.version << "; ";
+	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
 	called_by_ss << "seed: " << config.seed << "; ";
 	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
-	called_by_ss << "min-insertion-size: " << config.min_insertion_size << "; ";
+	called_by_ss << "min-insertion-size: " << config.min_sv_size << "; ";
 	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
 	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
 	called_by_ss << "min-clip-len: " << config.min_clip_len << "; ";

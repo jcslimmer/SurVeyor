@@ -43,7 +43,7 @@ bool compatible(insertion_t* i1, insertion_t* i2, int max_dist) {
 
 // filters for all categories
 void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) {
-	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_insertion_size) filters.push_back("SMALL");
+	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
 	if (insertion->end-insertion->start >= (int) insertion->ins_seq.length()) filters.push_back("ALT_SHORTER_THAN_REF");
 	if (insertion->median_lf_cov > stats.get_max_depth(insertion->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->chr) ||
 		insertion->median_lf_cov < stats.get_min_depth(insertion->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->chr))

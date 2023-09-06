@@ -123,7 +123,7 @@ void categorize(int id, std::string bam_fname, int contig_id, std::string contig
         // in score to be due to actual sequencing errors
         if (read->core.qual == 60 && !is_left_clipped(read, 0) && !is_right_clipped(read, 0)) {
             int64_t as = get_AS_tag(read);
-            as_diff_dist_contig.push_back(config.match_score*read->core.l_qseq - as);
+            as_diff_dist_contig.push_back(read->core.l_qseq - as);
         }
     }
 
@@ -246,6 +246,8 @@ int main(int argc, char* argv[]) {
 
     // convert as_diff_dist into a frequency distribution
     std::sort(as_diff_dist.begin(), as_diff_dist.end());
+    int min_as_diff = as_diff_dist[0];
+    if (min_as_diff < 0) for (int& i : as_diff_dist) i -= min_as_diff;
     int max_as_diff = as_diff_dist[as_diff_dist.size()-1];
     std::vector<uint64_t> as_diff_counts(max_as_diff+1);
     for (int as_diff : as_diff_dist) {
