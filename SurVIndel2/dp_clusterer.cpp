@@ -301,7 +301,9 @@ void compute_trusted_disc_pairs(int id, std::string contig_name, std::vector<del
 
 void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname,
 		std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
-	std::string dp_fname = workdir + "/workspace/" + std::to_string(contig_id) + "-DP.bam";
+	std::string dp_fname = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(dp_fname)) return;
+
 	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 
 	std::vector<cluster_t*> lp_clusters, ow_clusters;
@@ -444,7 +446,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 		mateseqs_to_retrieve[del->leftmost_leftfacing_seq] = del;
 	}
 
-	std::ifstream mateseqs_fin(workdir + "/workspace/" + std::to_string(contig_id) + ".sc_mateseqs");
+	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
 	std::string qname, seq;
 	while (mateseqs_fin >> qname >> seq) {
 		if (!mateseqs_to_retrieve.count(qname)) continue;
@@ -607,8 +609,7 @@ int main(int argc, char* argv[]) {
     config.parse(workdir + "/config.txt");
 
 	stats.parse(workdir + "/stats.txt");
-	min_cluster_size = std::max(3, int(stats.avg_depth+5)/10);
-
+	min_cluster_size = std::max(3, int(stats.median_depth+5)/10);
 	max_cluster_size = (stats.max_depth * config.max_is)/config.read_len;
 
 	chr_seqs.read_fasta_into_map(reference_fname);
@@ -642,10 +643,10 @@ int main(int argc, char* argv[]) {
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
 
-		std::string fname = workdir + "/workspace/" + std::to_string(contig_id) + ".dc_mateseqs";
+		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
 		std::ifstream fin(fname);
-		std::string qname, read_seq; int mapq;
-		while (fin >> qname >> read_seq >> mapq) {
+		std::string qname, read_seq, qual; int mapq;
+		while (fin >> qname >> read_seq >> qual >> mapq) {
 			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
 		}
 

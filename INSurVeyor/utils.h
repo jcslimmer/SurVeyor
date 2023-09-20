@@ -66,13 +66,12 @@ struct stats_t {
     void parse_stats(std::string stats_fname, bool per_contig_stats) {
 		std::unordered_map<std::string, std::string> params;
 		std::ifstream fin(stats_fname);
-		std::string name, contig, value;
-		while (fin >> name >> contig >> value) {
-			if (name == "min_depth") min_depth[contig] = stoi(value);
-			if (name == "median_depth") median_depth[contig] = stoi(value);
-			if (name == "max_depth") max_depth[contig] = stoi(value);
-			if (name == "min_avg_base_qual") min_avg_base_qual[contig] = stoi(value);
-			params[name] = value;
+		std::string name, value;
+		while (fin >> name >> value) {
+			if (name == "min_depth") min_depth["."] = stoi(value);
+			if (name == "median_depth") median_depth["."] = stoi(value);
+			if (name == "max_depth") max_depth["."] = stoi(value);
+			if (name == "min_avg_base_qual") min_avg_base_qual["."] = stoi(value);
 		}
 		this->per_contig_stats = per_contig_stats;
 		fin.close();

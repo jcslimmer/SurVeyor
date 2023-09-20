@@ -95,7 +95,7 @@ struct reads_cluster_t {
     }
 };
 
-std::string get_mate_seq(bam1_t* read,  std::unordered_map<std::string, std::string>& mateseqs) {
+std::string get_mate_seq(bam1_t* read, std::unordered_map<std::string, std::string>& mateseqs) {
     std::string qname = bam_get_qname(read);
     if (is_samechr(read)) {
         if (read->core.flag & BAM_FREAD1) qname += "_2";
@@ -107,7 +107,7 @@ std::string get_mate_seq(bam1_t* read,  std::unordered_map<std::string, std::str
     }
     return mateseqs[qname];
 }
-std::string get_mate_qual(bam1_t* read,  std::unordered_map<std::string, std::string>& matequals) {
+std::string get_mate_qual(bam1_t* read, std::unordered_map<std::string, std::string>& matequals) {
     std::string qname = bam_get_qname(read);
     if (is_samechr(read)) {
         if (read->core.flag & BAM_FREAD1) qname += "_2";

@@ -45,6 +45,15 @@ def mkdir(dirname):
         os.makedirs(dirname)
 
 mkdir(cmd_args.workdir)
+mkdir(cmd_args.workdir + "/workspace")
+mkdir(cmd_args.workdir + "/workspace/clipped")
+mkdir(cmd_args.workdir + "/workspace/hsr")
+mkdir(cmd_args.workdir + "/workspace/fwd-stable")
+mkdir(cmd_args.workdir + "/workspace/rev-stable")
+mkdir(cmd_args.workdir + "/workspace/long-pairs")
+mkdir(cmd_args.workdir + "/workspace/outward-pairs")
+mkdir(cmd_args.workdir + "/workspace/mateseqs")
+mkdir(cmd_args.workdir + "/workspace/sc_mateseqs")
 
 with open(cmd_args.workdir + "/full_cmd.txt", "w") as full_cmd_out:
     print(" ".join(sys.argv[:]), file=full_cmd_out)
@@ -136,6 +145,15 @@ mkdir(survindel2_workdir)
 insurveyor_workdir = cmd_args.workdir + "/insurveyor"
 mkdir(insurveyor_workdir)
 
+def exec(cmd):
+    print("Executing:", cmd)
+    os.system(cmd)
+
+SURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
+
+read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
+exec(read_categorizer_cmd)
+
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
 
@@ -148,34 +166,33 @@ def append(src, dst):
 append(cmd_args.workdir + "/stats.txt", survindel2_workdir + "/config.txt")
 append(cmd_args.workdir + "/stats.txt", insurveyor_workdir + "/config.txt")
 
+cp(cmd_args.workdir + "/stats.txt", survindel2_workdir)
+cp(cmd_args.workdir + "/stats.txt", insurveyor_workdir)
+
 cp(cmd_args.workdir + "/contig_map", survindel2_workdir)
 cp(cmd_args.workdir + "/contig_map", insurveyor_workdir)
-
-cp(cmd_args.workdir + "/random_pos.txt", survindel2_workdir)
-cp(cmd_args.workdir + "/random_pos.txt", insurveyor_workdir)
 
 cp(cmd_args.workdir + "/full_cmd.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/full_cmd.txt", insurveyor_workdir)
 
+cp(cmd_args.workdir + "/crossing_isizes.txt", survindel2_workdir)
+cp(cmd_args.workdir + "/crossing_isizes_count_geq_i.txt", survindel2_workdir)
+cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
+
 mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
-mkdir(insurveyor_workdir + "/workspace/clipped")
 mkdir(insurveyor_workdir + "/workspace/clip_consensuses")
-mkdir(insurveyor_workdir + "/workspace/mateseqs")
-mkdir(insurveyor_workdir + "/workspace/R")
-mkdir(insurveyor_workdir + "/workspace/L")
 
-def exec(cmd):
-    print("Executing:", cmd)
-    os.system(cmd)
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", survindel2_workdir + "/workspace/clipped"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr", survindel2_workdir + "/workspace/hsr"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_workdir + "/workspace/long-pairs"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sc_mateseqs", survindel2_workdir + "/workspace/sc_mateseqs"))
 
-SURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
-
-read_categorizer_cmd = SURVEYOR_PATH + "/bin/survindel2_reads_categorizer %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference)
-exec(read_categorizer_cmd)
-
-read_categorizer_cmd = SURVEYOR_PATH + "/bin/insurveyor_reads_categorizer %s %s %s" % (cmd_args.bam_file, insurveyor_workdir, cmd_args.reference)
-exec(read_categorizer_cmd)
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdir + "/workspace/clipped"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workdir + "/workspace/mateseqs"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
 clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/insurveyor_clip_consensus_builder %s %s" % (insurveyor_workdir, cmd_args.reference)
 exec(clip_consensus_builder_cmd)

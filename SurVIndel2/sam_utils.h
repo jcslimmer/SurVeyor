@@ -24,7 +24,7 @@ bool is_duplicate(bam1_t* r) {
 }
 
 bool is_samechr(bam1_t* r) {
-    return r->core.tid == r->core.mtid;
+    return r->core.tid == r->core.mtid && !is_unmapped(r) && !is_mate_unmapped(r);
 }
 bool is_samestr(bam1_t* r) {
     return is_samechr(r) && (bam_is_rev(r) == bam_is_mrev(r));

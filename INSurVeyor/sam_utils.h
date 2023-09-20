@@ -22,7 +22,7 @@ bool is_proper_pair(bam1_t* r) {
 }
 
 bool is_samechr(bam1_t* r) {
-    return r->core.tid == r->core.mtid;
+    return r->core.tid == r->core.mtid && !is_unmapped(r) && !is_mate_unmapped(r);
 }
 bool is_samestr(bam1_t* r) {
     return (r->core.flag & BAM_FREVERSE) == (r->core.flag & BAM_FMREVERSE);

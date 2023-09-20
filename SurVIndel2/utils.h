@@ -68,7 +68,7 @@ struct config_t {
 };
 
 struct stats_t {
-    double avg_depth, lt_depth_stddev;
+    double median_depth;
     int min_depth, max_depth;
     int pop_avg_crossing_is = 0;
 
@@ -81,8 +81,7 @@ struct stats_t {
         }
         fin.close();
 
-        avg_depth = std::stod(config_params["avg_depth"]);
-        lt_depth_stddev = std::stod(config_params["lt_depth_stddev"]);
+        median_depth = std::stod(config_params["median_depth"]);
         pop_avg_crossing_is = std::stoi(config_params["pop_avg_crossing_is"]);
         min_depth = std::stoi(config_params["min_depth"]);
         max_depth = std::stoi(config_params["max_depth"]);
@@ -1076,6 +1075,10 @@ std::pair<int, int> find_aln_suffix_score(std::vector<uint32_t> cigar, int ref_s
 						  int gap_open_score, int gap_extend_score) {
 	std::vector<uint32_t> rev_cigar(cigar.rbegin(), cigar.rend());
 	return find_aln_prefix_score(rev_cigar, ref_suffix_len, match_score, mismatch_score, gap_open_score, gap_extend_score);
+}
+
+bool file_exists(std::string& fname) {
+	return std::ifstream(fname).good();
 }
 
 #endif //SURVINDEL2_UTILS_H

@@ -267,12 +267,20 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 		ext_read_t* ext_read = i_read.value;
 		if (!ext_read->rev && ext_read->mapq >= config.high_confidence_mapq &&
 			!ext_read->same_chr && ext_read->start >= fwd_mates_start && ext_read->start <= fwd_mates_end) {
+			if (mateseqs_w_mapq.count(ext_read->qname) == 0) {
+				std::cerr << "ERROR: mateseqs_w_mapq does not contain " << ext_read->qname << std::endl;
+				exit(1);
+			};
 			std::pair<std::string, int> mateseq_w_mapq = mateseqs_w_mapq[ext_read->qname];
 			rc(mateseq_w_mapq.first);
 			read_seqs.push_back(mateseq_w_mapq.first);
 			read_mapqs.push_back(mateseq_w_mapq.second);
 		} else if (ext_read->rev && ext_read->mapq >= config.high_confidence_mapq &&
 				!ext_read->same_chr && ext_read->end >= rev_mates_start && ext_read->end <= rev_mates_end) {
+			if (mateseqs_w_mapq.count(ext_read->qname) == 0) {
+				std::cerr << "ERROR: mateseqs_w_mapq does not contain " << ext_read->qname << std::endl;
+				exit(1);
+			};
 			std::pair<std::string, int> mateseq_w_mapq = mateseqs_w_mapq[ext_read->qname];
 			read_seqs.push_back(mateseq_w_mapq.first);
 			read_mapqs.push_back(mateseq_w_mapq.second);

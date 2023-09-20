@@ -141,7 +141,10 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 
 void build_hsr_consensuses(int id, int contig_id, std::string contig_name, std::vector<consensus_t*>& rc_hsr_consensuses,
 	std::vector<consensus_t*>& lc_hsr_consensuses) {
-    std::string bam_fname = workdir + "/workspace/" + std::to_string(contig_id) + "-HSR.bam";
+    
+	std::string bam_fname = workdir + "/workspace/hsr/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(bam_fname)) return;
+
     open_samFile_t* bam_file = open_samFile(bam_fname, true);
 
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
@@ -150,6 +153,8 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, std::
     // divide soft-clipped reads into left-clipped and right-clipped
     std::deque<bam1_t*> lc_cluster, rc_cluster;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+
+		if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
 
         std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
 
@@ -480,7 +485,7 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 }
 
 void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions,
-                            std::vector<duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+                            std::vector<duplication_t*>& duplications) {
 
 	std::vector<deletion_t*> contig_deletions;
 	std::vector<duplication_t*> contig_duplications;
@@ -488,7 +493,9 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
 	StripedSmithWaterman::Filter filter;
 
-    std::string clip_fname = workdir + "/workspace/" + std::to_string(contig_id) + "-CLIP.bam";
+    std::string clip_fname = workdir + "/workspace/clipped/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(clip_fname)) return;
+
     open_samFile_t* clip_file = open_samFile(clip_fname, true);
 
     hts_itr_t* iter = sam_itr_querys(clip_file->idx, clip_file->header, contig_name.c_str());
@@ -497,6 +504,8 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
     // divide soft-clipped reads into left-clipped and right-clipped
     std::vector<bam_redux_t*> lc_reads, rc_reads;
     while (sam_itr_next(clip_file->file, iter, read) >= 0) {
+		if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
+
         if (is_left_clipped(read, config.min_clip_len)) {
             lc_reads.push_back(new bam_redux_t(read));
         }
@@ -589,7 +598,7 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 }
 
 
-void build_consensuses(int id, int contig_id, std::string contig_name, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
+void build_consensuses(int id, int contig_id, std::string contig_name) {
     mtx.lock();
     std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
@@ -599,7 +608,7 @@ void build_consensuses(int id, int contig_id, std::string contig_name, std::unor
 	std::cout << "Computing indels for " << contig_name << std::endl;
 	mtx.unlock();
 
-	build_clip_consensuses(id, contig_id, contig_name, deletions, duplications, *mateseqs_w_mapq);
+	build_clip_consensuses(id, contig_id, contig_name, deletions, duplications);
 }
 
 void size_and_depth_filtering(int id, std::string contig_name) {
@@ -650,21 +659,11 @@ int main(int argc, char* argv[]) {
     if (config.log) flog.open(workdir + "/log");
     else flog.open("/dev/null");
 
-    std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
-
     ctpl::thread_pool thread_pool1(config.threads);
     std::vector<std::future<void> > futures;
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-		std::string fname = workdir + "/workspace/" + std::to_string(contig_id) + ".dc_mateseqs";
-		std::ifstream fin(fname);
-		std::string qname, read_seq; int mapq;
-		while (fin >> qname >> read_seq >> mapq) {
-			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
-		}
-
 		std::string contig_name = contig_map.get_name(contig_id);
-//		if (contig_name != "chr22") continue;
-        std::future<void> future = thread_pool1.push(build_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
+        std::future<void> future = thread_pool1.push(build_consensuses, contig_id, contig_name);
         futures.push_back(std::move(future));
     }
     thread_pool1.stop(true);
@@ -673,10 +672,18 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
+	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
     int block_size = 1000;
     ctpl::thread_pool thread_pool2(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-    	std::string contig_name = contig_map.get_name(contig_id);
+		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
+		std::ifstream fin(fname);
+		std::string qname, read_seq, qual; int mapq;
+		while (fin >> qname >> read_seq >> qual >> mapq) {
+			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
+		}
+
+		std::string contig_name = contig_map.get_name(contig_id);
     	std::vector<consensus_t*>& consensuses = unpaired_consensuses_by_chr[contig_name];
     	if (consensuses.empty()) continue;
     	for (int i = 0; i <= consensuses.size()/block_size; i++) {

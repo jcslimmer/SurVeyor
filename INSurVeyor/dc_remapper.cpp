@@ -1191,8 +1191,8 @@ void remap(int id, int contig_id) {
     std::unordered_map<std::string, std::string> mateseqs;
     std::unordered_map<std::string, std::string> matequals;
     std::ifstream mateseqs_fin(workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt");
-    std::string qname, seq, qual;
-    while (mateseqs_fin >> qname >> seq >> qual) {
+    std::string qname, seq, qual; int mapq;
+    while (mateseqs_fin >> qname >> seq >> qual >> mapq) {
         mateseqs[qname] = seq;
         matequals[qname] = qual;
     }
@@ -1333,7 +1333,7 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool(config.threads);
 
     std::vector<std::future<void> > futures;
-    for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+    for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::future<void> future = thread_pool.push(remap, contig_id);
         futures.push_back(std::move(future));
     }
