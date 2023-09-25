@@ -19,7 +19,6 @@ add_executable(survindel2_merge_identical_calls SurVIndel2/merge_identical_calls
 add_executable(survindel2_dp_clusterer libs/ssw.c libs/ssw_cpp.cpp libs/kdtree.c SurVIndel2/dp_clusterer.cpp)
 add_executable(survindel2_normalise SurVIndel2/normalise.cpp)
 
-add_executable(insurveyor_clip_consensus_builder INSurVeyor/clip_consensus_builder.cpp)
 add_executable(insurveyor_call_insertions libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/call_insertions.cpp)
 add_executable(insurveyor_dc_remapper libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/dc_remapper.cpp)
 add_executable(insurveyor_add_filtering_info INSurVeyor/add_filtering_info.cpp)
@@ -27,6 +26,7 @@ add_executable(insurveyor_filter INSurVeyor/filter.cpp)
 add_executable(insurveyor_normalise INSurVeyor/normalise.cpp)
 
 add_executable(reads_categorizer src/reads_categorizer.cpp)
+add_executable(clip_consensus_builder src/clip_consensus_builder.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
@@ -36,7 +36,6 @@ target_link_libraries(survindel2_merge_identical_calls "${HTS_LIB}")
 target_link_libraries(survindel2_dp_clusterer "${HTS_LIB}")
 target_link_libraries(survindel2_normalise "${HTS_LIB}")
 
-target_link_libraries(insurveyor_clip_consensus_builder "${HTS_LIB}")
 target_link_libraries(insurveyor_call_insertions "${HTS_LIB}")
 target_link_libraries(insurveyor_dc_remapper "${HTS_LIB}")
 target_link_libraries(insurveyor_add_filtering_info "${HTS_LIB}")
@@ -44,5 +43,6 @@ target_link_libraries(insurveyor_filter "${HTS_LIB}")
 target_link_libraries(insurveyor_normalise "${HTS_LIB}")
 
 target_link_libraries(reads_categorizer "${HTS_LIB}")
+target_link_libraries(clip_consensus_builder "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")

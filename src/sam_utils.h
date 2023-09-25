@@ -1,6 +1,8 @@
 #ifndef SAM_UTILS_H
 #define SAM_UTILS_H
 
+#include <sstream>
+
 #include "htslib/sam.h"
 #include "utils.h"
 
@@ -23,15 +25,46 @@ bool is_dc_pair(bam1_t* r) {
     return !is_samechr(r) || std::abs(r->core.isize) > 100000 || is_unmapped(r) != is_mate_unmapped(r);
 }
 
+int get_left_clip_size(bam1_t* r) {
+    uint32_t* cigar = bam_get_cigar(r);
+    return bam_cigar_opchr(cigar[0]) == 'S' ? bam_cigar_oplen(cigar[0]): 0;
+}
+int get_right_clip_size(bam1_t* r) {
+    uint32_t* cigar = bam_get_cigar(r);
+    return bam_cigar_opchr(cigar[r->core.n_cigar-1]) == 'S' ? bam_cigar_oplen(cigar[r->core.n_cigar-1]): 0;
+}
 bool is_left_clipped(bam1_t* r, int min_clip_len) {
 	if (is_unmapped(r)) return false;
-    uint32_t* cigar = bam_get_cigar(r);
-    return bam_cigar_opchr(cigar[0]) == 'S' && bam_cigar_oplen(cigar[0]) >= min_clip_len;
+    return get_left_clip_size(r) >= min_clip_len;
 }
 bool is_right_clipped(bam1_t* r, int min_clip_len) {
 	if (is_unmapped(r)) return false;
-    uint32_t* cigar = bam_get_cigar(r);
-    return bam_cigar_opchr(cigar[r->core.n_cigar-1]) == 'S' && bam_cigar_oplen(cigar[r->core.n_cigar-1]) >= min_clip_len;
+    return get_right_clip_size(r) >= min_clip_len;
+}
+
+bool is_mate_left_clipped(bam1_t* r) {
+    if (is_mate_unmapped(r)) return false;
+    const uint8_t* mc_tag = bam_aux_get(r, "MC");
+    if (mc_tag == NULL) {
+        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+    }
+    char* mc_tag_str = bam_aux2Z(mc_tag);
+    int i = 0, n = 0;
+    while (mc_tag_str[i] >= '0' && mc_tag_str[i] <= '9') {
+    	n = n*10 + mc_tag_str[i]-'0';
+    	i++;
+    }
+    return mc_tag_str[i] == 'S';
+}
+bool is_mate_right_clipped(bam1_t* r) {
+    if (is_mate_unmapped(r)) return false;
+    const uint8_t* mc_tag = bam_aux_get(r, "MC");
+    if (mc_tag == NULL) {
+        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+    }
+    char* mc_tag_str = bam_aux2Z(mc_tag);
+    int i = strlen(mc_tag_str)-1;
+    return mc_tag_str[i] == 'S';
 }
 
 bool is_hidden_split_read(bam1_t* r, config_t config) {
@@ -187,5 +220,84 @@ void close_samFile(open_samFile_t* f) {
     sam_close(f->file);
     delete f;
 }
+
+struct bam_redux_t {
+    static const uint8_t IS_REV = 1, IS_MREV = 2, IS_INTER_CHR = 4, IS_MATE_LC = 8, IS_MATE_RC = 16;
+
+    hts_pos_t start, end, mstart, isize;
+    int left_clip_size, right_clip_size;
+    int nm = 0;
+    uint8_t flag = 0, mapq = 0;
+    std::vector<uint8_t> seq;
+    std::vector<uint8_t> qual;
+    std::vector<uint32_t> cigar;
+
+    // TODO: temporary
+    std::string qname;
+    int as = 0;
+
+    bam_redux_t() {}
+    bam_redux_t(bam1_t* read) : start(read->core.pos), end(bam_endpos(read)), mstart(read->core.mpos),
+        isize(read->core.isize), mapq(read->core.qual), left_clip_size(get_left_clip_size(read)), right_clip_size(get_right_clip_size(read)),
+		nm(bam_aux2i(bam_aux_get(read, "NM"))), as(bam_aux2i(bam_aux_get(read, "AS"))) {
+
+    	qname = bam_get_qname(read);
+        if (bam_is_rev(read)) flag |= IS_REV;
+        if (bam_is_mrev(read)) flag |= IS_MREV;
+        if (!is_samechr(read) || is_unmapped(read) != is_mate_unmapped(read)) flag |= IS_INTER_CHR;
+        if (is_mate_left_clipped(read)) flag |= IS_MATE_LC;
+        if (is_mate_right_clipped(read)) flag |= IS_MATE_RC;
+
+        uint8_t* seq_array = bam_get_seq(read);
+        seq = std::vector<uint8_t>(seq_array, seq_array+(read->core.l_qseq+1)/2);
+
+        uint8_t* qual_array = bam_get_qual(read);
+        qual = std::vector<uint8_t>(qual_array, qual_array+read->core.l_qseq);
+
+        uint32_t* cigar_array = bam_get_cigar(read);
+        cigar = std::vector<uint32_t>(cigar_array, cigar_array+read->core.n_cigar);
+    }
+
+    int seq_len() {
+        return qual.size();
+    }
+
+    bool is_rev() {
+        return flag & IS_REV;
+    }
+    bool is_mrev() {
+        return flag & IS_MREV;
+    }
+    bool is_inter_chr() {
+        return flag & IS_INTER_CHR;
+    }
+    bool mate_left_clipped() {
+        return flag & IS_MATE_LC;
+    }
+    bool mate_right_clipped() {
+        return flag & IS_MATE_RC;
+    }
+
+    hts_pos_t unclipped_start() {
+        return start-left_clip_size;
+    }
+    hts_pos_t unclipped_end() {
+        return end+right_clip_size;
+    }
+
+    std::string get_sequence() {
+        std::string seq_str;
+        for (int i = 0; i < seq_len(); i++) {
+            seq_str += get_base(seq.data(), i);
+        }
+        return seq_str;
+    }
+
+    std::string cigar_string() {
+        std::stringstream ss;
+        for (uint32_t c : cigar) ss << bam_cigar_oplen(c) << bam_cigar_opchr(c);
+        return ss.str();
+    }
+};
 
 #endif

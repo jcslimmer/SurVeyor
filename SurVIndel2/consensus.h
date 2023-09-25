@@ -114,16 +114,16 @@ std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped) {
             uint8_t qual = clipped[j]->qual[i - read_start_offsets[j]];
             if (nucl == 'A') {
                 base_scores[0].freq++;
-                if (base_scores[0].qual < qual) base_scores[0].qual = qual;
+				base_scores[0].qual += qual;
             } else if (nucl == 'C') {
                 base_scores[1].freq++;
-                if (base_scores[1].qual < qual) base_scores[1].qual = qual;
+				base_scores[1].qual += qual;
             } else if (nucl == 'G') {
                 base_scores[2].freq++;
-                if (base_scores[2].qual < qual) base_scores[2].qual = qual;
+				base_scores[2].qual += qual;
             } else if (nucl == 'T') {
                 base_scores[3].freq++;
-                if (base_scores[3].qual < qual) base_scores[3].qual = qual;
+				base_scores[3].qual += qual;
             }
         }
 

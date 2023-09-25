@@ -1209,13 +1209,20 @@ void remap(int id, int contig_id) {
     	char dir;
     	hts_pos_t start, end, breakpoint;
     	int fwd_clipped, rev_clipped;
-    	while (clipped_fin >> contig_name >> start >> end >> breakpoint >> dir >> seq >> fwd_clipped >> rev_clipped) {
+        int max_mapq, lowq_clip_portion;
+        hts_pos_t remap_boundary;
+    	while (clipped_fin >> contig_name >> start >> end >> breakpoint >> dir >> seq >> 
+            fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
 			if (dir == 'L') {
+                start += lowq_clip_portion;
+                seq = seq.substr(lowq_clip_portion);
 				anchor_t a(dir, contig_id, breakpoint, end, fwd_clipped, rev_clipped);
 				cluster_t* c = new cluster_t(a, a, 0);
 				std::string clip_seq = seq.substr(0, breakpoint-start);
 				l_clip_clusters.push_back(new clip_cluster_t(c, clip_seq, seq));
 			} else {
+                end -= lowq_clip_portion;
+                seq = seq.substr(0, seq.length()-lowq_clip_portion);
 				anchor_t a(dir, contig_id, start, breakpoint, fwd_clipped, rev_clipped);
 				cluster_t* c = new cluster_t(a, a, 0);
 				int clip_len = end - breakpoint;

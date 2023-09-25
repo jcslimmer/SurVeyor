@@ -54,6 +54,7 @@ mkdir(cmd_args.workdir + "/workspace/long-pairs")
 mkdir(cmd_args.workdir + "/workspace/outward-pairs")
 mkdir(cmd_args.workdir + "/workspace/mateseqs")
 mkdir(cmd_args.workdir + "/workspace/sc_mateseqs")
+mkdir(cmd_args.workdir + "/workspace/clip_consensuses")
 
 with open(cmd_args.workdir + "/full_cmd.txt", "w") as full_cmd_out:
     print(" ".join(sys.argv[:]), file=full_cmd_out)
@@ -181,9 +182,7 @@ cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
 
 mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
-mkdir(insurveyor_workdir + "/workspace/clip_consensuses")
 
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", survindel2_workdir + "/workspace/clipped"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr", survindel2_workdir + "/workspace/hsr"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_workdir + "/workspace/long-pairs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
@@ -194,8 +193,11 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/insurveyor_clip_consensus_builder %s %s" % (insurveyor_workdir, cmd_args.reference)
+clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
 exec(clip_consensus_builder_cmd)
+
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clip_consensuses", survindel2_workdir + "/workspace/clip_consensuses"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clip_consensuses", insurveyor_workdir + "/workspace/clip_consensuses"))
 
 if cmd_args.samplename:
     sample_name = cmd_args.samplename

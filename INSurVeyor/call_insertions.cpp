@@ -88,10 +88,15 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
     std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
-    while (clip_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> fwd_clipped >> rev_clipped) {
+    int max_mapq, lowq_clip_portion;
+    hts_pos_t remap_boundary;
+    while (clip_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
+        fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
         if (dir == "R") {
+            seq = seq.substr(0, seq.length()-lowq_clip_portion);
             rc_consensuses.push_back(clip_consensus_t(breakpoint, seq, fwd_clipped, rev_clipped));
         } else {
+            seq = seq.substr(lowq_clip_portion);
             lc_consensuses.push_back(clip_consensus_t(breakpoint, seq, fwd_clipped, rev_clipped));
         }
     }

@@ -118,8 +118,8 @@ indel_t* remap_consensus(std::string& consensus_seq, char* reference, int refere
 		int lh_suffix_score = lh_suffix_score_and_qlen.first, lh_suffix_qlen = lh_suffix_score_and_qlen.second;
 		std::pair<int, int> rh_prefix_score_and_qlen = find_aln_prefix_score(rh_aln.cigar, overlap_len, 1, -4, -6, -1);
 		int rh_prefix_score = rh_prefix_score_and_qlen.first, rh_prefix_qlen = rh_prefix_score_and_qlen.second;
-		if (ra_end-start < config.min_clip_len || end-la_start < config.min_clip_len ||
-				(lh_suffix_score == overlap_len && rh_prefix_score == overlap_len)) { // perfect dup
+		if (end-la_start < config.min_clip_len || ra_end-start < config.min_clip_len || 
+			(lh_suffix_score == overlap_len && rh_prefix_score == overlap_len)) { // perfect dup
 			std::string ins_seq = consensus_seq.substr(split_i, get_left_clip_size(rh_aln));
 			if (ins_seq.length() > start-end) return NULL;
 			indel = new duplication_t(end, start, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);

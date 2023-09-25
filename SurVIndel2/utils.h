@@ -100,6 +100,7 @@ struct consensus_t {
     hts_pos_t remap_boundary;
     int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
     bool is_hsr = false;
+	bool extended_to_left = false, extended_to_right = false;
 
     static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
     static const int UNKNOWN_CLIP_LEN = INT16_MAX;
@@ -813,11 +814,11 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	bcf_entry->pos = dup->start;
 	bcf_update_id(hdr, bcf_entry, dup->id.c_str());
 	std::string alleles = std::string(1, chr_seq[dup->start]);
-	if (dup->start == dup->end) {
-		alleles += ",<INS>";
-	} else {
+	// if (dup->start == dup->end) {
+	// 	alleles += ",<INS>";
+	// } else {
 		alleles += ",<DUP>";
-	}
+	// }
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	// add filters
@@ -833,11 +834,11 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
 	int_conv = dup->len();
 	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
-	if (dup->start == dup->end) {
-		bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");
-	} else {
+	// if (dup->start == dup->end) {
+	// 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");
+	// } else {
 		bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "DUP");
-	}
+	// }
 	int median_depths[] = {dup->med_left_flanking_cov, dup->med_indel_left_cov, dup->med_indel_right_cov, dup->med_right_flanking_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);

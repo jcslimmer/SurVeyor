@@ -53,8 +53,10 @@ bool check_ins_dup_seq(sv_t& ins_sv, sv_t& dup_sv) {
 	if (dup_sv.len() > ins_sv.ins_seq.length()+max_len_diff) return false;
 
 	std::string dup_seq = chrs[dup_sv.chr].substr(dup_sv.start, dup_sv.end-dup_sv.start);
-	std::string ext_dup_seq;
-	while (ext_dup_seq.length() <= ins_sv.ins_seq.length()) ext_dup_seq += dup_seq;
+	std::string ext_dup_seq = dup_seq;
+	while (ext_dup_seq.length() <= ins_sv.ins_seq.length()) {
+		ext_dup_seq += dup_sv.ins_seq + dup_seq;
+	}
 
 	if (ext_dup_seq.length() > UINT16_MAX || ins_sv.ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
 
@@ -337,7 +339,6 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (print_fp) {
-		// print fp ids
 		for (sv_t& csv : called_svs) {
 			if (!c_tps.count(csv.id)) {
 				std::cerr << csv.id << std::endl;

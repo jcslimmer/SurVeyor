@@ -343,6 +343,24 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 	return reads;
 }
 
+std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
+		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, config_t config, open_samFile_t* bam_file) {
+	std::vector<hts_pair_pos_t> target_ivals;
+	for (int i = 0; i < consensuses.size(); i++) {
+		consensus_t* consensus = consensuses[i];
+		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config);
+		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config);
+		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config);
+		hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config);
+		hts_pair_pos_t target_ival;
+		target_ival.beg = left_ext_target_start, target_ival.end = left_ext_target_end;
+		target_ivals.push_back(target_ival);
+		target_ival.beg = right_ext_target_start, target_ival.end = right_ext_target_end;
+		target_ivals.push_back(target_ival);
+	}
+	return get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq, config, bam_file);
+}
+
 void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev) {
 	int n = l_adj.size();
 	std::vector<bool> in_cycle = find_vertices_in_cycles_fast(l_adj);
@@ -361,6 +379,8 @@ void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >
 void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
 		config_t config, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+
+	if (consensus->extended_to_right) return;
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
@@ -424,11 +444,14 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 		}
 	}
 	consensus->consensus = ext_consensus;
+	consensus->extended_to_right = true;
 }
 
 void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
 		config_t config, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+
+	if (consensus->extended_to_left) return;
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
@@ -492,6 +515,7 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 			consensus->max_mapq = config.high_confidence_mapq;
 	}
 	consensus->consensus = ext_consensus;
+	consensus->extended_to_left = true;
 }
 
 
