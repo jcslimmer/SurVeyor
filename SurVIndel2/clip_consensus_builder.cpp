@@ -10,7 +10,6 @@
 #include "utils.h"
 #include "hsr.h"
 #include "remapping.h"
-#include "consensus.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
@@ -139,85 +138,6 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 	return indel;
 }
 
-
-void build_hsr_consensuses(int id, int contig_id, std::string contig_name, std::vector<consensus_t*>& rc_hsr_consensuses,
-	std::vector<consensus_t*>& lc_hsr_consensuses) {
-    
-	std::string bam_fname = workdir + "/workspace/hsr/" + std::to_string(contig_id) + ".bam";
-	if (!file_exists(bam_fname)) return;
-
-    open_samFile_t* bam_file = open_samFile(bam_fname, true);
-
-    hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
-    bam1_t* read = bam_init1();
-
-    // divide soft-clipped reads into left-clipped and right-clipped
-    std::deque<bam1_t*> lc_cluster, rc_cluster;
-    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-
-		if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
-
-        std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
-
-        bool lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
-        std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
-        std::vector<consensus_t*>& consensuses_v = lc_clipped ? lc_hsr_consensuses : rc_hsr_consensuses;
-
-        if (cluster.size() >= 3 && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
-			std::vector<bam_redux_t*> cluster_v;
-			for (bam1_t* r : cluster) cluster_v.push_back(new bam_redux_t(r));
-			std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, lc_clipped);
-			for (auto consensus : consensuses) {
-				consensus->is_hsr = true;
-				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
-				consensuses_v.push_back(consensus);
-			}
-			for (bam_redux_t* r : cluster_v) delete r;
-        }
-        while (!cluster.empty() && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
-            bam_destroy1(cluster.front());
-            cluster.pop_front();
-        }
-        cluster.push_back(bam_dup1(read));
-    }
-    if (rc_cluster.size() >= 3) {
-		std::vector<bam_redux_t*> cluster_v;
-		for (bam1_t* r : rc_cluster) cluster_v.push_back(new bam_redux_t(r));
-		std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, false);
-		for (auto consensus : consensuses) {
-			consensus->is_hsr = true;
-			consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
-			rc_hsr_consensuses.push_back(consensus);
-		}
-		for (bam_redux_t* r : cluster_v) delete r;
-    }
-    for (bam1_t* r : rc_cluster) bam_destroy1(r);
-    if (lc_cluster.size() >= 3) {
-		std::vector<bam_redux_t*> cluster_v;
-		for (bam1_t* r : lc_cluster) cluster_v.push_back(new bam_redux_t(r));
-		std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, true);
-		for (auto consensus : consensuses) {
-			consensus->is_hsr = true;
-			consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
-			lc_hsr_consensuses.push_back(consensus);
-		}
-		for (bam_redux_t* r : cluster_v) delete r;
-    }
-    for (bam1_t* r : lc_cluster) bam_destroy1(r);
-
-    StripedSmithWaterman::Aligner aligner(2, 2, 4, 1, true);
-    StripedSmithWaterman::Filter filter;
-    filter_well_aligned_to_ref(chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_hsr_consensuses, aligner, filter);
-    filter_well_aligned_to_ref(chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), lc_hsr_consensuses, aligner, filter);
-
-    bam_destroy1(read);
-
-    hts_itr_destroy(iter);
-    close_samFile(bam_file);
-
-	select_nonoverlapping_clusters(rc_hsr_consensuses);
-    select_nonoverlapping_clusters(lc_hsr_consensuses);
-}
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
 		std::vector<deletion_t*>& contig_deletions, std::vector<duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
@@ -508,45 +428,67 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
 	StripedSmithWaterman::Filter filter;
 
-	std::string clip_consensuses_fname = workdir + "/workspace/clip_consensuses/" + std::to_string(contig_id) + ".txt";
-	if (!file_exists(clip_consensuses_fname)) return;
-
-	std::vector<consensus_t*> rc_consensuses, lc_consensuses;
-
-	std::ifstream clip_consensuses_fin(clip_consensuses_fname);
 	std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
     int max_mapq, lowq_clip_portion;
     hts_pos_t remap_boundary;
-    while (clip_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
-        fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
-		if (dir == "L") {
-			lc_consensuses.push_back(new consensus_t(true, contig_id, start, end, breakpoint, breakpoint-start, 
-				lowq_clip_portion, seq, fwd_clipped+rev_clipped, max_mapq, remap_boundary));
-		} else {
-			rc_consensuses.push_back(new consensus_t(false, contig_id, start, end, breakpoint, end-breakpoint, 
-				lowq_clip_portion, seq, fwd_clipped+rev_clipped, max_mapq, remap_boundary));
+	
+	std::vector<consensus_t*> rc_sr_consensuses, lc_sr_consensuses;
+	std::string sr_consensuses_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
+	if (file_exists(sr_consensuses_fname)) {
+		std::ifstream sr_consensuses_fin(sr_consensuses_fname);
+		while (sr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
+			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
+			if (dir == "L") {
+				lc_sr_consensuses.push_back(new consensus_t(true, contig_id, start, end, breakpoint, breakpoint-start, 
+					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
+			} else {
+				rc_sr_consensuses.push_back(new consensus_t(false, contig_id, start, end, breakpoint, end-breakpoint, 
+					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
+			}
 		}
 	}
+
+    std::vector<consensus_t*> rc_hsr_consensuses, lc_hsr_consensuses;
+	std::string hsr_consensuses_fname = workdir + "/workspace/hsr_consensuses/" + std::to_string(contig_id) + ".txt";
+	if (file_exists(sr_consensuses_fname)) {
+		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
+		while (hsr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
+			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
+			if (dir == "L") {
+				consensus_t* consensus = new consensus_t(true, contig_id, start, end, breakpoint, breakpoint-start, 
+					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
+				consensus->is_hsr = true;
+				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+				lc_hsr_consensuses.push_back(consensus);
+			} else {
+				consensus_t* consensus = new consensus_t(false, contig_id, start, end, breakpoint, end-breakpoint, 
+					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
+				consensus->is_hsr = true;
+				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+				rc_hsr_consensuses.push_back(consensus);
+			}
+		}
+	}
+
+	// select_nonoverlapping_clusters(rc_hsr_consensuses);
+    // select_nonoverlapping_clusters(lc_hsr_consensuses);
 	
+	// sort by breakpoint position
 	auto consensus_cmp = [](consensus_t* c1, consensus_t* c2) {
 		return c1->breakpoint < c2->breakpoint;
 	};
-
-    // sort by breakpoint position
-    sort(rc_consensuses.begin(), rc_consensuses.end(), consensus_cmp);
-    sort(lc_consensuses.begin(), lc_consensuses.end(), consensus_cmp);
+    std::sort(rc_sr_consensuses.begin(), rc_sr_consensuses.end(), consensus_cmp);
+    std::sort(lc_sr_consensuses.begin(), lc_sr_consensuses.end(), consensus_cmp);
 
     // build HSR consensuses
-    std::vector<consensus_t*> rc_hsr_consensuses, lc_hsr_consensuses;
-    build_hsr_consensuses(0, contig_id, contig_name, rc_hsr_consensuses, lc_hsr_consensuses);
-    remove_hsr_overlapping_clipped(rc_hsr_consensuses, rc_consensuses);
-    remove_hsr_overlapping_clipped(lc_hsr_consensuses, lc_consensuses);
+    remove_hsr_overlapping_clipped(rc_hsr_consensuses, rc_sr_consensuses);
+    remove_hsr_overlapping_clipped(lc_hsr_consensuses, lc_sr_consensuses);
 
-	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
 	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
 
 	deletions.insert(deletions.end(), contig_deletions.begin(), contig_deletions.end());
@@ -555,8 +497,8 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
     /* == Deal with unpaired consensuses == */
 	up_consensus_mtx.lock();
 	std::vector<consensus_t*>& unpaired_consensuses = unpaired_consensuses_by_chr[contig_name];
-	unpaired_consensuses.insert(unpaired_consensuses.end(), rc_consensuses.begin(), rc_consensuses.end());
-	unpaired_consensuses.insert(unpaired_consensuses.end(), lc_consensuses.begin(), lc_consensuses.end());
+	unpaired_consensuses.insert(unpaired_consensuses.end(), rc_sr_consensuses.begin(), rc_sr_consensuses.end());
+	unpaired_consensuses.insert(unpaired_consensuses.end(), lc_sr_consensuses.begin(), lc_sr_consensuses.end());
 	unpaired_consensuses.insert(unpaired_consensuses.end(), rc_hsr_consensuses.begin(), rc_hsr_consensuses.end());
 	unpaired_consensuses.insert(unpaired_consensuses.end(), lc_hsr_consensuses.begin(), lc_hsr_consensuses.end());
 	up_consensus_mtx.unlock();

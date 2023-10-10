@@ -35,7 +35,7 @@ std::vector<std::vector<uint32_t> > isizes_count_geq_i;
 
 void categorize(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
     mtx.lock();
-    std::cerr << "Categorizing reads in " << contig_name << std::endl;
+    std::cout << "Categorizing reads in " << contig_name << std::endl;
     mtx.unlock();
 
     std::sort(rnd_positions.begin(), rnd_positions.end());

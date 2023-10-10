@@ -3,39 +3,14 @@
 #include <cmath>
 
 #include "sam_utils.h"
+#include "hsr_utils.h"
 #include "utils.h"
 #include "../libs/cptl_stl.h"
 
 std::mutex mtx;
 config_t config;
 std::string workdir, workspace;
-
-struct consensus_t {
-    bool left_clipped;
-    int contig_id;
-    hts_pos_t start, breakpoint, end;
-    std::string consensus;
-    int fwd_clipped, rev_clipped;
-    uint8_t max_mapq;
-    hts_pos_t remap_boundary;
-    int lowq_clip_portion;
-
-    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
-
-    consensus_t(bool left_clipped, int contig_id, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
-                const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary,
-                int lowq_clip_portion)
-                : left_clipped(left_clipped), contig_id(contig_id), start(start), breakpoint(breakpoint), end(end),
-                consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), max_mapq(max_mapq), 
-                remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
-
-    std::string to_string() {
-        std::stringstream ss;
-        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << consensus << " ";
-        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
-        return ss.str();
-    }
-};
+chr_seqs_map_t contigs;
 
 struct del_ins_t {
     int del, ins;
@@ -263,13 +238,13 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
     return consensuses;
 }
 
-void build_consensuses(int id, int contig_id, std::string contig_name, hts_pos_t contig_len) {
+void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_pos_t contig_len) {
 
     std::string clip_fname = workspace + "/clipped/" + std::to_string(contig_id) + ".bam";
     if (!file_exists(clip_fname)) return;
 
     mtx.lock();
-    std::cout << "Building consensuses for " << contig_name << std::endl;
+    std::cout << "Building SR consensuses for " << contig_name << std::endl;
     mtx.unlock();
 
     open_samFile_t* bam_file = open_samFile(clip_fname, true);
@@ -343,8 +318,95 @@ void build_consensuses(int id, int contig_id, std::string contig_name, hts_pos_t
 
     if (full_consensuses.empty()) return;
 
-    std::ofstream clip_fout(workspace + "/clip_consensuses/" + std::to_string(contig_id) + ".txt");
+    std::ofstream clip_fout(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
     for (consensus_t* consensus : full_consensuses) {
+        clip_fout << contig_name << " " << consensus->to_string() << std::endl;
+    }
+    clip_fout.close();
+}
+
+void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_pos_t contig_len) {
+
+    std::string bam_fname = workdir + "/workspace/hsr/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(bam_fname)) return;
+
+    mtx.lock();
+    std::cout << "Building HSR consensuses for " << contig_name << std::endl;
+    mtx.unlock();
+
+    open_samFile_t* bam_file = open_samFile(bam_fname, true);
+
+    hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
+    bam1_t* read = bam_init1();
+
+    // divide soft-clipped reads into left-clipped and right-clipped
+    std::deque<bam1_t*> lc_cluster, rc_cluster;
+    std::vector<consensus_t*> rc_consensuses, lc_consensuses;
+    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        
+        if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
+
+        std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
+
+        bool lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
+        std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
+
+        if (cluster.size() >= 3 && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
+            std::vector<bam_redux_t*> cluster_v;
+			for (bam1_t* r : cluster) cluster_v.push_back(new bam_redux_t(r));
+			std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, lc_clipped);
+			for (consensus_t* consensus : consensuses) {
+				consensus->is_hsr = true;
+				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+				if (lc_clipped) lc_consensuses.push_back(consensus);
+                else rc_consensuses.push_back(consensus);
+			}
+			for (bam_redux_t* r : cluster_v) delete r;
+        }
+        while (!cluster.empty() && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
+            bam_destroy1(cluster.front());
+            cluster.pop_front();
+        }
+        cluster.push_back(bam_dup1(read));
+    }
+    if (rc_cluster.size() >= 3) {
+        std::vector<bam_redux_t*> cluster_v;
+        for (bam1_t* r : rc_cluster) cluster_v.push_back(new bam_redux_t(r));
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, false);
+        for (auto consensus : consensuses) {
+            consensus->is_hsr = true;
+            consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+            rc_consensuses.push_back(consensus);
+        }
+        for (bam_redux_t* r : cluster_v) delete r;
+    }
+    for (bam1_t* r : rc_cluster) bam_destroy1(r);
+    if (lc_cluster.size() >= 3) {
+        std::vector<bam_redux_t*> cluster_v;
+        for (bam1_t* r : lc_cluster) cluster_v.push_back(new bam_redux_t(r));
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, true);
+        for (auto consensus : consensuses) {
+            consensus->is_hsr = true;
+            consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+            lc_consensuses.push_back(consensus);
+        }
+        for (bam_redux_t* r : cluster_v) delete r;
+    }
+    for (bam1_t* r : lc_cluster) bam_destroy1(r);
+
+    if (lc_consensuses.empty() && rc_consensuses.empty()) return;
+
+    filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
+    filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
+    select_nonoverlapping_clusters(rc_consensuses);
+    select_nonoverlapping_clusters(lc_consensuses);
+
+    std::vector<consensus_t*> all_consensuses;
+    all_consensuses.insert(all_consensuses.end(), rc_consensuses.begin(), rc_consensuses.end());
+    all_consensuses.insert(all_consensuses.end(), lc_consensuses.begin(), lc_consensuses.end());
+
+    std::ofstream clip_fout(workspace + "/hsr_consensuses/" + std::to_string(contig_id) + ".txt");
+    for (consensus_t* consensus : all_consensuses) {
         clip_fout << contig_name << " " << consensus->to_string() << std::endl;
     }
     clip_fout.close();
@@ -360,7 +422,6 @@ int main(int argc, char* argv[]) {
     contig_map.parse(workdir);
     config.parse(workdir + "/config.txt");
 
-    chr_seqs_map_t contigs;
     contigs.read_fasta_into_map(reference_fname);
 
     ctpl::thread_pool thread_pool(config.threads);
@@ -368,7 +429,9 @@ int main(int argc, char* argv[]) {
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
         hts_pos_t contig_len = contigs.get_len(contig_name);
-        std::future<void> future = thread_pool.push(build_consensuses, contig_id, contig_name, contig_len);
+        std::future<void> future = thread_pool.push(build_sr_consensuses, contig_id, contig_name, contig_len);
+        futures.push_back(std::move(future));
+        future = thread_pool.push(build_hsr_consensuses, contig_id, contig_name, contig_len);
         futures.push_back(std::move(future));
     }
     thread_pool.stop(true);

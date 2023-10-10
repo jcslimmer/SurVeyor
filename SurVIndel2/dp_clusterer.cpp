@@ -415,8 +415,8 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				deletions[i]->start = corr_sr_del->pos;
 				deletions[i]->end = get_sv_end(sr_hdr, corr_sr_del);
 				// we are only interested in the number of split reads
-				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[0], 0, 0);
-				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[1], 0, 0);
+				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[0], 0, 0, 0);
+				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[1], 0, 0, 0);
 			}
 		}
 	}
@@ -514,7 +514,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, config);
 	if (!shorter_deletions.empty()) calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, shorter_deletions, bam_file, config, stats);
 	if (!longer_deletions.empty()) calculate_ptn_ratio(contig_name, longer_deletions, bam_file, config);
-	calculate_cluster_region_disc(contig_name, duplications, bam_file, config);
+	if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, config);
 	close_samFile(bam_file);
 	std::cout << "Stats calculated for " << contig_name << std::endl;
 

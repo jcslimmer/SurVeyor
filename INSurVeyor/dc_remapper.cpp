@@ -1201,7 +1201,7 @@ void remap(int id, int contig_id) {
     open_samFile_t* r_dc_file = open_samFile(r_dc_fname.c_str(), true);
     open_samFile_t* l_dc_file = open_samFile(l_dc_fname.c_str(), true);
 
-    std::string clip_consensus_fname = workdir + "/workspace/clip_consensuses/" + std::to_string(contig_id) + ".txt";
+    std::string clip_consensus_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
     std::ifstream clipped_fin(clip_consensus_fname);
     std::vector<clip_cluster_t*> r_clip_clusters, l_clip_clusters;
     if (clipped_fin.good()) {

@@ -83,7 +83,7 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
 
-    std::ifstream clip_fin(workspace + "/clip_consensuses/" + std::to_string(contig_id) + ".txt");
+    std::ifstream clip_fin(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
     std::vector<clip_consensus_t> rc_consensuses, lc_consensuses;
     std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;

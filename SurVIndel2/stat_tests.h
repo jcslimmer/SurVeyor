@@ -609,9 +609,9 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 		return d1->rc_anchor_start < d2->rc_anchor_start;
 	});
 
+	bam1_t* read = bam_init1();
 	int curr_pos = 0;
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, rc_cluster_regions.data(), rc_cluster_regions.size());
-	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		while (curr_pos < duplications.size() && duplications[curr_pos]->end < read->core.pos) curr_pos++;
 
@@ -623,13 +623,18 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 			}
 		}
 	}
+	hts_itr_destroy(iter);
+	
+	for (char* region : rc_cluster_regions) {
+		delete[] region;
+	}
 
 	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
 		return d1->start < d2->start;
 	});
 
 	curr_pos = 0;
-	iter = sam_itr_regarray(bam_file->idx, bam_file->header, rc_cluster_regions.data(), rc_cluster_regions.size());
+	iter = sam_itr_regarray(bam_file->idx, bam_file->header, lc_cluster_regions.data(), lc_cluster_regions.size());
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		while (curr_pos < duplications.size() && duplications[curr_pos]->lc_anchor_end < read->core.pos) curr_pos++;
 
@@ -639,11 +644,9 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 			}
 		}
 	}
+	hts_itr_destroy(iter);
 
 	for (char* region : lc_cluster_regions) {
-		delete[] region;
-	}
-	for (char* region : rc_cluster_regions) {
 		delete[] region;
 	}
 }

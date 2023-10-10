@@ -26,7 +26,7 @@ add_executable(insurveyor_filter INSurVeyor/filter.cpp)
 add_executable(insurveyor_normalise INSurVeyor/normalise.cpp)
 
 add_executable(reads_categorizer src/reads_categorizer.cpp)
-add_executable(clip_consensus_builder src/clip_consensus_builder.cpp)
+add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 

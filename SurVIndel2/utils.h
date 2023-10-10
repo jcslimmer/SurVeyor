@@ -95,7 +95,7 @@ struct consensus_t {
     hts_pos_t breakpoint, start, end; // we follow the vcf conventions, i.e. this is the base "before" the breakpoint
     int clip_len, lowq_clip_portion;
     std::string consensus;
-    size_t supp_clipped_reads;
+    int fwd_clipped = 0, rev_clipped = 0;
     uint8_t max_mapq;
     hts_pos_t remap_boundary;
     int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
@@ -106,16 +106,18 @@ struct consensus_t {
     static const int UNKNOWN_CLIP_LEN = INT16_MAX;
 
     consensus_t(bool left_clipped, int contig_id, hts_pos_t start, hts_pos_t end, hts_pos_t breakpoint, int clip_len, int lowq_clip_portion,
-                const std::string& consensus, size_t supp_clipped_reads, uint8_t max_mapq, hts_pos_t remap_boundary)
+                const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary)
             : left_clipped(left_clipped), contig_id(contig_id), start(start), end(end), breakpoint(breakpoint), clip_len(clip_len),
-              lowq_clip_portion(lowq_clip_portion), consensus(consensus), supp_clipped_reads(supp_clipped_reads),
+              lowq_clip_portion(lowq_clip_portion), consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped),
 			  max_mapq(max_mapq), remap_boundary(remap_boundary) {}
 
     char dir() { return left_clipped ? 'L' : 'R'; }
 
+	int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
+
     std::string name() {
         std::stringstream ss;
-        ss << contig_id << "_" << breakpoint << "_" << dir() << "_" << clip_len << "_" << lowq_clip_portion << "_" << supp_clipped_reads;
+        ss << contig_id << "_" << breakpoint << "_" << dir() << "_" << clip_len << "_" << lowq_clip_portion << "_" << supp_clipped_reads();
         return ss.str();
     }
 
@@ -166,6 +168,13 @@ struct consensus_t {
     }
 
     int anchor_len() { return consensus.length() - clip_len; }
+
+	std::string to_string() {
+        std::stringstream ss;
+        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << consensus << " ";
+        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
+        return ss.str();
+    }
 };
 
 struct indel_t {
@@ -762,7 +771,7 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", &del->conc_pairs, 1);
-	int clipped_reads[] = {del->rc_consensus ? (int) del->rc_consensus->supp_clipped_reads : 0, del->lc_consensus ? (int) del->lc_consensus->supp_clipped_reads : 0};
+	int clipped_reads[] = {del->rc_consensus ? (int) del->rc_consensus->supp_clipped_reads() : 0, del->lc_consensus ? (int) del->lc_consensus->supp_clipped_reads() : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
 	int max_mapq[] = {del->rc_consensus ? (int) del->rc_consensus->max_mapq : 0, del->lc_consensus ? (int) del->lc_consensus->max_mapq : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
@@ -844,7 +853,7 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
 	int disc_pairs_surr[] = {dup->rc_cluster_region_disc_pairs, dup->lc_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-	int clipped_reads[] = {dup->lc_consensus ? (int) dup->lc_consensus->supp_clipped_reads : 0, dup->rc_consensus ? (int) dup->rc_consensus->supp_clipped_reads : 0};
+	int clipped_reads[] = {dup->lc_consensus ? (int) dup->lc_consensus->supp_clipped_reads() : 0, dup->rc_consensus ? (int) dup->rc_consensus->supp_clipped_reads() : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
 	int max_mapq[] = {dup->lc_consensus ? (int) dup->lc_consensus->max_mapq : 0, dup->rc_consensus ? (int) dup->rc_consensus->max_mapq : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);

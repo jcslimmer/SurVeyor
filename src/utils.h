@@ -7,6 +7,8 @@
 #include <numeric>
 #include <unistd.h>
 
+#include "../libs/ssw.h"
+#include "../libs/ssw_cpp.h"
 #include "htslib/kseq.h"
 KSEQ_INIT(int, read)
 
@@ -134,5 +136,52 @@ struct chr_seqs_map_t {
         clear();
     }
 };
+
+struct consensus_t {
+    bool left_clipped;
+    int contig_id;
+    hts_pos_t start, breakpoint, end;
+    std::string consensus;
+    int fwd_clipped, rev_clipped;
+    uint8_t max_mapq;
+    hts_pos_t remap_boundary;
+    int clip_len, lowq_clip_portion;
+    bool is_hsr = false;
+
+    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
+    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
+
+    consensus_t(bool left_clipped, int contig_id, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
+                const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary,
+                int lowq_clip_portion)
+                : left_clipped(left_clipped), contig_id(contig_id), start(start), breakpoint(breakpoint), end(end),
+                consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), max_mapq(max_mapq), 
+                remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
+
+    std::string to_string() {
+        std::stringstream ss;
+        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << consensus << " ";
+        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
+        return ss.str();
+    }
+
+    int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
+};
+
+int get_left_clip_size(StripedSmithWaterman::Alignment& aln) {
+	return cigar_int_to_op(aln.cigar[0]) == 'S' ? cigar_int_to_len(aln.cigar[0]) : 0;
+}
+int get_right_clip_size(StripedSmithWaterman::Alignment& aln) {
+	return cigar_int_to_op(aln.cigar[aln.cigar.size()-1]) == 'S' ? cigar_int_to_len(aln.cigar[aln.cigar.size()-1]) : 0;
+}
+bool is_left_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
+	return get_left_clip_size(aln) >= min_clip_len;
+}
+bool is_right_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
+	return get_right_clip_size(aln) >= min_clip_len;
+}
+bool is_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
+	return is_left_clipped(aln, min_clip_len) || is_right_clipped(aln, min_clip_len);
+}
 
 #endif

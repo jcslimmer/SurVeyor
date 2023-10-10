@@ -231,9 +231,6 @@ struct bam_redux_t {
     std::vector<uint8_t> seq;
     std::vector<uint8_t> qual;
     std::vector<uint32_t> cigar;
-
-    // TODO: temporary
-    std::string qname;
     int as = 0;
 
     bam_redux_t() {}
@@ -241,7 +238,6 @@ struct bam_redux_t {
         isize(read->core.isize), mapq(read->core.qual), left_clip_size(get_left_clip_size(read)), right_clip_size(get_right_clip_size(read)),
 		nm(bam_aux2i(bam_aux_get(read, "NM"))), as(bam_aux2i(bam_aux_get(read, "AS"))) {
 
-    	qname = bam_get_qname(read);
         if (bam_is_rev(read)) flag |= IS_REV;
         if (bam_is_mrev(read)) flag |= IS_MREV;
         if (!is_samechr(read) || is_unmapped(read) != is_mate_unmapped(read)) flag |= IS_INTER_CHR;
