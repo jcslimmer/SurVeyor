@@ -29,10 +29,6 @@ std::pair<double, double> ptn_score(insertion_t* insertion) {
 	return {double(r_positive)/(r_positive+r_negative), double(l_positive)/(l_positive+l_negative)};
 }
 
-char dir_to_strand(char dir) {
-    return (dir == 'R' ? 'F' : 'R');
-}
-
 bool compatible(insertion_t* i1, insertion_t* i2, int max_dist) {
 	if (i1->chr != i2->chr) return false;
 	if (abs(i1->start-i2->start) + abs(i1->end-i2->end) > max_dist) return false;
@@ -44,7 +40,7 @@ bool compatible(insertion_t* i1, insertion_t* i2, int max_dist) {
 // filters for all categories
 void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) {
 	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
-	if (insertion->end-insertion->start >= (int) insertion->ins_seq.length()) filters.push_back("ALT_SHORTER_THAN_REF");
+	// if (insertion->end-insertion->start >= (int) insertion->ins_seq.length()) filters.push_back("ALT_SHORTER_THAN_REF");
 	if (insertion->median_lf_cov > stats.get_max_depth(insertion->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->chr) ||
 		insertion->median_lf_cov < stats.get_min_depth(insertion->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->chr))
 		filters.push_back("ANOMALOUS_DEPTH");
@@ -249,6 +245,7 @@ int main(int argc, char* argv[]) {
 		final_insertions_set.push_back(bcf_dup(bcf_entry));
 	}
 
+
 	/* == Small insertions detected through consensus overlap == */
 	std::string small_ins_vcf_fname = workdir + "/small_ins.annotated.vcf.gz";
 	htsFile* small_ins_vcf_file = bcf_open(small_ins_vcf_fname.c_str(), "r");
@@ -260,29 +257,30 @@ int main(int argc, char* argv[]) {
 		std::string contig_name = bcf_seqname_safe(small_ins_hdr, bcf_entry);
 		int* split_reads = NULL;
 		int size = 0;
-		bcf_get_info_int32(out_vcf_header, bcf_entry, "SPLIT_READS", &split_reads, &size);
+		bcf_get_info_int32(small_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &size);
 
 		int* fwd_split_reads = NULL;
 		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "FWD_SPLIT_READS", &fwd_split_reads, &size);
+		bcf_get_info_int32(small_ins_hdr, bcf_entry, "FWD_SPLIT_READS", &fwd_split_reads, &size);
 
 		int* rev_split_reads = NULL;
 		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "REV_SPLIT_READS", &rev_split_reads, &size);
+		bcf_get_info_int32(small_ins_hdr, bcf_entry, "REV_SPLIT_READS", &rev_split_reads, &size);
 
 		int* stable_depths = NULL;
 		size = 0;
-		bcf_get_info_int32(out_vcf_header, bcf_entry, "STABLE_DEPTHS", &stable_depths, &size);
+		bcf_get_info_int32(small_ins_hdr, bcf_entry, "STABLE_DEPTHS", &stable_depths, &size);
 
-		insertion_t* insertion = new insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, out_vcf_header),
-				0, 0, fwd_split_reads[0], rev_split_reads[0], fwd_split_reads[1], rev_split_reads[1],
-				0, get_ins_seq(bcf_entry, out_vcf_header));
+		int end = get_sv_end(bcf_entry, small_ins_hdr);
+		std::string ins_seq = get_ins_seq(bcf_entry, small_ins_hdr);
+		insertion_t* insertion = new insertion_t(contig_name, bcf_entry->pos, end, 0, 0, fwd_split_reads[0], rev_split_reads[0], 
+			fwd_split_reads[1], rev_split_reads[1], 0, ins_seq);
 		insertion->median_lf_cov = stable_depths[0], insertion->median_rf_cov = stable_depths[1];
 
 		std::vector<std::string> filters = get_small_insertions_filterlist(insertion);
 		for (std::string filter : filters) {
-			int filter_id = bcf_hdr_id2int(out_vcf_header, BCF_DT_ID, filter.c_str());
-			bcf_add_filter(out_vcf_header, bcf_entry, filter_id);
+			int filter_id = bcf_hdr_id2int(small_ins_hdr, BCF_DT_ID, filter.c_str());
+			bcf_add_filter(small_ins_hdr, bcf_entry, filter_id);
 		}
 
 		std::vector<insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
@@ -294,9 +292,11 @@ int main(int argc, char* argv[]) {
 			}
 		}
 		if (write) {
+			bcf_translate(out_vcf_header, small_ins_hdr, bcf_entry);
 			final_insertions_set.push_back(bcf_dup(bcf_entry));
 		}
 	}
+
 
 	// sort and write final set of insertions to file
 	for (bcf1_t* b : final_insertions_set) bcf_unpack(b, BCF_UN_ALL);

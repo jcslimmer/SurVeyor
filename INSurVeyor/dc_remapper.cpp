@@ -134,24 +134,6 @@ region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name)
     return region_t(contig_map.get_id(m_contig_name), subcluster[0]->core.mtid, std::max(hts_pos_t(0),start), std::min(end,contig_len));
 }
 
-
-std::vector<int> get_best_alns(char* region, int region_len, std::string query, bool report_starts,
-                               StripedSmithWaterman::Aligner& aligner) {
-    StripedSmithWaterman::Filter filter;
-    std::vector<int> positions;
-    StripedSmithWaterman::Alignment alignment;
-    int offset = 0;
-    do {
-        aligner.Align(query.c_str(), region+offset, region_len-offset, filter, &alignment, query.length());
-        if (alignment.query_begin == 0 && alignment.query_end == query.length()-1) {
-            if (report_starts) positions.push_back(alignment.ref_begin+offset);
-            else positions.push_back(alignment.ref_end+offset);
-        }
-        offset += alignment.ref_begin + 1;
-    } while (alignment.sw_score == alignment.sw_score_next_best);
-    return positions;
-}
-
 remap_info_t remap_mate(char* region, int region_len, std::string& mate_seq, StripedSmithWaterman::Aligner& aligner,
                 StripedSmithWaterman::Filter& filter) {
     if (region_len <= 0) {

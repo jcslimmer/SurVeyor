@@ -7,6 +7,7 @@
 #include "../libs/ssw_cpp.h"
 #include "../libs/IntervalTree.h"
 #include "utils.h"
+#include "sw_utils.h"
 
 int compute_left_half_Ms(bam1_t* r) {
 	int border = r->core.l_qseq/2;

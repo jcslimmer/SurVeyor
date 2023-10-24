@@ -2,11 +2,13 @@
 #define UTILS_H_
 
 #include <fstream>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 #include <numeric>
 #include <unistd.h>
 
+#include <htslib/sam.h>
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "htslib/kseq.h"
@@ -14,10 +16,13 @@ KSEQ_INIT(int, read)
 
 struct config_t {
     
-    int threads;
+    int threads, seed;
     int min_clip_len, min_stable_mapq, min_diff_hsr;
+    int min_sv_size, max_trans_size;
     double max_seq_error;
     int max_clipped_pos_dist;
+    bool per_contig_stats;
+    std::string sampling_regions, version;
 
     int min_score_diff = 15;
 
@@ -31,11 +36,17 @@ struct config_t {
         fin.close();
 
         threads = std::stoi(config_params["threads"]);
+        seed = std::stoi(config_params["seed"]);
         min_clip_len = std::stoi(config_params["min_clip_len"]);
         min_stable_mapq = std::stoi(config_params["min_stable_mapq"]);
         min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
+        min_sv_size = std::stoi(config_params["min_sv_size"]);
+        max_trans_size = std::stoi(config_params["max_trans_size"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
         max_clipped_pos_dist = std::stoi(config_params["max_clipped_pos_dist"]);
+        per_contig_stats = std::stoi(config_params["per_contig_stats"]);
+        sampling_regions = config_params["sampling_regions"];
+        version = config_params["version"];
     }
 };
 
@@ -168,20 +179,56 @@ struct consensus_t {
     int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
 };
 
-int get_left_clip_size(StripedSmithWaterman::Alignment& aln) {
-	return cigar_int_to_op(aln.cigar[0]) == 'S' ? cigar_int_to_len(aln.cigar[0]) : 0;
+
+struct suffix_prefix_aln_t {
+    int overlap, score, mismatches;
+
+    suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
+};
+
+// Finds the best alignment between a suffix of s1 and a prefix of s2
+// Disallows gaps
+suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
+                                      int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
+    int best_score = 0, best_aln_mismatches = 0;
+    int overlap = 0;
+
+    for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
+        if (i+s2.length() < s1.length()) continue;
+
+        int sp_len = s1.length()-i;
+        if (best_score >= sp_len*match_score) break; // current best score is unbeatable
+
+        const char* s1_suffix = s1.data()+i;
+        const char* s2_prefix = s2.data();
+        int mismatches = 0;
+        while (*s1_suffix) {
+            if (*s1_suffix != *s2_prefix) mismatches++;
+            s1_suffix++; s2_prefix++;
+        }
+
+        int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
+
+        int max_acceptable_mm = max_seq_error == 0.0 ? 0 : std::max(1.0, sp_len*max_seq_error);
+        if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
+            best_score = score;
+            best_aln_mismatches = mismatches;
+            overlap = sp_len;
+        }
+    }
+    return suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
 }
-int get_right_clip_size(StripedSmithWaterman::Alignment& aln) {
-	return cigar_int_to_op(aln.cigar[aln.cigar.size()-1]) == 'S' ? cigar_int_to_len(aln.cigar[aln.cigar.size()-1]) : 0;
-}
-bool is_left_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
-	return get_left_clip_size(aln) >= min_clip_len;
-}
-bool is_right_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
-	return get_right_clip_size(aln) >= min_clip_len;
-}
-bool is_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
-	return is_left_clipped(aln, min_clip_len) || is_right_clipped(aln, min_clip_len);
+
+bool is_homopolymer(const char* seq, int len) {
+	int a = 0, c = 0, g = 0, t = 0;
+	for (int i = 0; i < len; i++) {
+		char b = std::toupper(seq[i]);
+		if (b == 'A') a++;
+		else if (b == 'C') c++;
+		else if (b == 'G') g++;
+		else if (b == 'T') t++;
+	}
+	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
 
 #endif

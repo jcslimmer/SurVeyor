@@ -36,7 +36,7 @@ cmd_parser.add_argument('--min-diff-hsr', type=int, default=3, help='Minimum num
 
 # INSurVeyor specific arguments
 cmd_parser.add_argument('--max-trans-size', type=int, default=10000, help='Maximum size of the transpositions which '
-                                                                          'INSurVeyor will predict when only one side is available.')
+                                                                          'SurVeyor will predict when only one side is available.')
 cmd_parser.add_argument('--min-stable-mapq', type=int, default=20, help='Minimum MAPQ for a stable read.')
 cmd_args = cmd_parser.parse_args()
 
@@ -206,6 +206,10 @@ if cmd_args.samplename:
 else:
     sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
 
+call_insertions_cmd = SURVEYOR_PATH + "/bin/call_insertions %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
+exec(call_insertions_cmd)
+
+
 clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/survindel2_clip_consensus_builder %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(clip_consensus_builder_cmd)
 
@@ -217,9 +221,6 @@ exec(merge_identical_calls_cmd)
 
 dp_clusterer = SURVEYOR_PATH + "/bin/survindel2_dp_clusterer %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(dp_clusterer)
-
-call_insertions_cmd = SURVEYOR_PATH + "/bin/insurveyor_call_insertions %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
-exec(call_insertions_cmd)
 
 dc_remapper_cmd = SURVEYOR_PATH + "/bin/insurveyor_dc_remapper %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
 exec(dc_remapper_cmd)
