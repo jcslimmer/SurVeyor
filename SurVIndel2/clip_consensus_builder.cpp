@@ -49,8 +49,8 @@ void release_bam_reader(open_samFile_t* reader) {
     bam_pool_mtx.unlock();
 }
 
-std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
-std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
+std::unordered_map<std::string, std::vector<sv2_deletion_t*> > deletions_by_chr;
+std::unordered_map<std::string, std::vector<sv2_duplication_t*> > duplications_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 std::vector<double> max_allowed_frac_normalized;
 std::mutex mtx, indel_out_mtx, up_consensus_mtx;
@@ -122,11 +122,11 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 		aligner.Align(padded_joined_consensus.c_str(), ref_with_del, ref_with_del_len, filter, &aln_to_ref, 0);
 		if (aln_to_ref.query_begin > 0 || aln_to_ref.query_end < padded_joined_consensus.length()-1) indel->start = indel->end = 0;
 
-		deletion_t* del = (deletion_t*) indel;
+		sv2_deletion_t* del = (sv2_deletion_t*) indel;
 		del->remap_boundary_lower = lc_consensus->remap_boundary;
 		del->remap_boundary_upper = rc_consensus->remap_boundary;
 	} else if (indel->indel_type() == "DUP") {
-		duplication_t* dup = (duplication_t*) indel;
+		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
 		dup->original_start = lc_consensus->breakpoint, dup->original_end = rc_consensus->breakpoint;
 	}
 
@@ -140,7 +140,7 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
-		std::vector<deletion_t*>& contig_deletions, std::vector<duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
+		std::vector<sv2_deletion_t*>& contig_deletions, std::vector<sv2_duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	// build interval tree of left-clipped consensuses (for quick search)
@@ -234,9 +234,9 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		indel->extra_info += std::to_string(rc_anchor->start) + "," + std::to_string(lc_anchor->end) + ",";
 		indel->extra_info += std::to_string(indel->rc_anchor_start) + "," + std::to_string(indel->lc_anchor_end);
 		if (indel->indel_type() == "DEL") {
-			contig_deletions.push_back((deletion_t*) indel);
+			contig_deletions.push_back((sv2_deletion_t*) indel);
 		} else if (indel->indel_type() == "DUP") {
-			contig_duplications.push_back((duplication_t*) indel);
+			contig_duplications.push_back((sv2_duplication_t*) indel);
 		}
 	}
 
@@ -295,7 +295,7 @@ indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_r
 	if (indel == NULL) return NULL;
 
 	if (indel->indel_type() == "DUP") {
-		duplication_t* dup = (duplication_t*) indel;
+		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
 		dup->original_start = dup->start, dup->original_end = dup->end;
 	}
 	indel->extra_info += consensus->name();
@@ -352,7 +352,7 @@ indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_r
 	if (indel == NULL) return NULL;
 
 	if (indel->indel_type() == "DUP") {
-		duplication_t* dup = (duplication_t*) indel;
+		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
 		dup->original_start = dup->start, dup->original_end = dup->end;
 	}
 	indel->extra_info += consensus->name();
@@ -366,8 +366,8 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 	std::cout << "Dealing with unpaired consensuses in " << contig_name << ", " << start << " to " << end << std::endl;
 	out_mtx.unlock();
 
-	std::vector<deletion_t*> local_dels;
-	std::vector<duplication_t*> local_dups;
+	std::vector<sv2_deletion_t*> local_dels;
+	std::vector<sv2_duplication_t*> local_dups;
 
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
@@ -405,9 +405,9 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 			continue;
 		}
 		if (smallest_indel->indel_type() == "DEL") {
-			local_dels.push_back((deletion_t*) smallest_indel);
+			local_dels.push_back((sv2_deletion_t*) smallest_indel);
 		} else {
-			local_dups.push_back((duplication_t*) smallest_indel);
+			local_dups.push_back((sv2_duplication_t*) smallest_indel);
 		}
 	}
 	close_samFile(bam_file);
@@ -419,11 +419,11 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 	indel_out_mtx.unlock();
 }
 
-void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions,
-                            std::vector<duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<sv2_deletion_t*>& deletions,
+                            std::vector<sv2_duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
-	std::vector<deletion_t*> contig_deletions;
-	std::vector<duplication_t*> contig_duplications;
+	std::vector<sv2_deletion_t*> contig_deletions;
+	std::vector<sv2_duplication_t*> contig_duplications;
 
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
 	StripedSmithWaterman::Filter filter;
@@ -507,8 +507,8 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 
 void build_consensuses(int id, int contig_id, std::string contig_name, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
     mtx.lock();
-    std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-    std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
+    std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
+    std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
     mtx.unlock();
 
     mtx.lock();
@@ -522,7 +522,7 @@ void size_and_depth_filtering(int id, std::string contig_name) {
     open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
 
     out_mtx.lock();
-    std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
+    std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
     out_mtx.unlock();
     std::vector<double> temp1;
     std::vector<uint32_t> temp2;
@@ -530,7 +530,7 @@ void size_and_depth_filtering(int id, std::string contig_name) {
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, config);
 
     out_mtx.lock();
-    std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
+    std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
     out_mtx.unlock();
 //    std::vector<duplication_t*> duplications_w_cleanup, duplications_wo_cleanup;
 //    for (duplication_t* dup : duplications) {
@@ -616,7 +616,7 @@ int main(int argc, char* argv[]) {
 				deletions[i] = NULL;
 			}
 		}
-		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (deletion_t*) NULL), deletions_by_chr[contig_name].end());
+		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (sv2_deletion_t*) NULL), deletions_by_chr[contig_name].end());
 		auto& duplications = duplications_by_chr[contig_name];
 		for (int i = 0; i < duplications.size(); i++) {
 			if (duplications[i]->len() < config.min_sv_size) {
@@ -624,7 +624,7 @@ int main(int argc, char* argv[]) {
 				duplications[i] = NULL;
 			}
 		}
-		duplications_by_chr[contig_name].erase(std::remove(duplications_by_chr[contig_name].begin(), duplications_by_chr[contig_name].end(), (duplication_t*) NULL), duplications_by_chr[contig_name].end());
+		duplications_by_chr[contig_name].erase(std::remove(duplications_by_chr[contig_name].begin(), duplications_by_chr[contig_name].end(), (sv2_duplication_t*) NULL), duplications_by_chr[contig_name].end());
 	}
 
     // create VCF out files
@@ -667,11 +667,11 @@ int main(int argc, char* argv[]) {
     int del_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!deletions_by_chr.count(contig_name)) continue;
-		std::vector<deletion_t*>& dels = deletions_by_chr[contig_name];
-		std::sort(dels.begin(), dels.end(), [](deletion_t* del1, deletion_t* del2) {
+		std::vector<sv2_deletion_t*>& dels = deletions_by_chr[contig_name];
+		std::sort(dels.begin(), dels.end(), [](sv2_deletion_t* del1, sv2_deletion_t* del2) {
 			return std::tie(del1->start, del1->end) < std::tie(del2->start, del2->end);
 		});
-        for (deletion_t* del : dels) {
+        for (sv2_deletion_t* del : dels) {
         	del->id = "DEL_SR_" + std::to_string(del_id++);
             std::vector<std::string> filters;
 
@@ -726,11 +726,11 @@ int main(int argc, char* argv[]) {
     int dup_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!duplications_by_chr.count(contig_name)) continue;
-    	std::vector<duplication_t*>& dups = duplications_by_chr[contig_name];
-    	std::sort(dups.begin(), dups.end(), [](duplication_t* dup1, duplication_t* dup2) {
+    	std::vector<sv2_duplication_t*>& dups = duplications_by_chr[contig_name];
+    	std::sort(dups.begin(), dups.end(), [](sv2_duplication_t* dup1, sv2_duplication_t* dup2) {
     		return std::tie(dup1->start, dup1->end) < std::tie(dup2->start, dup2->end);
     	});
-        for (duplication_t* dup : dups) {
+        for (sv2_duplication_t* dup : dups) {
         	dup->id = "DUP_SR_" + std::to_string(dup_id++);
             std::vector<std::string> filters;
 

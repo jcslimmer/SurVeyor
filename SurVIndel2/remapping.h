@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
+#include "../src/sw_utils.h"
 #include <mutex>
 
 extern config_t config;
@@ -48,6 +49,9 @@ indel_t* remap_consensus(std::string& consensus_seq, char* reference, int refere
 		ref_lh_cstr[i] = toupper(reference[ref_lh_start+i]);
 	} ref_lh_cstr[ref_lh_len] = '\0';
 	int* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_lh_len, consensus_seq.c_str(), consensus_seq.length(), 1, -4, -6, -1);
+	for (int i = 1; i < consensus_seq.length(); i++) {
+		prefix_scores[i] = std::max(prefix_scores[i], prefix_scores[i-1]);
+	}
 
 	char ref_rh_cstr[100000];
 	for (int i = 0; i < ref_rh_len; i++) {
@@ -55,6 +59,9 @@ indel_t* remap_consensus(std::string& consensus_seq, char* reference, int refere
 	} ref_rh_cstr[ref_rh_len] = '\0';
 	std::string consensus_seq_rev = std::string(consensus_seq.rbegin(), consensus_seq.rend());
 	int* suffix_scores = smith_waterman_gotoh(ref_rh_cstr, ref_rh_len, consensus_seq_rev.c_str(), consensus_seq_rev.length(), 1, -4, -6, -1);
+	for (int i = 1; i < consensus_seq_rev.length(); i++) {
+		suffix_scores[i] = std::max(suffix_scores[i], suffix_scores[i-1]);
+	}
 
 	int max_score = 0, split_i = 0;
 	for (int i = config.min_clip_len; i < consensus_seq.length()-config.min_clip_len; i++) {
@@ -110,7 +117,7 @@ indel_t* remap_consensus(std::string& consensus_seq, char* reference, int refere
 	if (start < end) {
 		std::string ins_seq = consensus_seq.substr(lh_aln.query_end, split_i-lh_aln.query_end-1);
 		ins_seq += consensus_seq.substr(split_i, rh_aln.query_begin);
-		indel = new deletion_t(start, end, la_start, ra_end, lc_consensus, rc_consensus, lh_aln.sw_score, rh_aln.sw_score, source, ins_seq);
+		indel = new sv2_deletion_t(start, end, la_start, ra_end, lc_consensus, rc_consensus, lh_aln.sw_score, rh_aln.sw_score, source, ins_seq);
 	} else {
 		int overlap_len = start - end;
 		std::stringstream ss;
@@ -122,16 +129,16 @@ indel_t* remap_consensus(std::string& consensus_seq, char* reference, int refere
 			(lh_suffix_score == overlap_len && rh_prefix_score == overlap_len)) { // perfect dup
 			std::string ins_seq = consensus_seq.substr(split_i, get_left_clip_size(rh_aln));
 			if (ins_seq.length() > start-end) return NULL;
-			indel = new duplication_t(end, start, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
+			indel = new sv2_duplication_t(end, start, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
 		} else { // insertion
 			if (lh_suffix_score <= rh_prefix_score) {
 				std::string ins_seq = consensus_seq.substr(split_i-lh_suffix_qlen, lh_suffix_qlen);
 				ins_seq += consensus_seq.substr(split_i, get_left_clip_size(rh_aln));
-				indel = new duplication_t(end, end, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
+				indel = new sv2_duplication_t(end, end, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
 			} else {
 				int ins_seq_len = rh_prefix_qlen + get_left_clip_size(rh_aln);
 				std::string ins_seq = consensus_seq.substr(split_i, ins_seq_len);
-				indel = new duplication_t(start, start, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
+				indel = new sv2_duplication_t(start, start, la_start, ra_end, lc_consensus, rc_consensus, source, ins_seq);
 			}
 		}
 	}

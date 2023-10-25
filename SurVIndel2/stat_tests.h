@@ -145,7 +145,7 @@ std::vector<read_w_cached_info_t*> cleanup_reads(std::vector<read_w_cached_info_
     return kept_reads;
 }
 
-void compute_cleaned_up_depth(duplication_t* dup, open_samFile_t* bam_file,
+void compute_cleaned_up_depth(sv2_duplication_t* dup, open_samFile_t* bam_file,
        std::vector<read_w_cached_info_t*>& lf_reads, std::vector<read_w_cached_info_t*>& ldup_reads,
        std::vector<read_w_cached_info_t*>& rdup_reads, std::vector<read_w_cached_info_t*>& rf_reads,
        stats_t& stats, config_t& config, std::vector<double>& max_allowed_frac_normalized, std::string workdir) {
@@ -258,7 +258,7 @@ void clear_rcis(std::vector<read_w_cached_info_t*>& testable_dups_lf_reads, std:
     std::vector<read_w_cached_info_t*>().swap(testable_dups_rf_reads);
 }
 
-void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<duplication_t*>& duplications,
+void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<sv2_duplication_t*>& duplications,
                                 open_samFile_t* bam_file, stats_t stats, config_t config,
                                 std::vector<double>& max_allowed_frac_normalized, std::string workdir) {
 
@@ -269,7 +269,7 @@ void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<duplication
 	std::default_random_engine rng(config.seed);
 
 	std::vector<hts_pair_pos_t> cleanup_ivals;
-	for (duplication_t* dup : duplications) {
+	for (sv2_duplication_t* dup : duplications) {
 		cleanup_ivals.push_back({std::max(dup->start-FLANKING_SIZE, hts_pos_t(0)), std::min(dup->start+INDEL_TESTED_REGION_SIZE, dup->end)});
 		cleanup_ivals.push_back({std::max(dup->end-INDEL_TESTED_REGION_SIZE, dup->start), dup->end+FLANKING_SIZE});
 	}
@@ -322,7 +322,7 @@ void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<duplication
 	}
 	IntervalTree<int> ival_tree(ivals);
 
-	for (duplication_t* dup : duplications) {
+	for (sv2_duplication_t* dup : duplications) {
 		std::vector<Interval<int> > c_ivals = ival_tree.findOverlapping(std::max(dup->start-FLANKING_SIZE, hts_pos_t(0)),
 				std::min(dup->start+INDEL_TESTED_REGION_SIZE, dup->end));
 		int idx = c_ivals[0].value;
@@ -484,7 +484,7 @@ void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, 
     bam_destroy1(read);
 }
 
-void depth_filter_del(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file,
+void depth_filter_del(std::string contig_name, std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file,
                       int min_size_for_depth_filtering, config_t& config) {
 	if (deletions.empty()) return;
 	mtx2.lock();
@@ -498,7 +498,7 @@ void depth_filter_del(std::string contig_name, std::vector<deletion_t*>& deletio
     std::cout << "Finished del depth computation for " << contig_name << ": " << std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() << "[s]" << std::endl;
     mtx2.unlock();
 }
-void depth_filter_dup(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file,
+void depth_filter_dup(std::string contig_name, std::vector<sv2_duplication_t*>& duplications, open_samFile_t* bam_file,
                       int min_size_for_depth_filtering, config_t& config) {
 	if (duplications.empty()) return;
 	mtx2.lock();
@@ -530,10 +530,10 @@ int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum)
 	return best_start;
 }
 
-void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion_t*> deletions, open_samFile_t* bam_file) {
+void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_deletion_t*> deletions, open_samFile_t* bam_file) {
 
 	std::vector<char*> l_cluster_regions, r_cluster_regions;
-	for (deletion_t* deletion : deletions) {
+	for (sv2_deletion_t* deletion : deletions) {
 		std::stringstream ss;
 		ss << contig_name << ":" << deletion->rc_anchor_start << "-" << deletion->start;
 		char* region = new char[ss.str().length()+1];
@@ -547,7 +547,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 		r_cluster_regions.push_back(region);
 	}
 
-	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+	std::sort(deletions.begin(), deletions.end(), [](const sv2_deletion_t* d1, const sv2_deletion_t* d2) {
 		return d1->rc_anchor_start < d2->rc_anchor_start;
 	});
 
@@ -564,7 +564,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 		}
 	}
 
-	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+	std::sort(deletions.begin(), deletions.end(), [](const sv2_deletion_t* d1, const sv2_deletion_t* d2) {
 		return d1->end < d2->end;
 	});
 
@@ -588,10 +588,10 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 	}
 }
 
-void calculate_cluster_region_disc(std::string contig_name, std::vector<duplication_t*> duplications, open_samFile_t* bam_file, config_t& config) {
+void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_duplication_t*> duplications, open_samFile_t* bam_file, config_t& config) {
 
 	std::vector<char*> lc_cluster_regions, rc_cluster_regions;
-	for (duplication_t* duplication : duplications) {
+	for (sv2_duplication_t* duplication : duplications) {
 		std::stringstream ss;
 		ss << contig_name << ":" << duplication->rc_anchor_start << "-" << duplication->end;
 		char* region = new char[ss.str().length()+1];
@@ -605,7 +605,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 		lc_cluster_regions.push_back(region);
 	}
 
-	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
+	std::sort(duplications.begin(), duplications.end(), [](const sv2_duplication_t* d1, const sv2_duplication_t* d2) {
 		return d1->rc_anchor_start < d2->rc_anchor_start;
 	});
 
@@ -629,7 +629,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 		delete[] region;
 	}
 
-	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
+	std::sort(duplications.begin(), duplications.end(), [](const sv2_duplication_t* d1, const sv2_duplication_t* d2) {
 		return d1->start < d2->start;
 	});
 
@@ -653,7 +653,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
 										std::vector<uint32_t>& median_crossing_count_geqi_by_isize,
-										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t config, stats_t stats) {
+										std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, config_t config, stats_t stats) {
 
 	if (deletions.empty()) return;
 
@@ -662,7 +662,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	mtx2.unlock();
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+    std::sort(deletions.begin(), deletions.end(), [](const sv2_deletion_t* d1, const sv2_deletion_t* d2) {
         return (d1->start+d1->end)/2 < (d2->start+d2->end)/2;
     });
 
@@ -671,7 +671,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     std::vector<uint32_t> ns(deletions.size());
     std::vector<char*> regions;
     std::vector<std::pair<hts_pos_t, hts_pos_t> > regions_coos;
-    for (deletion_t* deletion : deletions) {
+    for (sv2_deletion_t* deletion : deletions) {
         hts_pos_t midpoint = (deletion->start+deletion->end)/2, size = deletion->end-deletion->start;
         midpoints.push_back(midpoint);
         sizes.push_back(size);
@@ -712,7 +712,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     }
 
     for (int i = 0; i < deletions.size(); i++) {
-        deletion_t* del = deletions[i];
+        sv2_deletion_t* del = deletions[i];
         uint32_t n = ns[i];
         uint64_t sum = sums[i], sq_sum = sq_sums[i];
         if (n >= 4) {
@@ -824,17 +824,17 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     mtx2.unlock();
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t config) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, config_t config) {
 
 	if (deletions.empty()) return;
 
-	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+	std::sort(deletions.begin(), deletions.end(), [](const sv2_deletion_t* d1, const sv2_deletion_t* d2) {
 		return (d1->start+d1->end)/2 < (d2->start+d2->end)/2;
 	});
 
 	std::vector<hts_pos_t> midpoints;
 	std::vector<char*> mid_regions;
-	for (deletion_t* deletion : deletions) {
+	for (sv2_deletion_t* deletion : deletions) {
 		hts_pos_t midpoint = (deletion->start+deletion->end)/2;
 		midpoints.push_back(midpoint);
 
