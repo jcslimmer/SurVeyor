@@ -329,8 +329,6 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		indel->disc_pairs = c->count;
 		indel->disc_pairs_maxmapq = c->max_mapq;
 		indel->disc_pairs_high_mapq = c->confident_count;
-		indel->extra_info += "LC=" + std::to_string(c->la_start) + "-" + std::to_string(c->la_end) + ",";
-		indel->extra_info += "RC=" + std::to_string(c->ra_start) + "-" + std::to_string(c->ra_end) + ",";
 
 		indel->rightmost_rightfacing_seq = c->rightmost_lseq;
 		indel->leftmost_leftfacing_seq = c->leftmost_rseq;
@@ -415,8 +413,8 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				deletions[i]->start = corr_sr_del->pos;
 				deletions[i]->end = get_sv_end(sr_hdr, corr_sr_del);
 				// we are only interested in the number of split reads
-				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[0], 0, 0, 0);
-				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, 0, "", clipped_reads[1], 0, 0, 0);
+				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, "", clipped_reads[0], 0, 0, 0);
+				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, "", clipped_reads[1], 0, 0, 0);
 			}
 		}
 	}
@@ -474,7 +472,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 			if (has_Ns(chr_seqs.get_seq(contig_name), ref_lh_start, ref_lh_end-ref_lh_start)) continue;
 			if (has_Ns(chr_seqs.get_seq(contig_name), ref_rh_start, ref_rh_end-ref_rh_start)) continue;
 
-			indel_t* indel = remap_consensus(full_junction_seq, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name),
+			indel_t* indel = remap_consensus(contig_name, full_junction_seq, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name),
 					ref_lh_start, ref_lh_len, ref_rh_start, ref_rh_len, aligner, NULL, NULL, "DP");
 			if (indel == NULL || indel->indel_type() != "DEL" || indel->len() == 0) {
 				deletions[i] = NULL;

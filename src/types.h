@@ -67,4 +67,24 @@ struct insertion_t : sv_t {
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
 };
 
+
+struct clip_consensus_t {
+    bool left_clipped;
+    hts_pos_t breakpoint, start, end; // we follow the vcf conventions, i.e. this is the base "before" the breakpoint
+    std::string seq;
+    int fwd_clipped, rev_clipped;
+    int clip_len, lowq_clip_portion;
+    uint8_t max_mapq;
+    hts_pos_t remap_boundary;
+
+    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
+    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
+
+    clip_consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t end, hts_pos_t breakpoint, std::string& seq, 
+    int fwd_clipped, int rev_clipped, int clip_len, int max_mapq, hts_pos_t remap_boundary, int lowq_clip_portion) :
+        left_clipped(left_clipped), start(start), end(end), breakpoint(breakpoint), seq(seq), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped),
+        clip_len(clip_len), max_mapq(max_mapq), remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
+};
+
+
 #endif /* TYPES_H */

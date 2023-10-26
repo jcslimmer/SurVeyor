@@ -88,7 +88,6 @@ struct stats_t {
 
 struct consensus_t {
     bool left_clipped;
-    int contig_id;
     hts_pos_t breakpoint, start, end; // we follow the vcf conventions, i.e. this is the base "before" the breakpoint
     int clip_len, lowq_clip_portion;
     std::string consensus;
@@ -102,21 +101,15 @@ struct consensus_t {
     static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
     static const int UNKNOWN_CLIP_LEN = INT16_MAX;
 
-    consensus_t(bool left_clipped, int contig_id, hts_pos_t start, hts_pos_t end, hts_pos_t breakpoint, int clip_len, int lowq_clip_portion,
+    consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t end, hts_pos_t breakpoint, int clip_len, int lowq_clip_portion,
                 const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary)
-            : left_clipped(left_clipped), contig_id(contig_id), start(start), end(end), breakpoint(breakpoint), clip_len(clip_len),
+            : left_clipped(left_clipped), start(start), end(end), breakpoint(breakpoint), clip_len(clip_len),
               lowq_clip_portion(lowq_clip_portion), consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped),
 			  max_mapq(max_mapq), remap_boundary(remap_boundary) {}
 
     char dir() { return left_clipped ? 'L' : 'R'; }
 
 	int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
-
-    std::string name() {
-        std::stringstream ss;
-        ss << contig_id << "_" << breakpoint << "_" << dir() << "_" << clip_len << "_" << lowq_clip_portion << "_" << supp_clipped_reads();
-        return ss.str();
-    }
 
     hts_pos_t left_ext_target_start(config_t& config) {
     	if (!left_clipped) {
@@ -187,7 +180,6 @@ struct indel_t {
     int full_junction_score = 0, lh_best1_junction_score = 0, rh_best1_junction_score = 0,
     	lh_best2_junction_score = 0, rh_best2_junction_score = 0;
     int lh_junction_size = 0, rh_junction_size = 0;
-    std::string extra_info;
     int overlap = 0, mismatches = 0;
     bool remapped = false;
     std::string rightmost_rightfacing_seq, leftmost_leftfacing_seq;
@@ -675,10 +667,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* sr_consensus_seq_tag = "##INFO=<ID=SR_CONSENSUS_SEQ,Number=1,Type=String,Description=\".\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_consensus_seq_tag, &len));
 
-//	// TODO: this is "debugging" information, remove when done
-	const char* extrainfo_tag = "##INFO=<ID=EXTRA_INFO,Number=.,Type=String,Description=\"Extra information.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, extrainfo_tag, &len));
-
 	// add FORMAT tags
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
@@ -801,7 +789,6 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", del->ins_seq.c_str());
 	}
 
-	bcf_update_info_string(hdr, bcf_entry, "EXTRA_INFO", del->extra_info.c_str());
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
 
 	// add GT info
@@ -881,7 +868,6 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	if (!dup->ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", dup->ins_seq.c_str());
 	}
-	bcf_update_info_string(hdr, bcf_entry, "EXTRA_INFO", dup->extra_info.c_str());
 
 	// add GT info
 	int gt[1];

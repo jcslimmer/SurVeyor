@@ -103,7 +103,7 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 		source = "HSR-SR";
 	}
 
-	indel_t* indel = remap_consensus(joined_consensus, chr_seq, chr_len, ref_lh_start, ref_lh_len, ref_rh_start, ref_rh_len, aligner,
+	indel_t* indel = remap_consensus(contig_name, joined_consensus, chr_seq, chr_len, ref_lh_start, ref_lh_len, ref_rh_start, ref_rh_len, aligner,
 			lc_consensus, rc_consensus, source);
 	ref_lh_end = ref_lh_start + ref_lh_len;
 	ref_rh_end = ref_rh_start + ref_rh_len;
@@ -230,9 +230,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
 		indel->mm_rate = ps.mm_rate;
-		indel->extra_info += rc_anchor->name() + "," + lc_anchor->name() + ",";
-		indel->extra_info += std::to_string(rc_anchor->start) + "," + std::to_string(lc_anchor->end) + ",";
-		indel->extra_info += std::to_string(indel->rc_anchor_start) + "," + std::to_string(indel->lc_anchor_end);
 		if (indel->indel_type() == "DEL") {
 			contig_deletions.push_back((sv2_deletion_t*) indel);
 		} else if (indel->indel_type() == "DUP") {
@@ -290,15 +287,14 @@ indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_r
 	if (ref_rh_start < 0) ref_rh_start = 0;
 	hts_pos_t ref_rh_len = ref_rh_end - ref_rh_start;
 
-	indel_t* indel = remap_consensus(consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
-			remap_target_start, remap_target_len, ref_rh_start, ref_rh_len, aligner, consensus, NULL, "1SR_LC", false);
+	indel_t* indel = remap_consensus(contig_name, consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
+			remap_target_start, remap_target_len, ref_rh_start, ref_rh_len, aligner, consensus, NULL, "1SR_LC");
 	if (indel == NULL) return NULL;
 
 	if (indel->indel_type() == "DUP") {
 		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
 		dup->original_start = dup->start, dup->original_end = dup->end;
 	}
-	indel->extra_info += consensus->name();
 	return indel;
 }
 
@@ -346,16 +342,15 @@ indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_r
 	if (ref_lh_end >= contig_len) ref_lh_end = contig_len-1;
 	hts_pos_t ref_lh_len = ref_lh_end - ref_lh_start;
 
-	indel_t* indel = remap_consensus(consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
+	indel_t* indel = remap_consensus(contig_name, consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
 			ref_lh_start, ref_lh_len, remap_target_start, remap_target_len, aligner, NULL,
-			consensus, "1SR_RC", true);
+			consensus, "1SR_RC");
 	if (indel == NULL) return NULL;
 
 	if (indel->indel_type() == "DUP") {
 		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
 		dup->original_start = dup->start, dup->original_end = dup->end;
 	}
-	indel->extra_info += consensus->name();
 	return indel;
 }
 
@@ -441,10 +436,10 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		while (sr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
 			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
 			if (dir == "L") {
-				lc_sr_consensuses.push_back(new consensus_t(true, contig_id, start, end, breakpoint, breakpoint-start, 
+				lc_sr_consensuses.push_back(new consensus_t(true, start, end, breakpoint, breakpoint-start, 
 					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
 			} else {
-				rc_sr_consensuses.push_back(new consensus_t(false, contig_id, start, end, breakpoint, end-breakpoint, 
+				rc_sr_consensuses.push_back(new consensus_t(false, start, end, breakpoint, end-breakpoint, 
 					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
 			}
 		}
@@ -457,13 +452,13 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		while (hsr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
 			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
 			if (dir == "L") {
-				consensus_t* consensus = new consensus_t(true, contig_id, start, end, breakpoint, breakpoint-start, 
+				consensus_t* consensus = new consensus_t(true, start, end, breakpoint, breakpoint-start, 
 					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
 				consensus->is_hsr = true;
 				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
 				lc_hsr_consensuses.push_back(consensus);
 			} else {
-				consensus_t* consensus = new consensus_t(false, contig_id, start, end, breakpoint, end-breakpoint, 
+				consensus_t* consensus = new consensus_t(false, start, end, breakpoint, end-breakpoint, 
 					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
 				consensus->is_hsr = true;
 				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
@@ -599,7 +594,7 @@ int main(int argc, char* argv[]) {
 			std::future<void> future = thread_pool2.push(find_indels_from_unpaired_consensuses,
 					contig_name, &consensuses, i*block_size, end, &mateseqs_w_mapq[contig_id]);
 			futures.push_back(std::move(future));
-    	}
+		}
     }
     thread_pool2.stop(true);
 	for (size_t i = 0; i < futures.size(); i++) {

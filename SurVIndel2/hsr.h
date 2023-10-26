@@ -53,9 +53,8 @@ indel_t* remap_rc_cluster(consensus_t* consensus, IntervalTree<ext_read_t*>& can
 		return NULL;
 	}
 
-    indel_t* indel = remap_consensus(consensus->consensus, contig_seq, contig_len, ref_start, ref_len, remap_target_start,
+    indel_t* indel = remap_consensus(contig_name, consensus->consensus, contig_seq, contig_len, ref_start, ref_len, remap_target_start,
     		remap_target_len, aligner, NULL, consensus, "1HSR_RC");
-    if (indel != NULL) indel->extra_info += consensus->name() + ",";
     return indel;
 }
 
@@ -97,9 +96,8 @@ indel_t* remap_lc_cluster(consensus_t* consensus, IntervalTree<ext_read_t*>& can
 		return NULL;
 	}
 
-	indel_t* indel = remap_consensus(consensus->consensus, contig_seq, contig_len, remap_target_start, remap_target_len,
+	indel_t* indel = remap_consensus(contig_name, consensus->consensus, contig_seq, contig_len, remap_target_start, remap_target_len,
 			ref_start, ref_len, aligner, consensus, NULL, "1HSR_LC");
-	if (indel != NULL) indel->extra_info += consensus->name() + ",";
     return indel;
 }
 
