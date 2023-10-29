@@ -363,11 +363,11 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
 }
 
 sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
-				clip_consensus_t& rc_consensus, clip_consensus_t& lc_consensus,
+				consensus_t& rc_consensus, consensus_t& lc_consensus,
 				StripedSmithWaterman::Aligner& aligner, int min_clip_len, double max_seq_error) {
 
-    suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus.seq, lc_consensus.seq, 1, -4, max_seq_error);
-    if (spa.overlap < min_clip_len || is_homopolymer(lc_consensus.seq.c_str(), spa.overlap)) {
+    suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus.sequence, lc_consensus.sequence, 1, -4, max_seq_error);
+    if (spa.overlap < min_clip_len || is_homopolymer(lc_consensus.sequence.c_str(), spa.overlap)) {
 		return NULL;
 	}
 
@@ -379,7 +379,7 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln_rh, aln_lh;
 
-    std::string consensus_junction_seq = rc_consensus.seq + lc_consensus.seq.substr(spa.overlap);
+    std::string consensus_junction_seq = rc_consensus.sequence + lc_consensus.sequence.substr(spa.overlap);
     hts_pos_t ref_remap_lh_start = rc_consensus.breakpoint - consensus_junction_seq.length(), 
               ref_remap_lh_end = rc_consensus.breakpoint + consensus_junction_seq.length();
     if (ref_remap_lh_start < 0) ref_remap_lh_start = 0;

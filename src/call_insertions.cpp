@@ -32,7 +32,7 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
 
     std::ifstream clip_fin(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
-    std::vector<clip_consensus_t> rc_consensuses, lc_consensuses;
+    std::vector<consensus_t> rc_consensuses, lc_consensuses;
     std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
@@ -42,18 +42,18 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
         fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
         if (dir == "R") {
             seq = seq.substr(0, seq.length()-lowq_clip_portion);
-            rc_consensuses.push_back(clip_consensus_t(false, start, end, breakpoint, seq, fwd_clipped, rev_clipped, end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
+            rc_consensuses.push_back(consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
         } else {
             seq = seq.substr(lowq_clip_portion);
-            lc_consensuses.push_back(clip_consensus_t(true, start, end, breakpoint, seq, fwd_clipped, rev_clipped, breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
+            lc_consensuses.push_back(consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
         }
     }
 
     int MAX_MH_LEN = 100;
     for (int i = 0; i < rc_consensuses.size(); i++) {
-        clip_consensus_t& rc_consensus = rc_consensuses[i];
+        consensus_t& rc_consensus = rc_consensuses[i];
         for (int j = 0; j < lc_consensuses.size(); j++) {
-            clip_consensus_t& lc_consensus = lc_consensuses[j];
+            consensus_t& lc_consensus = lc_consensuses[j];
             int mh_len = rc_consensus.breakpoint - lc_consensus.breakpoint;
             if (lc_consensus.breakpoint-rc_consensus.breakpoint <= MAX_BP_DIST && mh_len <= MAX_MH_LEN) {
                 sv_t* sv = detect_sv(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensus, lc_consensus, aligner, config.min_clip_len, config.max_seq_error);
