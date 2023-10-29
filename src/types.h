@@ -4,7 +4,86 @@
 #include <string>
 #include <htslib/sam.h>
 
-// TODO: extract common members of subclasses to here
+struct consensus_t {
+    bool left_clipped;
+    hts_pos_t start, breakpoint, end;
+    std::string sequence;
+    int fwd_clipped, rev_clipped;
+    uint8_t max_mapq;
+    hts_pos_t remap_boundary;
+    int clip_len, lowq_clip_portion;
+    int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
+    bool is_hsr = false;
+	bool extended_to_left = false, extended_to_right = false;
+
+    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
+    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
+
+    consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
+                const std::string& sequence, int fwd_clipped, int rev_clipped, int clip_len, uint8_t max_mapq, 
+                hts_pos_t remap_boundary, int lowq_clip_portion)
+                : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
+                sequence(sequence), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), clip_len(clip_len), max_mapq(max_mapq), 
+                remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
+
+    std::string to_string() {
+        std::stringstream ss;
+        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";
+        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
+        return ss.str();
+    }
+
+    int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
+
+    hts_pos_t left_ext_target_start(int max_is, int read_len) {
+    	if (!left_clipped) {
+    		return start - max_is + read_len;
+    	} else {
+    		if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+				return breakpoint - max_is - 2*sequence.length();
+			} else {
+				return remap_boundary;
+			}
+    	}
+    }
+    hts_pos_t left_ext_target_end(int max_is, int read_len) {
+		if (!left_clipped) {
+			return start;
+		} else {
+			if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+				return breakpoint + max_is + 2*sequence.length();
+			} else {
+				return remap_boundary + max_is;
+			}
+		}
+	}
+
+    hts_pos_t right_ext_target_start(int max_is, int read_len) {
+		if (!left_clipped) {
+			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+				return breakpoint - max_is - 2*sequence.length();
+			} else {
+				return remap_boundary - max_is;
+			}
+		} else {
+			return end;
+		}
+	}
+    hts_pos_t right_ext_target_end(int max_is, int read_len) {
+    	if (!left_clipped) {
+			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+				return breakpoint + max_is + 2*sequence.length();
+			} else {
+				return remap_boundary;
+			}
+		} else {
+			return end + max_is - read_len;
+		}
+    }
+
+    int anchor_len() { return sequence.length() - clip_len; }
+};
+
 struct sv_t {
     std::string id;
     std::string chr;

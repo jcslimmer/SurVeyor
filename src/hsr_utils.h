@@ -160,11 +160,11 @@ void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vec
         hts_pos_t ref_start = c->start - 10, ref_end = c->end + 10;
 		if (ref_start < 0) ref_start = 0;
 		if (ref_end > contig_len) ref_end = contig_len;
-        aligner.Align(c->consensus.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &aln, 0);
+        aligner.Align(c->sequence.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &aln, 0);
         int differences = std::count(aln.cigar_string.begin(), aln.cigar_string.end(), 'D') +
                           std::count(aln.cigar_string.begin(), aln.cigar_string.end(), 'I') + 
 						  aln.mismatches;
-        if ((aln.sw_score < c->consensus.length()*2 && differences >= config.min_diff_hsr) || is_clipped(aln)) {
+        if ((aln.sw_score < c->sequence.length()*2 && differences >= config.min_diff_hsr) || is_clipped(aln)) {
             retained.push_back(c);
         } else {
         	delete c;

@@ -148,38 +148,6 @@ struct chr_seqs_map_t {
     }
 };
 
-struct consensus_t {
-    bool left_clipped;
-    int contig_id;
-    hts_pos_t start, breakpoint, end;
-    std::string consensus;
-    int fwd_clipped, rev_clipped;
-    uint8_t max_mapq;
-    hts_pos_t remap_boundary;
-    int clip_len, lowq_clip_portion;
-    bool is_hsr = false;
-
-    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
-    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
-
-    consensus_t(bool left_clipped, int contig_id, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
-                const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary,
-                int lowq_clip_portion)
-                : left_clipped(left_clipped), contig_id(contig_id), start(start), breakpoint(breakpoint), end(end),
-                consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), max_mapq(max_mapq), 
-                remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
-
-    std::string to_string() {
-        std::stringstream ss;
-        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << consensus << " ";
-        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
-        return ss.str();
-    }
-
-    int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
-};
-
-
 struct suffix_prefix_aln_t {
     int overlap, score, mismatches;
 

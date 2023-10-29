@@ -184,7 +184,7 @@ cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
 mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
 
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr", survindel2_workdir + "/workspace/hsr"))
+# exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr", survindel2_workdir + "/workspace/hsr"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_workdir + "/workspace/long-pairs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sc_mateseqs", survindel2_workdir + "/workspace/sc_mateseqs"))
@@ -208,7 +208,6 @@ else:
 
 call_insertions_cmd = SURVEYOR_PATH + "/bin/call_insertions %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
 exec(call_insertions_cmd)
-
 
 clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/survindel2_clip_consensus_builder %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(clip_consensus_builder_cmd)

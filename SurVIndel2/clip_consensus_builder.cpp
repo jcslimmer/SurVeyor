@@ -68,7 +68,7 @@ struct pair_w_score_t {
 
 indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus, consensus_t* lc_consensus, bool trimmed_consensuses, StripedSmithWaterman::Aligner& aligner) {
 
-	std::string rc_consensus_seq = rc_consensus->consensus, lc_consensus_seq = lc_consensus->consensus;
+	std::string rc_consensus_seq = rc_consensus->sequence, lc_consensus_seq = lc_consensus->sequence;
 	if (trimmed_consensuses) {
 		rc_consensus_seq = rc_consensus_seq.substr(0, rc_consensus_seq.length()-rc_consensus->lowq_clip_portion);
 		lc_consensus_seq = lc_consensus_seq.substr(lc_consensus->lowq_clip_portion);
@@ -103,8 +103,8 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 		source = "HSR-SR";
 	}
 
-	indel_t* indel = remap_consensus(contig_name, joined_consensus, chr_seq, chr_len, ref_lh_start, ref_lh_len, ref_rh_start, ref_rh_len, aligner,
-			lc_consensus, rc_consensus, source);
+	indel_t* indel = remap_consensus(contig_name, joined_consensus, chr_seq, chr_len, ref_lh_start, ref_lh_len, 
+		ref_rh_start, ref_rh_len, aligner, lc_consensus, rc_consensus, source);
 	ref_lh_end = ref_lh_start + ref_lh_len;
 	ref_rh_end = ref_rh_start + ref_rh_len;
 	if (indel == NULL) return NULL;
@@ -176,15 +176,15 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			int min_overlap = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 50 : std::min(rc_anchor->clip_len, lc_anchor->clip_len)+config.min_clip_len;
 			double max_mm_rate = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 0 : config.max_seq_error;
 
-			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->consensus, lc_anchor->consensus, 1, -4, min_overlap);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, min_overlap);
 			if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate) {
 				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), false));
 				consensuses_to_extend.push_back(lc_anchor);
 				consensuses_to_extend.push_back(rc_anchor);
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
 				// TODO: investigate if we can use base qualities for this
-				std::string rc_consensus_trim = rc_anchor->consensus.substr(0, rc_anchor->consensus.length()-rc_anchor->lowq_clip_portion);
-				std::string lc_consensus_trim = lc_anchor->consensus.substr(lc_anchor->lowq_clip_portion);
+				std::string rc_consensus_trim = rc_anchor->sequence.substr(0, rc_anchor->sequence.length()-rc_anchor->lowq_clip_portion);
+				std::string lc_consensus_trim = lc_anchor->sequence.substr(lc_anchor->lowq_clip_portion);
 
 				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, min_overlap);
 				if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate) {
@@ -220,12 +220,14 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		consensus_t* rc_anchor = rc_consensuses[ps.rc_idx];
 		consensus_t* lc_anchor = lc_consensuses[ps.lc_idx];
 
-		extend_consensus_to_left(rc_anchor, candidate_reads_for_extension_itree, rc_anchor->left_ext_target_start(config), 
-			rc_anchor->left_ext_target_end(config), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
-		extend_consensus_to_right(lc_anchor, candidate_reads_for_extension_itree, lc_anchor->right_ext_target_start(config),
-			lc_anchor->right_ext_target_end(config), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		consensus_t* rc_consensus = rc_anchor;
+		consensus_t* lc_consensus = lc_anchor;
+		extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_anchor->left_ext_target_start(config.max_is, config.read_len), 
+			rc_anchor->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_anchor->right_ext_target_start(config.max_is, config.read_len),
+			lc_anchor->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
 
-		indel_t* indel = realign_consensuses(contig_name, rc_anchor, lc_anchor, ps.trimmed, aligner);
+		indel_t* indel = realign_consensuses(contig_name, rc_consensus, lc_consensus, ps.trimmed, aligner);
 		if (indel == NULL) continue;
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
@@ -249,25 +251,25 @@ indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_r
 
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
-	hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config);
-	hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config);
+	hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config.max_is, config.read_len);
+	hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config.max_is, config.read_len);
 
-	hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config);
-	hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config);
+	hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config.max_is, config.read_len);
+	hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config.max_is, config.read_len);
 
-	int old_consensus_len = consensus->consensus.length();
+	int old_consensus_len = consensus->sequence.length();
 	extend_consensus_to_left(consensus, candidate_reads_itree, left_ext_target_start, left_ext_target_end, contig_name, contig_len, config, mateseqs_w_mapq);
-	int l_ext_len = consensus->consensus.length() - old_consensus_len;
+	int l_ext_len = consensus->sequence.length() - old_consensus_len;
 
-	old_consensus_len = consensus->consensus.length();
+	old_consensus_len = consensus->sequence.length();
 	extend_consensus_to_right(consensus, candidate_reads_itree, right_ext_target_start, right_ext_target_end, contig_name, contig_len, config, mateseqs_w_mapq);
-	int r_ext_len = consensus->consensus.length() - old_consensus_len;
+	int r_ext_len = consensus->sequence.length() - old_consensus_len;
 
 	hts_pos_t remap_target_start = consensus->remap_boundary;
 	hts_pos_t remap_target_end = consensus->remap_boundary + config.max_is;
 	if (consensus->remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-		remap_target_start = consensus->breakpoint - config.max_is - 2*consensus->consensus.length();
-		remap_target_end = consensus->breakpoint + config.max_is + 2*consensus->consensus.length();
+		remap_target_start = consensus->breakpoint - config.max_is - 2*consensus->sequence.length();
+		remap_target_end = consensus->breakpoint + config.max_is + 2*consensus->sequence.length();
 	}
 	remap_target_start = std::max(remap_target_start-l_ext_len, hts_pos_t(0));
 	remap_target_end = std::min(remap_target_end+r_ext_len, contig_len);
@@ -287,7 +289,7 @@ indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_r
 	if (ref_rh_start < 0) ref_rh_start = 0;
 	hts_pos_t ref_rh_len = ref_rh_end - ref_rh_start;
 
-	indel_t* indel = remap_consensus(contig_name, consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
+	indel_t* indel = remap_consensus(contig_name, consensus->sequence, chr_seqs.get_seq(contig_name), contig_len,
 			remap_target_start, remap_target_len, ref_rh_start, ref_rh_len, aligner, consensus, NULL, "1SR_LC");
 	if (indel == NULL) return NULL;
 
@@ -304,25 +306,25 @@ indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_r
 
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
-	hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config);
-	hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config);
+	hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config.max_is, config.read_len);
+	hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config.max_is, config.read_len);
 
-	hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config);
-	hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config);
+	hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config.max_is, config.read_len);
+	hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config.max_is, config.read_len);
 
-	int old_consensus_len = consensus->consensus.length();
+	int old_consensus_len = consensus->sequence.length();
 	extend_consensus_to_right(consensus, candidate_reads_itree, right_ext_target_start, right_ext_target_end, contig_name, contig_len, config, mateseqs_w_mapq);
-	int r_ext_len = consensus->consensus.length() - old_consensus_len;
+	int r_ext_len = consensus->sequence.length() - old_consensus_len;
 
-	old_consensus_len = consensus->consensus.length();
+	old_consensus_len = consensus->sequence.length();
 	extend_consensus_to_left(consensus, candidate_reads_itree, left_ext_target_start, left_ext_target_end, contig_name, contig_len, config, mateseqs_w_mapq);
-	int l_ext_len = consensus->consensus.length() - old_consensus_len;
+	int l_ext_len = consensus->sequence.length() - old_consensus_len;
 
 	hts_pos_t remap_target_end = consensus->remap_boundary;
 	hts_pos_t remap_target_start = consensus->remap_boundary - config.max_is;
 	if (consensus->remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-		remap_target_start = consensus->breakpoint - config.max_is - 2*consensus->consensus.length();
-		remap_target_end = consensus->breakpoint + config.max_is + 2*consensus->consensus.length();
+		remap_target_start = consensus->breakpoint - config.max_is - 2*consensus->sequence.length();
+		remap_target_end = consensus->breakpoint + config.max_is + 2*consensus->sequence.length();
 	}
 	remap_target_start = std::max(remap_target_start-l_ext_len, hts_pos_t(0));
 	remap_target_end = std::min(remap_target_end+r_ext_len, contig_len);
@@ -333,16 +335,16 @@ indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_r
 		return NULL;
 	}
 
-	std::string clip = consensus->consensus.substr(consensus->anchor_len());
+	std::string clip = consensus->sequence.substr(consensus->anchor_len());
 	if (clip.size() < config.min_clip_len) return NULL;
 
 	hts_pos_t ref_lh_start = consensus->start - EXTRA_SEQ;
 	if (ref_lh_start < 0) ref_lh_start = 0;
-	hts_pos_t ref_lh_end = consensus->start + consensus->consensus.length();
+	hts_pos_t ref_lh_end = consensus->start + consensus->sequence.length();
 	if (ref_lh_end >= contig_len) ref_lh_end = contig_len-1;
 	hts_pos_t ref_lh_len = ref_lh_end - ref_lh_start;
 
-	indel_t* indel = remap_consensus(contig_name, consensus->consensus, chr_seqs.get_seq(contig_name), contig_len,
+	indel_t* indel = remap_consensus(contig_name, consensus->sequence, chr_seqs.get_seq(contig_name), contig_len,
 			ref_lh_start, ref_lh_len, remap_target_start, remap_target_len, aligner, NULL,
 			consensus, "1SR_RC");
 	if (indel == NULL) return NULL;
@@ -436,11 +438,11 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		while (sr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
 			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
 			if (dir == "L") {
-				lc_sr_consensuses.push_back(new consensus_t(true, start, end, breakpoint, breakpoint-start, 
-					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
+				lc_sr_consensuses.push_back(new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+					breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
 			} else {
-				rc_sr_consensuses.push_back(new consensus_t(false, start, end, breakpoint, end-breakpoint, 
-					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary));
+				rc_sr_consensuses.push_back(new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+					end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
 			}
 		}
 	}
@@ -452,14 +454,14 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		while (hsr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
 			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
 			if (dir == "L") {
-				consensus_t* consensus = new consensus_t(true, start, end, breakpoint, breakpoint-start, 
-					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
+				consensus_t* consensus = new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+					breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion);
 				consensus->is_hsr = true;
 				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
 				lc_hsr_consensuses.push_back(consensus);
 			} else {
-				consensus_t* consensus = new consensus_t(false, start, end, breakpoint, end-breakpoint, 
-					lowq_clip_portion, seq, fwd_clipped, rev_clipped, max_mapq, remap_boundary);
+				consensus_t* consensus = new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+					end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion);
 				consensus->is_hsr = true;
 				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
 				rc_hsr_consensuses.push_back(consensus);
@@ -467,9 +469,6 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		}
 	}
 
-	// select_nonoverlapping_clusters(rc_hsr_consensuses);
-    // select_nonoverlapping_clusters(lc_hsr_consensuses);
-	
 	// sort by breakpoint position
 	auto consensus_cmp = [](consensus_t* c1, consensus_t* c2) {
 		return c1->breakpoint < c2->breakpoint;

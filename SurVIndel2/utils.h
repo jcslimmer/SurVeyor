@@ -17,6 +17,7 @@ KSEQ_INIT(int, read)
 #include "../libs/IntervalTree.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
+#include "../src/types.h"
 
 struct config_t {
 
@@ -82,88 +83,6 @@ struct stats_t {
         pop_avg_crossing_is = std::stoi(config_params["pop_avg_crossing_is"]);
         min_depth = std::stoi(config_params["min_depth"]);
         max_depth = std::stoi(config_params["max_depth"]);
-    }
-};
-
-
-struct consensus_t {
-    bool left_clipped;
-    hts_pos_t breakpoint, start, end; // we follow the vcf conventions, i.e. this is the base "before" the breakpoint
-    int clip_len, lowq_clip_portion;
-    std::string consensus;
-    int fwd_clipped = 0, rev_clipped = 0;
-    uint8_t max_mapq;
-    hts_pos_t remap_boundary;
-    int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
-    bool is_hsr = false;
-	bool extended_to_left = false, extended_to_right = false;
-
-    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
-    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
-
-    consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t end, hts_pos_t breakpoint, int clip_len, int lowq_clip_portion,
-                const std::string& consensus, int fwd_clipped, int rev_clipped, uint8_t max_mapq, hts_pos_t remap_boundary)
-            : left_clipped(left_clipped), start(start), end(end), breakpoint(breakpoint), clip_len(clip_len),
-              lowq_clip_portion(lowq_clip_portion), consensus(consensus), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped),
-			  max_mapq(max_mapq), remap_boundary(remap_boundary) {}
-
-    char dir() { return left_clipped ? 'L' : 'R'; }
-
-	int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
-
-    hts_pos_t left_ext_target_start(config_t& config) {
-    	if (!left_clipped) {
-    		return start - config.max_is + config.read_len;
-    	} else {
-    		if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-				return breakpoint - config.max_is - 2*consensus.length();
-			} else {
-				return remap_boundary;
-			}
-    	}
-    }
-    hts_pos_t left_ext_target_end(config_t& config) {
-		if (!left_clipped) {
-			return start;
-		} else {
-			if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-				return breakpoint + config.max_is + 2*consensus.length();
-			} else {
-				return remap_boundary + config.max_is;
-			}
-		}
-	}
-
-    hts_pos_t right_ext_target_start(config_t& config) {
-		if (!left_clipped) {
-			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-				return breakpoint - config.max_is - 2*consensus.length();
-			} else {
-				return remap_boundary - config.max_is;
-			}
-		} else {
-			return end;
-		}
-	}
-    hts_pos_t right_ext_target_end(config_t& config) {
-    	if (!left_clipped) {
-			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-				return breakpoint + config.max_is + 2*consensus.length();
-			} else {
-				return remap_boundary;
-			}
-		} else {
-			return end + config.max_is - config.read_len;
-		}
-    }
-
-    int anchor_len() { return consensus.length() - clip_len; }
-
-	std::string to_string() {
-        std::stringstream ss;
-        ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << consensus << " ";
-        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
-        return ss.str();
     }
 };
 
@@ -766,13 +685,13 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { del->lc_consensus->hq_left_ext_reads, del->lc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->lc_consensus->consensus.c_str());
+			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->lc_consensus->sequence.c_str());
 		} else if (del->rc_consensus) {
 			int ext_1sr_reads[] = { del->rc_consensus->left_ext_reads, del->rc_consensus->right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { del->rc_consensus->hq_left_ext_reads, del->rc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->rc_consensus->consensus.c_str());
+			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->rc_consensus->sequence.c_str());
 		}
 	}
 	bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &del->full_junction_score, 1);
@@ -847,13 +766,13 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { dup->lc_consensus->hq_left_ext_reads, dup->lc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->lc_consensus->consensus.c_str());
+			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->lc_consensus->sequence.c_str());
 		} else if (dup->rc_consensus) {
 			int ext_1sr_reads[] = { dup->rc_consensus->left_ext_reads, dup->rc_consensus->right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { dup->rc_consensus->hq_left_ext_reads, dup->rc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->rc_consensus->consensus.c_str());
+			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->rc_consensus->sequence.c_str());
 		}
 	}
 	bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &dup->full_junction_score, 1);

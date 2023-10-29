@@ -413,8 +413,8 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				deletions[i]->start = corr_sr_del->pos;
 				deletions[i]->end = get_sv_end(sr_hdr, corr_sr_del);
 				// we are only interested in the number of split reads
-				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, "", clipped_reads[0], 0, 0, 0);
-				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, 0, 0, "", clipped_reads[1], 0, 0, 0);
+				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[0], 0, 0, 0, 0, 0);
+				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[1], 0, 0, 0, 0, 0);
 			}
 		}
 	}

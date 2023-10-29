@@ -346,12 +346,11 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, config_t config, open_samFile_t* bam_file) {
 	std::vector<hts_pair_pos_t> target_ivals;
-	for (int i = 0; i < consensuses.size(); i++) {
-		consensus_t* consensus = consensuses[i];
-		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config);
-		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config);
-		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config);
-		hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config);
+	for (consensus_t* consensus : consensuses) {
+		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config.max_is, config.read_len);
+		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config.max_is, config.read_len);
+		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config.max_is, config.read_len);
+		hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config.max_is, config.read_len);
 		hts_pair_pos_t target_ival;
 		target_ival.beg = left_ext_target_start, target_ival.end = left_ext_target_end;
 		target_ivals.push_back(target_ival);
@@ -384,7 +383,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
-	read_seqs.push_back(consensus->consensus);
+	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(config.high_confidence_mapq);
 
 	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, config, 5000);
@@ -425,7 +424,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 	// 0 is the consensus, we start from there
 	edge_t e = best_edges[0];
-	std::string ext_consensus = consensus->consensus;
+	std::string ext_consensus = consensus->sequence;
 	while (e.overlap) {
 		ext_consensus += read_seqs[e.next].substr(e.overlap);
 		e = best_edges[e.next];
@@ -435,15 +434,15 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 	if (!consensus->left_clipped) {
 		if (consensus->clip_len != consensus_t::UNKNOWN_CLIP_LEN) {
-			consensus->clip_len += ext_consensus.length() - consensus->consensus.length();
+			consensus->clip_len += ext_consensus.length() - consensus->sequence.length();
 		}
 	} else {
-		consensus->end += ext_consensus.length() - consensus->consensus.length();
+		consensus->end += ext_consensus.length() - consensus->sequence.length();
 		if (consensus->max_mapq < config.high_confidence_mapq && consensus->hq_right_ext_reads >= 3) {
 			consensus->max_mapq = config.high_confidence_mapq;
 		}
 	}
-	consensus->consensus = ext_consensus;
+	consensus->sequence = ext_consensus;
 	consensus->extended_to_right = true;
 }
 
@@ -455,7 +454,7 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
-	read_seqs.push_back(consensus->consensus);
+	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(config.high_confidence_mapq);
 
 	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, config, 5000);
@@ -497,7 +496,7 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 
 	// 0 is the consensus, we start from there
 	edge_t e = best_edges[0];
-	std::string ext_consensus = consensus->consensus;
+	std::string ext_consensus = consensus->sequence;
 	while (e.overlap) {
 		ext_consensus = read_seqs[e.next].substr(0, read_seqs[e.next].length()-e.overlap) + ext_consensus;
 		e = best_edges[e.next];
@@ -507,14 +506,14 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 
 	if (consensus->left_clipped) {
 		if (consensus->clip_len != consensus_t::UNKNOWN_CLIP_LEN) {
-			consensus->clip_len += ext_consensus.length() - consensus->consensus.length();
+			consensus->clip_len += ext_consensus.length() - consensus->sequence.length();
 		}
 	} else {
-		consensus->start -= ext_consensus.length() - consensus->consensus.length();
+		consensus->start -= ext_consensus.length() - consensus->sequence.length();
 		if (consensus->max_mapq < config.high_confidence_mapq && consensus->hq_left_ext_reads >= 3)
 			consensus->max_mapq = config.high_confidence_mapq;
 	}
-	consensus->consensus = ext_consensus;
+	consensus->sequence = ext_consensus;
 	consensus->extended_to_left = true;
 }
 
