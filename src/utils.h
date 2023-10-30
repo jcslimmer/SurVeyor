@@ -152,6 +152,8 @@ struct suffix_prefix_aln_t {
     int overlap, score, mismatches;
 
     suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
+
+    double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
 };
 
 // Finds the best alignment between a suffix of s1 and a prefix of s2
