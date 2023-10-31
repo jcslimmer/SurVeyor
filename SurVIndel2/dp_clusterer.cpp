@@ -457,7 +457,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 	for (int i = 0; i < deletions.size(); i++) {
 		sv2_deletion_t* del = deletions[i];
 
-		suffix_prefix_aln_t spa = aln_suffix_prefix(del->rightmost_rightfacing_seq, del->leftmost_leftfacing_seq, 1, -4, config.min_clip_len);
+		sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(del->rightmost_rightfacing_seq, del->leftmost_leftfacing_seq, 1, -4, config.min_clip_len);
 		del->overlap = spa.overlap;
 		del->mismatches = spa.mismatches;
 		if (del->overlap && del->mismatches == 0) {

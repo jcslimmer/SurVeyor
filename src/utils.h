@@ -148,47 +148,6 @@ struct chr_seqs_map_t {
     }
 };
 
-struct suffix_prefix_aln_t {
-    int overlap, score, mismatches;
-
-    suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
-
-    double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
-};
-
-// Finds the best alignment between a suffix of s1 and a prefix of s2
-// Disallows gaps
-suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
-                                      int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
-    int best_score = 0, best_aln_mismatches = 0;
-    int overlap = 0;
-
-    for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
-        if (i+s2.length() < s1.length()) continue;
-
-        int sp_len = s1.length()-i;
-        if (best_score >= sp_len*match_score) break; // current best score is unbeatable
-
-        const char* s1_suffix = s1.data()+i;
-        const char* s2_prefix = s2.data();
-        int mismatches = 0;
-        while (*s1_suffix) {
-            if (*s1_suffix != *s2_prefix) mismatches++;
-            s1_suffix++; s2_prefix++;
-        }
-
-        int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
-
-        int max_acceptable_mm = max_seq_error == 0.0 ? 0 : std::max(1.0, sp_len*max_seq_error);
-        if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
-            best_score = score;
-            best_aln_mismatches = mismatches;
-            overlap = sp_len;
-        }
-    }
-    return suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
-}
-
 bool is_homopolymer(const char* seq, int len) {
 	int a = 0, c = 0, g = 0, t = 0;
 	for (int i = 0; i < len; i++) {

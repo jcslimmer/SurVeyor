@@ -214,6 +214,47 @@ int query_suffix_len(std::vector<uint32_t>& cigar, int ref_len, int& extra_delet
     return query_prefix_len(cigar_rev, ref_len, extra_deletion);
 }
 
+
+struct suffix_prefix_aln_t {
+    int overlap, score, mismatches;
+
+    suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
+};
+
+// Finds the best alignment between a suffix of s1 and a prefix of s2
+// Disallows gaps
+suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
+                                      int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
+    int best_score = 0, best_aln_mismatches = 0;
+    int overlap = 0;
+
+    for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
+        if (i+s2.length() < s1.length()) continue;
+
+        int sp_len = s1.length()-i;
+        if (best_score >= sp_len*match_score) break; // current best score is unbeatable
+
+        const char* s1_suffix = s1.data()+i;
+        const char* s2_prefix = s2.data();
+        int mismatches = 0;
+        while (*s1_suffix) {
+            if (*s1_suffix != *s2_prefix) mismatches++;
+            s1_suffix++; s2_prefix++;
+        }
+
+        int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
+
+        int max_acceptable_mm = sp_len * max_seq_error;
+        if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
+            best_score = score;
+            best_aln_mismatches = mismatches;
+            overlap = sp_len;
+        }
+    }
+    return suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
+}
+
+
 std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts_pos_t remap_start, hts_pos_t remap_len, char* query, StripedSmithWaterman::Aligner& aligner) {
 	
 	contig_seq += remap_start;
@@ -288,13 +329,11 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
     std::string middle_part = junction_seq.substr(best_i, best_j-best_i);
     std::string right_part = junction_seq.substr(best_j);
 
-    StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment left_part_aln, right_part_aln;
-    // aligner.Align(left_part.c_str(), ref_lh_cstr, ref_remap_lh_len, StripedSmithWaterman::Filter(), &left_part_aln, 0);
-    // aligner.Align(right_part.c_str(), ref_rh_cstr, ref_remap_rh_len, StripedSmithWaterman::Filter(), &right_part_aln, 0);
-
-	std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(ref_lh_cstr, 0, ref_remap_lh_len, (char*) left_part.c_str(), aligner);
+    std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(ref_lh_cstr, 0, ref_remap_lh_len, (char*) left_part.c_str(), aligner);
 	std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(ref_rh_cstr, 0, ref_remap_rh_len, (char*) right_part.c_str(), aligner);
+    
+	StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Alignment left_part_aln, right_part_aln;
 	int min_size = INT32_MAX;
 	for (StripedSmithWaterman::Alignment& _lh_aln : left_part_alns) {
 		for (StripedSmithWaterman::Alignment& _rh_aln : right_part_alns) {
@@ -368,15 +407,13 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 
 	std::string rc_consensus_seq = rc_consensus.sequence;
 	std::string lc_consensus_seq = lc_consensus.sequence;
-    suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus.sequence, lc_consensus.sequence, 1, -4, max_seq_error);
+    suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error);
     if (spa.overlap < min_clip_len || is_homopolymer(lc_consensus.sequence.c_str(), spa.overlap)) {
 		rc_consensus_seq = rc_consensus.sequence.substr(0, rc_consensus.sequence.length()-rc_consensus.lowq_clip_portion);
 		lc_consensus_seq = lc_consensus.sequence.substr(lc_consensus.lowq_clip_portion);
 		spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error);
 		if (spa.overlap < min_clip_len || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) return NULL;
 	}
-
-    if (spa.mismatch_rate() > max_seq_error) return NULL;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln_rh, aln_lh;

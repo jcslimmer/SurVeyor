@@ -330,17 +330,17 @@ int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     return std::max(int64_t(0), overlap);
 }
 
-struct suffix_prefix_aln_t {
+struct sv2_suffix_prefix_aln_t {
     int overlap, score, mismatches;
 
-    suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
+    sv2_suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
 
     double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
 };
 
 // Finds the best alignment between a suffix of s1 and a prefix of s2
 // Disallows gaps
-suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score,
+sv2_suffix_prefix_aln_t sv2_aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score,
                                       int min_overlap = 1, int max_overlap = INT32_MAX) {
     int best_score = 0, best_aln_mismatches = 0;
     int overlap = 0;
@@ -367,10 +367,10 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
             overlap = sp_len;
         }
     }
-    return suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
+    return sv2_suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
 }
 
-suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, int min_overlap = 1) {
+sv2_suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, int min_overlap = 1) {
     int best_overlap = 0, overlap = 0;
 
     const char* _s1 = s1.c_str(),* _s2 = s2.c_str();
@@ -379,10 +379,10 @@ suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, 
     int max_overlap = std::min(s1.length(), s2.length());
     for (int i = max_overlap; i >= min_overlap; i--) {
     	if (strncmp(_s1+(_s1_len-i), _s2, i) == 0) {
-			return suffix_prefix_aln_t(i, i, 0);
+			return sv2_suffix_prefix_aln_t(i, i, 0);
     	}
     }
-    return suffix_prefix_aln_t(0, 0, 0);
+    return sv2_suffix_prefix_aln_t(0, 0, 0);
 }
 
 bool is_homopolymer(const char* seq, int len) {

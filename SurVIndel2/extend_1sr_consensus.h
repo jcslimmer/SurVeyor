@@ -154,7 +154,7 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> start
 
 			if (s1 == s2) continue;
 
-			suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s1, s2, min_overlap);
+			sv2_suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s1, s2, min_overlap);
 			if (spa.overlap) {
 				if (!is_homopolymer(s2.c_str(), spa.overlap)) {
 					out_edges[i]++;
@@ -217,7 +217,7 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> start
 
 			if (s1 == s2) continue;
 
-			suffix_prefix_aln_t spa2 = aln_suffix_prefix_perfect(s2, s1, min_overlap);
+			sv2_suffix_prefix_aln_t spa2 = aln_suffix_prefix_perfect(s2, s1, min_overlap);
 			if (spa2.overlap) {
 				bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
 				if (!spa2_homopolymer) {

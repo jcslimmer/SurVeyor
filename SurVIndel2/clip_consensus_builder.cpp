@@ -17,6 +17,7 @@
 #include "sam_utils.h"
 #include "stat_tests.h"
 #include "extend_1sr_consensus.h"
+#include "../src/sw_utils.h"
 
 config_t config;
 stats_t stats;
@@ -73,7 +74,7 @@ indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus,
 		rc_consensus_seq = rc_consensus_seq.substr(0, rc_consensus_seq.length()-rc_consensus->lowq_clip_portion);
 		lc_consensus_seq = lc_consensus_seq.substr(lc_consensus->lowq_clip_portion);
 	}
-	suffix_prefix_aln_t sp_aln = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4);
+	suffix_prefix_aln_t sp_aln = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, config.max_seq_error);
 	std::string joined_consensus = rc_consensus_seq + lc_consensus_seq.substr(sp_aln.overlap);
 
 	char* chr_seq = chr_seqs.get_seq(contig_name);
@@ -176,7 +177,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			int min_overlap = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 50 : std::min(rc_anchor->clip_len, lc_anchor->clip_len)+config.min_clip_len;
 			double max_mm_rate = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 0 : config.max_seq_error;
 
-			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, min_overlap);
+			sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, min_overlap);
 			if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate && !is_homopolymer(lc_anchor->sequence.c_str(), spa.overlap)) {
 				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), false));
 				consensuses_to_extend.push_back(lc_anchor);
@@ -186,7 +187,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				std::string rc_consensus_trim = rc_anchor->sequence.substr(0, rc_anchor->sequence.length()-rc_anchor->lowq_clip_portion);
 				std::string lc_consensus_trim = lc_anchor->sequence.substr(lc_anchor->lowq_clip_portion);
 
-				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, min_overlap);
+				sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, min_overlap);
 				if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
 					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), true));
 					consensuses_to_extend.push_back(lc_anchor);
