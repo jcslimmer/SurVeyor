@@ -26,7 +26,7 @@ indel_t* remap_consensus(std::string contig_name, std::string& consensus_seq, ch
 		ref_lh_cstr[i] = toupper(reference[ref_lh_start+i]);
 	} ref_lh_cstr[ref_lh_len] = '\0';
 	int* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_lh_len, consensus_seq.c_str(), consensus_seq.length(), 1, -4, -6, -1);
-	for (int i = 1; i < consensus_seq.length(); i++) {
+	for (int i = config.min_clip_len; i < consensus_seq.length(); i++) {
 		prefix_scores[i] = std::max(prefix_scores[i], prefix_scores[i-1]);
 	}
 
@@ -36,7 +36,7 @@ indel_t* remap_consensus(std::string contig_name, std::string& consensus_seq, ch
 	} ref_rh_cstr[ref_rh_len] = '\0';
 	std::string consensus_seq_rev = std::string(consensus_seq.rbegin(), consensus_seq.rend());
 	int* suffix_scores = smith_waterman_gotoh(ref_rh_cstr, ref_rh_len, consensus_seq_rev.c_str(), consensus_seq_rev.length(), 1, -4, -6, -1);
-	for (int i = 1; i < consensus_seq_rev.length(); i++) {
+	for (int i = config.min_clip_len; i < consensus_seq_rev.length(); i++) {
 		suffix_scores[i] = std::max(suffix_scores[i], suffix_scores[i-1]);
 	}
 
@@ -94,6 +94,7 @@ indel_t* remap_consensus(std::string contig_name, std::string& consensus_seq, ch
 	if (start < end) {
 		std::string ins_seq = consensus_seq.substr(lh_aln.query_end, split_i-lh_aln.query_end-1);
 		ins_seq += consensus_seq.substr(split_i, rh_aln.query_begin);
+		if (ins_seq.length() > end-start) return NULL; // SurVIndel2 cannot handle this, it's an insertion
 		indel = new sv2_deletion_t(start, end, la_start, ra_end, lc_consensus, rc_consensus, lh_aln.sw_score, rh_aln.sw_score, source, ins_seq);
 	} else {
 		int overlap_len = start - end;

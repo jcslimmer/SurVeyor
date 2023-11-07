@@ -26,6 +26,10 @@ struct consensus_t {
                 sequence(sequence), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), clip_len(clip_len), max_mapq(max_mapq), 
                 remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
 
+    std::string name() {
+        return std::to_string(start) + "_" + std::to_string(end) + "_" + (left_clipped ? "L" : "R");
+    }
+
     std::string to_string() {
         std::stringstream ss;
         ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";

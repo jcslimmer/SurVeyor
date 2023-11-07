@@ -69,28 +69,29 @@ struct pair_w_score_t {
 
 indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus, consensus_t* lc_consensus, bool trimmed_consensuses, StripedSmithWaterman::Aligner& aligner) {
 
+	int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
+	double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
 	std::string rc_consensus_seq = rc_consensus->sequence, lc_consensus_seq = lc_consensus->sequence;
 	if (trimmed_consensuses) {
 		rc_consensus_seq = rc_consensus_seq.substr(0, rc_consensus_seq.length()-rc_consensus->lowq_clip_portion);
 		lc_consensus_seq = lc_consensus_seq.substr(lc_consensus->lowq_clip_portion);
 	}
-	suffix_prefix_aln_t sp_aln = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, config.max_seq_error);
-	std::string joined_consensus = rc_consensus_seq + lc_consensus_seq.substr(sp_aln.overlap);
+	suffix_prefix_aln_t sp_aln = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_mm_rate, min_overlap);
 
 	char* chr_seq = chr_seqs.get_seq(contig_name);
 	hts_pos_t chr_len = chr_seqs.get_len(contig_name);
 
-	hts_pos_t ref_lh_start = rc_consensus->start - config.clip_penalty - 10; // 10 bp tolerance
+	std::string joined_consensus = rc_consensus_seq + lc_consensus_seq.substr(sp_aln.overlap);
+	hts_pos_t ref_lh_start = rc_consensus->breakpoint - joined_consensus.length();
 	hts_pos_t ref_lh_end = rc_consensus->breakpoint + joined_consensus.length();
 	if (ref_lh_start < 0) ref_lh_start = 0;
-	if (ref_lh_end >= chr_len) ref_lh_end = chr_len-1;
+	if (ref_lh_end > chr_len) ref_lh_end = chr_len;
 	hts_pos_t ref_lh_len = ref_lh_end - ref_lh_start;
 
 	hts_pos_t ref_rh_start = lc_consensus->breakpoint - joined_consensus.length();
-	hts_pos_t ref_rh_end = lc_consensus->end + config.clip_penalty + 10; // 10 bp tolerance
-	// lc_consensus->breakpoint + joined_consensus.length()*2;
+	hts_pos_t ref_rh_end = lc_consensus->breakpoint + joined_consensus.length();
 	if (ref_rh_start < 0) ref_rh_start = 0;
-	if (ref_rh_end >= chr_len) ref_rh_end = chr_len-1;
+	if (ref_rh_end > chr_len) ref_rh_end = chr_len;
 	hts_pos_t ref_rh_len = ref_rh_end - ref_rh_start;
 
 	std::string source;
@@ -177,8 +178,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			int min_overlap = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 50 : std::min(rc_anchor->clip_len, lc_anchor->clip_len)+config.min_clip_len;
 			double max_mm_rate = (lc_anchor->is_hsr && rc_anchor->is_hsr) ? 0 : config.max_seq_error;
 
-			sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, min_overlap);
-			if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate && !is_homopolymer(lc_anchor->sequence.c_str(), spa.overlap)) {
+			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, max_mm_rate, min_overlap);
+			if (spa.overlap > 0 && !is_homopolymer(lc_anchor->sequence.c_str(), spa.overlap)) {
 				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), false));
 				consensuses_to_extend.push_back(lc_anchor);
 				consensuses_to_extend.push_back(rc_anchor);
@@ -187,8 +188,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				std::string rc_consensus_trim = rc_anchor->sequence.substr(0, rc_anchor->sequence.length()-rc_anchor->lowq_clip_portion);
 				std::string lc_consensus_trim = lc_anchor->sequence.substr(lc_anchor->lowq_clip_portion);
 
-				sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, min_overlap);
-				if (spa.overlap > 0 && spa.mismatch_rate() <= max_mm_rate && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
+				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, max_mm_rate, min_overlap);
+				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
 					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), true));
 					consensuses_to_extend.push_back(lc_anchor);
 					consensuses_to_extend.push_back(rc_anchor);
@@ -218,15 +219,20 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	for (pair_w_score_t& ps : rc_lc_scored_pairs) {
 		if (used_consensus_rc[ps.rc_idx] || used_consensus_lc[ps.lc_idx]) continue;
 
-		consensus_t* rc_anchor = rc_consensuses[ps.rc_idx];
-		consensus_t* lc_anchor = lc_consensuses[ps.lc_idx];
+		consensus_t* rc_consensus = rc_consensuses[ps.rc_idx];
+		consensus_t* lc_consensus = lc_consensuses[ps.lc_idx];
 
-		consensus_t* rc_consensus = rc_anchor;
-		consensus_t* lc_consensus = lc_anchor;
-		extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_anchor->left_ext_target_start(config.max_is, config.read_len), 
-			rc_anchor->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
-		extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_anchor->right_ext_target_start(config.max_is, config.read_len),
-			lc_anchor->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_consensus->left_ext_target_start(config.max_is, config.read_len), 
+			rc_consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_consensus->right_ext_target_start(config.max_is, config.read_len),
+			lc_consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+
+		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
+		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
+		suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
+		if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) { // sometimes after extending we don't need to trim anymore
+			ps.trimmed = false;
+		}
 
 		indel_t* indel = realign_consensuses(contig_name, rc_consensus, lc_consensus, ps.trimmed, aligner);
 		if (indel == NULL) continue;

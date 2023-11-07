@@ -112,7 +112,7 @@ struct indel_t {
     virtual hts_pos_t len() { return end-start; }
     virtual std::string indel_type() { return ""; };
     virtual std::string to_string(std::string contig_name) {
-    	return contig_name + ":" + std::to_string(start) + "-" + std::to_string(end);
+    	return contig_name + ":" + std::to_string(start) + "-" + std::to_string(end) + ":" + ins_seq;
     }
 
     bool is_single_consensus() { return (lc_consensus == NULL || rc_consensus == NULL) && lc_consensus != rc_consensus; }
@@ -586,6 +586,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* sr_consensus_seq_tag = "##INFO=<ID=SR_CONSENSUS_SEQ,Number=1,Type=String,Description=\".\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_consensus_seq_tag, &len));
 
+	const char* rc_consensus_name = "##INFO=<ID=RC_CONSENSUS_NAME,Number=1,Type=String,Description=\".\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rc_consensus_name, &len));
+
+	const char* lc_consensus_name = "##INFO=<ID=LC_CONSENSUS_NAME,Number=1,Type=String,Description=\".\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lc_consensus_name, &len));
+
 	// add FORMAT tags
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
@@ -709,6 +715,9 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
+
+	bcf_update_info_string(hdr, bcf_entry, "RC_CONSENSUS_NAME", del->rc_consensus ? del->rc_consensus->name().c_str() : ".");
+	bcf_update_info_string(hdr, bcf_entry, "LC_CONSENSUS_NAME", del->lc_consensus ? del->lc_consensus->name().c_str() : ".");
 
 	// add GT info
 	int gt[1];
