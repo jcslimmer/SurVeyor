@@ -457,38 +457,21 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 	for (int i = 0; i < deletions.size(); i++) {
 		sv2_deletion_t* del = deletions[i];
 
-		sv2_suffix_prefix_aln_t spa = sv2_aln_suffix_prefix(del->rightmost_rightfacing_seq, del->leftmost_leftfacing_seq, 1, -4, config.min_clip_len);
-		del->overlap = spa.overlap;
-		del->mismatches = spa.mismatches;
-		if (del->overlap && del->mismatches == 0) {
-			std::string full_junction_seq = del->rightmost_rightfacing_seq + del->leftmost_leftfacing_seq.substr(del->overlap);
-
-			hts_pos_t ref_lh_start = del->rc_anchor_start, ref_lh_end = del->start + full_junction_seq.length();
-			hts_pos_t ref_lh_len = ref_lh_end - ref_lh_start;
-
-			hts_pos_t ref_rh_start = del->end - full_junction_seq.length(), ref_rh_end = del->lc_anchor_end;
-			hts_pos_t ref_rh_len = ref_rh_end - ref_rh_start;
-
-			if (has_Ns(chr_seqs.get_seq(contig_name), ref_lh_start, ref_lh_end-ref_lh_start)) continue;
-			if (has_Ns(chr_seqs.get_seq(contig_name), ref_rh_start, ref_rh_end-ref_rh_start)) continue;
-
-			indel_t* indel = remap_consensus(contig_name, full_junction_seq, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name),
-					ref_lh_start, ref_lh_len, ref_rh_start, ref_rh_len, aligner, NULL, NULL, "DP");
-			if (indel == NULL || indel->indel_type() != "DEL" || indel->len() == 0) {
-				deletions[i] = NULL;
-				continue;
-			}
-
-			deletions[i] = (sv2_deletion_t*) indel;
-			indel->disc_pairs = del->disc_pairs;
-			indel->disc_pairs_maxmapq = del->disc_pairs_maxmapq;
-			indel->disc_pairs_trusted = del->disc_pairs_trusted;
-			indel->disc_pairs_high_mapq = del->disc_pairs_high_mapq;
-			indel->overlap = del->overlap;
-			indel->mismatches = del->mismatches;
-			deletions[i]->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
-			deletions[i]->remapped = true;
+		consensus_t rc_consensus(false, 0, del->start, 0, del->rightmost_rightfacing_seq, 0, 0, 0, 0, 0, 0);
+		consensus_t lc_consensus(false, 0, del->end, 0, del->leftmost_leftfacing_seq, 0, 0, 0, 0, 0, 0);
+		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, config.read_len/3, config.min_clip_len, 0.0);
+		if (sv == NULL) continue;
+		if (sv->svtype() != "DEL") {
+			deletions[i] = NULL;
+			continue;
 		}
+
+		del->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
+		del->start = sv->start;
+		del->end = sv->end;
+		del->overlap = sv->overlap;
+		del->mm_rate = sv->mismatch_rate;
+		del->remapped = true;
 	}
 	deletions.erase(std::remove(deletions.begin(), deletions.end(), (sv2_deletion_t*) NULL), deletions.end());
 }

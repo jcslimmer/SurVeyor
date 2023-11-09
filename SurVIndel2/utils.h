@@ -330,61 +330,6 @@ int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     return std::max(int64_t(0), overlap);
 }
 
-struct sv2_suffix_prefix_aln_t {
-    int overlap, score, mismatches;
-
-    sv2_suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
-
-    double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
-};
-
-// Finds the best alignment between a suffix of s1 and a prefix of s2
-// Disallows gaps
-sv2_suffix_prefix_aln_t sv2_aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score,
-                                      int min_overlap = 1, int max_overlap = INT32_MAX) {
-    int best_score = 0, best_aln_mismatches = 0;
-    int overlap = 0;
-
-    for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
-        if (i+s2.length() < s1.length()) continue;
-
-        int sp_len = s1.length()-i;
-        if (best_score >= sp_len*match_score) break; // current best score is unbeatable
-
-        int mismatches = 0;
-        const char* s1_suffix = s1.data()+i;
-        const char* s2_prefix = s2.data();
-        while (*s1_suffix) {
-            if (*s1_suffix != *s2_prefix) mismatches++;
-            s1_suffix++; s2_prefix++;
-        }
-
-        int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
-
-        if (best_score < score) {
-            best_score = score;
-            best_aln_mismatches = mismatches;
-            overlap = sp_len;
-        }
-    }
-    return sv2_suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
-}
-
-sv2_suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, int min_overlap = 1) {
-    int best_overlap = 0, overlap = 0;
-
-    const char* _s1 = s1.c_str(),* _s2 = s2.c_str();
-    int _s1_len = s1.length(), _s2_len = s2.length();
-
-    int max_overlap = std::min(s1.length(), s2.length());
-    for (int i = max_overlap; i >= min_overlap; i--) {
-    	if (strncmp(_s1+(_s1_len-i), _s2, i) == 0) {
-			return sv2_suffix_prefix_aln_t(i, i, 0);
-    	}
-    }
-    return sv2_suffix_prefix_aln_t(0, 0, 0);
-}
-
 bool is_homopolymer(const char* seq, int len) {
 	int a = 0, c = 0, g = 0, t = 0;
 	for (int i = 0; i < len; i++) {

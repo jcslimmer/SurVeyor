@@ -223,10 +223,28 @@ struct suffix_prefix_aln_t {
 	double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
 };
 
+suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, int min_overlap = 1) {
+    int best_overlap = 0, overlap = 0;
+
+    const char* _s1 = s1.c_str(),* _s2 = s2.c_str();
+    int _s1_len = s1.length(), _s2_len = s2.length();
+
+    int max_overlap = std::min(s1.length(), s2.length());
+    for (int i = max_overlap; i >= min_overlap; i--) {
+    	if (strncmp(_s1+(_s1_len-i), _s2, i) == 0) {
+			return suffix_prefix_aln_t(i, i, 0);
+    	}
+    }
+    return suffix_prefix_aln_t(0, 0, 0);
+}
+
 // Finds the best alignment between a suffix of s1 and a prefix of s2
 // Disallows gaps
 suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
                                       int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
+
+	if (max_seq_error == 0.0 || max_mismatches == 0) return aln_suffix_prefix_perfect(s1, s2, min_overlap);
+
     int best_score = 0, best_aln_mismatches = 0;
     int overlap = 0;
 
@@ -403,7 +421,6 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 
 	std::string rc_consensus_seq = rc_consensus.sequence;
 	std::string lc_consensus_seq = lc_consensus.sequence;
-	// TODO: if max_seq_error == 0.0 (which happens with HSRs) then use the perfect suffix-prefix alignment, which is much faster
     suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
     if (spa.overlap < min_overlap || is_homopolymer(lc_consensus.sequence.c_str(), spa.overlap)) {
 		rc_consensus_seq = rc_consensus.sequence.substr(0, rc_consensus.sequence.length()-rc_consensus.lowq_clip_portion);
