@@ -184,7 +184,6 @@ cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
 mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
 
-# exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr", survindel2_workdir + "/workspace/hsr"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_workdir + "/workspace/long-pairs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sc_mateseqs", survindel2_workdir + "/workspace/sc_mateseqs"))

@@ -352,6 +352,8 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
     hts_pos_t right_anchor_start = ref_remap_rh_start + right_part_aln.ref_begin;
     hts_pos_t right_anchor_end = ref_remap_rh_start + right_part_aln.ref_end;
     hts_pos_t left_bp = left_anchor_end, right_bp = right_anchor_start - 1;
+	sv_t::anchor_aln_t left_part_anchor_aln(left_anchor_start, left_anchor_end, left_part_aln.sw_score, left_part_aln.cigar_string);
+	sv_t::anchor_aln_t right_part_anchor_aln(right_anchor_start, right_anchor_end, right_part_aln.sw_score, right_part_aln.cigar_string);
 
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
         int mh_len = left_bp - right_bp;
@@ -361,11 +363,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
         if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
             (lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
             !is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
-            duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part);
-            sv->left_anchor = std::to_string(left_anchor_start) + "-" + std::to_string(left_anchor_end); 
-            sv->right_anchor = std::to_string(right_anchor_start) + "-" + std::to_string(right_anchor_end);
-            sv->left_anchor_cigar = left_part_aln.cigar_string;
-            sv->right_anchor_cigar = right_part_aln.cigar_string;
+            duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln);
             return sv;
         }
 
@@ -392,14 +390,10 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
 
     sv_t* sv = NULL;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-        sv = new deletion_t(contig_name, left_bp, right_bp, middle_part);
+        sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln);
     } else { // length of ALT > REF, insertion
-        sv = new insertion_t(contig_name, left_bp, right_bp, 0, 0, middle_part);
+        sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln);
     }
-    sv->left_anchor = std::to_string(left_anchor_start) + "-" + std::to_string(left_anchor_end); 
-    sv->right_anchor = std::to_string(right_anchor_start) + "-" + std::to_string(right_anchor_end);
-    sv->left_anchor_cigar = left_part_aln.cigar_string;
-    sv->right_anchor_cigar = right_part_aln.cigar_string;
     return sv;
 }
 
@@ -409,6 +403,7 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 
 	std::string rc_consensus_seq = rc_consensus.sequence;
 	std::string lc_consensus_seq = lc_consensus.sequence;
+	// TODO: if max_seq_error == 0.0 (which happens with HSRs) then use the perfect suffix-prefix alignment, which is much faster
     suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
     if (spa.overlap < min_overlap || is_homopolymer(lc_consensus.sequence.c_str(), spa.overlap)) {
 		rc_consensus_seq = rc_consensus.sequence.substr(0, rc_consensus.sequence.length()-rc_consensus.lowq_clip_portion);
@@ -441,6 +436,18 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
     sv->rc_fwd_reads = rc_consensus.fwd_clipped, sv->rc_rev_reads = rc_consensus.rev_clipped;
     sv->lc_fwd_reads = lc_consensus.fwd_clipped, sv->lc_rev_reads = lc_consensus.rev_clipped;
     sv->overlap = spa.overlap;
+	sv->mismatch_rate = spa.mismatch_rate();
+
+	if (!rc_consensus.is_hsr && !lc_consensus.is_hsr) {
+		sv->source = "2SR";
+	} else if (rc_consensus.is_hsr && lc_consensus.is_hsr) {
+		sv->source = "2HSR";
+	} else if (!rc_consensus.is_hsr && lc_consensus.is_hsr) {
+		sv->source = "SR-HSR";
+	} else if (rc_consensus.is_hsr && !lc_consensus.is_hsr) {
+		sv->source = "HSR-SR";
+	}
+
     return sv;
 }
 

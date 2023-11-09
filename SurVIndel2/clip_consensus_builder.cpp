@@ -60,86 +60,9 @@ std::mutex mtx, indel_out_mtx, up_consensus_mtx;
 struct pair_w_score_t {
     int rc_idx, lc_idx;
     int score;
-    double mm_rate;
-    bool trimmed;
 
-    pair_w_score_t(int rc_idx, int lc_idx, int score, double mm_rate, bool trimmed) :
-    	rc_idx(rc_idx), lc_idx(lc_idx), score(score), mm_rate(mm_rate), trimmed(trimmed) {}
+    pair_w_score_t(int rc_idx, int lc_idx, int score) : rc_idx(rc_idx), lc_idx(lc_idx), score(score) {}
 };
-
-indel_t* realign_consensuses(std::string contig_name, consensus_t* rc_consensus, consensus_t* lc_consensus, bool trimmed_consensuses, StripedSmithWaterman::Aligner& aligner) {
-
-	int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
-	double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
-	std::string rc_consensus_seq = rc_consensus->sequence, lc_consensus_seq = lc_consensus->sequence;
-	if (trimmed_consensuses) {
-		rc_consensus_seq = rc_consensus_seq.substr(0, rc_consensus_seq.length()-rc_consensus->lowq_clip_portion);
-		lc_consensus_seq = lc_consensus_seq.substr(lc_consensus->lowq_clip_portion);
-	}
-	suffix_prefix_aln_t sp_aln = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_mm_rate, min_overlap);
-
-	char* chr_seq = chr_seqs.get_seq(contig_name);
-	hts_pos_t chr_len = chr_seqs.get_len(contig_name);
-
-	std::string joined_consensus = rc_consensus_seq + lc_consensus_seq.substr(sp_aln.overlap);
-	hts_pos_t ref_lh_start = rc_consensus->breakpoint - joined_consensus.length();
-	hts_pos_t ref_lh_end = rc_consensus->breakpoint + joined_consensus.length();
-	if (ref_lh_start < 0) ref_lh_start = 0;
-	if (ref_lh_end > chr_len) ref_lh_end = chr_len;
-	hts_pos_t ref_lh_len = ref_lh_end - ref_lh_start;
-
-	hts_pos_t ref_rh_start = lc_consensus->breakpoint - joined_consensus.length();
-	hts_pos_t ref_rh_end = lc_consensus->breakpoint + joined_consensus.length();
-	if (ref_rh_start < 0) ref_rh_start = 0;
-	if (ref_rh_end > chr_len) ref_rh_end = chr_len;
-	hts_pos_t ref_rh_len = ref_rh_end - ref_rh_start;
-
-	std::string source;
-	if (!rc_consensus->is_hsr && !lc_consensus->is_hsr) {
-		source = "2SR";
-	} else if (rc_consensus->is_hsr && lc_consensus->is_hsr) {
-		source = "2HSR";
-	} else if (!rc_consensus->is_hsr && lc_consensus->is_hsr) {
-		source = "SR-HSR";
-	} else if (rc_consensus->is_hsr && !lc_consensus->is_hsr) {
-		source = "HSR-SR";
-	}
-
-	indel_t* indel = remap_consensus(contig_name, joined_consensus, chr_seq, chr_len, ref_lh_start, ref_lh_len, 
-		ref_rh_start, ref_rh_len, aligner, lc_consensus, rc_consensus, source);
-	ref_lh_end = ref_lh_start + ref_lh_len;
-	ref_rh_end = ref_rh_start + ref_rh_len;
-	if (indel == NULL) return NULL;
-
-	char ref_with_del[100000];
-	if (indel->indel_type() == "DEL") {
-		strncpy(ref_with_del, chr_seqs.get_seq(contig_name)+ref_lh_start, indel->start-ref_lh_start);
-		strncpy(ref_with_del+indel->start-ref_lh_start, chr_seqs.get_seq(contig_name)+indel->end, ref_rh_end-indel->end);
-		int ref_with_del_len = (indel->start-ref_lh_start) + (ref_rh_end-indel->end);
-		ref_with_del[ref_with_del_len] = '\0';
-
-		StripedSmithWaterman::Filter filter;
-		StripedSmithWaterman::Alignment aln_to_ref;
-		std::string padded_joined_consensus = config.clip_penalty_padding() + joined_consensus + config.clip_penalty_padding();
-		aligner.Align(padded_joined_consensus.c_str(), ref_with_del, ref_with_del_len, filter, &aln_to_ref, 0);
-		if (aln_to_ref.query_begin > 0 || aln_to_ref.query_end < padded_joined_consensus.length()-1) indel->start = indel->end = 0;
-
-		sv2_deletion_t* del = (sv2_deletion_t*) indel;
-		del->remap_boundary_lower = lc_consensus->remap_boundary;
-		del->remap_boundary_upper = rc_consensus->remap_boundary;
-	} else if (indel->indel_type() == "DUP") {
-		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
-		dup->original_start = lc_consensus->breakpoint, dup->original_end = rc_consensus->breakpoint;
-	}
-
-	if (indel->len() <= 0) {
-		delete indel;
-		return NULL;
-	}
-
-	return indel;
-}
-
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
 		std::vector<sv2_deletion_t*>& contig_deletions, std::vector<sv2_duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
@@ -180,7 +103,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, max_mm_rate, min_overlap);
 			if (spa.overlap > 0 && !is_homopolymer(lc_anchor->sequence.c_str(), spa.overlap)) {
-				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), false));
+				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
 				consensuses_to_extend.push_back(lc_anchor);
 				consensuses_to_extend.push_back(rc_anchor);
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
@@ -190,7 +113,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, max_mm_rate, min_overlap);
 				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
-					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score, spa.mismatch_rate(), true));
+					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
 					consensuses_to_extend.push_back(lc_anchor);
 					consensuses_to_extend.push_back(rc_anchor);
 				}
@@ -229,20 +152,24 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
 		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
-		suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
-		if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) { // sometimes after extending we don't need to trim anymore
-			ps.trimmed = false;
-		}
+		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), *rc_consensus, *lc_consensus, 
+			aligner, min_overlap, config.min_clip_len, max_mm_rate);
+		if (sv == NULL) continue;
 
-		indel_t* indel = realign_consensuses(contig_name, rc_consensus, lc_consensus, ps.trimmed, aligner);
-		if (indel == NULL) continue;
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
-		indel->mm_rate = ps.mm_rate;
-		if (indel->indel_type() == "DEL") {
-			contig_deletions.push_back((sv2_deletion_t*) indel);
-		} else if (indel->indel_type() == "DUP") {
-			contig_duplications.push_back((sv2_duplication_t*) indel);
+		if (sv->svtype() == "DEL") {
+			sv2_deletion_t* del = new sv2_deletion_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->left_anchor_aln.score, sv->right_anchor_aln.score, sv->source, sv->ins_seq);
+			del->overlap = sv->overlap;
+			del->mm_rate = sv->mismatch_rate;
+			del->remap_boundary_lower = lc_consensus->remap_boundary, del->remap_boundary_upper = rc_consensus->remap_boundary;
+			contig_deletions.push_back(del);
+		} else {
+			sv2_duplication_t* dup = new sv2_duplication_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->source, sv->ins_seq);
+			dup->overlap = sv->overlap;
+			dup->mm_rate = sv->mismatch_rate;
+			dup->original_start = lc_consensus->breakpoint, dup->original_end = rc_consensus->breakpoint;
+			contig_duplications.push_back(dup);
 		}
 	}
 

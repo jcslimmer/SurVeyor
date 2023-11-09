@@ -75,6 +75,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
 
+	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
+
 	const char* sr_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_tag, &len));
 
@@ -176,10 +179,13 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	int2_conv[0] = sv->rc_rev_reads, int2_conv[1] = sv->lc_rev_reads;
 	bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
 
-	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR", sv->left_anchor.c_str());
-	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR", sv->right_anchor.c_str());
-	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR_CIGAR", sv->left_anchor_cigar.c_str());
-	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR_CIGAR", sv->right_anchor_cigar.c_str());
+	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR", sv->left_anchor_string().c_str());
+	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR", sv->right_anchor_string().c_str());
+	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR_CIGAR", sv->left_anchor_aln.cigar.c_str());
+	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR_CIGAR", sv->right_anchor_aln.cigar.c_str());
+
+	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
+	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &sv->mismatch_rate, 1);
 
 	// add GT info
 	int gt[1];
