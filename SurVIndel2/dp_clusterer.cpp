@@ -469,6 +469,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 		del->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
 		del->start = sv->start;
 		del->end = sv->end;
+		del->ins_seq = sv->ins_seq;
 		del->overlap = sv->overlap;
 		del->mm_rate = sv->mismatch_rate;
 		del->remapped = true;

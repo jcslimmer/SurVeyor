@@ -90,17 +90,31 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* sd_tag = "##INFO=<ID=STABLE_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the stable regions (in practice, the regions left and right of the insertion site).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sd_tag, &len));
 
-	const char* left_anchor_tag = "##INFO=<ID=LEFT_ANCHOR,Number=1,Type=String,Description=\"Region that the left part of the junction sequence was mapped to.\">";
+	const char* left_anchor_tag = "##INFO=<ID=LEFT_ANCHOR,Number=1,Type=String,Description=\"Region flanking the insertion to the left, that contains"
+			"reads supporting the insertion.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, left_anchor_tag, &len));
 
-	const char* right_anchor_tag = "##INFO=<ID=RIGHT_ANCHOR,Number=1,Type=String,Description=\"Region that the right part of the junction sequence was mapped to.\">";
+	const char* right_anchor_tag = "##INFO=<ID=RIGHT_ANCHOR,Number=1,Type=String,Description=\"Region flanking the insertion to the right, that contains"
+			"reads supporting the insertion.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, right_anchor_tag, &len));
 
-	const char* left_anchor_cigar_tag = "##INFO=<ID=LEFT_ANCHOR_CIGAR,Number=1,Type=String,Description=\"CIGAR of the left anchor.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, left_anchor_cigar_tag, &len));
+	const char* fullj_score_tag = "##INFO=<ID=FULL_JUNCTION_SCORE,Number=1,Type=Integer,Description=\"Score of the best alignment of the full junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_score_tag, &len));
 
-	const char* right_anchor_cigar_tag = "##INFO=<ID=RIGHT_ANCHOR_CIGAR,Number=1,Type=String,Description=\"CIGAR of the right anchor.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, right_anchor_cigar_tag, &len));
+	const char* fullj_cigar_tag = "##INFO=<ID=FULL_JUNCTION_CIGAR,Number=1,Type=String,Description=\"CIGAR of the best alignment of the full junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_cigar_tag, &len));
+
+	const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score_tag, &len));
+
+	const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
+
+	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the left-half and right-half of the junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
+
+	const char* splitj_cigar_tag = "##INFO=<ID=SPLIT_JUNCTION_CIGAR,Number=2,Type=String,Description=\"CIGAR of the best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_cigar_tag, &len));
 
 	const char* algo_tag = "##INFO=<ID=ALGORITHM,Number=1,Type=String,Description=\"Algorithm used to report the call.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, algo_tag, &len));
@@ -179,10 +193,19 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	int2_conv[0] = sv->rc_rev_reads, int2_conv[1] = sv->lc_rev_reads;
 	bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
 
-	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR", sv->left_anchor_string().c_str());
-	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR", sv->right_anchor_string().c_str());
-	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR_CIGAR", sv->left_anchor_aln.cigar.c_str());
-	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR_CIGAR", sv->right_anchor_aln.cigar.c_str());
+	bcf_update_info_string(hdr, bcf_entry, "LEFT_ANCHOR", sv->left_anchor_aln_string().c_str());
+	bcf_update_info_string(hdr, bcf_entry, "RIGHT_ANCHOR", sv->right_anchor_aln_string().c_str());
+	bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln.best_score, 1);
+	int2_conv[0] = sv->left_anchor_aln.best_score, int2_conv[1] = sv->right_anchor_aln.best_score;
+	bcf_update_info_string(hdr, bcf_entry, "FULL_JUNCTION_CIGAR", sv->full_junction_aln.cigar.c_str());
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", int2_conv, 2);
+	int2_conv[0] = sv->left_anchor_aln.next_best_score, int2_conv[1] = sv->right_anchor_aln.next_best_score;
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", int2_conv, 2);
+	int2_conv[0] = sv->left_anchor_aln.seq_len, int2_conv[1] = sv->right_anchor_aln.seq_len;
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
+	char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln.cigar.length() + sv->right_anchor_aln.cigar.length() + 2);
+	sprintf(split_junction_cigar, "%s,%s", sv->left_anchor_aln.cigar.c_str(), sv->right_anchor_aln.cigar.c_str());
+	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", split_junction_cigar);
 
 	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
 	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &sv->mismatch_rate, 1);

@@ -92,10 +92,12 @@ struct sv_t {
     
     struct anchor_aln_t {
         hts_pos_t start, end;
-        int score;
+        int seq_len;
+        int best_score, next_best_score;
         std::string cigar;
 
-        anchor_aln_t(hts_pos_t start, hts_pos_t end, int score, std::string cigar) : start(start), end(end), score(score), cigar(cigar) {}
+        anchor_aln_t(hts_pos_t start, hts_pos_t end, int seq_len, int best_score, int next_best_score, std::string cigar) : 
+            start(start), end(end), seq_len(seq_len), best_score(best_score), next_best_score(next_best_score), cigar(cigar) {}
     };
 
     std::string id;
@@ -103,13 +105,13 @@ struct sv_t {
     hts_pos_t start, end;
     std::string ins_seq;
     int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
-    anchor_aln_t left_anchor_aln, right_anchor_aln;
+    anchor_aln_t left_anchor_aln, right_anchor_aln, full_junction_aln;
     int overlap = 0;
     double mismatch_rate = 0.0;
     std::string source;
 
-    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, anchor_aln_t left_anchor, anchor_aln_t right_anchor) : 
-        chr(chr), start(start), end(end), ins_seq(ins_seq), left_anchor_aln(left_anchor), right_anchor_aln(right_anchor) {}
+    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, anchor_aln_t left_anchor_aln, anchor_aln_t right_anchor_aln, anchor_aln_t full_junction_aln) : 
+        chr(chr), start(start), end(end), ins_seq(ins_seq), left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
 
     int rc_reads() { return rc_fwd_reads + rc_rev_reads; }
     int lc_reads() { return lc_fwd_reads + lc_rev_reads; }
@@ -121,11 +123,14 @@ struct sv_t {
     virtual std::string svtype() = 0;
     virtual hts_pos_t svlen() = 0;
 
-    std::string left_anchor_string() {
-        return std::to_string(left_anchor_aln.start) + ":" + std::to_string(left_anchor_aln.end);
+    std::string left_anchor_aln_string() {
+        return std::to_string(left_anchor_aln.start) + "-" + std::to_string(left_anchor_aln.end);
     }
-    std::string right_anchor_string() {
-        return std::to_string(right_anchor_aln.start) + ":" + std::to_string(right_anchor_aln.end);
+    std::string right_anchor_aln_string() {
+        return std::to_string(right_anchor_aln.start) + "-" + std::to_string(right_anchor_aln.end);
+    }
+    std::string full_junction_aln_string() {
+        return std::to_string(full_junction_aln.start) + "-" + std::to_string(full_junction_aln.end);
     }
 
     virtual ~sv_t() {}
