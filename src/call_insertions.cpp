@@ -56,7 +56,7 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
             consensus_t& lc_consensus = lc_consensuses[j];
             int mh_len = rc_consensus.breakpoint - lc_consensus.breakpoint;
             if (lc_consensus.breakpoint-rc_consensus.breakpoint <= MAX_BP_DIST && mh_len <= MAX_MH_LEN) {
-                sv_t* sv = detect_sv(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensus, lc_consensus, aligner, config.min_clip_len, config.min_clip_len, config.max_seq_error);
+                sv_t* sv = detect_sv(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), &rc_consensus, &lc_consensus, aligner, config.min_clip_len, config.min_clip_len, config.max_seq_error);
                 if (sv == NULL) continue;
 
                 mtx.lock();

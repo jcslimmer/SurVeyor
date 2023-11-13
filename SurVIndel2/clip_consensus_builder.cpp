@@ -9,7 +9,6 @@
 
 #include "utils.h"
 #include "hsr.h"
-#include "remapping.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
@@ -152,30 +151,18 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
 		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
-		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), *rc_consensus, *lc_consensus, 
+		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
 			aligner, min_overlap, config.min_clip_len, max_mm_rate);
 		if (sv == NULL) continue;
 
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
-		indel_t* indel;
-		if (sv->svtype() == "DEL") {
-			sv2_deletion_t* del = new sv2_deletion_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->left_anchor_aln.best_score, sv->right_anchor_aln.best_score, sv->source, sv->ins_seq);
-			del->remap_boundary_lower = lc_consensus->remap_boundary, del->remap_boundary_upper = rc_consensus->remap_boundary;
-			contig_deletions.push_back(del);
-			indel = del;
+		indel_t* indel = sv_to_indel(sv, rc_consensus, lc_consensus);
+		if (indel->indel_type() == "DEL") {
+			contig_deletions.push_back((sv2_deletion_t*) indel);
 		} else {
-			sv2_duplication_t* dup = new sv2_duplication_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->source, sv->ins_seq);
-			dup->original_start = lc_consensus->breakpoint, dup->original_end = rc_consensus->breakpoint;
-			contig_duplications.push_back(dup);
-			indel = dup;
+			contig_duplications.push_back((sv2_duplication_t*) indel);
 		}
-		indel->overlap = sv->overlap;
-		indel->mm_rate = sv->mismatch_rate;
-		indel->lh_best1_junction_score = sv->left_anchor_aln.best_score, indel->rh_best1_junction_score = sv->right_anchor_aln.best_score;
-		indel->lh_best2_junction_score = sv->left_anchor_aln.next_best_score, indel->rh_best2_junction_score = sv->right_anchor_aln.next_best_score;
-		indel->lh_junction_size = sv->left_anchor_aln.seq_len, indel->rh_junction_size = sv->right_anchor_aln.seq_len;
-		indel->full_junction_score = sv->full_junction_aln.best_score;
 	}
 
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
@@ -184,86 +171,39 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 }
 
+indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree, std::string contig_name,
+		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+
+	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
+	char* contig_seq = chr_seqs.get_seq(contig_name);
+	
+	extend_consensus_to_left(consensus, candidate_reads_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
+		consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
+	extend_consensus_to_right(consensus, candidate_reads_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
+		consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
+
+	sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
+	if (sv == NULL) return NULL;
+
+	return sv_to_indel(sv, consensus, NULL);
+}
+
 indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree, std::string contig_name,
 		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 	if (!consensus->left_clipped) return NULL;
 
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 	char* contig_seq = chr_seqs.get_seq(contig_name);
-	
-	int old_consensus_len = consensus->sequence.length();
+
 	extend_consensus_to_left(consensus, candidate_reads_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
 		consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	int l_ext_len = consensus->sequence.length() - old_consensus_len;
-	
-	old_consensus_len = consensus->sequence.length();
 	extend_consensus_to_right(consensus, candidate_reads_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
 		consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	int r_ext_len = consensus->sequence.length() - old_consensus_len;
-	
-	hts_pos_t remap_lh_start = consensus->remap_boundary;
-	hts_pos_t remap_lh_end = consensus->remap_boundary + config.max_is;
-	if (consensus->remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-		remap_lh_start = consensus->breakpoint - config.max_is - 2*consensus->sequence.length();
-		remap_lh_end = consensus->breakpoint + config.max_is + 2*consensus->sequence.length();
-	}
-	remap_lh_start = std::max(remap_lh_start-l_ext_len, hts_pos_t(0));
-	remap_lh_end = std::min(remap_lh_end+r_ext_len, contig_len);
-	hts_pos_t remap_lh_len = remap_lh_end - remap_lh_start;
-	
-	hts_pos_t remap_rh_end = std::min(consensus->end + EXTRA_SEQ, contig_len);
-	hts_pos_t remap_rh_start = std::max(hts_pos_t(0), consensus->start - config.max_is);
-	hts_pos_t remap_rh_len = remap_rh_end - remap_rh_start;
-	indel_t* indel = remap_consensus(contig_name, consensus->sequence, contig_seq, contig_len, remap_lh_start, remap_lh_len, 
-		remap_rh_start, remap_rh_len, aligner, consensus, NULL, consensus->is_hsr ? "1HSR_LC" : "1SR_LC");
-	if (indel == NULL) return NULL;
 
-	if (indel->indel_type() == "DUP") {
-		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
-		dup->original_start = dup->start, dup->original_end = dup->end;
-	}
-	return indel;
-}
+	sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
+	if (sv == NULL) return NULL;
 
-indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree, std::string contig_name,
-		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
-	if (consensus->left_clipped) return NULL;
-
-	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
-	char* contig_seq = chr_seqs.get_seq(contig_name);
-	
-	int old_consensus_len = consensus->sequence.length();
-	extend_consensus_to_left(consensus, candidate_reads_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
-		consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	int l_ext_len = consensus->sequence.length() - old_consensus_len;
-
-	old_consensus_len = consensus->sequence.length();
-	extend_consensus_to_right(consensus, candidate_reads_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
-		consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	int r_ext_len = consensus->sequence.length() - old_consensus_len;
-	
-	hts_pos_t remap_rh_start = consensus->remap_boundary - config.max_is;
-	hts_pos_t remap_rh_end = consensus->remap_boundary;
-	if (consensus->remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-		remap_rh_start = consensus->breakpoint - config.max_is - 2*consensus->sequence.length();
-		remap_rh_end = consensus->breakpoint + config.max_is + 2*consensus->sequence.length();
-	}
-	remap_rh_start = std::max(remap_rh_start-l_ext_len, hts_pos_t(0));
-	remap_rh_end = std::min(remap_rh_end+r_ext_len, contig_len);
-	hts_pos_t remap_rh_len = remap_rh_end - remap_rh_start;
-	
-	hts_pos_t remap_lh_start = std::max(hts_pos_t(0), consensus->start - EXTRA_SEQ);
-	hts_pos_t remap_lh_end = std::min(consensus->end + config.max_is, contig_len);
-	hts_pos_t remap_lh_len = remap_lh_end - remap_lh_start;
-	indel_t* indel = remap_consensus(contig_name, consensus->sequence, contig_seq, contig_len, remap_lh_start, remap_lh_len, 
-		remap_rh_start, remap_rh_len, aligner, NULL, consensus, consensus->is_hsr ? "1HSR_RC" : "1SR_RC");
-	if (indel == NULL) return NULL;
-
-	if (indel->indel_type() == "DUP") {
-		sv2_duplication_t* dup = (sv2_duplication_t*) indel;
-		dup->original_start = dup->start, dup->original_end = dup->end;
-	}
-	return indel;
+	return sv_to_indel(sv, NULL, consensus);
 }
 
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,

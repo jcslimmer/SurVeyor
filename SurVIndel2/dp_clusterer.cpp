@@ -9,7 +9,6 @@
 #include "utils.h"
 #include "sam_utils.h"
 #include "stat_tests.h"
-#include "remapping.h"
 #include "extend_1sr_consensus.h"
 #include "../libs/kdtree.h"
 
@@ -459,7 +458,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 
 		consensus_t rc_consensus(false, 0, del->start, 0, del->rightmost_rightfacing_seq, 0, 0, 0, 0, 0, 0);
 		consensus_t lc_consensus(false, 0, del->end, 0, del->leftmost_leftfacing_seq, 0, 0, 0, 0, 0, 0);
-		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, config.read_len/3, config.min_clip_len, 0.0);
+		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), &rc_consensus, &lc_consensus, aligner, config.read_len/3, config.min_clip_len, 0.0);
 		if (sv == NULL) continue;
 		if (sv->svtype() != "DEL") {
 			deletions[i] = NULL;

@@ -6,6 +6,7 @@
 #include <queue>
 #include <stack>
 #include "utils.h"
+#include "../src/sw_utils.h"
 
 struct edge_t {
 	int next, score, overlap;

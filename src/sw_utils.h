@@ -329,7 +329,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
     int max_score = 0, best_i = 0, best_j = 0;
 	for (int i = min_clip_len; i < junction_seq.length()-min_clip_len; i++) {
         int prefix_score = prefix_scores[i-1]; // score of the best aln of [0..i-1]
-        for (int j = i; j < junction_seq.length()-min_clip_len; j++) {
+        for (int j = i; j <= junction_seq.length()-min_clip_len; j++) {
             int suffix_score = suffix_scores[junction_seq.length()-j-1]; // score of the best aln of [j..junction_seq.length()-1]
             // note that we want the score of the suffix of length junction_seq.length()-j, 
             // so we need to subtract 1 because suffix_scores[n] is the score of the best suffix of length n+1
@@ -351,7 +351,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
 
     std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(ref_lh_cstr, 0, ref_remap_lh_len, (char*) left_part.c_str(), aligner);
 	std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(ref_rh_cstr, 0, ref_remap_rh_len, (char*) right_part.c_str(), aligner);
-    
+
 	StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment left_part_aln, right_part_aln;
 	int min_size = INT32_MAX;
@@ -422,52 +422,108 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
 }
 
 sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
-				consensus_t& rc_consensus, consensus_t& lc_consensus,
+				consensus_t* rc_consensus, consensus_t* lc_consensus,
 				StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
 
-	std::string rc_consensus_seq = rc_consensus.sequence;
-	std::string lc_consensus_seq = lc_consensus.sequence;
-    suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
-    if (spa.overlap < min_overlap || is_homopolymer(lc_consensus.sequence.c_str(), spa.overlap)) {
-		rc_consensus_seq = rc_consensus.sequence.substr(0, rc_consensus.sequence.length()-rc_consensus.lowq_clip_portion);
-		lc_consensus_seq = lc_consensus.sequence.substr(lc_consensus.lowq_clip_portion);
-		spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
-		if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
-			return NULL;
+	std::string consensus_junction_seq;
+	hts_pos_t ref_remap_lh_start = 0, ref_remap_lh_end = 0, ref_remap_rh_start = 0, ref_remap_rh_end = 0;
+	int overlap = 0;
+	double mismatch_rate = 0.0;
+
+	if (rc_consensus != NULL && lc_consensus != NULL) {
+		std::string rc_consensus_seq = rc_consensus->sequence;
+		std::string lc_consensus_seq = lc_consensus->sequence;
+		suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
+		if (spa.overlap < min_overlap || is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
+			rc_consensus_seq = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_clip_portion);
+			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_clip_portion);
+			spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
+			if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
+				return NULL;
+			}
 		}
+
+		overlap = spa.overlap;
+		mismatch_rate = spa.mismatch_rate();
+		
+		StripedSmithWaterman::Filter filter;
+		StripedSmithWaterman::Alignment aln_rh, aln_lh;
+
+		consensus_junction_seq = rc_consensus_seq + lc_consensus_seq.substr(spa.overlap);
+		ref_remap_lh_start = rc_consensus->breakpoint - consensus_junction_seq.length();
+		ref_remap_lh_end = rc_consensus->breakpoint + consensus_junction_seq.length();
+		if (ref_remap_lh_start < 0) ref_remap_lh_start = 0;
+		if (ref_remap_lh_end > contig_len) ref_remap_lh_end = contig_len;
+
+		ref_remap_rh_start = lc_consensus->breakpoint - consensus_junction_seq.length();
+		ref_remap_rh_end = lc_consensus->breakpoint + consensus_junction_seq.length();
+		if (ref_remap_rh_start < 0) ref_remap_rh_start = 0;
+		if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
+	} else if (rc_consensus != NULL) {
+		consensus_junction_seq = rc_consensus->sequence;
+
+		ref_remap_lh_start = std::max(hts_pos_t(0), rc_consensus->start - (int) rc_consensus->sequence.length());
+		ref_remap_lh_end = std::min(rc_consensus->end + (int) rc_consensus->sequence.length(), contig_len);
+
+		ref_remap_rh_start = rc_consensus->remap_boundary - rc_consensus->sequence.length();
+		ref_remap_rh_end = rc_consensus->remap_boundary + rc_consensus->sequence.length();
+		if (rc_consensus->remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+			ref_remap_rh_start = rc_consensus->breakpoint - 2*rc_consensus->sequence.length();
+			ref_remap_rh_end = rc_consensus->breakpoint + 2*rc_consensus->sequence.length();
+		}
+		ref_remap_rh_start = std::max(ref_remap_rh_start, hts_pos_t(0));
+		ref_remap_rh_end = std::min(ref_remap_rh_end, contig_len);
+	} else if (lc_consensus != NULL) {
+		consensus_junction_seq = lc_consensus->sequence;
+
+		ref_remap_lh_start = lc_consensus->remap_boundary - lc_consensus->sequence.length();
+		ref_remap_lh_end = lc_consensus->remap_boundary + lc_consensus->sequence.length();
+		if (lc_consensus->remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+			ref_remap_lh_start = lc_consensus->breakpoint - 2*lc_consensus->sequence.length();
+			ref_remap_lh_end = lc_consensus->breakpoint + 2*lc_consensus->sequence.length();
+		}
+		ref_remap_lh_start = std::max(ref_remap_lh_start, hts_pos_t(0));
+		ref_remap_lh_end = std::min(ref_remap_lh_end, contig_len);
+
+		ref_remap_rh_start = std::max(hts_pos_t(0), lc_consensus->start - (int) lc_consensus->sequence.length());
+		ref_remap_rh_end = std::min(lc_consensus->end + (int) lc_consensus->sequence.length(), contig_len);
+	} else {
+		return NULL;
 	}
-
-    StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment aln_rh, aln_lh;
-
-    std::string consensus_junction_seq = rc_consensus_seq + lc_consensus_seq.substr(spa.overlap);
-    hts_pos_t ref_remap_lh_start = rc_consensus.breakpoint - consensus_junction_seq.length(), 
-              ref_remap_lh_end = rc_consensus.breakpoint + consensus_junction_seq.length();
-    if (ref_remap_lh_start < 0) ref_remap_lh_start = 0;
-    if (ref_remap_lh_end > contig_len) ref_remap_lh_end = contig_len;
-
-	hts_pos_t ref_remap_rh_start = lc_consensus.breakpoint - consensus_junction_seq.length(), 
-              ref_remap_rh_end = lc_consensus.breakpoint + consensus_junction_seq.length();
-	if (ref_remap_rh_start < 0) ref_remap_rh_start = 0;
-	if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
 
     sv_t* sv = detect_sv_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
     if (sv == NULL) {
 		return NULL;
 	}
 
-    sv->rc_fwd_reads = rc_consensus.fwd_clipped, sv->rc_rev_reads = rc_consensus.rev_clipped;
-    sv->lc_fwd_reads = lc_consensus.fwd_clipped, sv->lc_rev_reads = lc_consensus.rev_clipped;
-    sv->overlap = spa.overlap;
-	sv->mismatch_rate = spa.mismatch_rate();
+	if (rc_consensus != NULL) {
+   		sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
+	}
+	if (lc_consensus != NULL) {
+    	sv->lc_fwd_reads = lc_consensus->fwd_clipped, sv->lc_rev_reads = lc_consensus->rev_clipped;
+	}
+    sv->overlap = overlap;
+	sv->mismatch_rate = mismatch_rate;
 
-	if (!rc_consensus.is_hsr && !lc_consensus.is_hsr) {
+	if (rc_consensus != NULL && lc_consensus == NULL) {
+		if (rc_consensus->is_hsr) {
+			sv->source = "1HSR_RC";
+		} else {
+			sv->source = "1SR_RC";
+		}
+	} else if (rc_consensus == NULL && lc_consensus != NULL) {
+		if (lc_consensus->is_hsr) {
+			sv->source = "1HSR_LC";
+		} else {
+			sv->source = "1SR_LC";
+		}
+	} else if (!rc_consensus->is_hsr && !lc_consensus->is_hsr) {
 		sv->source = "2SR";
-	} else if (rc_consensus.is_hsr && lc_consensus.is_hsr) {
+	} else if (rc_consensus->is_hsr && lc_consensus->is_hsr) {
 		sv->source = "2HSR";
-	} else if (!rc_consensus.is_hsr && lc_consensus.is_hsr) {
+	} else if (!rc_consensus->is_hsr && lc_consensus->is_hsr) {
 		sv->source = "SR-HSR";
-	} else if (rc_consensus.is_hsr && !lc_consensus.is_hsr) {
+	} else if (rc_consensus->is_hsr && !lc_consensus->is_hsr) {
 		sv->source = "HSR-SR";
 	}
 

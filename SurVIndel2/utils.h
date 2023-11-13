@@ -160,6 +160,28 @@ struct sv2_duplication_t : indel_t {
     hts_pos_t len() override { return ins_seq.length() + (end-start); }
 };
 
+indel_t* sv_to_indel(sv_t* sv, consensus_t* rc_consensus, consensus_t* lc_consensus) {
+	indel_t* indel;
+	if (sv->svtype() == "DEL") {
+		sv2_deletion_t* del = new sv2_deletion_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->left_anchor_aln.best_score, sv->right_anchor_aln.best_score, sv->source, sv->ins_seq);
+		if (rc_consensus != NULL) del->remap_boundary_upper = rc_consensus->remap_boundary;
+		if (lc_consensus != NULL) del->remap_boundary_lower = lc_consensus->remap_boundary;
+		indel = del;
+	} else {
+		sv2_duplication_t* dup = new sv2_duplication_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->source, sv->ins_seq);
+		if (rc_consensus != NULL) dup->original_end = rc_consensus->breakpoint;
+		if (lc_consensus != NULL) dup->original_start = lc_consensus->breakpoint; 
+		indel = dup;
+	}
+	indel->overlap = sv->overlap;
+	indel->mm_rate = sv->mismatch_rate;
+	indel->lh_best1_junction_score = sv->left_anchor_aln.best_score, indel->rh_best1_junction_score = sv->right_anchor_aln.best_score;
+	indel->lh_best2_junction_score = sv->left_anchor_aln.next_best_score, indel->rh_best2_junction_score = sv->right_anchor_aln.next_best_score;
+	indel->lh_junction_size = sv->left_anchor_aln.seq_len, indel->rh_junction_size = sv->right_anchor_aln.seq_len;
+	indel->full_junction_score = sv->full_junction_aln.best_score;
+	return indel;
+}
+
 
 struct tandem_rep_t {
 
