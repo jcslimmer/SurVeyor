@@ -182,58 +182,6 @@ indel_t* sv_to_indel(sv_t* sv, consensus_t* rc_consensus, consensus_t* lc_consen
 	return indel;
 }
 
-
-struct tandem_rep_t {
-
-        std::string chr;
-        hts_pos_t start, end;
-
-        tandem_rep_t(std::string& line) {
-            std::stringstream ss(line);
-            ss >> chr >> start >> end;
-            start--; end--; // annotations files are in 1-based coordinates, here we are working with 0-based
-        }
-};
-
-struct tandem_rep_trees_t {
-
-    std::unordered_map<std::string, IntervalTree<tandem_rep_t>* > trees;
-
-    tandem_rep_trees_t() {}
-    tandem_rep_trees_t(std::unordered_map<std::string, IntervalTree<tandem_rep_t>* > trees) : trees(trees) {}
-
-    bool overlaps_tr(std::string contig, hts_pos_t start, hts_pos_t end) {
-        std::vector<Interval<tandem_rep_t> > reps = trees[contig]->findOverlapping(start, end);
-        return !reps.empty();
-    }
-};
-
-tandem_rep_trees_t parse_tr(std::string fname, int min_sv_size) {
-    std::unordered_map<std::string, IntervalTree<tandem_rep_t>* > repeat_trees;
-    std::ifstream rep_fin(fname);
-    if (!rep_fin.is_open()) {
-        throw "ERROR: Could not open simpleRepeats file";
-    } else {
-        std::unordered_map<std::string, std::vector<Interval<tandem_rep_t> > > v;
-        std::string line;
-        while (getline(rep_fin, line)) {
-            if (line[0] != '#') {
-                tandem_rep_t rep(line);
-                if (rep.end-rep.start >= min_sv_size) {
-                    v[rep.chr].push_back(Interval<tandem_rep_t>(rep.start, rep.end, rep));
-                }
-
-            }
-        }
-
-        for (auto& k : v) {
-            repeat_trees[k.first] = new IntervalTree<tandem_rep_t>(k.second);
-        }
-    }
-    return tandem_rep_trees_t(repeat_trees);
-}
-
-
 struct contig_map_t {
 
     std::unordered_map<std::string, size_t> name_to_id;
@@ -306,47 +254,6 @@ struct chr_seqs_map_t {
 template<typename T>
 inline T max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
 
-void strrev(char* str) {
-    if (str == NULL) return;
-
-    int len = strlen(str);
-    for (int i = 0; i < len/2; i++) {
-        std::swap(str[i], str[len-1-i]);
-    }
-}
-
-// excludes soft-clipped parts from prefix_len
-int swaln_mismatches_in_prefix(StripedSmithWaterman::Alignment& aln, int prefix_len) {
-    int mismatches = 0;
-    for (uint32_t op : aln.cigar) {
-        if (prefix_len <= 0) break;
-        char opchr = cigar_int_to_op(op);
-        int oplen = cigar_int_to_len(op);
-        if (opchr == 'X') {
-            mismatches += std::min(oplen, prefix_len);
-        }
-        if (opchr != 'S') {
-            prefix_len -= oplen;
-        }
-    }
-    return mismatches;
-}
-int swaln_mismatches_in_suffix(StripedSmithWaterman::Alignment& aln, int suffix_len) {
-    int mismatches = 0;
-    for (int i = aln.cigar.size()-1; i >= 0 && suffix_len > 0; i--) {
-        uint32_t op = aln.cigar[i];
-        char opchr = cigar_int_to_op(op);
-        int oplen = cigar_int_to_len(op);
-        if (opchr == 'X') {
-            mismatches += std::min(oplen, suffix_len);
-        }
-        if (opchr != 'S') {
-            suffix_len -= oplen;
-        }
-    }
-    return mismatches;
-}
-
 int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
     return std::max(int64_t(0), overlap);
@@ -362,10 +269,6 @@ bool is_homopolymer(const char* seq, int len) {
 		else if (b == 'T') t++;
 	}
 	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
-}
-
-bool is_homopolymer(std::string seq) {
-	return is_homopolymer(seq.data(), seq.length());
 }
 
 template<typename T>
@@ -776,10 +679,6 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
 	for (int i = 0; i < consensuses.size(); i++) if (used[i]) consensuses[i] = NULL;
 	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), (consensus_t*) NULL), consensuses.end());
-}
-
-inline bool has_Ns(char* ref, hts_pos_t start, hts_pos_t len) {
-	return memchr(ref+start, 'N', len) != NULL;
 }
 
 bool file_exists(std::string& fname) {
