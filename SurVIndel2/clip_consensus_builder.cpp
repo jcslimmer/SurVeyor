@@ -51,7 +51,6 @@ void release_bam_reader(open_samFile_t* reader) {
 std::unordered_map<std::string, std::vector<sv2_deletion_t*> > deletions_by_chr;
 std::unordered_map<std::string, std::vector<sv2_duplication_t*> > duplications_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
-std::vector<double> max_allowed_frac_normalized;
 std::mutex mtx, indel_out_mtx, up_consensus_mtx;
 
 
@@ -170,41 +169,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 }
 
-indel_t* find_indel_from_rc_consensus(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree, std::string contig_name,
-		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
-
-	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
-	char* contig_seq = chr_seqs.get_seq(contig_name);
-	
-	extend_consensus_to_left(consensus, candidate_reads_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
-		consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	extend_consensus_to_right(consensus, candidate_reads_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
-		consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-
-	sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
-	if (sv == NULL) return NULL;
-
-	return sv_to_indel(sv, consensus, NULL);
-}
-
-indel_t* find_indel_from_lc_consensus(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree, std::string contig_name,
-		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
-	if (!consensus->left_clipped) return NULL;
-
-	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
-	char* contig_seq = chr_seqs.get_seq(contig_name);
-
-	extend_consensus_to_left(consensus, candidate_reads_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
-		consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-	extend_consensus_to_right(consensus, candidate_reads_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
-		consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, mateseqs_w_mapq);
-
-	sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
-	if (sv == NULL) return NULL;
-
-	return sv_to_indel(sv, NULL, consensus);
-}
-
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
 		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
 
@@ -215,6 +179,7 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 	std::vector<sv2_deletion_t*> local_dels;
 	std::vector<sv2_duplication_t*> local_dups;
 
+	char* contig_seq = chr_seqs.get_seq(contig_name);
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
@@ -233,11 +198,18 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 	for (int i = start; i < consensuses->size() && i < end; i++) {
 		consensus_t* consensus = consensuses->at(i);
 
+		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
+			consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, *mateseqs_w_mapq);
+		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
+			consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, *mateseqs_w_mapq);
+
 		indel_t* smallest_indel = NULL;
 		if (!consensus->left_clipped) {
-			smallest_indel = find_indel_from_rc_consensus(consensus, candidate_reads_for_extension_itree, contig_name, aligner, *mateseqs_w_mapq);
+			sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
+			smallest_indel = sv_to_indel(sv, consensus, NULL);
 		} else if (consensus->left_clipped) {
-			smallest_indel = find_indel_from_lc_consensus(consensus, candidate_reads_for_extension_itree, contig_name, aligner, *mateseqs_w_mapq);
+			sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
+			smallest_indel = sv_to_indel(sv, NULL, consensus);
 		}
 
 		if (smallest_indel == NULL) {
@@ -469,7 +441,7 @@ int main(int argc, char* argv[]) {
 		std::string contig_name = contig_map.get_name(contig_id);
 		auto& deletions = deletions_by_chr[contig_name];
 		for (int i = 0; i < deletions.size(); i++) {
-			if (deletions[i]->len() < config.min_sv_size) {
+			if (-deletions[i]->sv->svlen() < config.min_sv_size) {
 				delete deletions[i];
 				deletions[i] = NULL;
 			}
@@ -477,7 +449,7 @@ int main(int argc, char* argv[]) {
 		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (sv2_deletion_t*) NULL), deletions_by_chr[contig_name].end());
 		auto& duplications = duplications_by_chr[contig_name];
 		for (int i = 0; i < duplications.size(); i++) {
-			if (duplications[i]->len() < config.min_sv_size) {
+			if (duplications[i]->sv->svlen() < config.min_sv_size) {
 				delete duplications[i];
 				duplications[i] = NULL;
 			}
@@ -492,21 +464,6 @@ int main(int argc, char* argv[]) {
 	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
-
-    std::ifstream as_dist_fin(workdir + "/as_diff_dist.txt");
-    int as_diff; double freq;
-    std::unordered_map<int, double> as_diff_frequency_table;
-    while (as_dist_fin >> as_diff >> freq) {
-        as_diff_frequency_table[as_diff] = freq;
-    }
-    int max_as_diff = 0;
-    for (auto& e : as_diff_frequency_table) {
-        if (e.first > max_as_diff) max_as_diff = e.first;
-    }
-    max_allowed_frac_normalized.resize(max_as_diff+1);
-    for (int i = 0; i <= max_as_diff; i++) {
-        max_allowed_frac_normalized[i] = as_diff_frequency_table[i]/as_diff_frequency_table[0];
-    }
 
     ctpl::thread_pool thread_pool3(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
@@ -533,18 +490,18 @@ int main(int argc, char* argv[]) {
         	del->id = "DEL_SR_" + std::to_string(del_id++);
             std::vector<std::string> filters;
 
-            if (del->len() < config.min_sv_size) {
+            if (-del->sv->svlen() < config.min_sv_size) {
             	filters.push_back("SMALL");
             }
-            if (del->len() < config.max_is) {
-            	if (del->len()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
+            if (-del->sv->svlen() < config.max_is) {
+            	if (-del->sv->svlen()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
             }
             if (del->remap_boundary_lower > del->start) {
                 filters.push_back("REMAP_BOUNDARY_FILTER");
             } else if (del->remap_boundary_upper < del->end) {
                 filters.push_back("REMAP_BOUNDARY_FILTER");
             }
-            if (del->len() >= config.min_size_for_depth_filtering &&
+            if (-del->sv->svlen() >= config.min_size_for_depth_filtering &&
                     (del->med_left_flanking_cov*0.74<=del->med_indel_left_cov || del->med_right_flanking_cov*0.74<=del->med_indel_right_cov)) {
             	filters.push_back("DEPTH_FILTER");
             }
@@ -592,7 +549,7 @@ int main(int argc, char* argv[]) {
         	dup->id = "DUP_SR_" + std::to_string(dup_id++);
             std::vector<std::string> filters;
 
-            if (dup->len() >= config.min_size_for_depth_filtering &&
+            if (dup->sv->svlen() >= config.min_size_for_depth_filtering &&
                     (dup->med_left_flanking_cov*1.26>=dup->med_indel_left_cov || dup->med_indel_right_cov<=dup->med_right_flanking_cov*1.26)) {
                 // note: using >= so that a 0 0 0 0 depth will not be accepted
                 filters.push_back("DEPTH_FILTER");
@@ -609,7 +566,7 @@ int main(int argc, char* argv[]) {
 				(dup->rc_consensus == NULL || dup->rc_consensus->max_mapq < config.high_confidence_mapq)) {
 				filters.push_back("LOW_MAPQ_CONSENSUSES");
 			}
-            if (dup->len() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
+            if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
                 filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
             if (dup->source == "1SR_RC" || dup->source == "1HSR_RC") {

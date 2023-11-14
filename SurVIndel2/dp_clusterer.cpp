@@ -339,7 +339,11 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue; //config.high_confidence_mapq) continue;
 
 		if (c->la_end < c->ra_start) {
-			sv2_deletion_t* del = new sv2_deletion_t(c->la_end, c->ra_start, c->la_start, c->ra_end, NULL, NULL, 0, 0, "DP", "");
+			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
+			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
+			sv_t* sv = new deletion_t(contig_name, c->la_end, c->ra_start, "", left_anchor_aln, right_anchor_aln, NULL);
+			sv->source = "DP";
+			sv2_deletion_t* del = new sv2_deletion_t(sv, NULL, NULL);
 			set_indel_info(del, c);
 			deletions.push_back(del);
 			deletion_ra_reads.push_back(c->reads_seqs);
@@ -347,15 +351,15 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	}
 
 	std::vector<sv2_duplication_t*> duplications;
-	for (cluster_t* c : ow_clusters) {
-		if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue; //config.high_confidence_mapq) continue;
+	// for (cluster_t* c : ow_clusters) {
+	// 	if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue; //config.high_confidence_mapq) continue;
 
-		if (c->la_end > c->ra_start) {
-			sv2_duplication_t* dup = new sv2_duplication_t(c->ra_start, c->la_end, c->la_start, c->ra_end, NULL, NULL, "DP", "");
-			set_indel_info(dup, c);
-			duplications.push_back(dup);
-		}
-	}
+	// 	if (c->la_end > c->ra_start) {
+	// 		sv2_duplication_t* dup = new sv2_duplication_t(NULL, c->ra_start, c->la_end, c->la_start, c->ra_end, NULL, NULL, "DP", "");
+	// 		set_indel_info(dup, c);
+	// 		duplications.push_back(dup);
+	// 	}
+	// }
 
 	maps_mtx.lock();
 	deletions_by_chr[contig_name] = deletions;
@@ -406,11 +410,14 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_HIGHMAPQ", &del->disc_pairs_high_mapq, 1);
 				deletions[i] = NULL;
 			} else { // if the SR deletion failed the filters, just borrow the coordinates (and the split reads)
+				sv_t* sv = new deletion_t(contig_name, corr_sr_del->pos, get_sv_end(sr_hdr, corr_sr_del), del->ins_seq, NULL, NULL, NULL);
+				deletions[i]->set_sv(sv);
+
 				int* clipped_reads = NULL, n = 0;
 				bcf_get_info_int32(sr_hdr, corr_sr_del, "CLIPPED_READS", &clipped_reads, &n);
 				if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
-				deletions[i]->start = corr_sr_del->pos;
-				deletions[i]->end = get_sv_end(sr_hdr, corr_sr_del);
+				// deletions[i]->start = corr_sr_del->pos;
+				// deletions[i]->end = get_sv_end(sr_hdr, corr_sr_del);
 				// we are only interested in the number of split reads
 				deletions[i]->rc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[0], 0, 0, 0, 0, 0);
 				deletions[i]->lc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[1], 0, 0, 0, 0, 0);
@@ -466,11 +473,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 		}
 
 		del->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
-		del->start = sv->start;
-		del->end = sv->end;
-		del->ins_seq = sv->ins_seq;
-		del->overlap = sv->overlap;
-		del->mm_rate = sv->mismatch_rate;
+		del->set_sv(sv);
 		del->remapped = true;
 	}
 	deletions.erase(std::remove(deletions.begin(), deletions.end(), (sv2_deletion_t*) NULL), deletions.end());
@@ -485,7 +488,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 
 	std::vector<sv2_deletion_t*> shorter_deletions, longer_deletions;
 	for (sv2_deletion_t* deletion : deletions) {
-		if (deletion->len() < config.max_is) shorter_deletions.push_back(deletion);
+		if (-deletion->sv->svlen() < config.max_is) shorter_deletions.push_back(deletion);
 		else longer_deletions.push_back(deletion);
 	}
 
@@ -504,14 +507,14 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 	for (sv2_deletion_t* del : deletions) {
 		std::vector<std::string> filters;
 
-		if (del->len() < config.min_sv_size) {
+		if (-del->sv->svlen() < config.min_sv_size) {
 			continue;
 			filters.push_back("SMALL");
 		}
 		if (del->ks_pval > 0.01) {
 			filters.push_back("KS_FILTER");
 		} else
-		if (del->len() >= config.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
+		if (-del->sv->svlen() >= config.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
 			filters.push_back("LOW_PTN_RATIO");
 		}
 
@@ -527,7 +530,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 			filters.push_back("ANOMALOUS_DEL_DEPTH");
 		}
 
-		if (del->len() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs || del->r_cluster_region_disc_pairs >= del->disc_pairs)) {
+		if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs || del->r_cluster_region_disc_pairs >= del->disc_pairs)) {
 			filters.push_back("AMBIGUOUS_REGION");
 		}
 

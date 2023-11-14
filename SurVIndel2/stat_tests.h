@@ -805,6 +805,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				if (new_start >= del->start-config.read_len/2 && new_end <= del->end+config.read_len) {
 					del->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
 					del->start = new_start; del->end = new_end;
+					del->sv->start = new_start; del->sv->end = new_end;
 				}
             }
         }

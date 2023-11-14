@@ -369,15 +369,21 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
     hts_pos_t left_anchor_end = ref_remap_lh_start + left_part_aln.ref_end;
     hts_pos_t right_anchor_start = ref_remap_rh_start + right_part_aln.ref_begin;
     hts_pos_t right_anchor_end = ref_remap_rh_start + right_part_aln.ref_end;
-    hts_pos_t left_bp = left_anchor_end, right_bp = right_anchor_start - 1;
-	sv_t::anchor_aln_t left_part_anchor_aln(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, left_part_aln.cigar_string);
-	sv_t::anchor_aln_t right_part_anchor_aln(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, right_part_aln.cigar_string);
+    hts_pos_t left_bp = left_anchor_end, right_bp = right_anchor_start - 1; 
+	if (right_bp < 0) right_bp = 0; // this can be -1, if the duplication starts at the beginning of the contig. 
+	/* The VCF specification says: "For simple insertions and deletions in which either the REF or one of the ALT alleles 
+		would otherwise be null/empty, the REF and ALT Strings must include the base before the event (which must be reflected 
+		in the POS field), unless the event occurs at position 1 on the contig in which case it must include the base after 
+		the event"
+		However, I am not sure what the base "after the event" is in the case of a duplication. I will report 1 in the VCF (meaning 0 here) for now */
+	sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, left_part_aln.cigar_string);
+	sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, right_part_aln.cigar_string);
 
 	StripedSmithWaterman::Alignment full_aln_lh, full_aln_rh;
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_lh_start, ref_remap_lh_len, filter, &full_aln_lh, 0);
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_rh_start, ref_remap_rh_len, filter, &full_aln_rh, 0);
 	StripedSmithWaterman::Alignment& best_full_aln = full_aln_lh.sw_score >= full_aln_rh.sw_score ? full_aln_lh : full_aln_rh;
-	sv_t::anchor_aln_t full_junction_aln(ref_remap_lh_start+best_full_aln.ref_begin, ref_remap_lh_start+best_full_aln.ref_end, junction_seq.length(), best_full_aln.sw_score, best_full_aln.sw_score_next_best, best_full_aln.cigar_string);
+	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+best_full_aln.ref_begin, ref_remap_lh_start+best_full_aln.ref_end, junction_seq.length(), best_full_aln.sw_score, best_full_aln.sw_score_next_best, best_full_aln.cigar_string);
 
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
         int mh_len = left_bp - right_bp;

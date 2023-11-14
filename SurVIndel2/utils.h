@@ -103,17 +103,37 @@ struct indel_t {
     bool remapped = false;
     std::string rightmost_rightfacing_seq, leftmost_leftfacing_seq;
     std::string ins_seq;
+	sv_t* sv;
 
-    indel_t(hts_pos_t start, hts_pos_t end, hts_pos_t rc_anchor_start, hts_pos_t lc_anchor_end, std::string source,
-            consensus_t* lc_consensus, consensus_t* rc_consensus, std::string ins_seq)
-    : start(start), end(end), rc_anchor_start(rc_anchor_start), lc_anchor_end(lc_anchor_end),
-	  source(source), lc_consensus(lc_consensus), rc_consensus(rc_consensus), ins_seq(ins_seq) { }
+    indel_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus)
+    : lc_consensus(lc_consensus), rc_consensus(rc_consensus) { 
+		set_sv(sv);
+	}
 
-    virtual hts_pos_t len() { return end-start; }
+	void set_sv(sv_t* sv) { 
+		this->sv = sv; 
+		this->start = sv->start;
+		this->end = sv->end;
+		this->ins_seq = sv->ins_seq;
+		this->rc_anchor_start = sv->left_anchor_aln->start;
+		this->lc_anchor_end = sv->right_anchor_aln->end;
+		this->source = sv->source;
+		this->overlap = sv->overlap;
+		this->mm_rate = sv->mismatch_rate;
+		if (sv->left_anchor_aln != NULL) {
+			this->lh_best1_junction_score = sv->left_anchor_aln->best_score;
+			this->lh_best2_junction_score = sv->left_anchor_aln->next_best_score;
+			this->lh_junction_size = sv->left_anchor_aln->seq_len;
+		}
+		if (sv->right_anchor_aln != NULL) {
+			this->rh_best1_junction_score = sv->right_anchor_aln->best_score;
+			this->rh_best2_junction_score = sv->right_anchor_aln->next_best_score;
+			this->rh_junction_size = sv->right_anchor_aln->seq_len;
+		}
+		if (sv->full_junction_aln != NULL) this->full_junction_score = sv->full_junction_aln->best_score;
+	}
+
     virtual std::string indel_type() { return ""; };
-    virtual std::string to_string(std::string contig_name) {
-    	return contig_name + ":" + std::to_string(start) + "-" + std::to_string(end) + ":" + ins_seq;
-    }
 
     bool is_single_consensus() { return (lc_consensus == NULL || rc_consensus == NULL) && lc_consensus != rc_consensus; }
     bool imprecise() { return lc_consensus == NULL && rc_consensus == NULL && remapped == false; }
@@ -123,7 +143,6 @@ struct sv2_deletion_t : indel_t {
 	static const int SIZE_NOT_COMPUTED = INT32_MAX;
 	static const int REMAP_LB_NOT_COMPUTED = 0, REMAP_UB_NOT_COMPUTED = INT32_MAX;
 
-    int lh_score, rh_score;
     int max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED, conc_pairs = 0;
     double ks_pval = -1.0;
     hts_pos_t remap_boundary_lower = REMAP_LB_NOT_COMPUTED, remap_boundary_upper = REMAP_UB_NOT_COMPUTED;
@@ -132,53 +151,37 @@ struct sv2_deletion_t : indel_t {
     std::string original_range;
     std::string genotype;
 
-    sv2_deletion_t(hts_pos_t start, hts_pos_t end, hts_pos_t rc_anchor_start, hts_pos_t lc_anchor_end, consensus_t* lc_consensus,
-               consensus_t* rc_consensus, int lh_score, int rh_score, std::string source, std::string ins_seq) :
-            indel_t(start, end, rc_anchor_start, lc_anchor_end, source, lc_consensus, rc_consensus, ins_seq), lh_score(lh_score), rh_score(rh_score) {};
-
-    hts_pos_t len() override { return end-start-ins_seq.length(); }
+    sv2_deletion_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
+        indel_t(sv, lc_consensus, rc_consensus) {}
 
     std::string indel_type() override { return "DEL"; }
 };
 
 struct sv2_duplication_t : indel_t {
-    static const int OW_NOT_COMPUTED = INT32_MAX;
-
     hts_pos_t original_start, original_end;
     int lc_cluster_region_disc_pairs = 0, rc_cluster_region_disc_pairs = 0;
 
-    sv2_duplication_t(hts_pos_t start, hts_pos_t end, hts_pos_t rc_anchor_start, hts_pos_t lc_anchor_end, consensus_t* lc_consensus,
-                  consensus_t* rc_consensus, std::string source, std::string ins_seq) :
-                	  original_start(start), original_end(end),
-					  indel_t(std::max(start, hts_pos_t(0)), end, rc_anchor_start, lc_anchor_end, source, lc_consensus, rc_consensus, ins_seq) {}
-    // Normally we store/report the base BEFORE the event, as per VCF specifications.
-    // We handle here the exception where the duplication starts at the first base of the contig (base before 0 is -1, but it is not valid,
-    // so we still store 0)
+    sv2_duplication_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
+		indel_t(sv, lc_consensus, rc_consensus), original_start(sv->start), original_end(sv->end) {}
 
     std::string indel_type() override { return "DUP"; }
-
-    hts_pos_t len() override { return ins_seq.length() + (end-start); }
 };
 
 indel_t* sv_to_indel(sv_t* sv, consensus_t* rc_consensus, consensus_t* lc_consensus) {
+	if (sv == NULL) return NULL;
+
 	indel_t* indel;
 	if (sv->svtype() == "DEL") {
-		sv2_deletion_t* del = new sv2_deletion_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->left_anchor_aln.best_score, sv->right_anchor_aln.best_score, sv->source, sv->ins_seq);
+		sv2_deletion_t* del = new sv2_deletion_t(sv, lc_consensus, rc_consensus);
 		if (rc_consensus != NULL) del->remap_boundary_upper = rc_consensus->remap_boundary;
 		if (lc_consensus != NULL) del->remap_boundary_lower = lc_consensus->remap_boundary;
 		indel = del;
 	} else {
-		sv2_duplication_t* dup = new sv2_duplication_t(sv->start, sv->end, sv->left_anchor_aln.start, sv->right_anchor_aln.end, lc_consensus, rc_consensus, sv->source, sv->ins_seq);
+		sv2_duplication_t* dup = new sv2_duplication_t(sv, lc_consensus, rc_consensus);
 		if (rc_consensus != NULL) dup->original_end = rc_consensus->breakpoint;
 		if (lc_consensus != NULL) dup->original_start = lc_consensus->breakpoint; 
 		indel = dup;
 	}
-	indel->overlap = sv->overlap;
-	indel->mm_rate = sv->mismatch_rate;
-	indel->lh_best1_junction_score = sv->left_anchor_aln.best_score, indel->rh_best1_junction_score = sv->right_anchor_aln.best_score;
-	indel->lh_best2_junction_score = sv->left_anchor_aln.next_best_score, indel->rh_best2_junction_score = sv->right_anchor_aln.next_best_score;
-	indel->lh_junction_size = sv->left_anchor_aln.seq_len, indel->rh_junction_size = sv->right_anchor_aln.seq_len;
-	indel->full_junction_score = sv->full_junction_aln.best_score;
 	return indel;
 }
 
@@ -522,7 +525,7 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 
 	int_conv = del->end+1;
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
-	int_conv = -(del->end - del->start - del->ins_seq.length());
+	int_conv = del->sv->svlen();
 	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "DEL");
 	if (del->max_conf_size != sv2_deletion_t::SIZE_NOT_COMPUTED) {
@@ -623,7 +626,7 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 
 	int_conv = dup->end+1;
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
-	int_conv = dup->len();
+	int_conv = dup->sv->svlen();
 	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 	// if (dup->start == dup->end) {
 	// 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");

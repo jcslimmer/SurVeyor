@@ -105,12 +105,12 @@ struct sv_t {
     hts_pos_t start, end;
     std::string ins_seq;
     int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
-    anchor_aln_t left_anchor_aln, right_anchor_aln, full_junction_aln;
+    anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     int overlap = 0;
     double mismatch_rate = 0.0;
     std::string source;
 
-    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, anchor_aln_t left_anchor_aln, anchor_aln_t right_anchor_aln, anchor_aln_t full_junction_aln) : 
+    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
 
     int rc_reads() { return rc_fwd_reads + rc_rev_reads; }
@@ -124,13 +124,16 @@ struct sv_t {
     virtual hts_pos_t svlen() = 0;
 
     std::string left_anchor_aln_string() {
-        return std::to_string(left_anchor_aln.start) + "-" + std::to_string(left_anchor_aln.end);
+        if (left_anchor_aln == NULL) return "NA";
+        return std::to_string(left_anchor_aln->start) + "-" + std::to_string(left_anchor_aln->end);
     }
     std::string right_anchor_aln_string() {
-        return std::to_string(right_anchor_aln.start) + "-" + std::to_string(right_anchor_aln.end);
+        if (right_anchor_aln == NULL) return "NA";
+        return std::to_string(right_anchor_aln->start) + "-" + std::to_string(right_anchor_aln->end);
     }
     std::string full_junction_aln_string() {
-        return std::to_string(full_junction_aln.start) + "-" + std::to_string(full_junction_aln.end);
+        if (full_junction_aln == NULL) return "NA";
+        return std::to_string(full_junction_aln->start) + "-" + std::to_string(full_junction_aln->end);
     }
 
     virtual ~sv_t() {}
@@ -147,7 +150,7 @@ struct duplication_t : sv_t {
     using sv_t::sv_t;
 
     std::string svtype() { return "DUP"; }
-    hts_pos_t svlen() { return end - start; }
+    hts_pos_t svlen() { return end - start + ins_seq.length(); }
 };
 
 struct insertion_t : sv_t {
