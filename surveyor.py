@@ -93,8 +93,8 @@ rand_pos_gen = RandomPositionGenerator(reference_fa, cmd_args.seed, cmd_args.sam
 random_positions = []
 n_rand_pos = int(rand_pos_gen.reference_len/1000)
 for i in range(1,n_rand_pos):
-    if i % 100000 == 0: print(i, "random positions generated.")
     random_positions.append(rand_pos_gen.next())
+print("%d random positions generated." % n_rand_pos)
 
 with open("%s/random_pos.txt" % cmd_args.workdir, "w") as random_pos_file:
     for random_pos in random_positions:
@@ -149,12 +149,17 @@ mkdir(insurveyor_workdir)
 
 def exec(cmd):
     print("Executing:", cmd)
-    os.system(cmd)
+    if os.system(cmd) != 0:
+        print("Error executing:", cmd)
+        exit(1)
 
 SURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
 exec(read_categorizer_cmd)
+
+clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
+exec(clip_consensus_builder_cmd)
 
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
@@ -192,9 +197,6 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdi
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
-
-clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-exec(clip_consensus_builder_cmd)
 
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", survindel2_workdir + "/workspace/sr_consensuses"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr_consensuses", survindel2_workdir + "/workspace/hsr_consensuses"))

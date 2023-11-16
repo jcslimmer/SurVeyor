@@ -214,6 +214,11 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	int gt[1];
 	gt[0] = bcf_gt_unphased(1);
 	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
+
+	if (!filters.empty()) {
+		const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
+		bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
+	}
 }
 
 void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, deletion_t* del, char* chr_seq, std::vector<std::string>& filters) {
@@ -222,53 +227,11 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, deletion_t* del, char* chr_seq, 
 
 void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, duplication_t* dup, char* chr_seq, std::vector<std::string>& filters) {
 	sv2bcf(hdr, bcf_entry, dup, chr_seq, filters);
-
-	// int median_depths[] = {dup->med_left_flanking_cov, dup->med_indel_left_cov, dup->med_indel_right_cov, dup->med_right_flanking_cov};
-	// bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
-	// bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
-	// int disc_pairs_surr[] = {dup->rc_cluster_region_disc_pairs, dup->lc_cluster_region_disc_pairs};
-	// bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-	// int max_mapq[] = {dup->lc_consensus ? (int) dup->lc_consensus->max_mapq : 0, dup->rc_consensus ? (int) dup->rc_consensus->max_mapq : 0};
-	// bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-	// if (dup->is_single_consensus()) {
-	// 	if (dup->lc_consensus) {
-	// 		int ext_1sr_reads[] = { dup->lc_consensus->left_ext_reads, dup->lc_consensus->right_ext_reads };
-	// 		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-	// 		int hq_ext_1sr_reads[] = { dup->lc_consensus->hq_left_ext_reads, dup->lc_consensus->hq_right_ext_reads };
-	// 		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	// 		bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->lc_consensus->consensus.c_str());
-	// 	} else if (dup->rc_consensus) {
-	// 		int ext_1sr_reads[] = { dup->rc_consensus->left_ext_reads, dup->rc_consensus->right_ext_reads };
-	// 		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-	// 		int hq_ext_1sr_reads[] = { dup->rc_consensus->hq_left_ext_reads, dup->rc_consensus->hq_right_ext_reads };
-	// 		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	// 		bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->rc_consensus->consensus.c_str());
-	// 	}
-	// }
-	// bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &dup->full_junction_score, 1);
-	// int split_junction_score[] = {dup->lh_best1_junction_score, dup->rh_best1_junction_score};
-	// bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", split_junction_score, 2);
-	// int split_junction_score2[] = {dup->lh_best2_junction_score, dup->rh_best2_junction_score};
-	// bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", split_junction_score2, 2);
-	// int split_junction_size[] = {dup->lh_junction_size, dup->rh_junction_size};
-	// bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", split_junction_size, 2);
-	// bcf_update_info_string(hdr, bcf_entry, "SOURCE", dup->source.c_str());
-
-	// if (!dup->ins_seq.empty()) {
-	// 	bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", dup->ins_seq.c_str());
-	// }
-	// bcf_update_info_string(hdr, bcf_entry, "EXTRA_INFO", dup->extra_info.c_str());
-
-	if (!filters.empty()) {
-		const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
-		bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
-	}
 }
 
 void ins2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, insertion_t* ins, char* chr_seq, std::vector<std::string>& filters) {
 	sv2bcf(hdr, bcf_entry, ins, chr_seq, filters);
 
-	// bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");
 	if (ins->ins_seq.find("-") != std::string::npos) {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 	}

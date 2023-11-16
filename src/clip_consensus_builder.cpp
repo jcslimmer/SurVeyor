@@ -244,10 +244,6 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
     std::string clip_fname = workspace + "/clipped/" + std::to_string(contig_id) + ".bam";
     if (!file_exists(clip_fname)) return;
 
-    mtx.lock();
-    std::cout << "Building SR consensuses for " << contig_name << std::endl;
-    mtx.unlock();
-
     open_samFile_t* bam_file = open_samFile(clip_fname, true);
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
     bam1_t* read = bam_init1();
@@ -330,10 +326,6 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
 
     std::string bam_fname = workdir + "/workspace/hsr/" + std::to_string(contig_id) + ".bam";
 	if (!file_exists(bam_fname)) return;
-
-    mtx.lock();
-    std::cout << "Building HSR consensuses for " << contig_name << std::endl;
-    mtx.unlock();
 
     open_samFile_t* bam_file = open_samFile(bam_fname, true);
 

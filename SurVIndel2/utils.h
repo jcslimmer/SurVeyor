@@ -87,55 +87,18 @@ struct stats_t {
 };
 
 struct indel_t {
-    std::string id;
-    hts_pos_t start, end;
-    hts_pos_t rc_anchor_start, lc_anchor_end; // start of the rc anchor and lc anchor end
-    int disc_pairs = 0, disc_pairs_trusted = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
+	sv_t* sv;
+    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
     consensus_t* lc_consensus = NULL,* rc_consensus = NULL;
-    double mm_rate = 0.0;
-    std::string source;
     int med_left_flanking_cov = 0, med_indel_left_cov = 0, med_indel_right_cov = 0, med_right_flanking_cov = 0;
     int med_left_cluster_cov = 0, med_right_cluster_cov = 0;
-    int full_junction_score = 0, lh_best1_junction_score = 0, rh_best1_junction_score = 0,
-    	lh_best2_junction_score = 0, rh_best2_junction_score = 0;
-    int lh_junction_size = 0, rh_junction_size = 0;
-    int overlap = 0, mismatches = 0;
     bool remapped = false;
     std::string rightmost_rightfacing_seq, leftmost_leftfacing_seq;
-    std::string ins_seq;
-	sv_t* sv;
 
     indel_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus)
-    : lc_consensus(lc_consensus), rc_consensus(rc_consensus) { 
-		set_sv(sv);
-	}
+    : sv(sv), lc_consensus(lc_consensus), rc_consensus(rc_consensus) { }
 
-	void set_sv(sv_t* sv) { 
-		this->sv = sv; 
-		this->start = sv->start;
-		this->end = sv->end;
-		this->ins_seq = sv->ins_seq;
-		this->rc_anchor_start = sv->left_anchor_aln->start;
-		this->lc_anchor_end = sv->right_anchor_aln->end;
-		this->source = sv->source;
-		this->overlap = sv->overlap;
-		this->mm_rate = sv->mismatch_rate;
-		if (sv->left_anchor_aln != NULL) {
-			this->lh_best1_junction_score = sv->left_anchor_aln->best_score;
-			this->lh_best2_junction_score = sv->left_anchor_aln->next_best_score;
-			this->lh_junction_size = sv->left_anchor_aln->seq_len;
-		}
-		if (sv->right_anchor_aln != NULL) {
-			this->rh_best1_junction_score = sv->right_anchor_aln->best_score;
-			this->rh_best2_junction_score = sv->right_anchor_aln->next_best_score;
-			this->rh_junction_size = sv->right_anchor_aln->seq_len;
-		}
-		if (sv->full_junction_aln != NULL) this->full_junction_score = sv->full_junction_aln->best_score;
-	}
-
-    virtual std::string indel_type() { return ""; };
-
-    bool is_single_consensus() { return (lc_consensus == NULL || rc_consensus == NULL) && lc_consensus != rc_consensus; }
+	bool is_single_consensus() { return (lc_consensus == NULL || rc_consensus == NULL) && lc_consensus != rc_consensus; }
     bool imprecise() { return lc_consensus == NULL && rc_consensus == NULL && remapped == false; }
 };
 
@@ -153,8 +116,6 @@ struct sv2_deletion_t : indel_t {
 
     sv2_deletion_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
         indel_t(sv, lc_consensus, rc_consensus) {}
-
-    std::string indel_type() override { return "DEL"; }
 };
 
 struct sv2_duplication_t : indel_t {
@@ -163,8 +124,6 @@ struct sv2_duplication_t : indel_t {
 
     sv2_duplication_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
 		indel_t(sv, lc_consensus, rc_consensus), original_start(sv->start), original_end(sv->end) {}
-
-    std::string indel_type() override { return "DUP"; }
 };
 
 indel_t* sv_to_indel(sv_t* sv, consensus_t* rc_consensus, consensus_t* lc_consensus) {
@@ -395,9 +354,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=1,Type=Integer,Description=\"Discordant pairs supporting the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
 
-//	const char* disc_pairs_trusted_tag = "##INFO=<ID=DISC_PAIRS_TRUSTED,Number=1,Type=Integer,Description=\"Discordant pairs likely to be aligned to the correct location.\">";
-//	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_trusted_tag, &len));
-
 	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=1,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
 
@@ -422,9 +378,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* hq_ext_1sr_reads_tag = "##INFO=<ID=HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a 1SR consensus to the left and to the right.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, hq_ext_1sr_reads_tag, &len));
 
-	const char* mmrate_pairs_tag = "##INFO=<ID=MM_RATE,Number=1,Type=Float,Description=\"Mismatch rate in consensus overlap.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mmrate_pairs_tag, &len));
-
 	const char* fullj_score_tag = "##INFO=<ID=FULL_JUNCTION_SCORE,Number=1,Type=Integer,Description=\"Full junction score.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_score_tag, &len));
 
@@ -446,24 +399,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));
 
-	// TODO: temporary
-	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
-
-	const char* mismatches_tag = "##INFO=<ID=MISMATCHES,Number=1,Type=Integer,Description=\"Mismatches.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatches_tag, &len));
-
 	const char* og_range_tag = "##INFO=<ID=ORIGINAL_RANGE,Number=1,Type=String,Description=\"Unadjusted imprecise range predicted by discordant pairs. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, og_range_tag, &len));
-
-	const char* sr_consensus_seq_tag = "##INFO=<ID=SR_CONSENSUS_SEQ,Number=1,Type=String,Description=\".\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_consensus_seq_tag, &len));
-
-	const char* rc_consensus_name = "##INFO=<ID=RC_CONSENSUS_NAME,Number=1,Type=String,Description=\".\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rc_consensus_name, &len));
-
-	const char* lc_consensus_name = "##INFO=<ID=LC_CONSENSUS_NAME,Number=1,Type=String,Description=\".\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lc_consensus_name, &len));
 
 	// add FORMAT tags
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
@@ -505,13 +442,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	return header;
 }
 
-void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
-	bcf_clear(bcf_entry);
-	// populate basic info
+void indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char* chr_seq, sv_t* sv, std::vector<std::string>& filters) {
 	bcf_entry->rid = bcf_hdr_name2id(hdr, contig_name.c_str());
-	bcf_entry->pos = del->start;
-	bcf_update_id(hdr, bcf_entry, del->id.c_str());
-	std::string alleles = std::string(1, chr_seq[del->start]) + ",<DEL>";
+	bcf_entry->pos = sv->start;
+	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
+	
+	std::string alleles = std::string(1, chr_seq[sv->start]) + ",<" + sv->svtype() + ">";
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	// add filters
@@ -521,13 +457,44 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	}
 
 	// add info
-	int int_conv; // current htslib does not support writing int64 yet
-
-	int_conv = del->end+1;
+	int int_conv; // using hts_pos_t + bcf_update_info_int64 throws [E::bcf_update_info] The type 257 not implemented yet
+	
+	int_conv = sv->end+1;
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
-	int_conv = del->sv->svlen();
+	int_conv = sv->svlen();
 	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
-	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "DEL");
+	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", sv->svtype().c_str());
+	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
+	if (!sv->ins_seq.empty()) {
+		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
+	}
+
+	int split_junction_score[] = {sv->left_anchor_aln->best_score, sv->right_anchor_aln->best_score};
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", split_junction_score, 2);
+	int split_junction_score2[] = {sv->left_anchor_aln->next_best_score, sv->right_anchor_aln->next_best_score};
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", split_junction_score2, 2);
+	int split_junction_size[] = {sv->left_anchor_aln->seq_len, sv->right_anchor_aln->seq_len};
+	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", split_junction_size, 2);
+	if (sv->full_junction_aln != NULL) {
+		bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
+	}
+
+	// add GT info
+	int gt[1];
+	gt[0] = bcf_gt_unphased(1);
+	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
+
+	const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
+	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
+}
+
+void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
+	bcf_clear(bcf_entry);
+
+	indel2bcf(hdr, bcf_entry, contig_name, chr_seq, del->sv, filters);
+	
+	int int_conv;
+
 	if (del->max_conf_size != sv2_deletion_t::SIZE_NOT_COMPUTED) {
 		bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
 	}
@@ -547,8 +514,7 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	if (del->disc_pairs > 0) {
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", &del->disc_pairs_maxmapq, 1);
 	}
-	if (del->source == "DP") {
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_TRUSTED", &del->disc_pairs_trusted, 1);
+	if (del->sv->source == "DP") {
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", &del->disc_pairs_high_mapq, 1);
 	}
 	int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
@@ -564,75 +530,25 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { del->lc_consensus->hq_left_ext_reads, del->lc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->lc_consensus->sequence.c_str());
 		} else if (del->rc_consensus) {
 			int ext_1sr_reads[] = { del->rc_consensus->left_ext_reads, del->rc_consensus->right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { del->rc_consensus->hq_left_ext_reads, del->rc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", del->rc_consensus->sequence.c_str());
 		}
-	}
-	bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &del->full_junction_score, 1);
-	int split_junction_score[] = {del->lh_best1_junction_score, del->rh_best1_junction_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", split_junction_score, 2);
-	int split_junction_score2[] = {del->lh_best2_junction_score, del->rh_best2_junction_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", split_junction_score2, 2);
-	int split_junction_size[] = {del->lh_junction_size, del->rh_junction_size};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", split_junction_size, 2);
-	float mm_rate = del->mm_rate;
-	bcf_update_info_float(hdr, bcf_entry, "MM_RATE", &mm_rate, 1);
-	bcf_update_info_string(hdr, bcf_entry, "SOURCE", del->source.c_str());
-	if (!del->ins_seq.empty()) {
-		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", del->ins_seq.c_str());
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
-
-	bcf_update_info_string(hdr, bcf_entry, "RC_CONSENSUS_NAME", del->rc_consensus ? del->rc_consensus->name().c_str() : ".");
-	bcf_update_info_string(hdr, bcf_entry, "LC_CONSENSUS_NAME", del->lc_consensus ? del->lc_consensus->name().c_str() : ".");
-
-	// add GT info
-	int gt[1];
-	gt[0] = bcf_gt_unphased(1);
-	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
-
-	const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
 }
 
 void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup, std::vector<std::string>& filters) {
 	bcf_clear(bcf_entry);
-	// populate basic info
-	bcf_entry->rid = bcf_hdr_name2id(hdr, contig_name.c_str());
-	bcf_entry->pos = dup->start;
-	bcf_update_id(hdr, bcf_entry, dup->id.c_str());
-	std::string alleles = std::string(1, chr_seq[dup->start]);
-	// if (dup->start == dup->end) {
-	// 	alleles += ",<INS>";
-	// } else {
-		alleles += ",<DUP>";
-	// }
-	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
-
-	// add filters
-	for (std::string& filter : filters) {
-		int filter_id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter.c_str());
-		bcf_add_filter(hdr, bcf_entry, filter_id);
-	}
+	
+	indel2bcf(hdr, bcf_entry, contig_name, chr_seq, dup->sv, filters);
 
 	// add info
-	int int_conv; // current htslib does not support writing int64 yet
+	int int_conv;
 
-	int_conv = dup->end+1;
-	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
-	int_conv = dup->sv->svlen();
-	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
-	// if (dup->start == dup->end) {
-	// 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");
-	// } else {
-		bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "DUP");
-	// }
 	int median_depths[] = {dup->med_left_flanking_cov, dup->med_indel_left_cov, dup->med_indel_right_cov, dup->med_right_flanking_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
@@ -648,35 +564,13 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { dup->lc_consensus->hq_left_ext_reads, dup->lc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->lc_consensus->sequence.c_str());
 		} else if (dup->rc_consensus) {
 			int ext_1sr_reads[] = { dup->rc_consensus->left_ext_reads, dup->rc_consensus->right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
 			int hq_ext_1sr_reads[] = { dup->rc_consensus->hq_left_ext_reads, dup->rc_consensus->hq_right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-			bcf_update_info_string(hdr, bcf_entry, "SR_CONSENSUS_SEQ", dup->rc_consensus->sequence.c_str());
 		}
 	}
-	bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &dup->full_junction_score, 1);
-	int split_junction_score[] = {dup->lh_best1_junction_score, dup->rh_best1_junction_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", split_junction_score, 2);
-	int split_junction_score2[] = {dup->lh_best2_junction_score, dup->rh_best2_junction_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", split_junction_score2, 2);
-	int split_junction_size[] = {dup->lh_junction_size, dup->rh_junction_size};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", split_junction_size, 2);
-	bcf_update_info_string(hdr, bcf_entry, "SOURCE", dup->source.c_str());
-
-	if (!dup->ins_seq.empty()) {
-		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", dup->ins_seq.c_str());
-	}
-
-	// add GT info
-	int gt[1];
-	gt[0] = bcf_gt_unphased(1);
-	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
-
-	const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
 }
 
 void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {

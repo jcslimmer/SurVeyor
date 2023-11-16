@@ -132,6 +132,16 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	}
 	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
 
+	// extend consensuses
+	for (consensus_t* consensus : consensuses_to_extend) {
+		if (!consensus->left_clipped)
+		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
+			consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		if (consensus->left_clipped)
+		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(config.max_is, config.read_len),
+			consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+	}
+
 	std::sort(rc_lc_scored_pairs.begin(), rc_lc_scored_pairs.end(),
 	            [](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {return ps1.score > ps2.score;});
 
@@ -142,10 +152,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		consensus_t* rc_consensus = rc_consensuses[ps.rc_idx];
 		consensus_t* lc_consensus = lc_consensuses[ps.lc_idx];
 
-		extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_consensus->left_ext_target_start(config.max_is, config.read_len), 
-			rc_consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
-		extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_consensus->right_ext_target_start(config.max_is, config.read_len),
-			lc_consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		// extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_consensus->left_ext_target_start(config.max_is, config.read_len), 
+		// 	rc_consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
+		// extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_consensus->right_ext_target_start(config.max_is, config.read_len),
+		// 	lc_consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
 
 		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
 		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
@@ -156,7 +166,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
 		indel_t* indel = sv_to_indel(sv, rc_consensus, lc_consensus);
-		if (indel->indel_type() == "DEL") {
+		if (indel->sv->svtype() == "DEL") {
 			contig_deletions.push_back((sv2_deletion_t*) indel);
 		} else {
 			contig_duplications.push_back((sv2_duplication_t*) indel);
@@ -171,10 +181,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
 		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
-
-	out_mtx.lock();
-	std::cout << "Dealing with unpaired consensuses in " << contig_name << ", " << start << " to " << end << std::endl;
-	out_mtx.unlock();
 
 	std::vector<sv2_deletion_t*> local_dels;
 	std::vector<sv2_duplication_t*> local_dups;
@@ -216,7 +222,7 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 			delete consensus;
 			continue;
 		}
-		if (smallest_indel->indel_type() == "DEL") {
+		if (smallest_indel->sv->svtype() == "DEL") {
 			local_dels.push_back((sv2_deletion_t*) smallest_indel);
 		} else {
 			local_dups.push_back((sv2_duplication_t*) smallest_indel);
@@ -341,10 +347,6 @@ void build_consensuses(int id, int contig_id, std::string contig_name, std::unor
     std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
     mtx.unlock();
 
-    mtx.lock();
-	std::cout << "Computing indels for " << contig_name << std::endl;
-	mtx.unlock();
-
 	build_clip_consensuses(id, contig_id, contig_name, deletions, duplications, *mateseqs_w_mapq);
 }
 
@@ -396,6 +398,8 @@ int main(int argc, char* argv[]) {
     if (config.log) flog.open(workdir + "/log");
     else flog.open("/dev/null");
 
+	std::cout << "Finding indels." << std::endl;
+
     ctpl::thread_pool thread_pool1(config.threads);
     std::vector<std::future<void> > futures;
 	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
@@ -416,6 +420,8 @@ int main(int argc, char* argv[]) {
         futures[i].get();
     }
     futures.clear();
+
+	std::cout << "Finding indels from unpaired consensuses." << std::endl;
 
     int block_size = 1000;
     ctpl::thread_pool thread_pool2(config.threads);
@@ -465,6 +471,8 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
+	std::cout << "Computing statistics for indels." << std::endl;
+
     ctpl::thread_pool thread_pool3(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
@@ -484,10 +492,10 @@ int main(int argc, char* argv[]) {
     	if (!deletions_by_chr.count(contig_name)) continue;
 		std::vector<sv2_deletion_t*>& dels = deletions_by_chr[contig_name];
 		std::sort(dels.begin(), dels.end(), [](sv2_deletion_t* del1, sv2_deletion_t* del2) {
-			return std::tie(del1->start, del1->end) < std::tie(del2->start, del2->end);
+			return std::tie(del1->sv->start, del1->sv->end) < std::tie(del2->sv->start, del2->sv->end);
 		});
         for (sv2_deletion_t* del : dels) {
-        	del->id = "DEL_SR_" + std::to_string(del_id++);
+        	del->sv->id = "DEL_SR_" + std::to_string(del_id++);
             std::vector<std::string> filters;
 
             if (-del->sv->svlen() < config.min_sv_size) {
@@ -496,9 +504,9 @@ int main(int argc, char* argv[]) {
             if (-del->sv->svlen() < config.max_is) {
             	if (-del->sv->svlen()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
             }
-            if (del->remap_boundary_lower > del->start) {
+            if (del->remap_boundary_lower > del->sv->start) {
                 filters.push_back("REMAP_BOUNDARY_FILTER");
-            } else if (del->remap_boundary_upper < del->end) {
+            } else if (del->remap_boundary_upper < del->sv->end) {
                 filters.push_back("REMAP_BOUNDARY_FILTER");
             }
             if (-del->sv->svlen() >= config.min_size_for_depth_filtering &&
@@ -513,16 +521,16 @@ int main(int argc, char* argv[]) {
             if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
                 filters.push_back("ANOMALOUS_DEL_DEPTH");
             }
-            if (del->full_junction_score && del->lh_best1_junction_score+del->rh_best1_junction_score-del->full_junction_score < config.min_score_diff) {
+            if (del->sv->full_junction_aln != NULL && del->sv->left_anchor_aln->best_score+del->sv->right_anchor_aln->best_score-del->sv->full_junction_aln->best_score < config.min_score_diff) {
             	filters.push_back("WEAK_SPLIT_ALIGNMENT");
             }
             if ((del->lc_consensus == NULL || del->lc_consensus->max_mapq < config.high_confidence_mapq) &&
             	(del->rc_consensus == NULL || del->rc_consensus->max_mapq < config.high_confidence_mapq)) {
 				filters.push_back("LOW_MAPQ_CONSENSUSES");
             }
-            if (del->source == "1SR_RC" || del->source == "1HSR_RC") {
+            if (del->sv->source == "1SR_RC" || del->sv->source == "1HSR_RC") {
             	if (del->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-            } else if (del->source == "1SR_LC" || del->source == "1HSR_LC") {
+            } else if (del->sv->source == "1SR_LC" || del->sv->source == "1HSR_LC") {
             	if (del->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
             }
 
@@ -543,10 +551,10 @@ int main(int argc, char* argv[]) {
     	if (!duplications_by_chr.count(contig_name)) continue;
     	std::vector<sv2_duplication_t*>& dups = duplications_by_chr[contig_name];
     	std::sort(dups.begin(), dups.end(), [](sv2_duplication_t* dup1, sv2_duplication_t* dup2) {
-    		return std::tie(dup1->start, dup1->end) < std::tie(dup2->start, dup2->end);
+    		return std::tie(dup1->sv->start, dup1->sv->end) < std::tie(dup2->sv->start, dup2->sv->end);
     	});
         for (sv2_duplication_t* dup : dups) {
-        	dup->id = "DUP_SR_" + std::to_string(dup_id++);
+        	dup->sv->id = "DUP_SR_" + std::to_string(dup_id++);
             std::vector<std::string> filters;
 
             if (dup->sv->svlen() >= config.min_size_for_depth_filtering &&
@@ -559,7 +567,7 @@ int main(int argc, char* argv[]) {
                 dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
                 filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
-            if (dup->full_junction_score && dup->lh_best1_junction_score+dup->rh_best1_junction_score-dup->full_junction_score < config.min_score_diff) {
+            if (dup->sv->full_junction_aln != NULL && dup->sv->left_anchor_aln->best_score+dup->sv->right_anchor_aln->best_score-dup->sv->full_junction_aln->best_score < config.min_score_diff) {
 				filters.push_back("WEAK_SPLIT_ALIGNMENT");
 			}
             if ((dup->lc_consensus == NULL || dup->lc_consensus->max_mapq < config.high_confidence_mapq) &&
@@ -569,9 +577,9 @@ int main(int argc, char* argv[]) {
             if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
                 filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
-            if (dup->source == "1SR_RC" || dup->source == "1HSR_RC") {
+            if (dup->sv->source == "1SR_RC" || dup->sv->source == "1HSR_RC") {
 				if (dup->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-            } else if (dup->source == "1SR_LC" || dup->source == "1HSR_LC") {
+            } else if (dup->sv->source == "1SR_LC" || dup->sv->source == "1HSR_LC") {
             	if (dup->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
 			}
 

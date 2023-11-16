@@ -25,9 +25,6 @@ std::vector<sv_t*> svs;
 int MAX_BP_DIST = 10;
 
 void call_insertions(int id, int contig_id, std::string contig_name) {
-    mtx.lock();
-    std::cout << "Calling insertions for " << contig_name << std::endl;
-    mtx.unlock();
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
 

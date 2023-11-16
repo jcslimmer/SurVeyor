@@ -1166,10 +1166,6 @@ void remap(int id, int contig_id) {
     std::string l_dc_fname = workdir + "/workspace/L/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
 
-    mtx.lock();
-    std::cout << "Remapping DC for " << contig_map.get_name(contig_id) << std::endl;
-    mtx.unlock();
-
     std::unordered_map<std::string, std::string> mateseqs;
     std::unordered_map<std::string, std::string> matequals;
     std::ifstream mateseqs_fin(workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt");
