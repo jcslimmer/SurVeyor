@@ -1,4 +1,4 @@
-import sys, os, argparse, pysam, pyfaidx
+import sys, os, argparse, pysam, pyfaidx, timeit
 from random_pos_generator import RandomPositionGenerator
 import numpy as np
 
@@ -148,10 +148,14 @@ insurveyor_workdir = cmd_args.workdir + "/insurveyor"
 mkdir(insurveyor_workdir)
 
 def exec(cmd):
+    start_time = timeit.default_timer()
     print("Executing:", cmd)
     if os.system(cmd) != 0:
         print("Error executing:", cmd)
         exit(1)
+    elapsed = timeit.default_timer() - start_time
+    print(cmd, "was run in %.2f seconds" % elapsed)
+    
 
 SURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -193,14 +197,15 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_wor
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sc_mateseqs", survindel2_workdir + "/workspace/sc_mateseqs"))
 
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", survindel2_workdir + "/workspace/sr_consensuses"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr_consensuses", survindel2_workdir + "/workspace/hsr_consensuses"))
+exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", insurveyor_workdir + "/workspace/sr_consensuses"))
+
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdir + "/workspace/clipped"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", survindel2_workdir + "/workspace/sr_consensuses"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr_consensuses", survindel2_workdir + "/workspace/hsr_consensuses"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", insurveyor_workdir + "/workspace/sr_consensuses"))
 
 if cmd_args.samplename:
     sample_name = cmd_args.samplename

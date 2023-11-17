@@ -301,7 +301,7 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 	return best_alns;
 }
 
-sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
+std::vector<sv_t*> detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
                     hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
     
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
@@ -343,7 +343,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
 	free(prefix_scores);
 	free(suffix_scores);
 
-    if (max_score == 0) return NULL;
+    if (max_score == 0) return std::vector<sv_t*>();
 
     std::string left_part = junction_seq.substr(0, best_i);
     std::string middle_part = junction_seq.substr(best_i, best_j-best_i);
@@ -394,7 +394,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
             (lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
             !is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
             duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
-            return sv;
+            return std::vector<sv_t*>({sv});
         }
 
         // otherwise, it's an insertion
@@ -424,7 +424,7 @@ sv_t* detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::s
     } else { // length of ALT > REF, insertion
         sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
     }
-    return sv;
+    return std::vector<sv_t*>({sv});
 }
 
 sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
@@ -497,11 +497,12 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 		return NULL;
 	}
 
-    sv_t* sv = detect_sv_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
-    if (sv == NULL) {
+    std::vector<sv_t*> svs = detect_sv_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
+    if (svs.empty()) {
 		return NULL;
 	}
 
+	sv_t* sv = svs[0];
 	if (rc_consensus != NULL) {
    		sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
 	}

@@ -50,6 +50,7 @@ void release_bam_reader(open_samFile_t* reader) {
 
 std::unordered_map<std::string, std::vector<sv2_deletion_t*> > deletions_by_chr;
 std::unordered_map<std::string, std::vector<sv2_duplication_t*> > duplications_by_chr;
+std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 std::mutex mtx, indel_out_mtx, up_consensus_mtx;
 
@@ -60,6 +61,34 @@ struct pair_w_score_t {
 
     pair_w_score_t(int rc_idx, int lc_idx, int score) : rc_idx(rc_idx), lc_idx(lc_idx), score(score) {}
 };
+
+void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::string contig_name,
+	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq, int start_idx, int end_idx) {
+
+	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start_idx, consensuses->begin()+end_idx);
+
+	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
+	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), *mateseqs_w_mapq, config, bam_file);
+
+	std::vector<Interval<ext_read_t*>> it_ivals;
+	for (ext_read_t* ext_read : candidate_reads_for_extension) {
+		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
+		it_ivals.push_back(it_ival);
+	}
+	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
+	for (consensus_t* consensus : consensuses_to_consider) {
+		if (consensus->left_clipped) {
+			extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
+				consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, *mateseqs_w_mapq);
+		} else {
+			extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
+				consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, *mateseqs_w_mapq);
+		}
+	}
+	for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
+
+	close_samFile(bam_file);
+}
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
 		std::vector<sv2_deletion_t*>& contig_deletions, std::vector<sv2_duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
@@ -74,7 +103,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	IntervalTree<int> consensus_ivtree = IntervalTree<int>(consensus_iv);
 
 	std::vector<pair_w_score_t> rc_lc_scored_pairs;
-	std::vector<consensus_t*> consensuses_to_extend;
 	for (int i = 0; i < rc_consensuses.size(); i++) {
 		consensus_t* rc_anchor = rc_consensuses[i];
 
@@ -101,8 +129,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_anchor->sequence, lc_anchor->sequence, 1, -4, max_mm_rate, min_overlap);
 			if (spa.overlap > 0 && !is_homopolymer(lc_anchor->sequence.c_str(), spa.overlap)) {
 				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
-				consensuses_to_extend.push_back(lc_anchor);
-				consensuses_to_extend.push_back(rc_anchor);
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
 				// TODO: investigate if we can use base qualities for this
 				std::string rc_consensus_trim = rc_anchor->sequence.substr(0, rc_anchor->sequence.length()-rc_anchor->lowq_clip_portion);
@@ -111,35 +137,9 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, max_mm_rate, min_overlap);
 				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
 					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
-					consensuses_to_extend.push_back(lc_anchor);
-					consensuses_to_extend.push_back(rc_anchor);
 				}
 			}
 		}
-	}
-
-	std::vector<ext_read_t*> candidate_reads_for_extension;
-	if (!consensuses_to_extend.empty()) {
-		open_samFile_t* bam_file = open_samFile(complete_bam_fname);
-		candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_extend, contig_name, chr_seqs.get_len(contig_name), mateseqs_w_mapq, config, bam_file);
-		close_samFile(bam_file);
-	}
-
-	std::vector<Interval<ext_read_t*>> it_ivals;
-	for (ext_read_t* ext_read : candidate_reads_for_extension) {
-		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-		it_ivals.push_back(it_ival);
-	}
-	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
-
-	// extend consensuses
-	for (consensus_t* consensus : consensuses_to_extend) {
-		if (!consensus->left_clipped)
-		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(config.max_is, config.read_len), 
-			consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
-		if (consensus->left_clipped)
-		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(config.max_is, config.read_len),
-			consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
 	}
 
 	std::sort(rc_lc_scored_pairs.begin(), rc_lc_scored_pairs.end(),
@@ -151,11 +151,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		consensus_t* rc_consensus = rc_consensuses[ps.rc_idx];
 		consensus_t* lc_consensus = lc_consensuses[ps.lc_idx];
-
-		// extend_consensus_to_left(rc_consensus, candidate_reads_for_extension_itree, rc_consensus->left_ext_target_start(config.max_is, config.read_len), 
-		// 	rc_consensus->left_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
-		// extend_consensus_to_right(lc_consensus, candidate_reads_for_extension_itree, lc_consensus->right_ext_target_start(config.max_is, config.read_len),
-		// 	lc_consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, chr_seqs.get_len(contig_name), config, mateseqs_w_mapq);
 
 		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
 		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
@@ -175,8 +170,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
 	remove_marked_consensuses(lc_consensuses, used_consensus_lc);
-
-	for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 }
 
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
@@ -258,22 +251,20 @@ void remove_hsr_overlapping_clipped(std::vector<consensus_t*>& hsr_consensuses, 
 	kept_consensus.swap(hsr_consensuses);
 }
 
-void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<sv2_deletion_t*>& deletions,
-                            std::vector<sv2_duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
-
-	std::vector<sv2_deletion_t*> contig_deletions;
-	std::vector<sv2_duplication_t*> contig_duplications;
-
-	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
-	StripedSmithWaterman::Filter filter;
-
+void read_consensuses(int id, int contig_id, std::string contig_name) {
 	std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
     int max_mapq, lowq_clip_portion;
     hts_pos_t remap_boundary;
-	
-	std::vector<consensus_t*> rc_sr_consensuses, lc_sr_consensuses;
+
+	mtx.lock();
+	std::vector<consensus_t*>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
+	mtx.unlock();
+
 	std::string sr_consensuses_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
 	if (file_exists(sr_consensuses_fname)) {
 		std::ifstream sr_consensuses_fin(sr_consensuses_fname);
@@ -289,9 +280,8 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 		}
 	}
 
-    std::vector<consensus_t*> rc_hsr_consensuses, lc_hsr_consensuses;
 	std::string hsr_consensuses_fname = workdir + "/workspace/hsr_consensuses/" + std::to_string(contig_id) + ".txt";
-	if (file_exists(sr_consensuses_fname)) {
+	if (file_exists(hsr_consensuses_fname)) {
 		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
 		while (hsr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
 			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
@@ -318,9 +308,30 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
     std::sort(rc_sr_consensuses.begin(), rc_sr_consensuses.end(), consensus_cmp);
     std::sort(lc_sr_consensuses.begin(), lc_sr_consensuses.end(), consensus_cmp);
 
-    // build HSR consensuses
-    remove_hsr_overlapping_clipped(rc_hsr_consensuses, rc_sr_consensuses);
+	remove_hsr_overlapping_clipped(rc_hsr_consensuses, rc_sr_consensuses);
     remove_hsr_overlapping_clipped(lc_hsr_consensuses, lc_sr_consensuses);
+}
+
+void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<sv2_deletion_t*>& deletions,
+                            std::vector<sv2_duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+
+	std::vector<sv2_deletion_t*> contig_deletions;
+	std::vector<sv2_duplication_t*> contig_duplications;
+
+	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
+	StripedSmithWaterman::Filter filter;
+
+	mtx.lock();
+	std::vector<consensus_t*>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
+	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
+	mtx.unlock();
+
+	// extend_consensuses(0, &rc_sr_consensuses, contig_name, &mateseqs_w_mapq, 0, rc_sr_consensuses.size());
+	// extend_consensuses(0, &lc_sr_consensuses, contig_name, &mateseqs_w_mapq, 0, lc_sr_consensuses.size());
+	// extend_consensuses(0, &rc_hsr_consensuses, contig_name, &mateseqs_w_mapq, 0, rc_hsr_consensuses.size());
+	// extend_consensuses(0, &lc_hsr_consensuses, contig_name, &mateseqs_w_mapq, 0, lc_hsr_consensuses.size());
 
 	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
 	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
@@ -398,12 +409,26 @@ int main(int argc, char* argv[]) {
     if (config.log) flog.open(workdir + "/log");
     else flog.open("/dev/null");
 
-	std::cout << "Finding indels." << std::endl;
-
-    ctpl::thread_pool thread_pool1(config.threads);
+	ctpl::thread_pool read_consensuses_thread_pool(config.threads);
     std::vector<std::future<void> > futures;
+	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+		std::string contig_name = contig_map.get_name(contig_id);
+		std::future<void> future = read_consensuses_thread_pool.push(read_consensuses, contig_id, contig_name);
+        futures.push_back(std::move(future));
+	}
+	read_consensuses_thread_pool.stop(true);
+    for (size_t i = 0; i < futures.size(); i++) {
+        futures[i].get();
+    }
+	futures.clear();
+	
+	std::cout << "Extending consensuses." << std::endl;
+	auto start_time = std::chrono::high_resolution_clock::now();
+
+	int block_size = 1000;
 	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
-    for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+	ctpl::thread_pool extend_consensuses_thread_pool(config.threads);
+	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
 		std::ifstream fin(fname);
 		std::string qname, read_seq, qual; int mapq;
@@ -411,6 +436,47 @@ int main(int argc, char* argv[]) {
 			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
 		}
 
+		std::future<void> future;
+		std::string contig_name = contig_map.get_name(contig_id);
+		std::vector<consensus_t*>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
+		for (int i = 0; i < rc_sr_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) rc_sr_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_sr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			futures.push_back(std::move(future));
+		}
+		std::vector<consensus_t*>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
+		for (int i = 0; i < lc_sr_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) lc_sr_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_sr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			futures.push_back(std::move(future));
+		}
+		std::vector<consensus_t*>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
+		for (int i = 0; i < rc_hsr_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) rc_hsr_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_hsr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			futures.push_back(std::move(future));
+		}
+		std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
+		for (int i = 0; i < lc_hsr_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) lc_hsr_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_hsr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			futures.push_back(std::move(future));
+		}
+	}
+	extend_consensuses_thread_pool.stop(true);
+	for (size_t i = 0; i < futures.size(); i++) {
+		futures[i].get();
+	}
+	futures.clear();
+
+	auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
+	std::cout << "Consensuses extended in " << elapsed_time << " seconds" << std::endl;
+
+	std::cout << "Finding indels." << std::endl;
+	start_time = std::chrono::high_resolution_clock::now();
+
+    ctpl::thread_pool thread_pool1(config.threads);
+    for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
         std::future<void> future = thread_pool1.push(build_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
         futures.push_back(std::move(future));
@@ -421,9 +487,12 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
-	std::cout << "Finding indels from unpaired consensuses." << std::endl;
+	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
+	std::cout << "Indels found in " << elapsed_time << " seconds" << std::endl;
 
-    int block_size = 1000;
+	std::cout << "Finding indels from unpaired consensuses." << std::endl;
+	start_time = std::chrono::high_resolution_clock::now();
+
     ctpl::thread_pool thread_pool2(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
@@ -442,6 +511,9 @@ int main(int argc, char* argv[]) {
 		futures[i].get();
 	}
 	futures.clear();
+
+	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
+	std::cout << "Indels found from unpaired consensuses in " << elapsed_time << " seconds" << std::endl;
 
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
@@ -472,6 +544,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	std::cout << "Computing statistics for indels." << std::endl;
+	start_time = std::chrono::high_resolution_clock::now();
 
     ctpl::thread_pool thread_pool3(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
@@ -484,6 +557,9 @@ int main(int argc, char* argv[]) {
         futures[i].get();
     }
     futures.clear();
+
+	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
+	std::cout << "Statistics computed in " << elapsed_time << " seconds" << std::endl;
 
     std::unordered_map<std::string, std::vector<bcf1_t*>> bcf_entries;
     bcf1_t* bcf_entry = bcf_init();

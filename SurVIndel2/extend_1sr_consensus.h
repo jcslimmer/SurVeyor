@@ -346,6 +346,9 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 
 std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, config_t config, open_samFile_t* bam_file) {
+
+	if (consensuses.empty()) return std::vector<ext_read_t*>();
+	
 	std::vector<hts_pair_pos_t> target_ivals;
 	for (consensus_t* consensus : consensuses) {
 		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config.max_is, config.read_len);
