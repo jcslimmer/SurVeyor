@@ -154,20 +154,22 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		int min_overlap = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 50 : std::min(rc_consensus->clip_len, lc_consensus->clip_len)+config.min_clip_len;
 		double max_mm_rate = (lc_consensus->is_hsr && rc_consensus->is_hsr) ? 0 : config.max_seq_error;
-		sv_t* sv = detect_sv(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
+		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
 			aligner, min_overlap, config.min_clip_len, max_mm_rate);
-		if (sv == NULL) continue;
+		if (svs.empty()) continue;
 
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
-		indel_t* indel = sv_to_indel(sv, rc_consensus, lc_consensus);
-		if (indel->sv->svtype() == "DEL") {
-			contig_deletions.push_back((sv2_deletion_t*) indel);
-		} else {
-			contig_duplications.push_back((sv2_duplication_t*) indel);
+		for (sv_t* sv : svs) {
+			indel_t* indel = sv_to_indel(sv, rc_consensus, lc_consensus);
+			if (indel->sv->svtype() == "DEL") {
+				contig_deletions.push_back((sv2_deletion_t*) indel);
+			} else {
+				contig_duplications.push_back((sv2_duplication_t*) indel);
+			}
 		}
 	}
-
+	
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
 	remove_marked_consensuses(lc_consensuses, used_consensus_lc);
 }
@@ -202,23 +204,30 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(config.max_is, config.read_len), 
 			consensus->right_ext_target_end(config.max_is, config.read_len), contig_name, contig_len, config, *mateseqs_w_mapq);
 
-		indel_t* smallest_indel = NULL;
+		std::vector<indel_t*> indels;
 		if (!consensus->left_clipped) {
-			sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
-			smallest_indel = sv_to_indel(sv, consensus, NULL);
+			std::vector<sv_t*> svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
+			for (sv_t* sv : svs) {
+				indels.push_back(sv_to_indel(sv, consensus, NULL));
+			}
 		} else if (consensus->left_clipped) {
-			sv_t* sv = detect_sv(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
-			smallest_indel = sv_to_indel(sv, NULL, consensus);
+			std::vector<sv_t*> svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
+			for (sv_t* sv : svs) {
+				indels.push_back(sv_to_indel(sv, NULL, consensus));
+			}
 		}
 
-		if (smallest_indel == NULL) {
+		if (indels.empty()) {
 			delete consensus;
 			continue;
 		}
-		if (smallest_indel->sv->svtype() == "DEL") {
-			local_dels.push_back((sv2_deletion_t*) smallest_indel);
-		} else {
-			local_dups.push_back((sv2_duplication_t*) smallest_indel);
+
+		for (indel_t* indel : indels) {
+			if (indel->sv->svtype() == "DEL") {
+				local_dels.push_back((sv2_deletion_t*) indel);
+			} else {
+				local_dups.push_back((sv2_duplication_t*) indel);
+			}
 		}
 	}
 	close_samFile(bam_file);
@@ -327,11 +336,6 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 	std::vector<consensus_t*>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
 	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
-
-	// extend_consensuses(0, &rc_sr_consensuses, contig_name, &mateseqs_w_mapq, 0, rc_sr_consensuses.size());
-	// extend_consensuses(0, &lc_sr_consensuses, contig_name, &mateseqs_w_mapq, 0, lc_sr_consensuses.size());
-	// extend_consensuses(0, &rc_hsr_consensuses, contig_name, &mateseqs_w_mapq, 0, rc_hsr_consensuses.size());
-	// extend_consensuses(0, &lc_hsr_consensuses, contig_name, &mateseqs_w_mapq, 0, lc_hsr_consensuses.size());
 
 	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
 	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
@@ -616,8 +620,6 @@ int main(int argc, char* argv[]) {
 
             del2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
             bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
-            delete del->rc_consensus;
-            delete del->lc_consensus;
             delete del;
         }
     }
@@ -665,8 +667,6 @@ int main(int argc, char* argv[]) {
 
             dup2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
             bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
-            delete dup->rc_consensus;
-            delete dup->lc_consensus;
             delete dup;
         }
     }
@@ -679,6 +679,8 @@ int main(int argc, char* argv[]) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
 		}
+	
+		for (consensus_t* consensus : unpaired_consensuses_by_chr[contig_name]) delete consensus;
     }
 
     chr_seqs.clear();

@@ -301,7 +301,46 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 	return best_alns;
 }
 
-std::vector<sv_t*> detect_sv_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
+std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
+	std::string junction_seq, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {
+	std::vector<sv_t*> svs;
+    hts_pos_t current_pos = ref_start + aln.ref_begin;
+	hts_pos_t junction_pos = 0;
+
+	for (int i = 0; i < aln.cigar.size(); i++) {
+		uint32_t c = aln.cigar[i];
+        int op_length = cigar_int_to_len(c);
+        char op = cigar_int_to_op(c);
+
+		hts_pos_t start = current_pos-1, end = (op == 'D') ? current_pos+op_length-1 : current_pos;
+		std::string ins_seq = (op == 'I') ? junction_seq.substr(junction_pos, op_length) : "";
+		sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
+		sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
+		if (op == 'D') {
+			sv_t* sv = new deletion_t(contig_name, start, end, "", left_part_anchor_aln, right_part_anchor_aln, NULL);
+			svs.push_back(sv);
+		} else if (op == 'I') {
+			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, left_part_anchor_aln, right_part_anchor_aln, NULL);
+			svs.push_back(sv);
+		}
+
+        if (op != 'I' && op != 'S') {
+            current_pos += op_length;
+        }
+		if (op != 'D') {
+			junction_pos += op_length;
+		}
+    }
+
+	return svs;
+}
+
+int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
+    int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
+    return std::max(int64_t(0), overlap);
+}
+
+std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
                     hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
     
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
@@ -418,18 +457,37 @@ std::vector<sv_t*> detect_sv_from_junction(std::string& contig_name, char* conti
         }
     }
 
-    sv_t* sv = NULL;
+    std::vector<sv_t*> svs;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-        sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+        svs.push_back(new deletion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
     } else { // length of ALT > REF, insertion
-        sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+        svs.push_back(new insertion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
     }
-    return std::vector<sv_t*>({sv});
+
+	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
+	hts_pos_t forbidden_zone_end = std::max(left_anchor_start, right_anchor_end);
+	std::vector<sv_t*> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part);
+	for (sv_t* sv : extra_svs) {
+		if (overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
+			delete sv;
+		} else {
+			svs.push_back(sv);
+		}
+	}
+	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part);
+	for (sv_t* sv : extra_svs) {
+		if (overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
+			delete sv;
+		} else {
+			svs.push_back(sv);
+		}
+	}
+    return svs;
 }
 
-sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
-				consensus_t* rc_consensus, consensus_t* lc_consensus,
-				StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
+std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
+					consensus_t* rc_consensus, consensus_t* lc_consensus,
+					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
 
 	std::string consensus_junction_seq;
 	hts_pos_t ref_remap_lh_start = 0, ref_remap_lh_end = 0, ref_remap_rh_start = 0, ref_remap_rh_end = 0;
@@ -445,7 +503,7 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_clip_portion);
 			spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
 			if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
-				return NULL;
+				return std::vector<sv_t*>();
 			}
 		}
 
@@ -494,47 +552,44 @@ sv_t* detect_sv(std::string& contig_name, char* contig_seq, hts_pos_t contig_len
 		ref_remap_rh_start = std::max(hts_pos_t(0), lc_consensus->start - (int) lc_consensus->sequence.length());
 		ref_remap_rh_end = std::min(lc_consensus->end + (int) lc_consensus->sequence.length(), contig_len);
 	} else {
-		return NULL;
+		return std::vector<sv_t*>();
 	}
 
-    std::vector<sv_t*> svs = detect_sv_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
-    if (svs.empty()) {
-		return NULL;
-	}
-
-	sv_t* sv = svs[0];
-	if (rc_consensus != NULL) {
-   		sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
-	}
-	if (lc_consensus != NULL) {
-    	sv->lc_fwd_reads = lc_consensus->fwd_clipped, sv->lc_rev_reads = lc_consensus->rev_clipped;
-	}
-    sv->overlap = overlap;
-	sv->mismatch_rate = mismatch_rate;
-
-	if (rc_consensus != NULL && lc_consensus == NULL) {
-		if (rc_consensus->is_hsr) {
-			sv->source = "1HSR_RC";
-		} else {
-			sv->source = "1SR_RC";
+    std::vector<sv_t*> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
+	for (sv_t* sv : svs) {
+		if (rc_consensus != NULL) {
+			sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
 		}
-	} else if (rc_consensus == NULL && lc_consensus != NULL) {
-		if (lc_consensus->is_hsr) {
-			sv->source = "1HSR_LC";
-		} else {
-			sv->source = "1SR_LC";
+		if (lc_consensus != NULL) {
+			sv->lc_fwd_reads = lc_consensus->fwd_clipped, sv->lc_rev_reads = lc_consensus->rev_clipped;
 		}
-	} else if (!rc_consensus->is_hsr && !lc_consensus->is_hsr) {
-		sv->source = "2SR";
-	} else if (rc_consensus->is_hsr && lc_consensus->is_hsr) {
-		sv->source = "2HSR";
-	} else if (!rc_consensus->is_hsr && lc_consensus->is_hsr) {
-		sv->source = "SR-HSR";
-	} else if (rc_consensus->is_hsr && !lc_consensus->is_hsr) {
-		sv->source = "HSR-SR";
+		sv->overlap = overlap;
+		sv->mismatch_rate = mismatch_rate;
+
+		if (rc_consensus != NULL && lc_consensus == NULL) {
+			if (rc_consensus->is_hsr) {
+				sv->source = "1HSR_RC";
+			} else {
+				sv->source = "1SR_RC";
+			}
+		} else if (rc_consensus == NULL && lc_consensus != NULL) {
+			if (lc_consensus->is_hsr) {
+				sv->source = "1HSR_LC";
+			} else {
+				sv->source = "1SR_LC";
+			}
+		} else if (!rc_consensus->is_hsr && !lc_consensus->is_hsr) {
+			sv->source = "2SR";
+		} else if (rc_consensus->is_hsr && lc_consensus->is_hsr) {
+			sv->source = "2HSR";
+		} else if (!rc_consensus->is_hsr && lc_consensus->is_hsr) {
+			sv->source = "SR-HSR";
+		} else if (rc_consensus->is_hsr && !lc_consensus->is_hsr) {
+			sv->source = "HSR-SR";
+		}
 	}
 
-    return sv;
+    return svs;
 }
 
 #endif // SW_UTILS_H

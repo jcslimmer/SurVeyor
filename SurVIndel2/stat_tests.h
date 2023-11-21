@@ -57,8 +57,8 @@ std::vector<read_w_cached_info_t*> cleanup_reads(std::vector<read_w_cached_info_
         int rs_bin = rs_in_region/bin_size, re_bin = re_in_region/bin_size;
         int best_overlap = 0, best_bin;
         for (int i = rs_bin; i <= re_bin && i < n_bins; i++) {
-            int bin_overlap = overlap(rs_in_region, re_in_region, i*bin_size,
-                                      std::min(hts_pos_t(i+1)*bin_size, region_len));
+            int bin_overlap = sv2_overlap(rs_in_region, re_in_region, i*bin_size,
+                                      	std::min(hts_pos_t(i+1)*bin_size, region_len));
             if (bin_overlap > best_overlap) {
                 best_overlap = bin_overlap;
                 best_bin = i;
@@ -335,10 +335,10 @@ void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<sv2_duplica
 		for (read_w_cached_info_t* rci : clean_reads[idx]) {
 			bam1_t* read = rci->read;
 			hts_pos_t rs = read->core.pos, re = bam_endpos(read);
-			bool overlaps_lf = overlap(rs, re, left_flanking_start, left_flanking_end) > 0;
-			bool overlaps_ldup = overlap(rs, re, dup_left_start, dup_left_end) > 0;
-			bool overlaps_rdup = overlap(rs, re, dup_right_start, dup_right_end) > 0;
-			bool overlaps_rf = overlap(rs, re, right_flanking_start, right_flanking_end) > 0;
+			bool overlaps_lf = sv2_overlap(rs, re, left_flanking_start, left_flanking_end) > 0;
+			bool overlaps_ldup = sv2_overlap(rs, re, dup_left_start, dup_left_end) > 0;
+			bool overlaps_rdup = sv2_overlap(rs, re, dup_right_start, dup_right_end) > 0;
+			bool overlaps_rf = sv2_overlap(rs, re, right_flanking_start, right_flanking_end) > 0;
 			if (overlaps_lf || overlaps_ldup || overlaps_rdup || overlaps_rf) {
 				if (overlaps_lf) {
 					dups_lf_reads.push_back(rci);
@@ -443,7 +443,7 @@ void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, 
 
         auto& curr_region = merged_regions_of_interest[curr_pos];
 
-        if (overlap(curr_region.start, curr_region.end, rs, re)) {
+        if (sv2_overlap(curr_region.start, curr_region.end, rs, re)) {
 			int ov_start = std::max(0, int(rs-curr_region.start));
 			int ov_end = std::min(int(curr_region.depths.size()), int(re-curr_region.start));
 			for (int i = ov_start; i < ov_end; i++) {
@@ -453,7 +453,7 @@ void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, 
 
         if (read->core.qual < 20) continue;
 
-        if (overlap(curr_region.start, curr_region.end, rs, re)) {
+        if (sv2_overlap(curr_region.start, curr_region.end, rs, re)) {
         	int ov_start = std::max(0, int(rs-curr_region.start));
         	int ov_end = std::min(int(curr_region.depths.size()), int(re-curr_region.start));
         	for (int i = ov_start; i < ov_end; i++) {
