@@ -17,7 +17,7 @@ std::mutex mtx;
 
 config_t config;
 stats_t stats;
-chr_seqs_map_t chr_seqs;
+sv2_chr_seqs_map_t chr_seqs;
 std::string reference_fname;
 
 bcf_hdr_t* dp_vcf_header;
@@ -108,7 +108,7 @@ struct cc_pair {
 	bool compatible() {
 //		if (c1->la_end_clipped && c2->la_end > c1->la_end+config.min_clip_len) return false;
 //		if (c2->la_end_clipped && c1->la_end > c2->la_end+config.min_clip_len) return false;
-		return dist <= config.max_is;
+		return dist <= stats.max_is;
 	}
 };
 bool operator < (const cc_pair& cc1, const cc_pair& cc2) { return cc1.dist > cc2.dist; }
@@ -133,7 +133,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters) {
 
 		std::vector<cc_pair> ccps;
 		for (int j = i+1; j < clusters.size(); j++) {
-			if (clusters[j]->la_start-clusters[i]->la_start > config.max_is || ccps.size() > max_cluster_size) break;
+			if (clusters[j]->la_start-clusters[i]->la_start > stats.max_is || ccps.size() > max_cluster_size) break;
 			cc_pair ccp = cc_pair(clusters[i], clusters[j]);
 			if (ccp.compatible()) ccps.push_back(ccp);
 		}
@@ -163,7 +163,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters) {
 
 		cluster_t* merged = merge(ccp.c1, ccp.c2);
 		double ps[2] = {double(merged->la_start), double(merged->ra_start)};
-		kdres* res = kd_nearest_range(kd_tree_endpoints, ps, 2*config.max_is);
+		kdres* res = kd_nearest_range(kd_tree_endpoints, ps, 2*stats.max_is);
 		while (!kd_res_end(res)) {
 			cluster_t* c = (cluster_t*) kd_res_item_data(res);
 			if (!c->used) {
@@ -224,9 +224,9 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		if (c->la_end < c->ra_start) {
 			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
 			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
-			sv_t* sv = new deletion_t(contig_name, c->la_end, c->ra_start, "", left_anchor_aln, right_anchor_aln, NULL);
+			sv_t* sv = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 			sv->source = "DP";
-			sv2_deletion_t* del = new sv2_deletion_t(sv, NULL, NULL);
+			sv2_deletion_t* del = new sv2_deletion_t(sv);
 			set_indel_info(del, c);
 			deletions.push_back(del);
 			deletion_ra_reads.push_back(c->reads_seqs);
@@ -285,7 +285,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 		if (iv.size() != 1) continue;
 
 		bcf1_t* corr_sr_del = iv[0].value;
-		if (corr_sr_del->pos-del->sv->left_anchor_aln->start <= config.max_is && del->sv->right_anchor_aln->end-get_sv_end(sr_hdr, corr_sr_del) <= config.max_is) {
+		if (corr_sr_del->pos-del->sv->left_anchor_aln->start <= stats.max_is && del->sv->right_anchor_aln->end-get_sv_end(sr_hdr, corr_sr_del) <= stats.max_is) {
 			if (bcf_has_filter(sr_hdr, corr_sr_del, (char*) "PASS")) {
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS", &del->disc_pairs, 1);
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_MAXMAPQ", &del->disc_pairs_maxmapq, 1);
@@ -301,8 +301,8 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
 
 				// we are only interested in the number of split reads
-				del->rc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[0], 0, 0, 0, 0, 0);
-				del->lc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[1], 0, 0, 0, 0, 0);
+				del->sv->rc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[0], 0, 0, 0, 0, 0);
+				del->sv->lc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[1], 0, 0, 0, 0, 0);
 			}
 		}
 	}
@@ -345,9 +345,9 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 	for (int i = 0; i < deletions.size(); i++) {
 		sv2_deletion_t* del = deletions[i];
 
-		consensus_t rc_consensus(false, 0, del->sv->start, 0, del->rightmost_rightfacing_seq, 0, 0, 0, 0, 0, 0);
-		consensus_t lc_consensus(false, 0, del->sv->end, 0, del->leftmost_leftfacing_seq, 0, 0, 0, 0, 0, 0);
-		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), &rc_consensus, &lc_consensus, aligner, config.read_len/3, config.min_clip_len, 0.0);
+		consensus_t* rc_consensus = new consensus_t(false, 0, del->sv->start, 0, del->rightmost_rightfacing_seq, 0, 0, 0, 0, 0, 0);
+		consensus_t* lc_consensus = new consensus_t(false, 0, del->sv->end, 0, del->leftmost_leftfacing_seq, 0, 0, 0, 0, 0, 0);
+		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, stats.read_len/3, config.min_clip_len, 0.0);
 		if (svs.empty()) continue;
 
 		sv_t* sv = svs[0];
@@ -372,17 +372,17 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 
 	std::vector<sv2_deletion_t*> shorter_deletions, longer_deletions;
 	for (sv2_deletion_t* deletion : deletions) {
-		if (-deletion->sv->svlen() < config.max_is) shorter_deletions.push_back(deletion);
+		if (-deletion->sv->svlen() < stats.max_is) shorter_deletions.push_back(deletion);
 		else longer_deletions.push_back(deletion);
 	}
 
 	open_samFile_t* bam_file = open_samFile(bam_fname, false);
 	hts_set_fai_filename(bam_file->file, reference_fname.c_str());
-	depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, config);
-	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, config);
-	if (!shorter_deletions.empty()) calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, shorter_deletions, bam_file, config, stats);
-	if (!longer_deletions.empty()) calculate_ptn_ratio(contig_name, longer_deletions, bam_file, config);
-	if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, config);
+	depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
+	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
+	if (!shorter_deletions.empty()) calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, shorter_deletions, bam_file, stats, config.min_sv_size);
+	if (!longer_deletions.empty()) calculate_ptn_ratio(contig_name, longer_deletions, bam_file, stats);
+	if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
 	close_samFile(bam_file);
 
 	mtx.lock();
@@ -397,7 +397,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 		if (del->ks_pval > 0.01) {
 			filters.push_back("KS_FILTER");
 		} else
-		if (-del->sv->svlen() >= config.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
+		if (-del->sv->svlen() >= stats.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
 			filters.push_back("LOW_PTN_RATIO");
 		}
 
@@ -421,7 +421,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 			filters.push_back("PASS");
 		}
 
-		del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
+		sv2_del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
 		float ks_pval = del->ks_pval;
 		bcf_update_info_float(dp_vcf_header, bcf_entry, "KS_PVAL", &ks_pval, 1);
 //		if (!del->genotype.empty()) bcf_update_info_string(dp_vcf_header, bcf_entry, "GENOTYPE", del->genotype.c_str());
@@ -448,7 +448,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 			filters.push_back("PASS");
 		}
 
-		dup2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
+		sv2_dup2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
 		dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
 	}
 
@@ -470,12 +470,12 @@ int main(int argc, char* argv[]) {
 	std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);
 
-    contig_map_t contig_map(workdir);
+    sv2_contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
 
 	stats.parse(workdir + "/stats.txt");
 	min_cluster_size = std::max(3, int(stats.median_depth+5)/10);
-	max_cluster_size = (stats.max_depth * config.max_is)/config.read_len;
+	max_cluster_size = (stats.max_depth * stats.max_is)/stats.read_len;
 
 	chr_seqs.read_fasta_into_map(reference_fname);
 
@@ -495,7 +495,7 @@ int main(int argc, char* argv[]) {
 	}
 	crossing_isizes_count_geq_i_fin.close();
 
-	dp_vcf_header = generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
+	dp_vcf_header = sv2_generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
 	std::string dp_vcf_fname = workdir + "/dp.vcf.gz";
 	htsFile* dp_vcf_file = bcf_open(dp_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(dp_vcf_file, dp_vcf_header) != 0) {

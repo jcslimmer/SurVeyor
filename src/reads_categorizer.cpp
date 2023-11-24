@@ -214,10 +214,9 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[3];
 
     config.parse(workdir + "/config.txt");
-    stats.parse(workdir + "/stats.txt");
+    stats.parse(workdir + "/stats.txt", true);
 
-    contig_map_t contig_map;
-    contig_map.parse(workdir);
+    contig_map_t contig_map(workdir);
 
     open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
 	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {

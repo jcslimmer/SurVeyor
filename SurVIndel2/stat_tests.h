@@ -34,9 +34,9 @@ int cleanup_bin_size(int read_len) {
 
 std::vector<read_w_cached_info_t*> cleanup_reads(std::vector<read_w_cached_info_t*>& reads_w_as, hts_pos_t region_start,
                                                 hts_pos_t region_end, hts_pos_t original_dup_left_bp, hts_pos_t original_dup_right_bp,
-                                                stats_t stats, config_t config, std::vector<double>& max_allowed_frac_normalized,
+                                                stats_t stats, std::vector<double>& max_allowed_frac_normalized,
 												std::default_random_engine& rng) {
-    int BIN_SIZE = cleanup_bin_size(config.read_len);
+    int BIN_SIZE = cleanup_bin_size(stats.read_len);
     hts_pos_t region_len = region_end - region_start;
     int n_bins = (region_len-1)/BIN_SIZE + 1;
     double desired_depth = stats.min_depth;
@@ -146,7 +146,7 @@ std::vector<read_w_cached_info_t*> cleanup_reads(std::vector<read_w_cached_info_
 void compute_cleaned_up_depth(sv2_duplication_t* dup, open_samFile_t* bam_file,
        std::vector<read_w_cached_info_t*>& lf_reads, std::vector<read_w_cached_info_t*>& ldup_reads,
        std::vector<read_w_cached_info_t*>& rdup_reads, std::vector<read_w_cached_info_t*>& rf_reads,
-       stats_t& stats, config_t& config, std::vector<double>& max_allowed_frac_normalized, std::string workdir) {
+       stats_t& stats, std::vector<double>& max_allowed_frac_normalized, std::string workdir) {
 
 	const int FLANKING_SIZE = 5000, INDEL_TESTED_REGION_SIZE = 10000;
 
@@ -223,8 +223,8 @@ void compute_cleaned_up_depth(sv2_duplication_t* dup, open_samFile_t* bam_file,
 
     for (read_w_cached_info_t* r : ldup_reads) {
         hts_pos_t mate_end = r->start + r->isize;
-        if (r->start >= dup->original_start && r->end-dup->original_start <= config.max_is && r->is_rev && !r->is_mrev
-        && mate_end <= dup->original_end && dup->original_end-mate_end <= config.max_is && r->isize > 0) {
+        if (r->start >= dup->original_start && r->end-dup->original_start <= stats.max_is && r->is_rev && !r->is_mrev
+        && mate_end <= dup->original_end && dup->original_end-mate_end <= stats.max_is && r->isize > 0) {
             ow_pairs++;
         }
     }
@@ -257,14 +257,14 @@ void clear_rcis(std::vector<read_w_cached_info_t*>& testable_dups_lf_reads, std:
 }
 
 void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<sv2_duplication_t*>& duplications,
-                                open_samFile_t* bam_file, stats_t stats, config_t config,
+                                open_samFile_t* bam_file, stats_t& stats, int seed,
                                 std::vector<double>& max_allowed_frac_normalized, std::string workdir) {
 
 	if (duplications.empty()) return;
 
 	const int FLANKING_SIZE = 5000, INDEL_TESTED_REGION_SIZE = 10000;
 
-	std::default_random_engine rng(config.seed);
+	std::default_random_engine rng(seed);
 
 	std::vector<hts_pair_pos_t> cleanup_ivals;
 	for (sv2_duplication_t* dup : duplications) {
@@ -303,7 +303,7 @@ void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<sv2_duplica
 		hts_itr_destroy(iter);
 
 		std::vector<read_w_cached_info_t*> curr_clean_reads = cleanup_reads(reads, merged_cleanup_ival.beg, merged_cleanup_ival.end,
-				merged_cleanup_ival.beg, merged_cleanup_ival.end, stats, config, max_allowed_frac_normalized, rng);
+				merged_cleanup_ival.beg, merged_cleanup_ival.end, stats, max_allowed_frac_normalized, rng);
 		std::vector<read_w_cached_info_t*> curr_clean_reads_copy;
 		for (read_w_cached_info_t* rci : curr_clean_reads) {
 			curr_clean_reads_copy.push_back(new read_w_cached_info_t(rci->read));
@@ -356,7 +356,7 @@ void depth_filter_dup_w_cleanup(std::string contig_name, std::vector<sv2_duplica
 		}
 
 		compute_cleaned_up_depth(dup, bam_file, dups_lf_reads, dups_ldup_reads, dups_rdup_reads, dups_rf_reads, stats,
-				config, max_allowed_frac_normalized, workdir);
+				max_allowed_frac_normalized, workdir);
 	}
 
 	for (auto& v : clean_reads) {
@@ -383,7 +383,7 @@ struct region_w_median_t {
 	region_w_median_t(hts_pos_t start, hts_pos_t end, int* median_target, bool highmq_reads_only) :
 		start(start), end(end), median_target(median_target), highmq_reads_only(highmq_reads_only) {}
 };
-void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, open_samFile_t* bam_file, config_t& config) {
+void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, open_samFile_t* bam_file, stats_t& stats) {
 
 	if (indels.empty()) return;
 	std::sort(indels.begin(), indels.end(), [](const indel_t* i1, const indel_t* i2) {
@@ -421,7 +421,7 @@ void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, 
     std::vector<region_depth_t> merged_regions_of_interest;
     auto curr_region = regions_of_interest[0];
     for (const auto& region : regions_of_interest) {
-    	if (region.start - curr_region.end <= config.read_len) {
+    	if (region.start - curr_region.end <= stats.read_len) {
     		curr_region.end = std::max(region.end, curr_region.end);
     	} else {
     		merged_regions_of_interest.emplace_back(curr_region.start, curr_region.end);
@@ -483,16 +483,16 @@ void depth_filter_indel(std::string contig_name, std::vector<indel_t*>& indels, 
 }
 
 void depth_filter_del(std::string contig_name, std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file,
-                      int min_size_for_depth_filtering, config_t& config) {
+                      int min_size_for_depth_filtering, stats_t& stats) {
 	if (deletions.empty()) return;
     std::vector<indel_t*> testable_indels(deletions.begin(), deletions.end());
-    depth_filter_indel(contig_name, testable_indels, bam_file, config);
+    depth_filter_indel(contig_name, testable_indels, bam_file, stats);
 }
 void depth_filter_dup(std::string contig_name, std::vector<sv2_duplication_t*>& duplications, open_samFile_t* bam_file,
-                      int min_size_for_depth_filtering, config_t& config) {
+                      int min_size_for_depth_filtering, stats_t& stats) {
 	if (duplications.empty()) return;
     std::vector<indel_t*> testable_indels(duplications.begin(), duplications.end());
-    depth_filter_indel(contig_name, testable_indels, bam_file, config);
+    depth_filter_indel(contig_name, testable_indels, bam_file, stats);
 }
 
 int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum) {
@@ -570,7 +570,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_dele
 	}
 }
 
-void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_duplication_t*> duplications, open_samFile_t* bam_file, config_t& config) {
+void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_duplication_t*> duplications, open_samFile_t* bam_file, stats_t& stats) {
 
 	std::vector<char*> lc_cluster_regions, rc_cluster_regions;
 	for (sv2_duplication_t* duplication : duplications) {
@@ -597,7 +597,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_dupl
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		while (curr_pos < duplications.size() && duplications[curr_pos]->sv->end < read->core.pos) curr_pos++;
 
-		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, config.max_is)) {
+		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, stats.max_is)) {
 			for (int i = curr_pos; i < duplications.size() && duplications[i]->sv->left_anchor_aln->start <= bam_endpos(read); i++) {
 				if (read->core.pos <= duplications[i]->sv->end) {
 					duplications[i]->rc_cluster_region_disc_pairs++;
@@ -620,7 +620,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_dupl
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		while (curr_pos < duplications.size() && duplications[curr_pos]->sv->right_anchor_aln->end < read->core.pos) curr_pos++;
 
-		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, config.max_is)) {
+		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, stats.max_is)) {
 			for (int i = curr_pos; i < duplications.size() && duplications[i]->sv->start <= bam_endpos(read); i++) {
 				if (read->core.pos <= duplications[i]->sv->right_anchor_aln->end) duplications[i]->lc_cluster_region_disc_pairs++;
 			}
@@ -635,7 +635,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<sv2_dupl
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
 										std::vector<uint32_t>& median_crossing_count_geqi_by_isize,
-										std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, config_t config, stats_t stats) {
+										std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats, int min_sv_size) {
 
 	if (deletions.empty()) return;
 
@@ -653,8 +653,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
         midpoints.push_back(midpoint);
         sizes.push_back(size);
 
-        regions_coos.push_back({std::max(hts_pos_t(1), deletion->sv->start-config.max_is), deletion->sv->start});
-        regions_coos.push_back({std::max(hts_pos_t(1), midpoint-config.max_is), midpoint});
+        regions_coos.push_back({std::max(hts_pos_t(1), deletion->sv->start-stats.max_is), deletion->sv->start});
+        regions_coos.push_back({std::max(hts_pos_t(1), midpoint-stats.max_is), midpoint});
     }
 	std::sort(regions_coos.begin(), regions_coos.end());
     for (auto coos : regions_coos) {
@@ -679,7 +679,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
         hts_pos_t start = read->core.pos + read->core.l_qseq/2;
         hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
         for (int i = curr_pos; i < deletions.size() && midpoints[i] < read->core.pos+read->core.isize; i++) {
-            if (start <= midpoints[i] && midpoints[i] <= end && read->core.isize <= config.max_is+sizes[i]) {
+            if (start <= midpoints[i] && midpoints[i] <= end && read->core.isize <= stats.max_is+sizes[i]) {
                 sums[i] += read->core.isize;
                 sq_sums[i] += read->core.isize*read->core.isize;
                 ns[i]++;
@@ -706,8 +706,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 
 				// compute depth base by base in the imprecise deleted regions
 				// TODO: there are some faster data structures out there for this - e.g., Fenwick tree
-				hts_pos_t range_start = std::max(hts_pos_t(1), del->sv->start-config.read_len), range_end = del->sv->end + config.read_len;
-				if (est_size > range_end-range_start || est_size < config.min_sv_size) continue; // estimated size is grossly off - ignore
+				hts_pos_t range_start = std::max(hts_pos_t(1), del->sv->start-stats.read_len), range_end = del->sv->end + stats.read_len;
+				if (est_size > range_end-range_start || est_size < min_sv_size) continue; // estimated size is grossly off - ignore
 
 				std::vector<int> depth_by_base(range_end-range_start+1);
 				char region[1000];
@@ -715,7 +715,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				iter = sam_itr_querys(bam_file->idx, bam_file->header, region);
 				while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 					if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read) || read->core.qual < 0) continue;
-					if (!is_samechr(read) || is_samestr(read) || read->core.isize < -config.max_is || read->core.isize > config.max_is) continue;
+					if (!is_samechr(read) || is_samestr(read) || read->core.isize < -stats.max_is || read->core.isize > stats.max_is) continue;
 
 					int start = std::max(hts_pos_t(0), read->core.pos-range_start);
 					int end = std::min(bam_endpos(read)-range_start, range_end-range_start);
@@ -749,8 +749,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				// whether the discordant pairs are closer to what we expect with a het or a hom alt deletion
 				// TODO: this is better than random but not very accurate. If we could have a test on standard deviations (het will have larger
 				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
-				int homalt_idx = std::max(0, config.max_is - est_size);
-				int het_idx = std::max(0, config.max_is - 2*est_size);
+				int homalt_idx = std::max(0, stats.max_is - est_size);
+				int het_idx = std::max(0, stats.max_is - 2*est_size);
 				int dev_if_homalt = abs((int) (del->disc_pairs-median_crossing_count_geqi_by_isize[homalt_idx]));
 				int dev_if_het = abs((int) (del->disc_pairs-median_crossing_count_geqi_by_isize[het_idx]/2));
 				if (dev_if_het <= dev_if_homalt) {
@@ -779,7 +779,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				}
 
 				int new_start = range_start + best_start, new_end = new_start + est_size;
-				if (new_start >= del->sv->start-config.read_len/2 && new_end <= del->sv->end+config.read_len) {
+				if (new_start >= del->sv->start-stats.read_len/2 && new_end <= del->sv->end+stats.read_len) {
 					del->original_range = std::to_string(del->sv->start) + "-" + std::to_string(del->sv->end);
 					del->sv->start = new_start; del->sv->end = new_end;
 					del->sv->start = new_start; del->sv->end = new_end;
@@ -797,7 +797,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     bam_destroy1(read);
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, config_t config) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<sv2_deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats) {
 
 	if (deletions.empty()) return;
 
@@ -812,7 +812,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv2_deletion_t*>& 
 		midpoints.push_back(midpoint);
 
 		std::stringstream ss;
-		ss << contig_name << ":" << std::max(hts_pos_t(1), midpoint-config.max_is) << "-" << midpoint;
+		ss << contig_name << ":" << std::max(hts_pos_t(1), midpoint-stats.max_is) << "-" << midpoint;
 		char* region = new char[ss.str().length()+1];
 		strcpy(region, ss.str().c_str());
 		mid_regions.push_back(region);
@@ -832,7 +832,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv2_deletion_t*>& 
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
 
 		for (int i = curr_pos; i < deletions.size() && midpoints[i] < read->core.pos+read->core.isize; i++) {
-			if (start <= midpoints[i] && midpoints[i] <= end && read->core.isize <= config.max_is) deletions[i]->conc_pairs++;
+			if (start <= midpoints[i] && midpoints[i] <= end && read->core.isize <= stats.max_is) deletions[i]->conc_pairs++;
 		}
 	}
 

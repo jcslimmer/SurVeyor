@@ -29,7 +29,7 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
 
     std::ifstream clip_fin(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
-    std::vector<consensus_t> rc_consensuses, lc_consensuses;
+    std::vector<consensus_t*> rc_consensuses, lc_consensuses;
     std::string chr, dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
@@ -39,26 +39,26 @@ void call_insertions(int id, int contig_id, std::string contig_name) {
         fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
         if (dir == "R") {
             seq = seq.substr(0, seq.length()-lowq_clip_portion);
-            rc_consensuses.push_back(consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
+            rc_consensuses.push_back(new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
         } else {
             seq = seq.substr(lowq_clip_portion);
-            lc_consensuses.push_back(consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
+            lc_consensuses.push_back(new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
         }
     }
 
     int MAX_MH_LEN = 100;
     for (int i = 0; i < rc_consensuses.size(); i++) {
-        consensus_t& rc_consensus = rc_consensuses[i];
+        consensus_t* rc_consensus = rc_consensuses[i];
         for (int j = 0; j < lc_consensuses.size(); j++) {
-            consensus_t& lc_consensus = lc_consensuses[j];
-            int mh_len = rc_consensus.breakpoint - lc_consensus.breakpoint;
-            if (lc_consensus.breakpoint-rc_consensus.breakpoint <= MAX_BP_DIST && mh_len <= MAX_MH_LEN) {
-                std::vector<sv_t*> _svs = detect_svs(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), &rc_consensus, &lc_consensus, aligner, config.min_clip_len, config.min_clip_len, config.max_seq_error);
+            consensus_t* lc_consensus = lc_consensuses[j];
+            int mh_len = rc_consensus->breakpoint - lc_consensus->breakpoint;
+            if (lc_consensus->breakpoint-rc_consensus->breakpoint <= MAX_BP_DIST && mh_len <= MAX_MH_LEN) {
+                std::vector<sv_t*> _svs = detect_svs(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensus, lc_consensus, aligner, config.min_clip_len, config.min_clip_len, config.max_seq_error);
                 if (_svs.empty()) continue;
 
                 mtx.lock();
                 for (sv_t* sv : _svs) {
-                    svs.push_back(sv);
+                    if (abs(sv->svlen()) >= config.min_sv_size) svs.push_back(sv);
                 }
                 mtx.unlock();
             }
@@ -80,8 +80,7 @@ int main(int argc, char* argv[]) {
 
     contigs.read_fasta_into_map(reference_fname);
 
-    contig_map_t contig_map;
-    contig_map.parse(workdir);
+    contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
 
     ctpl::thread_pool thread_pool(config.threads);

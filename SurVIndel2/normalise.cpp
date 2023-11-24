@@ -5,7 +5,7 @@
 #include "sam_utils.h"
 #include "utils.h"
 
-chr_seqs_map_t chr_seqs;
+sv2_chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
 
 std::string get_ins_seq(bcf1_t* sv) {

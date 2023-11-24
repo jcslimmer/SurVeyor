@@ -106,12 +106,16 @@ struct sv_t {
     std::string ins_seq;
     int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
+    consensus_t* rc_consensus, * lc_consensus;
+
     int overlap = 0;
     double mismatch_rate = 0.0;
     std::string source;
 
-    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
-        chr(chr), start(start), end(end), ins_seq(ins_seq), left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
+    sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
+        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
+        chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
+        left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
 
     int rc_reads() { return rc_fwd_reads + rc_rev_reads; }
     int lc_reads() { return lc_fwd_reads + lc_rev_reads; }

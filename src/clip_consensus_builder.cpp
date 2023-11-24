@@ -411,8 +411,7 @@ int main(int argc, char* argv[]) {
 
     std::string reference_fname = argv[2];
 
-    contig_map_t contig_map;
-    contig_map.parse(workdir);
+    contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
 
     contigs.read_fasta_into_map(reference_fname);

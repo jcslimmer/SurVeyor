@@ -5,6 +5,7 @@
 #include "../libs/ssw_cpp.h"
 #include "simd_macros.h"
 #include "types.h"
+#include "utils.h"
 
 int get_left_clip_size(StripedSmithWaterman::Alignment& aln) {
 	return cigar_int_to_op(aln.cigar[0]) == 'S' ? cigar_int_to_len(aln.cigar[0]) : 0;
@@ -21,7 +22,6 @@ bool is_right_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1
 bool is_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
 	return is_left_clipped(aln, min_clip_len) || is_right_clipped(aln, min_clip_len);
 }
-
 
 size_t gcd(size_t a, size_t b) {
     return (b == 0) ? a : gcd(b, a % b);
@@ -317,10 +317,10 @@ std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std
 		sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
 		sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
 		if (op == 'D') {
-			sv_t* sv = new deletion_t(contig_name, start, end, "", left_part_anchor_aln, right_part_anchor_aln, NULL);
+			sv_t* sv = new deletion_t(contig_name, start, end, "", NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, NULL);
 			svs.push_back(sv);
 		} else if (op == 'I') {
-			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, left_part_anchor_aln, right_part_anchor_aln, NULL);
+			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, NULL);
 			svs.push_back(sv);
 		}
 
@@ -432,7 +432,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
         if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
             (lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
             !is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
-            duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+            duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
             return std::vector<sv_t*>({sv});
         }
 
@@ -459,9 +459,9 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 
     std::vector<sv_t*> svs;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-        svs.push_back(new deletion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
+        svs.push_back(new deletion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
     } else { // length of ALT > REF, insertion
-        svs.push_back(new insertion_t(contig_name, left_bp, right_bp, middle_part, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
+        svs.push_back(new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
     }
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
@@ -557,6 +557,8 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 
     std::vector<sv_t*> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
 	for (sv_t* sv : svs) {
+		sv->rc_consensus = rc_consensus;
+		sv->lc_consensus = lc_consensus;
 		if (rc_consensus != NULL) {
 			sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
 		}

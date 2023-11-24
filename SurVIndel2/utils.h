@@ -5,12 +5,10 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
-#include "htslib/kseq.h"
 #include <unistd.h>
 #include <numeric>
 #include <chrono>
 #include <ctime>
-KSEQ_INIT(int, read)
 
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
@@ -18,87 +16,20 @@ KSEQ_INIT(int, read)
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
 #include "../src/types.h"
+#include "../src/vcf_utils.h"
 
-struct config_t {
-
-    int threads, seed;
-    int min_is, max_is; // find a way to move this to stats_t
-    int min_sv_size;
-    int read_len; // this is not exactly "config", but it is more convenient to place it here
-    int min_clip_len;
-    double max_seq_error;
-    int max_clipped_pos_dist;
-    int min_size_for_depth_filtering;
-    int min_diff_hsr;
-    std::string sampling_regions, version;
-    bool log;
-
-    int clip_penalty = 7;
-    int min_score_diff = 15;
-    int high_confidence_mapq = 60;
-
-    void parse(std::string config_file) {
-        std::unordered_map<std::string, std::string> config_params;
-        std::ifstream fin(config_file);
-        std::string name, value;
-        while (fin >> name >> value) {
-            config_params[name] = value;
-        }
-        fin.close();
-
-        threads = std::stoi(config_params["threads"]);
-        seed = std::stoi(config_params["seed"]);
-        min_is = std::stoi(config_params["min_is"]);
-        max_is = std::stoi(config_params["max_is"]);
-        min_sv_size = std::stoi(config_params["min_sv_size"]);
-        min_clip_len = std::stoi(config_params["min_clip_len"]);
-        read_len = std::stod(config_params["read_len"]);
-        max_seq_error = std::stod(config_params["max_seq_error"]);
-        max_clipped_pos_dist = std::stoi(config_params["max_clipped_pos_dist"]);
-        min_size_for_depth_filtering = std::stoi(config_params["min_size_for_depth_filtering"]);
-        min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
-        sampling_regions = config_params["sampling_regions"];
-        version = config_params["version"];
-        log = std::stoi(config_params["log"]);
-    }
-
-    std::string clip_penalty_padding() { return std::string(this->clip_penalty, 'N'); }
-};
-
-struct stats_t {
-    double median_depth;
-    int min_depth, max_depth;
-    int pop_avg_crossing_is = 0;
-
-    void parse(std::string config_file) {
-        std::unordered_map<std::string, std::string> config_params;
-        std::ifstream fin(config_file);
-        std::string name, value;
-        while (fin >> name >> value) {
-            config_params[name] = value;
-        }
-        fin.close();
-
-        median_depth = std::stod(config_params["median_depth"]);
-        pop_avg_crossing_is = std::stoi(config_params["pop_avg_crossing_is"]);
-        min_depth = std::stoi(config_params["min_depth"]);
-        max_depth = std::stoi(config_params["max_depth"]);
-    }
-};
 
 struct indel_t {
 	sv_t* sv;
     int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
-    consensus_t* lc_consensus = NULL,* rc_consensus = NULL;
     int med_left_flanking_cov = 0, med_indel_left_cov = 0, med_indel_right_cov = 0, med_right_flanking_cov = 0;
     int med_left_cluster_cov = 0, med_right_cluster_cov = 0;
     bool remapped = false;
     std::string rightmost_rightfacing_seq, leftmost_leftfacing_seq;
 
-    indel_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus)
-    : sv(sv), lc_consensus(lc_consensus), rc_consensus(rc_consensus) { }
+    indel_t(sv_t* sv) : sv(sv) {}
 
-    bool imprecise() { return lc_consensus == NULL && rc_consensus == NULL && remapped == false; }
+    bool imprecise() { return sv->lc_consensus == NULL && sv->rc_consensus == NULL && remapped == false; }
 };
 
 struct sv2_deletion_t : indel_t {
@@ -113,43 +44,44 @@ struct sv2_deletion_t : indel_t {
     std::string original_range;
     std::string genotype;
 
-    sv2_deletion_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
-        indel_t(sv, lc_consensus, rc_consensus) {}
+    sv2_deletion_t(sv_t* sv) :
+        indel_t(sv) {
+		if (sv->rc_consensus != NULL) this->remap_boundary_upper = sv->rc_consensus->remap_boundary;
+		if (sv->lc_consensus != NULL) this->remap_boundary_lower = sv->lc_consensus->remap_boundary;
+	}
 };
 
 struct sv2_duplication_t : indel_t {
     hts_pos_t original_start, original_end;
     int lc_cluster_region_disc_pairs = 0, rc_cluster_region_disc_pairs = 0;
 
-    sv2_duplication_t(sv_t* sv, consensus_t* lc_consensus, consensus_t* rc_consensus) :
-		indel_t(sv, lc_consensus, rc_consensus), original_start(sv->start), original_end(sv->end) {}
+    sv2_duplication_t(sv_t* sv) :
+		indel_t(sv), original_start(sv->start), original_end(sv->end) {
+		if (sv->rc_consensus != NULL) this->original_end = sv->rc_consensus->breakpoint;
+		if (sv->lc_consensus != NULL) this->original_start = sv->lc_consensus->breakpoint; 
+	}
 };
 
-indel_t* sv_to_indel(sv_t* sv, consensus_t* rc_consensus, consensus_t* lc_consensus) {
+indel_t* sv_to_indel(sv_t* sv) {
 	if (sv == NULL) return NULL;
 
 	indel_t* indel;
 	if (sv->svtype() == "DEL") {
-		sv2_deletion_t* del = new sv2_deletion_t(sv, lc_consensus, rc_consensus);
-		if (rc_consensus != NULL) del->remap_boundary_upper = rc_consensus->remap_boundary;
-		if (lc_consensus != NULL) del->remap_boundary_lower = lc_consensus->remap_boundary;
-		indel = del;
+		sv2_deletion_t* del = new sv2_deletion_t(sv);
+		return del;
 	} else {
-		sv2_duplication_t* dup = new sv2_duplication_t(sv, lc_consensus, rc_consensus);
-		if (rc_consensus != NULL) dup->original_end = rc_consensus->breakpoint;
-		if (lc_consensus != NULL) dup->original_start = lc_consensus->breakpoint; 
-		indel = dup;
+		sv2_duplication_t* dup = new sv2_duplication_t(sv);
+		return dup;
 	}
-	return indel;
 }
 
-struct contig_map_t {
+struct sv2_contig_map_t {
 
     std::unordered_map<std::string, size_t> name_to_id;
     std::vector<std::string> id_to_name;
 
-    contig_map_t() {}
-    contig_map_t(std::string workdir) { load(workdir); }
+    sv2_contig_map_t() {}
+    sv2_contig_map_t(std::string workdir) { load(workdir); }
 
     void load(std::string workdir) {
         std::ifstream fin(workdir + "/contig_map");
@@ -167,15 +99,15 @@ struct contig_map_t {
 };
 
 
-struct chr_seq_t {
+struct sv2_chr_seq_t {
     char* seq;
     hts_pos_t len;
 
-    chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
-    ~chr_seq_t() {delete[] seq;}
+    sv2_chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
+    ~sv2_chr_seq_t() {delete[] seq;}
 };
-struct chr_seqs_map_t {
-    std::unordered_map<std::string, chr_seq_t*> seqs;
+struct sv2_chr_seqs_map_t {
+    std::unordered_map<std::string, sv2_chr_seq_t*> seqs;
     std::vector<std::string> ordered_contigs;
 
     void read_fasta_into_map(std::string& reference_fname) {
@@ -185,7 +117,7 @@ struct chr_seqs_map_t {
             std::string seq_name = seq->name.s;
             char* chr_seq = new char[seq->seq.l + 1];
             strcpy(chr_seq, seq->seq.s);
-            seqs[seq_name] = new chr_seq_t(chr_seq, seq->seq.l);
+            seqs[seq_name] = new sv2_chr_seq_t(chr_seq, seq->seq.l);
             ordered_contigs.push_back(seq_name);
         }
         kseq_destroy(seq);
@@ -207,20 +139,20 @@ struct chr_seqs_map_t {
         }
     }
 
-    ~chr_seqs_map_t() {
+    ~sv2_chr_seqs_map_t() {
         clear();
     }
 };
 
 template<typename T>
-inline T max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
+inline T sv2_max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
 
 int64_t sv2_overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
     return std::max(int64_t(0), overlap);
 }
 
-bool is_homopolymer(const char* seq, int len) {
+bool sv2_is_homopolymer(const char* seq, int len) {
 	int a = 0, c = 0, g = 0, t = 0;
 	for (int i = 0; i < len; i++) {
 		char b = std::toupper(seq[i]);
@@ -229,15 +161,15 @@ bool is_homopolymer(const char* seq, int len) {
 		else if (b == 'G') g++;
 		else if (b == 'T') t++;
 	}
-	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
+	return sv2_max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
 
 template<typename T>
-T mean(std::vector<T>& v) {
+T sv2_mean(std::vector<T>& v) {
     return std::accumulate(v.begin(), v.end(), (T)0.0)/v.size();
 }
 
-bcf_hrec_t* generate_contig_hrec() {
+bcf_hrec_t* sv2_generate_contig_hrec() {
 	bcf_hrec_t* contig_hrec = new bcf_hrec_t;
 	contig_hrec->type = BCF_HL_CTG;
 	contig_hrec->key = strdup("contig");
@@ -251,12 +183,12 @@ bcf_hrec_t* generate_contig_hrec() {
 	}
 	return contig_hrec;
 }
-bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name, config_t config, std::string command) {
+bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sample_name, config_t config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
 	// add contigs
 	for (std::string contig_name : contigs.ordered_contigs) {
-		bcf_hrec_t* hrec = generate_contig_hrec();
+		bcf_hrec_t* hrec = sv2_generate_contig_hrec();
 		int r1 = bcf_hrec_set_val(hrec, 0, contig_name.c_str(), contig_name.length(), false);
 		std::string len_str = std::to_string(contigs.get_len(contig_name));
 		int r2 = bcf_hrec_set_val(hrec, 1, len_str.c_str(), len_str.length(), false);
@@ -371,11 +303,17 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
 
-	const char* ext_1sr_reads_tag = "##INFO=<ID=EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a 1SR consensus to the left and to the right.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ext_1sr_reads_tag, &len));
+	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
 
-	const char* hq_ext_1sr_reads_tag = "##INFO=<ID=HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a 1SR consensus to the left and to the right.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, hq_ext_1sr_reads_tag, &len));
+	const char* lcc_ext_1sr_reads_tag = "##INFO=<ID=LCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the left-clipped consensus to the left and to the right, respectively.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lcc_ext_1sr_reads_tag, &len));
+
+	const char* rcc_hq_ext_1sr_reads_tag = "##INFO=<ID=RCC_HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a the right-clipped consensus to the left and to the right, respectively.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_hq_ext_1sr_reads_tag, &len));
+
+	const char* lcc_hq_ext_1sr_reads_tag = "##INFO=<ID=LCC_HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a the left-clipped consensus to the left and to the right, respectively.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lcc_hq_ext_1sr_reads_tag, &len));
 
 	const char* fullj_score_tag = "##INFO=<ID=FULL_JUNCTION_SCORE,Number=1,Type=Integer,Description=\"Full junction score.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_score_tag, &len));
@@ -441,7 +379,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name
 	return header;
 }
 
-void indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char* chr_seq, sv_t* sv, std::vector<std::string>& filters) {
+void sv2_indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char* chr_seq, sv_t* sv, std::vector<std::string>& filters) {
 	bcf_entry->rid = bcf_hdr_name2id(hdr, contig_name.c_str());
 	bcf_entry->pos = sv->start;
 	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
@@ -478,6 +416,24 @@ void indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char
 		bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
 	}
 
+	if (sv->rc_consensus) {
+		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
+		bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
+		int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
+		bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
+	}
+	if (sv->lc_consensus) {
+		int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
+		bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
+		int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
+		bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
+	}
+
+	int clipped_reads[] = {sv->rc_consensus ? (int) sv->rc_consensus->supp_clipped_reads() : 0, sv->lc_consensus ? (int) sv->lc_consensus->supp_clipped_reads() : 0};
+	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
+	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
+	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
+
 	// add GT info
 	int gt[1];
 	gt[0] = bcf_gt_unphased(1);
@@ -487,10 +443,10 @@ void indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char
 	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
 }
 
-void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
+void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
 	bcf_clear(bcf_entry);
 
-	indel2bcf(hdr, bcf_entry, contig_name, chr_seq, del->sv, filters);
+	sv2_indel2bcf(hdr, bcf_entry, contig_name, chr_seq, del->sv, filters);
 	
 	int int_conv;
 
@@ -519,30 +475,14 @@ void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", &del->conc_pairs, 1);
-	int clipped_reads[] = {del->rc_consensus ? (int) del->rc_consensus->supp_clipped_reads() : 0, del->lc_consensus ? (int) del->lc_consensus->supp_clipped_reads() : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
-	int max_mapq[] = {del->rc_consensus ? (int) del->rc_consensus->max_mapq : 0, del->lc_consensus ? (int) del->lc_consensus->max_mapq : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-	if (del->lc_consensus) {
-		int ext_1sr_reads[] = { del->lc_consensus->left_ext_reads, del->lc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { del->lc_consensus->hq_left_ext_reads, del->lc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	} 
-	if (del->rc_consensus) {
-		int ext_1sr_reads[] = { del->rc_consensus->left_ext_reads, del->rc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { del->rc_consensus->hq_left_ext_reads, del->rc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
 }
 
-void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup, std::vector<std::string>& filters) {
+void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup, std::vector<std::string>& filters) {
 	bcf_clear(bcf_entry);
 	
-	indel2bcf(hdr, bcf_entry, contig_name, chr_seq, dup->sv, filters);
+	sv2_indel2bcf(hdr, bcf_entry, contig_name, chr_seq, dup->sv, filters);
 
 	// add info
 	int int_conv;
@@ -552,22 +492,6 @@ void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& cont
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
 	int disc_pairs_surr[] = {dup->rc_cluster_region_disc_pairs, dup->lc_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-	int clipped_reads[] = {dup->lc_consensus ? (int) dup->lc_consensus->supp_clipped_reads() : 0, dup->rc_consensus ? (int) dup->rc_consensus->supp_clipped_reads() : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
-	int max_mapq[] = {dup->lc_consensus ? (int) dup->lc_consensus->max_mapq : 0, dup->rc_consensus ? (int) dup->rc_consensus->max_mapq : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-	if (dup->lc_consensus) {
-		int ext_1sr_reads[] = { dup->lc_consensus->left_ext_reads, dup->lc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { dup->lc_consensus->hq_left_ext_reads, dup->lc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
-	if (dup->rc_consensus) {
-		int ext_1sr_reads[] = { dup->rc_consensus->left_ext_reads, dup->rc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { dup->rc_consensus->hq_left_ext_reads, dup->rc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
 }
 
 void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
@@ -575,7 +499,7 @@ void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vect
 	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), (consensus_t*) NULL), consensuses.end());
 }
 
-bool file_exists(std::string& fname) {
+bool sv2_file_exists(std::string& fname) {
 	return std::ifstream(fname).good();
 }
 

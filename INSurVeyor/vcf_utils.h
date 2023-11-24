@@ -235,6 +235,14 @@ std::string get_left_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "LEFT_ANCHOR", (void**) &data, &size);
 	if (data) return data;
+
+	bcf_get_info_string(hdr, sv, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &data, &size);
+	if (data) {
+		std::string ret = data;
+		delete[] data;
+		return ret.substr(0, ret.find(","));
+	}
+	
 	return "";
 }
 std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
@@ -242,6 +250,14 @@ std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "RIGHT_ANCHOR", (void**) &data, &size);
 	if (data) return data;
+
+	bcf_get_info_string(hdr, sv, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &data, &size);
+	if (data) {
+		std::string ret = data;
+		delete[] data;
+		return ret.substr(ret.find(",")+1);
+	}
+
 	return "";
 }
 

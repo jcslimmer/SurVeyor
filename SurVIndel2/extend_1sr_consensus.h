@@ -254,19 +254,19 @@ std::vector<int> find_rev_topological_order(int n, std::vector<int>& out_edges, 
 
 void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, std::vector<std::string>& read_seqs, std::vector<int>& read_mapqs,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq,
-		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len, config_t config, int max_reads = INT32_MAX) {
+		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len, int high_confidence_mapq, stats_t& stats, int max_reads = INT32_MAX) {
 
-	hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_start-config.max_is+config.read_len);
-	hts_pos_t fwd_mates_end = std::max(hts_pos_t(1), target_end-config.min_is);
+	hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_start-stats.max_is+stats.read_len);
+	hts_pos_t fwd_mates_end = std::max(hts_pos_t(1), target_end-stats.min_is);
 
-	hts_pos_t rev_mates_start = std::min(target_start+config.min_is, contig_len);
-	hts_pos_t rev_mates_end = std::min(target_end+config.max_is-config.read_len, contig_len);
+	hts_pos_t rev_mates_start = std::min(target_start+stats.min_is, contig_len);
+	hts_pos_t rev_mates_end = std::min(target_end+stats.max_is-stats.read_len, contig_len);
 
 	std::vector<Interval<ext_read_t*> > target_reads = candidate_reads_itree.findOverlapping(
 			std::min(fwd_mates_start, rev_mates_start)-10, std::max(fwd_mates_end, rev_mates_end)+10);
 	for (Interval<ext_read_t*> i_read : target_reads) {
 		ext_read_t* ext_read = i_read.value;
-		if (!ext_read->rev && ext_read->mapq >= config.high_confidence_mapq &&
+		if (!ext_read->rev && ext_read->mapq >= high_confidence_mapq &&
 			!ext_read->same_chr && ext_read->start >= fwd_mates_start && ext_read->start <= fwd_mates_end) {
 			if (mateseqs_w_mapq.count(ext_read->qname) == 0) {
 				std::cerr << "ERROR: mateseqs_w_mapq does not contain " << ext_read->qname << std::endl;
@@ -276,7 +276,7 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 			rc(mateseq_w_mapq.first);
 			read_seqs.push_back(mateseq_w_mapq.first);
 			read_mapqs.push_back(mateseq_w_mapq.second);
-		} else if (ext_read->rev && ext_read->mapq >= config.high_confidence_mapq &&
+		} else if (ext_read->rev && ext_read->mapq >= high_confidence_mapq &&
 				!ext_read->same_chr && ext_read->end >= rev_mates_start && ext_read->end <= rev_mates_end) {
 			if (mateseqs_w_mapq.count(ext_read->qname) == 0) {
 				std::cerr << "ERROR: mateseqs_w_mapq does not contain " << ext_read->qname << std::endl;
@@ -310,12 +310,12 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 //	}
 }
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, config_t config, open_samFile_t* bam_file) {
+		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
 
 	std::vector<char*> regions;
 	for (hts_pair_pos_t target_ival : target_ivals) {
-		hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_ival.beg-config.max_is+config.read_len);
-		hts_pos_t rev_mates_end = std::min(target_ival.end+config.max_is-config.read_len, contig_len);
+		hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_ival.beg-stats.max_is+stats.read_len);
+		hts_pos_t rev_mates_end = std::min(target_ival.end+stats.max_is-stats.read_len, contig_len);
 
 		std::stringstream ss;
 		ss << contig_name << ":" << fwd_mates_start << "-" << rev_mates_end;
@@ -345,23 +345,23 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 }
 
 std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, config_t config, open_samFile_t* bam_file) {
+		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
 
 	if (consensuses.empty()) return std::vector<ext_read_t*>();
-	
+
 	std::vector<hts_pair_pos_t> target_ivals;
 	for (consensus_t* consensus : consensuses) {
-		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(config.max_is, config.read_len);
-		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(config.max_is, config.read_len);
-		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(config.max_is, config.read_len);
-		hts_pos_t right_ext_target_end = consensus->right_ext_target_end(config.max_is, config.read_len);
+		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(stats.max_is, stats.read_len);
+		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(stats.max_is, stats.read_len);
+		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(stats.max_is, stats.read_len);
+		hts_pos_t right_ext_target_end = consensus->right_ext_target_end(stats.max_is, stats.read_len);
 		hts_pair_pos_t target_ival;
 		target_ival.beg = left_ext_target_start, target_ival.end = left_ext_target_end;
 		target_ivals.push_back(target_ival);
 		target_ival.beg = right_ext_target_start, target_ival.end = right_ext_target_end;
 		target_ivals.push_back(target_ival);
 	}
-	return get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq, config, bam_file);
+	return get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq, stats, bam_file);
 }
 
 void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev) {
@@ -381,23 +381,23 @@ void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >
 
 void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
-		config_t config, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	if (consensus->extended_to_right) return;
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
 	read_seqs.push_back(consensus->sequence);
-	read_mapqs.push_back(config.high_confidence_mapq);
+	read_mapqs.push_back(high_confidence_mapq);
 
-	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, config, 5000);
+	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
 
 	if (read_seqs.size() > 5000) return;
 
 	int n = read_seqs.size();
 	std::vector<int> out_edges(n);
 	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-	build_graph_fwd(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, config.read_len/2);
+	build_graph_fwd(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2);
 
 	bool cycle_contains_0 = is_vertex_in_cycle(l_adj, 0);
 	if (cycle_contains_0) {
@@ -433,7 +433,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 		ext_consensus += read_seqs[e.next].substr(e.overlap);
 		e = best_edges[e.next];
 		consensus->right_ext_reads++;
-		if (read_mapqs[e.next] >= config.high_confidence_mapq) consensus->hq_right_ext_reads++;
+		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_right_ext_reads++;
 	}
 
 	if (!consensus->left_clipped) {
@@ -442,8 +442,8 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 		}
 	} else {
 		consensus->end += ext_consensus.length() - consensus->sequence.length();
-		if (consensus->max_mapq < config.high_confidence_mapq && consensus->hq_right_ext_reads >= 3) {
-			consensus->max_mapq = config.high_confidence_mapq;
+		if (consensus->max_mapq < high_confidence_mapq && consensus->hq_right_ext_reads >= 3) {
+			consensus->max_mapq = high_confidence_mapq;
 		}
 	}
 	consensus->sequence = ext_consensus;
@@ -452,23 +452,23 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
-		config_t config, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	if (consensus->extended_to_left) return;
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
 	read_seqs.push_back(consensus->sequence);
-	read_mapqs.push_back(config.high_confidence_mapq);
+	read_mapqs.push_back(high_confidence_mapq);
 
-	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, config, 5000);
+	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
 
 	if (read_seqs.size() > 5000) return;
 
 	int n = read_seqs.size();
 	std::vector<int> out_edges(n);
 	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-	build_graph_rev(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, config.read_len/2);
+	build_graph_rev(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2);
 
 	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 
@@ -505,7 +505,7 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 		ext_consensus = read_seqs[e.next].substr(0, read_seqs[e.next].length()-e.overlap) + ext_consensus;
 		e = best_edges[e.next];
 		consensus->left_ext_reads++;
-		if (read_mapqs[e.next] >= config.high_confidence_mapq) consensus->hq_left_ext_reads++;
+		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_left_ext_reads++;
 	}
 
 	if (consensus->left_clipped) {
@@ -514,8 +514,8 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 		}
 	} else {
 		consensus->start -= ext_consensus.length() - consensus->sequence.length();
-		if (consensus->max_mapq < config.high_confidence_mapq && consensus->hq_left_ext_reads >= 3)
-			consensus->max_mapq = config.high_confidence_mapq;
+		if (consensus->max_mapq < high_confidence_mapq && consensus->hq_left_ext_reads >= 3)
+			consensus->max_mapq = high_confidence_mapq;
 	}
 	consensus->sequence = ext_consensus;
 	consensus->extended_to_left = true;
