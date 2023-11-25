@@ -47,12 +47,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* anomalous_sc_flt_tag = "##FILTER=<ID=ANOMALOUS_SC_NUMBER,Description=\"The number of soft-clipped reads supporting this call is too large.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_sc_flt_tag, &len));
 
-	const char* anomalous_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEPTH,Description=\"The insertion region has anomalous depth.\">";
+	const char* anomalous_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"The insertion region has anomalous depth.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_depth_flt_tag, &len));
-
-	const char* alt_short_flt_tag = "##FILTER=<ID=ALT_SHORTER_THAN_REF,Description=\"If this insertion/replacement was real, alternative"
-			"allele would be shorter than reference.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, alt_short_flt_tag, &len));
 
 	const char* low_support_flt_tag = "##FILTER=<ID=LOW_SUPPORT,Description=\"Insertion has low support.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_support_flt_tag, &len));

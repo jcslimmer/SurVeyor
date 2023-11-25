@@ -40,10 +40,9 @@ bool compatible(insertion_t* i1, insertion_t* i2, int max_dist) {
 // filters for all categories
 void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) {
 	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
-	// if (insertion->end-insertion->start >= (int) insertion->ins_seq.length()) filters.push_back("ALT_SHORTER_THAN_REF");
 	if (insertion->median_lf_cov > stats.get_max_depth(insertion->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->chr) ||
 		insertion->median_lf_cov < stats.get_min_depth(insertion->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->chr))
-		filters.push_back("ANOMALOUS_DEPTH");
+		filters.push_back("ANOMALOUS_FLANKING_DEPTH");
 	int d = insertion->ins_seq.find("-");
 	if (is_homopolymer(insertion->ins_seq.substr(0, d))) filters.push_back("HOMOPOLYMER_INSSEQ");
 	else if (d != std::string::npos && is_homopolymer(insertion->ins_seq.substr(d+1))) filters.push_back("HOMOPOLYMER_INSSEQ");
@@ -123,6 +122,15 @@ int main(int argc, char* argv[]) {
 	}
 	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(transurveyor_ins_vcf_file);
 	bcf_hdr_t* out_vcf_header = bcf_hdr_dup(transurveyor_ins_hdr);
+
+	std::string small_ins_vcf_fname = workdir + "/small_ins.annotated.vcf.gz";
+	htsFile* small_ins_vcf_file = bcf_open(small_ins_vcf_fname.c_str(), "r");
+	if (!small_ins_vcf_file) {
+		throw std::runtime_error("Unable to open file " + small_ins_vcf_fname + ".");
+	}
+	bcf_hdr_t* small_ins_hdr = bcf_hdr_read(small_ins_vcf_file);
+	
+	out_vcf_header = bcf_hdr_merge(out_vcf_header, small_ins_hdr); 
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(transurveyor_ins_vcf_file, transurveyor_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry);
@@ -203,6 +211,7 @@ int main(int argc, char* argv[]) {
 			final_insertions_by_contig[contig_name].push_back(insertion);
 		}
 		bcf_unpack(bcf_entry, BCF_UN_ALL);
+		bcf_translate(out_vcf_header, transurveyor_ins_hdr, bcf_entry);
 		final_insertions_set.push_back(bcf_dup(bcf_entry));
 	}
 
@@ -242,17 +251,12 @@ int main(int argc, char* argv[]) {
 			final_insertions_by_contig[contig_name].push_back(insertion);
 		}
 		bcf_unpack(bcf_entry, BCF_UN_ALL);
+		bcf_translate(out_vcf_header, assembled_ins_hdr, bcf_entry);
 		final_insertions_set.push_back(bcf_dup(bcf_entry));
 	}
 
 
 	/* == Small insertions detected through consensus overlap == */
-	std::string small_ins_vcf_fname = workdir + "/small_ins.annotated.vcf.gz";
-	htsFile* small_ins_vcf_file = bcf_open(small_ins_vcf_fname.c_str(), "r");
-	if (!small_ins_vcf_file) {
-		throw std::runtime_error("Unable to open file " + small_ins_vcf_fname + ".");
-	}
-	bcf_hdr_t* small_ins_hdr = bcf_hdr_read(small_ins_vcf_file);
 	while (bcf_read(small_ins_vcf_file, small_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(small_ins_hdr, bcf_entry);
 		int* split_reads = NULL;
@@ -296,7 +300,6 @@ int main(int argc, char* argv[]) {
 			final_insertions_set.push_back(bcf_dup(bcf_entry));
 		}
 	}
-
 
 	// sort and write final set of insertions to file
 	for (bcf1_t* b : final_insertions_set) bcf_unpack(b, BCF_UN_ALL);

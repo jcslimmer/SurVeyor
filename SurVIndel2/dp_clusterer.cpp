@@ -17,7 +17,7 @@ std::mutex mtx;
 
 config_t config;
 stats_t stats;
-sv2_chr_seqs_map_t chr_seqs;
+chr_seqs_map_t chr_seqs;
 std::string reference_fname;
 
 bcf_hdr_t* dp_vcf_header;
@@ -392,7 +392,6 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 
 		if (-del->sv->svlen() < config.min_sv_size) {
 			continue;
-			filters.push_back("SMALL");
 		}
 		if (del->ks_pval > 0.01) {
 			filters.push_back("KS_FILTER");
@@ -470,7 +469,7 @@ int main(int argc, char* argv[]) {
 	std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);
 
-    sv2_contig_map_t contig_map(workdir);
+    contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
 
 	stats.parse(workdir + "/stats.txt");

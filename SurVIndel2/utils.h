@@ -75,135 +75,12 @@ indel_t* sv_to_indel(sv_t* sv) {
 	}
 }
 
-struct sv2_contig_map_t {
-
-    std::unordered_map<std::string, size_t> name_to_id;
-    std::vector<std::string> id_to_name;
-
-    sv2_contig_map_t() {}
-    sv2_contig_map_t(std::string workdir) { load(workdir); }
-
-    void load(std::string workdir) {
-        std::ifstream fin(workdir + "/contig_map");
-        std::string name;
-        int id = 0;
-        while (fin >> name) {
-            name_to_id[name] = id;
-            id_to_name.push_back(name);
-            id++;
-        }
-    }
-
-    size_t size() {return id_to_name.size();}
-    std::string get_name(size_t id) {return id_to_name[id];};
-};
-
-
-struct sv2_chr_seq_t {
-    char* seq;
-    hts_pos_t len;
-
-    sv2_chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
-    ~sv2_chr_seq_t() {delete[] seq;}
-};
-struct sv2_chr_seqs_map_t {
-    std::unordered_map<std::string, sv2_chr_seq_t*> seqs;
-    std::vector<std::string> ordered_contigs;
-
-    void read_fasta_into_map(std::string& reference_fname) {
-        FILE* fasta = fopen(reference_fname.c_str(), "r");
-        kseq_t* seq = kseq_init(fileno(fasta));
-        while (kseq_read(seq) >= 0) {
-            std::string seq_name = seq->name.s;
-            char* chr_seq = new char[seq->seq.l + 1];
-            strcpy(chr_seq, seq->seq.s);
-            seqs[seq_name] = new sv2_chr_seq_t(chr_seq, seq->seq.l);
-            ordered_contigs.push_back(seq_name);
-        }
-        kseq_destroy(seq);
-        fclose(fasta);
-    }
-
-    char* get_seq(std::string seq_name) {
-        return seqs[seq_name]->seq;
-    }
-
-    hts_pos_t get_len(std::string seq_name) {
-        return seqs[seq_name]->len;
-    }
-
-    void clear() {
-        for (auto& e : seqs) {
-            delete e.second;
-            e.second = NULL;
-        }
-    }
-
-    ~sv2_chr_seqs_map_t() {
-        clear();
-    }
-};
-
-template<typename T>
-inline T sv2_max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
-
-int64_t sv2_overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
-    int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
-    return std::max(int64_t(0), overlap);
-}
-
-bool sv2_is_homopolymer(const char* seq, int len) {
-	int a = 0, c = 0, g = 0, t = 0;
-	for (int i = 0; i < len; i++) {
-		char b = std::toupper(seq[i]);
-		if (b == 'A') a++;
-		else if (b == 'C') c++;
-		else if (b == 'G') g++;
-		else if (b == 'T') t++;
-	}
-	return sv2_max(a, c, g, t)/double(a+c+g+t) >= 0.8;
-}
-
-template<typename T>
-T sv2_mean(std::vector<T>& v) {
-    return std::accumulate(v.begin(), v.end(), (T)0.0)/v.size();
-}
-
-bcf_hrec_t* sv2_generate_contig_hrec() {
-	bcf_hrec_t* contig_hrec = new bcf_hrec_t;
-	contig_hrec->type = BCF_HL_CTG;
-	contig_hrec->key = strdup("contig");
-	contig_hrec->value = NULL;
-	contig_hrec->keys = contig_hrec->vals = NULL;
-	contig_hrec->nkeys = 0;
-	int r1 = bcf_hrec_add_key(contig_hrec, "ID", 2);
-	int r2 = bcf_hrec_add_key(contig_hrec, "length", 6);
-	if (r1 || r2) {
-		throw std::runtime_error("Failed to create contig to VCF header.");
-	}
-	return contig_hrec;
-}
-bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sample_name, config_t config, std::string command) {
-	bcf_hdr_t* header = bcf_hdr_init("w");
-
-	// add contigs
-	for (std::string contig_name : contigs.ordered_contigs) {
-		bcf_hrec_t* hrec = sv2_generate_contig_hrec();
-		int r1 = bcf_hrec_set_val(hrec, 0, contig_name.c_str(), contig_name.length(), false);
-		std::string len_str = std::to_string(contigs.get_len(contig_name));
-		int r2 = bcf_hrec_set_val(hrec, 1, len_str.c_str(), len_str.length(), false);
-		if (r1 || r2) {
-			throw std::runtime_error("Failed to create contig to VCF header.");
-		}
-		bcf_hdr_add_hrec(header, hrec);
-	}
+bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name, config_t config, std::string command) {
+	bcf_hdr_t* header = generate_vcf_header_base(contigs, sample_name, config, command);
 
 	int len;
 
 	// add FILTER tags
-	const char* small_flt_tag = "##FILTER=<ID=SMALL,Description=\"Event is smaller than what required by the user.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, small_flt_tag, &len));
-
 	const char* size_flt_tag = "##FILTER=<ID=SIZE_FILTER,Description=\"Size of the event is outside the predicted confidence interval.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
 
@@ -212,9 +89,6 @@ bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sam
 
 	const char* depth_flt_tag = "##FILTER=<ID=DEPTH_FILTER,Description=\"Depth of the region is incompatible with type of the event. Only applicable to long events.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, depth_flt_tag, &len));
-
-	const char* anom_flanking_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"Depth of region(s) flanking this event is anomalous.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anom_flanking_depth_flt_tag, &len));
 
 	const char* anom_del_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEL_DEPTH,Description=\"Depth of the deleted region is anomalous.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anom_del_depth_flt_tag, &len));
@@ -245,15 +119,6 @@ bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sam
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ambiguous_flt_tag, &len));
 
 	// add INFO tags
-	const char* svtype_tag = "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of the indel (DEL or DUP).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svtype_tag, &len));
-
-	const char* end_tag = "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the variant described in this record.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, end_tag, &len));
-
-	const char* svlen_tag = "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Difference in length between REF and ALT alleles.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svlen_tag, &len));
-
 	const char* max_size_tag = "##INFO=<ID=MAX_SIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
 			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_tag, &len));
@@ -270,10 +135,6 @@ bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sam
 
 	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
-
-//	const char* depths_tag = "##INFO=<ID=DEPTHS,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
-//			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels.\">";
-//	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, depths_tag, &len));
 
 	const char* median_depths_tag = "##INFO=<ID=MEDIAN_DEPTHS,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
 			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels.\">";
@@ -297,41 +158,20 @@ bcf_hdr_t* sv2_generate_vcf_header(sv2_chr_seqs_map_t& contigs, std::string& sam
 	const char* clipped_reads_tag = "##INFO=<ID=CLIPPED_READS,Number=2,Type=Integer,Description=\"Reads supporting the right and the left breakpoints, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clipped_reads_tag, &len));
 
-	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
-
 	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
 
-	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
+	// const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the left-half and right-half of the junction.\">";
+	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score_tag, &len));
 
-	const char* lcc_ext_1sr_reads_tag = "##INFO=<ID=LCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the left-clipped consensus to the left and to the right, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lcc_ext_1sr_reads_tag, &len));
+	// const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the left-half and right-half of the junction.\">";
+	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
 
-	const char* rcc_hq_ext_1sr_reads_tag = "##INFO=<ID=RCC_HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a the right-clipped consensus to the left and to the right, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_hq_ext_1sr_reads_tag, &len));
-
-	const char* lcc_hq_ext_1sr_reads_tag = "##INFO=<ID=LCC_HQ_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads with high MAPQ extending a the left-clipped consensus to the left and to the right, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lcc_hq_ext_1sr_reads_tag, &len));
-
-	const char* fullj_score_tag = "##INFO=<ID=FULL_JUNCTION_SCORE,Number=1,Type=Integer,Description=\"Full junction score.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_score_tag, &len));
-
-	const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the left-half and right-half of the junction.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score_tag, &len));
-
-	const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the left-half and right-half of the junction.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
-
-	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the left-half and right-half of the junction.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
+	// const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the left-half and right-half of the junction.\">";
+	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
 
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source algorithm of the indel.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
-
-	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
 
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));

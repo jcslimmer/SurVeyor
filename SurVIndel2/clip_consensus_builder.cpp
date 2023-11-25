@@ -22,8 +22,8 @@ stats_t stats;
 std::string workdir, complete_bam_fname, reference_fname;
 std::mutex out_mtx, log_mtx;
 
-sv2_chr_seqs_map_t chr_seqs;
-sv2_contig_map_t contig_map;
+chr_seqs_map_t chr_seqs;
+contig_map_t contig_map;
 
 std::mutex bam_pool_mtx;
 std::queue<open_samFile_t*> bam_pool;
@@ -421,7 +421,7 @@ int main(int argc, char* argv[]) {
         futures[i].get();
     }
 	futures.clear();
-	
+
 	std::cout << "Extending consensuses." << std::endl;
 	auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -574,9 +574,6 @@ int main(int argc, char* argv[]) {
         	del->sv->id = "DEL_SR_" + std::to_string(del_id++);
             std::vector<std::string> filters;
 
-            if (-del->sv->svlen() < config.min_sv_size) {
-            	filters.push_back("SMALL");
-            }
             if (-del->sv->svlen() < stats.max_is) {
             	if (-del->sv->svlen()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
             }

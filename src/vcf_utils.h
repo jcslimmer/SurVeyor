@@ -21,7 +21,7 @@ bcf_hrec_t* generate_contig_hrec() {
 	}
 	return contig_hrec;
 }
-bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
+bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
 	// add contigs
@@ -40,16 +40,11 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	// add FILTER tags
 	char size_flt_tag[1000];
-	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"Insertion smaller than %d bp.\">", config.min_sv_size);
+	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"SV smaller than %d bp.\">", config.min_sv_size); // TODO: remove this filter
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
-
-	// TODO: remove this filter
-	const char* alt_short_flt_tag = "##FILTER=<ID=ALT_SHORTER_THAN_REF,Description=\"If this insertion/replacement was real, alternative"
-			"allele would be shorter than reference.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, alt_short_flt_tag, &len));
-
-	const char* anomalous_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEPTH,Description=\"The insertion region has anomalous depth.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_depth_flt_tag, &len));
+	
+	const char* anomalous_fl_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"The insertion region has anomalous depth.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_fl_depth_flt_tag, &len));
 
 	const char* homopolymer_flt_tag = "##FILTER=<ID=HOMOPOLYMER_INSSEQ,Description=\"Inserted sequence is a homopolymer.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, homopolymer_flt_tag, &len));
@@ -72,28 +67,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
-
-	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
-
-	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
-
-	const char* sr_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_tag, &len));
-
-	const char* fwd_sr_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fwd_sr_tag, &len));
-
-	const char* rev_sr_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_tag, &len));
-
-	const char* sd_tag = "##INFO=<ID=STABLE_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the stable regions (in practice, the regions left and right of the insertion site).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sd_tag, &len));
-
-	const char* consensuses_id_tag = "##INFO=<ID=CONSENSUSES_ID,Number=1,Type=String,Description=\"ID of the consensuses used to generate this call (for development/debug).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, consensuses_id_tag, &len));
-
+	
 	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
 
@@ -129,6 +103,35 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
+
+	return header;
+}
+bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
+	bcf_hdr_t* header = generate_vcf_header_base(contigs, sample_name, config, command);
+
+	int len;
+
+	// add INFO tags
+	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
+
+	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
+
+	const char* sr_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_tag, &len));
+
+	const char* fwd_sr_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fwd_sr_tag, &len));
+
+	const char* rev_sr_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_tag, &len));
+
+	const char* sd_tag = "##INFO=<ID=STABLE_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the stable regions (in practice, the regions left and right of the insertion site).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sd_tag, &len));
+
+	const char* consensuses_id_tag = "##INFO=<ID=CONSENSUSES_ID,Number=1,Type=String,Description=\"ID of the consensuses used to generate this call (for development/debug).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, consensuses_id_tag, &len));
 
 	const char* algo_tag = "##INFO=<ID=ALGORITHM,Number=1,Type=String,Description=\"Algorithm used to report the call.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, algo_tag, &len));

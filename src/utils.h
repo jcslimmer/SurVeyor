@@ -87,6 +87,7 @@ struct contig_map_t {
     std::unordered_map<std::string, size_t> name_to_id;
     std::vector<std::string> id_to_name;
 
+    contig_map_t() {}
     contig_map_t(std::string workdir) {
         load(workdir);
     }
@@ -119,14 +120,15 @@ bool file_exists(std::string& fname) {
 	return std::ifstream(fname).good();
 }
 
-struct chr_seq_t {
-    char* seq;
-    hts_pos_t len;
-
-    chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
-    ~chr_seq_t() {delete[] seq;}
-};
 struct chr_seqs_map_t {
+    struct chr_seq_t {
+        char* seq;
+        hts_pos_t len;
+
+        chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
+        ~chr_seq_t() {delete[] seq;}
+    };
+
     std::unordered_map<std::string, chr_seq_t*> seqs;
     std::vector<std::string> ordered_contigs;
 
@@ -174,6 +176,11 @@ bool is_homopolymer(const char* seq, int len) {
 		else if (b == 'T') t++;
 	}
 	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
+}
+
+int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
+    int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
+    return std::max(int64_t(0), overlap);
 }
 
 #endif
