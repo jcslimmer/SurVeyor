@@ -62,19 +62,6 @@ struct sv2_duplication_t : indel_t {
 	}
 };
 
-indel_t* sv_to_indel(sv_t* sv) {
-	if (sv == NULL) return NULL;
-
-	indel_t* indel;
-	if (sv->svtype() == "DEL") {
-		sv2_deletion_t* del = new sv2_deletion_t(sv);
-		return del;
-	} else {
-		sv2_duplication_t* dup = new sv2_duplication_t(sv);
-		return dup;
-	}
-}
-
 bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_name, config_t config, std::string command) {
 	bcf_hdr_t* header = generate_vcf_header_base(contigs, sample_name, config, command);
 
@@ -160,15 +147,6 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 
 	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
-
-	// const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the left-half and right-half of the junction.\">";
-	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score_tag, &len));
-
-	// const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the left-half and right-half of the junction.\">";
-	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
-
-	// const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the left-half and right-half of the junction.\">";
-	// bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
 
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source algorithm of the indel.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
@@ -337,10 +315,6 @@ void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
 	for (int i = 0; i < consensuses.size(); i++) if (used[i]) consensuses[i] = NULL;
 	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), (consensus_t*) NULL), consensuses.end());
-}
-
-bool sv2_file_exists(std::string& fname) {
-	return std::ifstream(fname).good();
 }
 
 #endif //SURVINDEL2_UTILS_H

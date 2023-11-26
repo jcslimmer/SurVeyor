@@ -7,10 +7,11 @@
 #include "../libs/cptl_stl.h"
 #include "../libs/IntervalTree.h"
 #include "utils.h"
-#include "sam_utils.h"
+#include "../src/sam_utils.h"
 #include "stat_tests.h"
 #include "extend_1sr_consensus.h"
 #include "../libs/kdtree.h"
+#include "../src/vcf_utils.h"
 
 std::string workdir;
 std::mutex mtx;

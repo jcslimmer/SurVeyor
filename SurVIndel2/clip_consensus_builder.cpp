@@ -12,10 +12,11 @@
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
 #include "../libs/IntervalTree.h"
-#include "sam_utils.h"
+#include "../src/sam_utils.h"
 #include "stat_tests.h"
 #include "extend_1sr_consensus.h"
 #include "../src/sw_utils.h"
+#include "../src/sam_utils.h"
 
 config_t config;
 stats_t stats;
@@ -46,8 +47,10 @@ void release_bam_reader(open_samFile_t* reader) {
     bam_pool_mtx.unlock();
 }
 
-std::unordered_map<std::string, std::vector<sv2_deletion_t*> > deletions_by_chr;
-std::unordered_map<std::string, std::vector<sv2_duplication_t*> > duplications_by_chr;
+std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
+std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
+std::unordered_map<std::string, std::vector<sv2_deletion_t*> > sv2_deletions_by_chr;
+std::unordered_map<std::string, std::vector<sv2_duplication_t*> > sv2_duplications_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 std::mutex mtx, indel_out_mtx, up_consensus_mtx;
@@ -89,7 +92,7 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 }
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
-		std::vector<sv2_deletion_t*>& contig_deletions, std::vector<sv2_duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
+		std::vector<deletion_t*>& contig_deletions, std::vector<duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	// build interval tree of left-clipped consensuses (for quick search)
@@ -160,82 +163,15 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		for (sv_t* sv : svs) {
 			if (sv->svtype() == "DEL") {
-				sv2_deletion_t* del = new sv2_deletion_t(sv);
-				contig_deletions.push_back(del);
+				contig_deletions.push_back((deletion_t*) sv);
 			} else {
-				sv2_duplication_t* dup = new sv2_duplication_t(sv);
-				contig_duplications.push_back(dup);
+				contig_duplications.push_back((duplication_t*) sv);
 			}
 		}
 	}
 	
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
 	remove_marked_consensuses(lc_consensuses, used_consensus_lc);
-}
-
-void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
-		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
-
-	std::vector<sv2_deletion_t*> local_dels;
-	std::vector<sv2_duplication_t*> local_dups;
-
-	char* contig_seq = chr_seqs.get_seq(contig_name);
-	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
-
-	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
-	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
-
-	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start, consensuses->begin()+end);
-	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, contig_len, *mateseqs_w_mapq, stats, bam_file);
-
-	std::vector<Interval<ext_read_t*>> it_ivals;
-	for (ext_read_t* ext_read : candidate_reads_for_extension) {
-		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-		it_ivals.push_back(it_ival);
-	}
-	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
-
-	for (int i = start; i < consensuses->size() && i < end; i++) {
-		consensus_t* consensus = consensuses->at(i);
-
-		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
-			consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
-		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
-			consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
-
-		std::vector<indel_t*> indels;
-		if (!consensus->left_clipped) {
-			std::vector<sv_t*> svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
-			for (sv_t* sv : svs) {
-				indels.push_back(sv_to_indel(sv));
-			}
-		} else if (consensus->left_clipped) {
-			std::vector<sv_t*> svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
-			for (sv_t* sv : svs) {
-				indels.push_back(sv_to_indel(sv));
-			}
-		}
-
-		if (indels.empty()) {
-			delete consensus;
-			continue;
-		}
-
-		for (indel_t* indel : indels) {
-			if (indel->sv->svtype() == "DEL") {
-				local_dels.push_back((sv2_deletion_t*) indel);
-			} else {
-				local_dups.push_back((sv2_duplication_t*) indel);
-			}
-		}
-	}
-	close_samFile(bam_file);
-	for (ext_read_t* read : candidate_reads_for_extension) delete read;
-
-	indel_out_mtx.lock();
-	deletions_by_chr[contig_name].insert(deletions_by_chr[contig_name].end(), local_dels.begin(), local_dels.end());
-	duplications_by_chr[contig_name].insert(duplications_by_chr[contig_name].end(), local_dups.begin(), local_dups.end());
-	indel_out_mtx.unlock();
 }
 
 // remove HSR clusters that overlap with a clipped position, i.e., the clipped position of a clipped cluster is contained in the HSR cluster
@@ -320,14 +256,13 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
     remove_hsr_overlapping_clipped(lc_hsr_consensuses, lc_sr_consensuses);
 }
 
-void build_clip_consensuses(int id, int contig_id, std::string contig_name, std::vector<sv2_deletion_t*>& deletions,
-                            std::vector<sv2_duplication_t*>& duplications, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+void find_indels_from_paired_consensuses(int id, int contig_id, std::string contig_name, 
+	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
 
-	std::vector<sv2_deletion_t*> contig_deletions;
-	std::vector<sv2_duplication_t*> contig_duplications;
+	std::vector<deletion_t*> contig_deletions;
+	std::vector<duplication_t*> contig_duplications;
 
-	StripedSmithWaterman::Aligner aligner(1,4,6,1,true);
-	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
 	mtx.lock();
 	std::vector<consensus_t*>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
@@ -336,11 +271,15 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
 
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
 
+	mtx.lock();
+    std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
+    std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
+    mtx.unlock();
 	deletions.insert(deletions.end(), contig_deletions.begin(), contig_deletions.end());
 	duplications.insert(duplications.end(), contig_duplications.begin(), contig_duplications.end());
 
@@ -355,20 +294,71 @@ void build_clip_consensuses(int id, int contig_id, std::string contig_name, std:
 }
 
 
-void build_consensuses(int id, int contig_id, std::string contig_name, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
-    mtx.lock();
-    std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
-    std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
-    mtx.unlock();
+void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
+		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
 
-	build_clip_consensuses(id, contig_id, contig_name, deletions, duplications, *mateseqs_w_mapq);
+	std::vector<deletion_t*> local_dels;
+	std::vector<duplication_t*> local_dups;
+
+	char* contig_seq = chr_seqs.get_seq(contig_name);
+	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
+
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
+	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
+
+	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start, consensuses->begin()+end);
+	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, contig_len, *mateseqs_w_mapq, stats, bam_file);
+
+	std::vector<Interval<ext_read_t*>> it_ivals;
+	for (ext_read_t* ext_read : candidate_reads_for_extension) {
+		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
+		it_ivals.push_back(it_ival);
+	}
+	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
+
+	for (int i = start; i < consensuses->size() && i < end; i++) {
+		consensus_t* consensus = consensuses->at(i);
+
+		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
+			consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
+		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
+			consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
+
+		std::vector<sv_t*> svs;
+		if (!consensus->left_clipped) {
+			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
+		} else if (consensus->left_clipped) {
+			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
+		}
+
+		if (svs.empty()) {
+			delete consensus;
+			continue;
+		}
+
+		for (sv_t* sv : svs) {
+			if (sv->svtype() == "DEL") {
+				local_dels.push_back((deletion_t*) sv);
+			} else {
+				local_dups.push_back((duplication_t*) sv);
+			}
+		}
+	}
+	close_samFile(bam_file);
+	for (ext_read_t* read : candidate_reads_for_extension) delete read;
+
+	indel_out_mtx.lock();
+	deletions_by_chr[contig_name].insert(deletions_by_chr[contig_name].end(), local_dels.begin(), local_dels.end());
+	duplications_by_chr[contig_name].insert(duplications_by_chr[contig_name].end(), local_dups.begin(), local_dups.end());
+	indel_out_mtx.unlock();
 }
+
 
 void size_and_depth_filtering(int id, std::string contig_name) {
     open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
 
     out_mtx.lock();
-    std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
+    std::vector<sv2_deletion_t*>& deletions = sv2_deletions_by_chr[contig_name];
     out_mtx.unlock();
     std::vector<double> temp1;
     std::vector<uint32_t> temp2;
@@ -376,7 +366,7 @@ void size_and_depth_filtering(int id, std::string contig_name) {
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
 
     out_mtx.lock();
-    std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
+    std::vector<sv2_duplication_t*>& duplications = sv2_duplications_by_chr[contig_name];
     out_mtx.unlock();
 //    std::vector<duplication_t*> duplications_w_cleanup, duplications_wo_cleanup;
 //    for (duplication_t* dup : duplications) {
@@ -478,7 +468,7 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool1(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = thread_pool1.push(build_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
+        std::future<void> future = thread_pool1.push(find_indels_from_paired_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
         futures.push_back(std::move(future));
     }
     thread_pool1.stop(true);
@@ -517,22 +507,37 @@ int main(int argc, char* argv[]) {
 
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
+		
 		auto& deletions = deletions_by_chr[contig_name];
 		for (int i = 0; i < deletions.size(); i++) {
-			if (-deletions[i]->sv->svlen() < config.min_sv_size) {
+			if (-deletions[i]->svlen() < config.min_sv_size) {
 				delete deletions[i];
 				deletions[i] = NULL;
 			}
 		}
-		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (sv2_deletion_t*) NULL), deletions_by_chr[contig_name].end());
+		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (deletion_t*) NULL), deletions_by_chr[contig_name].end());
+		
 		auto& duplications = duplications_by_chr[contig_name];
 		for (int i = 0; i < duplications.size(); i++) {
-			if (duplications[i]->sv->svlen() < config.min_sv_size) {
+			if (duplications[i]->svlen() < config.min_sv_size) {
 				delete duplications[i];
 				duplications[i] = NULL;
 			}
 		}
-		duplications_by_chr[contig_name].erase(std::remove(duplications_by_chr[contig_name].begin(), duplications_by_chr[contig_name].end(), (sv2_duplication_t*) NULL), duplications_by_chr[contig_name].end());
+		duplications_by_chr[contig_name].erase(std::remove(duplications_by_chr[contig_name].begin(), duplications_by_chr[contig_name].end(), (duplication_t*) NULL), duplications_by_chr[contig_name].end());
+	}
+
+	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+		std::string contig_name = contig_map.get_name(contig_id);
+		std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
+		for (deletion_t* del : deletions) {
+			sv2_deletions_by_chr[contig_name].push_back(new sv2_deletion_t(del));
+		}
+
+		std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
+		for (duplication_t* dup : duplications) {
+			sv2_duplications_by_chr[contig_name].push_back(new sv2_duplication_t(dup));
+		}
 	}
 
     // create VCF out files
@@ -565,8 +570,8 @@ int main(int argc, char* argv[]) {
     bcf1_t* bcf_entry = bcf_init();
     int del_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	if (!deletions_by_chr.count(contig_name)) continue;
-		std::vector<sv2_deletion_t*>& dels = deletions_by_chr[contig_name];
+    	if (!sv2_deletions_by_chr.count(contig_name)) continue;
+		std::vector<sv2_deletion_t*>& dels = sv2_deletions_by_chr[contig_name];
 		std::sort(dels.begin(), dels.end(), [](sv2_deletion_t* del1, sv2_deletion_t* del2) {
 			return std::tie(del1->sv->start, del1->sv->end) < std::tie(del2->sv->start, del2->sv->end);
 		});
@@ -619,8 +624,8 @@ int main(int argc, char* argv[]) {
 
     int dup_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	if (!duplications_by_chr.count(contig_name)) continue;
-    	std::vector<sv2_duplication_t*>& dups = duplications_by_chr[contig_name];
+    	if (!sv2_duplications_by_chr.count(contig_name)) continue;
+    	std::vector<sv2_duplication_t*>& dups = sv2_duplications_by_chr[contig_name];
     	std::sort(dups.begin(), dups.end(), [](sv2_duplication_t* dup1, sv2_duplication_t* dup2) {
     		return std::tie(dup1->sv->start, dup1->sv->end) < std::tie(dup2->sv->start, dup2->sv->end);
     	});

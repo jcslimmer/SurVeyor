@@ -7,10 +7,11 @@
 #include <random>
 
 #include "htslib/sam.h"
-#include "sam_utils.h"
+#include "../src/sam_utils.h"
 #include "ks-test.h"
 #include "../src/utils.h"
 #include "../libs/IntervalTree.h"
+#include "../src/sam_utils.h"
 
 struct read_w_cached_info_t {
     bam1_t* read;

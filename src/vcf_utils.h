@@ -274,4 +274,46 @@ void ins2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, insertion_t* ins, char* chr_seq,
 	}
 }
 
+std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
+    char* data = NULL;
+    int len = 0;
+    if (bcf_get_info_string(hdr, sv, "SVTYPE", &data, &len) < 0) {
+        throw std::runtime_error("Failed to determine SVTYPE for sv " + std::string(sv->d.id));
+    }
+    std::string svtype = data;
+    delete[] data;
+    return svtype;
+}
+
+int get_sv_end(bcf_hdr_t* hdr, bcf1_t* sv) {
+    int* data = NULL;
+    int size = 0;
+    bcf_get_info_int32(hdr, sv, "END", &data, &size);
+    if (size > 0) {
+        int end = data[0];
+        delete[] data;
+        return end-1; // return 0-based
+    }
+
+    bcf_get_info_int32(hdr, sv, "SVLEN", &data, &size);
+    if (size > 0) {
+        int svlen = data[0];
+        delete[] data;
+        return sv->pos + abs(svlen);
+    }
+
+    throw std::runtime_error("SV " + std::string(sv->d.id) + "has no END or SVLEN annotation.");
+}
+
+std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
+    char* data = NULL;
+    int len = 0;
+    if (bcf_get_info_string(hdr, sv, info.c_str(), &data, &len) < 0) {
+        throw std::runtime_error("Failed to fetch " + info + " for sv " + std::string(sv->d.id));
+    }
+    std::string svtype = data;
+    delete[] data;
+    return svtype;
+}
+
 #endif /* VCF_UTILS_H */

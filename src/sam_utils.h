@@ -1,6 +1,7 @@
 #ifndef SAM_UTILS_H
 #define SAM_UTILS_H
 
+#include <iostream>
 #include <sstream>
 
 #include "htslib/sam.h"
@@ -24,6 +25,12 @@ bool is_samestr(bam1_t* r) {
 bool is_dc_pair(bam1_t* r) {
     return !is_samechr(r) || std::abs(r->core.isize) > 100000 || is_unmapped(r) != is_mate_unmapped(r);
 }
+bool is_outward(bam1_t* r) {
+	return is_samechr(r) && ((!bam_is_rev(r) && r->core.isize < 0) || (bam_is_rev(r) && r->core.isize > 0));
+}
+bool is_long(bam1_t* r, int max_is) {
+	return is_samechr(r) && ((!bam_is_rev(r) && r->core.isize > max_is) || (bam_is_rev(r) && r->core.isize < -max_is));
+}
 
 int get_left_clip_size(bam1_t* r) {
     uint32_t* cigar = bam_get_cigar(r);
@@ -42,7 +49,7 @@ bool is_right_clipped(bam1_t* r, int min_clip_len) {
     return get_right_clip_size(r) >= min_clip_len;
 }
 
-bool is_mate_left_clipped(bam1_t* r) {
+bool is_mate_left_clipped(bam1_t* r, int min_clip_len = 0) {
     if (is_mate_unmapped(r)) return false;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (mc_tag == NULL) {
@@ -54,7 +61,7 @@ bool is_mate_left_clipped(bam1_t* r) {
     	n = n*10 + mc_tag_str[i]-'0';
     	i++;
     }
-    return mc_tag_str[i] == 'S';
+    return mc_tag_str[i] == 'S' && n >= min_clip_len;
 }
 bool is_mate_right_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
@@ -120,6 +127,20 @@ int64_t get_mq(bam1_t* r) {
     return bam_aux2i(mq);
 }
 
+void rc(std::string& read) {
+    int len = read.length();
+    for (int i = 0; i < len/2; i++) {
+        std::swap(read[i], read[len-i-1]);
+    }
+    for (int i = 0; i < len; i++) {
+		char c = std::toupper(read[i]);
+		if (c == 'A') read[i] = 'T';
+		else if (c == 'C') read[i] = 'G';
+		else if (c == 'G') read[i] = 'C';
+		else if (c == 'T') read[i] = 'A';
+		else c = 'N';
+	}
+}
 void rc(char* read) {
     int len = strlen(read);
     for (int i = 0; i < len/2; i++) {
@@ -166,6 +187,26 @@ double avg_qual(bam1_t* read) {
 		avg_qual += qual[i];
 	}
 	return avg_qual/read->core.l_qseq;
+}
+
+int get_aligned_portion_len(bam1_t* read) {
+    return read->core.l_qseq - get_left_clip_size(read) - get_right_clip_size(read);
+}
+
+int64_t get_AS_tag(bam1_t* read) {
+    uint8_t* aux_get = bam_aux_get(read, "AS");
+    return bam_aux2i(aux_get);
+}
+
+char* get_sequence_cstr(bam1_t* r, bool fastq_seq = false) {
+	char* seq = new char[r->core.l_qseq+1];
+	const uint8_t* bam_seq = bam_get_seq(r);
+	for (int i = 0; i < r->core.l_qseq; i++) {
+		seq[i] = get_base(bam_seq, i);
+	}
+	seq[r->core.l_qseq] = '\0';
+	if (fastq_seq && bam_is_rev(r)) rc(seq);
+	return seq;
 }
 
 samFile* open_writer(std::string filename, bam_hdr_t* header) {
