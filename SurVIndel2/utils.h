@@ -142,9 +142,6 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=1,Type=Integer,Description=\"Concordant pairs supporting the absence of a SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
-	const char* clipped_reads_tag = "##INFO=<ID=CLIPPED_READS,Number=2,Type=Integer,Description=\"Reads supporting the right and the left breakpoints, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clipped_reads_tag, &len));
-
 	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
 
@@ -197,74 +194,8 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	return header;
 }
 
-void sv2_indel2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string& contig_name, char* chr_seq, sv_t* sv, std::vector<std::string>& filters) {
-	bcf_entry->rid = bcf_hdr_name2id(hdr, contig_name.c_str());
-	bcf_entry->pos = sv->start;
-	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
-	
-	std::string alleles = std::string(1, chr_seq[sv->start]) + ",<" + sv->svtype() + ">";
-	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
-
-	// add filters
-	for (std::string& filter : filters) {
-		int filter_id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter.c_str());
-		bcf_add_filter(hdr, bcf_entry, filter_id);
-	}
-
-	// add info
-	int int_conv; // using hts_pos_t + bcf_update_info_int64 throws [E::bcf_update_info] The type 257 not implemented yet
-	
-	int_conv = sv->end+1;
-	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
-	int_conv = sv->svlen();
-	bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
-	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", sv->svtype().c_str());
-	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
-	if (!sv->ins_seq.empty()) {
-		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
-	}
-
-	int split_junction_score[] = {sv->left_anchor_aln->best_score, sv->right_anchor_aln->best_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", split_junction_score, 2);
-	int split_junction_score2[] = {sv->left_anchor_aln->next_best_score, sv->right_anchor_aln->next_best_score};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", split_junction_score2, 2);
-	int split_junction_size[] = {sv->left_anchor_aln->seq_len, sv->right_anchor_aln->seq_len};
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", split_junction_size, 2);
-	if (sv->full_junction_aln != NULL) {
-		bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
-	}
-
-	if (sv->rc_consensus) {
-		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
-	if (sv->lc_consensus) {
-		int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
-
-	int clipped_reads[] = {sv->rc_consensus ? (int) sv->rc_consensus->supp_clipped_reads() : 0, sv->lc_consensus ? (int) sv->lc_consensus->supp_clipped_reads() : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "CLIPPED_READS", clipped_reads, 2);
-	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-
-	// add GT info
-	int gt[1];
-	gt[0] = bcf_gt_unphased(1);
-	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
-
-	const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
-}
-
 void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
-	bcf_clear(bcf_entry);
-
-	sv2_indel2bcf(hdr, bcf_entry, contig_name, chr_seq, del->sv, filters);
+	sv2bcf(hdr, bcf_entry, del->sv, chr_seq, filters);
 	
 	int int_conv;
 
@@ -298,9 +229,7 @@ void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 }
 
 void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup, std::vector<std::string>& filters) {
-	bcf_clear(bcf_entry);
-	
-	sv2_indel2bcf(hdr, bcf_entry, contig_name, chr_seq, dup->sv, filters);
+	sv2bcf(hdr, bcf_entry, dup->sv, chr_seq, filters);
 
 	// add info
 	int int_conv;

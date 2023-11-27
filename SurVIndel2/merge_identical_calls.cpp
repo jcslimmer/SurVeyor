@@ -11,11 +11,11 @@
 void merge_hsr_sr_with_1sr_rc(bcf_hdr_t* hdr, bcf1_t* hsr_b, bcf1_t* sr_b, bool is_sr_rc) {
 	int* hsr_cr = NULL;
 	int size = 0;
-	bcf_get_info_int32(hdr, hsr_b, "CLIPPED_READS", &hsr_cr, &size);
+	bcf_get_info_int32(hdr, hsr_b, "SPLIT_READS", &hsr_cr, &size);
 
 	int* sr_cr = NULL;
 	size = 0;
-	bcf_get_info_int32(hdr, sr_b, "CLIPPED_READS", &sr_cr, &size);
+	bcf_get_info_int32(hdr, sr_b, "SPLIT_READS", &sr_cr, &size);
 
 	int* hsr_mmapq = NULL;
 	size = 0;
@@ -36,7 +36,7 @@ void merge_hsr_sr_with_1sr_rc(bcf_hdr_t* hdr, bcf1_t* hsr_b, bcf1_t* sr_b, bool 
 		hsr_mmapq[idx] = sr_mmapq[idx];
 	}
 
-	bcf_update_info_int32(hdr, hsr_b, "CLIPPED_READS", hsr_cr, 2);
+	bcf_update_info_int32(hdr, hsr_b, "SPLIT_READS", hsr_cr, 2);
 	bcf_update_info_int32(hdr, hsr_b, "MAX_MAPQ", hsr_mmapq, 2);
 	bcf_update_info_string(hdr, hsr_b, "SOURCE", "2SR");
 }

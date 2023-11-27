@@ -298,7 +298,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 				del->sv->ins_seq = get_sv_info_str(sr_hdr, corr_sr_del, "SVINSSEQ");
 
 				int* clipped_reads = NULL, n = 0;
-				bcf_get_info_int32(sr_hdr, corr_sr_del, "CLIPPED_READS", &clipped_reads, &n);
+				bcf_get_info_int32(sr_hdr, corr_sr_del, "SPLIT_READS", &clipped_reads, &n);
 				if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
 
 				// we are only interested in the number of split reads
@@ -322,7 +322,7 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 // 			}
 // 		} else { // if the SR deletion failed the filters, just borrow the coordinates (and the split reads)
 // 			int* clipped_reads = NULL, n = 0;
-// 			bcf_get_info_int32(sr_hdr, corr_sr_dup, "CLIPPED_READS", &clipped_reads, &n);
+// 			bcf_get_info_int32(sr_hdr, corr_sr_dup, "SPLIT_READS", &clipped_reads, &n);
 // 			if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
 // 		}
 // 	}
@@ -533,9 +533,9 @@ int main(int argc, char* argv[]) {
 	bcf_hdr_t* sr_vcf_hdr = bcf_hdr_read(sr_vcf_file);
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sr_vcf_file, sr_vcf_hdr, bcf_entry) == 0) {
-		int* clipped_reads = NULL, n = 0;
-		bcf_get_info_int32(sr_vcf_hdr, bcf_entry, "CLIPPED_READS", &clipped_reads, &n);
-		if (bcf_has_filter(sr_vcf_hdr, bcf_entry, (char*) "PASS") || (clipped_reads[0] == 0 && clipped_reads[1] == 0)) { // only use 2SR or PASS
+		int* split_reads = NULL, n = 0;
+		bcf_get_info_int32(sr_vcf_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
+		if (bcf_has_filter(sr_vcf_hdr, bcf_entry, (char*) "PASS") || (split_reads[0] == 0 && split_reads[1] == 0)) { // only use 2SR or PASS
 			sr_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
 		} else {
 			sr_nonpass_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
