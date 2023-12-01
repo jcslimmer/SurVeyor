@@ -206,14 +206,10 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-
 if cmd_args.samplename:
     sample_name = cmd_args.samplename
 else:
     sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
-
-call_insertions_cmd = SURVEYOR_PATH + "/bin/call_insertions %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
-exec(call_insertions_cmd)
 
 clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/survindel2_clip_consensus_builder %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(clip_consensus_builder_cmd)

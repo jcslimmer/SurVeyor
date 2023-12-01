@@ -113,6 +113,9 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
 
+	const char* consensuses_id_tag = "##INFO=<ID=CONSENSUSES_ID,Number=1,Type=String,Description=\"ID of the consensuses used to generate this call (for development/debug).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, consensuses_id_tag, &len));
+
 	return header;
 }
 bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
@@ -129,9 +132,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* sd_tag = "##INFO=<ID=STABLE_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the stable regions (in practice, the regions left and right of the insertion site).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sd_tag, &len));
-
-	const char* consensuses_id_tag = "##INFO=<ID=CONSENSUSES_ID,Number=1,Type=String,Description=\"ID of the consensuses used to generate this call (for development/debug).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, consensuses_id_tag, &len));
 
 	const char* algo_tag = "##INFO=<ID=ALGORITHM,Number=1,Type=String,Description=\"Algorithm used to report the call.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, algo_tag, &len));
@@ -234,18 +234,23 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
 	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &sv->mismatch_rate, 1);
 
+	std::string consensuses_id;
 	if (sv->rc_consensus) {
 		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
 		int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
+		consensuses_id += sv->rc_consensus->name();
+	} else consensuses_id += "NA";
+	consensuses_id += ",";
 	if (sv->lc_consensus) {
 		int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
 		int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-	}
+		consensuses_id += sv->lc_consensus->name();
+	} else consensuses_id += "NA";
+	bcf_update_info_string(hdr, bcf_entry, "CONSENSUSES_ID", consensuses_id.c_str());
 
 	// add GT info
 	int gt[1];

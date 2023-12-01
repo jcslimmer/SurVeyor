@@ -29,14 +29,6 @@ std::pair<double, double> ptn_score(insertion_t* insertion) {
 	return {double(r_positive)/(r_positive+r_negative), double(l_positive)/(l_positive+l_negative)};
 }
 
-bool compatible(insertion_t* i1, insertion_t* i2, int max_dist) {
-	if (i1->chr != i2->chr) return false;
-	if (abs(i1->start-i2->start) + abs(i1->end-i2->end) > max_dist) return false;
-	int len_diff = i1->ins_seq.length()-i2->ins_seq.length();
-	if (abs(len_diff) > max_dist) return false;
-	return true;
-}
-
 // filters for all categories
 void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) {
 	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
@@ -47,13 +39,6 @@ void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) 
 	if (is_homopolymer(insertion->ins_seq.substr(0, d))) filters.push_back("HOMOPOLYMER_INSSEQ");
 	else if (d != std::string::npos && is_homopolymer(insertion->ins_seq.substr(d+1))) filters.push_back("HOMOPOLYMER_INSSEQ");
 	if (insertion->rc_reads() > stats.get_max_depth() || insertion->lc_reads() > stats.get_max_depth()) filters.push_back("ANOMALOUS_SC_NUMBER");
-}
-
-std::vector<std::string> get_small_insertions_filterlist(insertion_t* insertion) {
-	std::vector<std::string> filters;
-	add_AST_filters(insertion, filters);
-	if (filters.empty()) filters.push_back("PASS");
-	return filters;
 }
 
 void add_AT_filters(insertion_t* insertion, std::vector<std::string>& filters) {
@@ -122,15 +107,7 @@ int main(int argc, char* argv[]) {
 	}
 	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(transurveyor_ins_vcf_file);
 	bcf_hdr_t* out_vcf_header = bcf_hdr_dup(transurveyor_ins_hdr);
-
-	std::string small_ins_vcf_fname = workdir + "/small_ins.annotated.vcf.gz";
-	htsFile* small_ins_vcf_file = bcf_open(small_ins_vcf_fname.c_str(), "r");
-	if (!small_ins_vcf_file) {
-		throw std::runtime_error("Unable to open file " + small_ins_vcf_fname + ".");
-	}
-	bcf_hdr_t* small_ins_hdr = bcf_hdr_read(small_ins_vcf_file);
 	
-	out_vcf_header = bcf_hdr_merge(out_vcf_header, small_ins_hdr); 
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(transurveyor_ins_vcf_file, transurveyor_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry);
@@ -253,52 +230,6 @@ int main(int argc, char* argv[]) {
 		bcf_unpack(bcf_entry, BCF_UN_ALL);
 		bcf_translate(out_vcf_header, assembled_ins_hdr, bcf_entry);
 		final_insertions_set.push_back(bcf_dup(bcf_entry));
-	}
-
-
-	/* == Small insertions detected through consensus overlap == */
-	while (bcf_read(small_ins_vcf_file, small_ins_hdr, bcf_entry) == 0) {
-		std::string contig_name = bcf_seqname_safe(small_ins_hdr, bcf_entry);
-		int* split_reads = NULL;
-		int size = 0;
-		bcf_get_info_int32(small_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &size);
-
-		int* fwd_split_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(small_ins_hdr, bcf_entry, "FWD_SPLIT_READS", &fwd_split_reads, &size);
-
-		int* rev_split_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(small_ins_hdr, bcf_entry, "REV_SPLIT_READS", &rev_split_reads, &size);
-
-		int* stable_depths = NULL;
-		size = 0;
-		bcf_get_info_int32(small_ins_hdr, bcf_entry, "STABLE_DEPTHS", &stable_depths, &size);
-
-		int end = get_sv_end(bcf_entry, small_ins_hdr);
-		std::string ins_seq = get_ins_seq(bcf_entry, small_ins_hdr);
-		insertion_t* insertion = new insertion_t(contig_name, bcf_entry->pos, end, 0, 0, fwd_split_reads[0], rev_split_reads[0], 
-			fwd_split_reads[1], rev_split_reads[1], 0, ins_seq);
-		insertion->median_lf_cov = stable_depths[0], insertion->median_rf_cov = stable_depths[1];
-
-		std::vector<std::string> filters = get_small_insertions_filterlist(insertion);
-		for (std::string filter : filters) {
-			int filter_id = bcf_hdr_id2int(small_ins_hdr, BCF_DT_ID, filter.c_str());
-			bcf_add_filter(small_ins_hdr, bcf_entry, filter_id);
-		}
-
-		std::vector<insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		bool write = true;
-		for (insertion_t* i : dst_contig_insertions) {
-			if (compatible(i, insertion, config.max_is)) {
-				write = false;
-				break;
-			}
-		}
-		if (write) {
-			bcf_translate(out_vcf_header, small_ins_hdr, bcf_entry);
-			final_insertions_set.push_back(bcf_dup(bcf_entry));
-		}
 	}
 
 	// sort and write final set of insertions to file

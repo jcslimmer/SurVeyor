@@ -26,7 +26,6 @@ add_executable(insurveyor_normalise INSurVeyor/normalise.cpp)
 
 add_executable(reads_categorizer src/reads_categorizer.cpp)
 add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)
-add_executable(call_insertions libs/ssw.c libs/ssw_cpp.cpp src/call_insertions.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
@@ -43,6 +42,5 @@ target_link_libraries(insurveyor_normalise "${HTS_LIB}")
 
 target_link_libraries(reads_categorizer "${HTS_LIB}")
 target_link_libraries(clip_consensus_builder "${HTS_LIB}")
-target_link_libraries(call_insertions "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")

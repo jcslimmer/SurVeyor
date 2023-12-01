@@ -143,20 +143,9 @@ int main(int argc, char* argv[]) {
     contig_map.parse(workdir);
     stats.parse_stats(workdir + "/stats.txt", config.per_contig_stats);
 
-    std::vector<std::pair<insertion_t*, bcf1_t*> > small_insertions, assembled_insertions, transurveyor_insertions;
+    std::vector<std::pair<insertion_t*, bcf1_t*> > assembled_insertions, transurveyor_insertions;
 
     bcf1_t* bcf_entry = bcf_init();
-
-    std::string in_small_ins_fname = workdir + "/small_ins.vcf.gz";
-    htsFile* in_small_ins_file = bcf_open(in_small_ins_fname.c_str(), "r");
-    bcf_hdr_t* small_ins_hdr = bcf_hdr_read(in_small_ins_file);
-    while (bcf_read(in_small_ins_file, small_ins_hdr, bcf_entry) == 0) {
-    	insertion_t* ins = new insertion_t(bcf_seqname_safe(small_ins_hdr, bcf_entry), bcf_entry->pos,
-    			get_sv_end(bcf_entry, small_ins_hdr), 0, 0, 0, 0, 0, 0, 0, "");
-    	ins->left_anchor = get_left_anchor(bcf_entry, small_ins_hdr);
-    	ins->right_anchor = get_right_anchor(bcf_entry, small_ins_hdr);
-    	small_insertions.push_back({ins, bcf_dup(bcf_entry)});
-    }
 
     std::string in_assembled_ins_fname = workdir + "/assembled_ins.vcf.gz";
     htsFile* in_assembled_ins_file = bcf_open(in_assembled_ins_fname.c_str(), "r");
@@ -190,10 +179,6 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool(config.threads);
 
     std::vector<std::future<void> > futures;
-    for (auto& p : small_insertions) {
-    	std::future<void> future = thread_pool.push(compute_coverage, p.first, bam_fname, reference_fname);
-    	futures.push_back(std::move(future));
-    }
     for (auto& p : assembled_insertions) {
 		std::future<void> future1 = thread_pool.push(compute_coverage, p.first, bam_fname, reference_fname);
 		futures.push_back(std::move(future1));
@@ -210,19 +195,6 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < futures.size(); i++) {
         futures[i].get();
     }
-
-    std::string out_small_ins_fname = workdir + "/small_ins.annotated.vcf.gz";
-	htsFile* out_small_ins_file = bcf_open(out_small_ins_fname.c_str(), "wz");
-	if (bcf_hdr_write(out_small_ins_file, small_ins_hdr) != 0) {
-		throw std::runtime_error("Failed to write header to " + out_small_ins_fname);
-	}
-	for (auto& p : small_insertions) {
-		int int2_conv[] = {p.first->median_lf_cov, p.first->median_rf_cov};
-		bcf_update_info_int32(small_ins_hdr, p.second, "STABLE_DEPTHS", int2_conv,  2);
-		if (bcf_write(out_small_ins_file, small_ins_hdr, p.second) != 0) {
-			throw std::runtime_error("Failed to write VCF record to " + out_small_ins_fname);
-		}
-	}
 
 	std::string out_assembled_ins_fname = workdir + "/assembled_ins.annotated.vcf.gz";
 	htsFile* out_assembled_ins_file = bcf_open(out_assembled_ins_fname.c_str(), "wz");
@@ -254,8 +226,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	bcf_close(in_small_ins_file);
-	bcf_close(out_small_ins_file);
 	bcf_close(in_assembled_ins_file);
 	bcf_close(out_assembled_ins_file);
 	bcf_close(in_transurveyor_ins_file);
