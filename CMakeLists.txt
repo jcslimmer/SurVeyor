@@ -14,7 +14,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include_directories(htslib-1.18)
 include_directories(htslib-1.18/include)
 
-add_executable(survindel2_clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp SurVIndel2/clip_consensus_builder.cpp)
+add_executable(survindel2_add_sr_filtering_info libs/ssw.c libs/ssw_cpp.cpp SurVIndel2/add_sr_filtering_info.cpp)
 add_executable(survindel2_merge_identical_calls SurVIndel2/merge_identical_calls.cpp)
 add_executable(survindel2_dp_clusterer libs/ssw.c libs/ssw_cpp.cpp libs/kdtree.c SurVIndel2/dp_clusterer.cpp)
 add_executable(survindel2_normalise SurVIndel2/normalise.cpp)
@@ -26,11 +26,13 @@ add_executable(insurveyor_normalise INSurVeyor/normalise.cpp)
 
 add_executable(reads_categorizer src/reads_categorizer.cpp)
 add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)
+add_executable(find_svs_from_sr_consensuses libs/ssw.c libs/ssw_cpp.cpp src/find_svs_from_sr_consensuses.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
 find_library(HTS_LIB hts PATHS htslib-1.18/lib NO_DEFAULT_PATH)
-target_link_libraries(survindel2_clip_consensus_builder "${HTS_LIB}")
+target_link_libraries(find_svs_from_sr_consensuses "${HTS_LIB}")
+target_link_libraries(survindel2_add_sr_filtering_info "${HTS_LIB}")
 target_link_libraries(survindel2_merge_identical_calls "${HTS_LIB}")
 target_link_libraries(survindel2_dp_clusterer "${HTS_LIB}")
 target_link_libraries(survindel2_normalise "${HTS_LIB}")

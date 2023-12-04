@@ -554,12 +554,6 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 	for (sv_t* sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
-		if (rc_consensus != NULL) {
-			sv->rc_fwd_reads = rc_consensus->fwd_clipped, sv->rc_rev_reads = rc_consensus->rev_clipped;
-		}
-		if (lc_consensus != NULL) {
-			sv->lc_fwd_reads = lc_consensus->fwd_clipped, sv->lc_rev_reads = lc_consensus->rev_clipped;
-		}
 		sv->overlap = overlap;
 		sv->mismatch_rate = mismatch_rate;
 

@@ -165,8 +165,18 @@ exec(read_categorizer_cmd)
 clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
 exec(clip_consensus_builder_cmd)
 
+if cmd_args.samplename:
+    sample_name = cmd_args.samplename
+else:
+    sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
+
+find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+exec(find_svs_from_sr_consensuses_cmd)
+
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
+
+cp(cmd_args.workdir + "/sr.vcf.gz", survindel2_workdir)
 
 cp(cmd_args.workdir + "/config.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
@@ -206,15 +216,10 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-if cmd_args.samplename:
-    sample_name = cmd_args.samplename
-else:
-    sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
+add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
+exec(add_sr_filtering_info_cmd)
 
-clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/survindel2_clip_consensus_builder %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
-exec(clip_consensus_builder_cmd)
-
-normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.vcf.gz %s/sr.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
+normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
 exec(normalise_cmd)
 
 merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/survindel2_merge_identical_calls %s/sr.norm.vcf.gz %s/sr.norm.dedup.vcf.gz" % (survindel2_workdir, survindel2_workdir)

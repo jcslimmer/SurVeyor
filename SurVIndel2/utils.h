@@ -116,7 +116,6 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
 
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_tag, &len));
 	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
 
@@ -144,9 +143,6 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 
 	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
-
-	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source algorithm of the indel.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));
@@ -239,11 +235,6 @@ void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
 	int disc_pairs_surr[] = {dup->rc_cluster_region_disc_pairs, dup->lc_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-}
-
-void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
-	for (int i = 0; i < consensuses.size(); i++) if (used[i]) consensuses[i] = NULL;
-	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), (consensus_t*) NULL), consensuses.end());
 }
 
 #endif //SURVINDEL2_UTILS_H

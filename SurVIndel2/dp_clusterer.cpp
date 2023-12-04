@@ -9,7 +9,7 @@
 #include "utils.h"
 #include "../src/sam_utils.h"
 #include "stat_tests.h"
-#include "extend_1sr_consensus.h"
+#include "../src/sw_utils.h"
 #include "../libs/kdtree.h"
 #include "../src/vcf_utils.h"
 

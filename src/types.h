@@ -104,7 +104,6 @@ struct sv_t {
     std::string chr;
     hts_pos_t start, end;
     std::string ins_seq;
-    int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
 
@@ -117,8 +116,13 @@ struct sv_t {
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
         left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
 
-    int rc_reads() { return rc_fwd_reads + rc_rev_reads; }
-    int lc_reads() { return lc_fwd_reads + lc_rev_reads; }
+    int rc_reads() { return rc_consensus ? rc_consensus->fwd_clipped + rc_consensus->rev_clipped : 0; }
+    int lc_reads() { return lc_consensus ? lc_consensus->fwd_clipped + lc_consensus->rev_clipped : 0; }
+
+    int rc_fwd_reads() { return rc_consensus ? rc_consensus->fwd_clipped : 0; }
+    int rc_rev_reads() { return rc_consensus ? rc_consensus->rev_clipped : 0; }
+    int lc_fwd_reads() { return lc_consensus ? lc_consensus->fwd_clipped : 0; }
+    int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_clipped : 0; }
 
     std::string unique_key() {
         return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;

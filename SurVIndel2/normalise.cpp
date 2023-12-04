@@ -3,26 +3,11 @@
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
 #include "../src/sam_utils.h"
+#include "../src/sam_utils.h"
 #include "utils.h"
 
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
-
-std::string get_ins_seq(bcf1_t* sv) {
-	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
-	char c = toupper(sv->d.allele[1][0]);
-	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
-		return sv->d.allele[1];
-	}
-
-	// otherwise, look for SVINSSEQ (compliant with Manta)
-	char* data = NULL;
-	int size = 0;
-	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
-	if (data) return data;
-
-	return "";
-}
 
 void normalise_del(bcf1_t* vcf_record) {
 
@@ -30,7 +15,7 @@ void normalise_del(bcf1_t* vcf_record) {
 	int end = get_sv_end(hdr, vcf_record);
 
 	// try to shorten deletion if ins_seq
-	std::string ins_seq = get_ins_seq(vcf_record);
+	std::string ins_seq = get_ins_seq(hdr, vcf_record);
 	std::string orig_ins_seq = ins_seq;
 
 	int start_is = 0;
@@ -68,7 +53,7 @@ void normalise_del(bcf1_t* vcf_record) {
 
 void normalise_dup(bcf1_t* vcf_record) {
 
-	std::string ins_seq = get_ins_seq(vcf_record);
+	std::string ins_seq = get_ins_seq(hdr, vcf_record);
 	if (!ins_seq.empty()) return;
 
 	char* chr_seq = chr_seqs.get_seq(bcf_hdr_id2name(hdr, vcf_record->rid));

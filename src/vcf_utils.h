@@ -68,6 +68,9 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
 
+	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
+
 	const char* sr_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_tag, &len));
 
@@ -113,8 +116,11 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
 
-	const char* consensuses_id_tag = "##INFO=<ID=CONSENSUSES_ID,Number=1,Type=String,Description=\"ID of the consensuses used to generate this call (for development/debug).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, consensuses_id_tag, &len));
+	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
+
+	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
 
 	return header;
 }
@@ -208,9 +214,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	int int2_conv[2];
 	int2_conv[0] = sv->rc_reads(), int2_conv[1] = sv->lc_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = sv->rc_fwd_reads, int2_conv[1] = sv->lc_fwd_reads;
+	int2_conv[0] = sv->rc_fwd_reads(), int2_conv[1] = sv->lc_fwd_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "FWD_SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = sv->rc_rev_reads, int2_conv[1] = sv->lc_rev_reads;
+	int2_conv[0] = sv->rc_rev_reads(), int2_conv[1] = sv->lc_rev_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
 
 	if (sv->full_junction_aln != NULL) {
@@ -234,23 +240,24 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
 	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &sv->mismatch_rate, 1);
 
-	std::string consensuses_id;
 	if (sv->rc_consensus) {
 		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
 		int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-		consensuses_id += sv->rc_consensus->name();
-	} else consensuses_id += "NA";
-	consensuses_id += ",";
+		if (sv->rc_consensus->remap_boundary != consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+			bcf_update_info_int32(hdr, bcf_entry, "REMAP_UB", &sv->rc_consensus->remap_boundary, 1);
+		}
+	}
 	if (sv->lc_consensus) {
 		int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
 		int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
 		bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-		consensuses_id += sv->lc_consensus->name();
-	} else consensuses_id += "NA";
-	bcf_update_info_string(hdr, bcf_entry, "CONSENSUSES_ID", consensuses_id.c_str());
+		if (sv->lc_consensus->remap_boundary != consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
+			bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
+		}
+	}
 
 	// add GT info
 	int gt[1];
@@ -319,6 +326,179 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
     std::string svtype = data;
     delete[] data;
     return svtype;
+}
+
+std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
+	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
+	bcf_unpack(sv, BCF_UN_INFO);
+	char c = toupper(sv->d.allele[1][0]);
+	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
+		return sv->d.allele[1];
+	}
+
+	// otherwise, look for SVINSSEQ (compliant with Manta)
+	char* data = NULL;
+	int size = 0;
+	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
+	if (data) return data;
+
+	return "";
+}
+
+sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
+
+	// MAX_MAPQ
+	int* data = NULL;
+	int len = 0;
+	bcf_get_info_int32(hdr, b, "MAX_MAPQ", &data, &len);
+	int max_rc_mapq = 0, max_lc_mapq = 0;
+	if (len > 0) {
+		max_rc_mapq = data[0];
+		max_lc_mapq = data[1];
+	}
+
+	int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "FWD_SPLIT_READS", &data, &len);
+	if (len > 0) {
+		rc_fwd_reads = data[0];
+		lc_fwd_reads = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "REV_SPLIT_READS", &data, &len);
+	if (len > 0) {
+		rc_rev_reads = data[0];
+		lc_rev_reads = data[1];
+	}
+
+
+	consensus_t* rc_consensus = NULL;
+	if (rc_fwd_reads + rc_rev_reads > 0) {
+		rc_consensus = new consensus_t(false, 0, 0, 0, "", rc_fwd_reads, rc_rev_reads, 0, max_rc_mapq, consensus_t::UPPER_BOUNDARY_NON_CALCULATED, 0);
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "RCC_EXT_1SR_READS", &data, &len);
+		int rcc_left_ext_reads = 0, rcc_right_ext_reads = 0;
+		if (len > 0) {
+			rc_consensus->left_ext_reads = data[0];
+			rc_consensus->right_ext_reads = data[1];
+		}
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "RCC_HQ_EXT_1SR_READS", &data, &len);
+		if (len > 0) {
+			rc_consensus->hq_left_ext_reads = data[0];
+			rc_consensus->hq_right_ext_reads = data[1];
+		}
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "REMAP_UB", &data, &len);
+		if (len > 0) rc_consensus->remap_boundary = data[0];
+	} 
+
+	consensus_t* lc_consensus = NULL;
+	if (lc_fwd_reads + lc_rev_reads > 0) {
+		lc_consensus = new consensus_t(true, 0, 0, 0, "", lc_fwd_reads, lc_rev_reads, 0, max_lc_mapq, consensus_t::LOWER_BOUNDARY_NON_CALCULATED, 0);
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "LCC_EXT_1SR_READS", &data, &len);
+		if (len > 0) {
+			lc_consensus->left_ext_reads = data[0];
+			lc_consensus->right_ext_reads = data[1];
+		}
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "LCC_HQ_EXT_1SR_READS", &data, &len);
+		if (len > 0) {
+			lc_consensus->hq_left_ext_reads = data[0];
+			lc_consensus->hq_right_ext_reads = data[1];
+		}
+
+		data = NULL;
+		len = 0;
+		bcf_get_info_int32(hdr, b, "REMAP_LB", &data, &len);
+		if (len > 0) lc_consensus->remap_boundary = data[0];
+	}
+
+	char* data2 = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &data2, &len);
+	std::string left_split_mapping_range = "", right_split_mapping_range = "";
+	if (data2) {
+		std::string mapping_range = data2;
+		size_t comma_pos = mapping_range.find(",");
+		left_split_mapping_range = mapping_range.substr(0, comma_pos);
+		right_split_mapping_range = mapping_range.substr(comma_pos+1);
+	}
+
+	int left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")));
+	int left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1));
+	int right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")));
+	int right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1));
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SCORE", &data, &len);
+	int left_split_score = data[0], right_split_score = data[1];
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SCORE2", &data, &len);
+	int left_split_score2 = data[0], right_split_score2 = data[1];
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SIZE", &data, &len);
+	int left_split_size = data[0], right_split_size = data[1];
+
+	data2 = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_CIGAR", (void**) &data2, &len);
+	std::string left_split_cigar = "", right_split_cigar = "";
+	if (data2) {
+		std::string cigar = data2;
+		size_t comma_pos = cigar.find(",");
+		left_split_cigar = cigar.substr(0, comma_pos);
+		right_split_cigar = cigar.substr(comma_pos+1);
+	}
+
+	int full_junction_score = 0;
+	bcf_get_info_int32(hdr, b, "FULL_JUNCTION_SCORE", &data, &len);
+	if (len > 0) full_junction_score = data[0];
+
+	std::string full_junction_cigar = "";
+	data2 = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &data2, &len);
+	if (data2) full_junction_cigar = data2;
+
+	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, left_split_size, left_split_score, left_split_score2, left_split_cigar);
+	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
+	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar);
+
+	std::string svtype = get_sv_type(hdr, b);
+	sv_t* sv;
+	if (svtype == "DEL") {
+		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+	} else if (svtype == "DUP") {
+		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+	} else if (svtype == "INS") {
+		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+	} else {
+		throw std::runtime_error("Unsupported SV type: " + svtype);
+	}
+
+	sv->source = get_sv_info_str(hdr, b, "SOURCE");
+
+	return sv;
 }
 
 #endif /* VCF_UTILS_H */
