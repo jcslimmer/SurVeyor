@@ -1,59 +1,33 @@
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 #include <htslib/tbx.h>
+#include <htslib/vcf.h>
 #include <cstdint>
 #include <chrono>
 #include <cmath>
 #include <sstream>
 #include <unordered_map>
 
-#include "utils.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
 #include "../libs/IntervalTree.h"
-#include "../src/sam_utils.h"
-#include "stat_tests.h"
+#include "sam_utils.h"
 #include "extend_1sr_consensus.h"
-#include "../src/sw_utils.h"
-#include "../src/sam_utils.h"
+#include "sw_utils.h"
+#include "vcf_utils.h"
 
 config_t config;
 stats_t stats;
 std::string workdir, complete_bam_fname, reference_fname;
-std::mutex out_mtx, log_mtx;
 
 chr_seqs_map_t chr_seqs;
 contig_map_t contig_map;
 
-std::mutex bam_pool_mtx;
-std::queue<open_samFile_t*> bam_pool;
-open_samFile_t* get_bam_reader(std::string bam_fname) {
-    open_samFile_t* o;
-    bam_pool_mtx.lock();
-    if (!bam_pool.empty()) {
-        o = bam_pool.front();
-        bam_pool.pop();
-    } else {
-        o = open_samFile(bam_fname.c_str());
-        hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
-    }
-    bam_pool_mtx.unlock();
-    return o;
-}
-void release_bam_reader(open_samFile_t* reader) {
-    bam_pool_mtx.lock();
-    bam_pool.push(reader);
-    bam_pool_mtx.unlock();
-}
-
-std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
-std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
-std::unordered_map<std::string, std::vector<sv2_deletion_t*> > sv2_deletions_by_chr;
-std::unordered_map<std::string, std::vector<sv2_duplication_t*> > sv2_duplications_by_chr;
+std::unordered_map<std::string, std::vector<sv_t*> > svs_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
-std::mutex mtx, indel_out_mtx, up_consensus_mtx;
+std::mutex mtx;
 
 
 struct pair_w_score_t {
@@ -91,9 +65,15 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 	close_samFile(bam_file);
 }
 
+void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
+	for (int i = 0; i < consensuses.size(); i++) if (used[i]) consensuses[i] = NULL;
+	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), (consensus_t*) NULL), consensuses.end());
+}
+
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
-		std::vector<deletion_t*>& contig_deletions, std::vector<duplication_t*>& contig_duplications, StripedSmithWaterman::Aligner& aligner,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+
+	std::vector<sv_t*> local_svs;
 
 	auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
 		return c1->is_hsr && c2->is_hsr ? 50 : config.min_clip_len;
@@ -168,17 +148,16 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
 
-		for (sv_t* sv : svs) {
-			if (sv->svtype() == "DEL") {
-				contig_deletions.push_back((deletion_t*) sv);
-			} else {
-				contig_duplications.push_back((duplication_t*) sv);
-			}
-		}
+		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
 
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
 	remove_marked_consensuses(lc_consensuses, used_consensus_lc);
+
+	mtx.lock();
+	std::vector<sv_t*>& svs = svs_by_chr[contig_name];
+	svs.insert(svs.end(), local_svs.begin(), local_svs.end());
+	mtx.unlock();
 }
 
 // remove HSR clusters that overlap with a clipped position, i.e., the clipped position of a clipped cluster is contained in the HSR cluster
@@ -266,9 +245,6 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 void find_indels_from_paired_consensuses(int id, int contig_id, std::string contig_name, 
 	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
 
-	std::vector<deletion_t*> contig_deletions;
-	std::vector<duplication_t*> contig_duplications;
-
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
 	mtx.lock();
@@ -278,39 +254,30 @@ void find_indels_from_paired_consensuses(int id, int contig_id, std::string cont
 	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
 
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, contig_deletions, contig_duplications, aligner, *mateseqs_w_mapq);
-
-	mtx.lock();
-    std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-    std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
-    mtx.unlock();
-	deletions.insert(deletions.end(), contig_deletions.begin(), contig_deletions.end());
-	duplications.insert(duplications.end(), contig_duplications.begin(), contig_duplications.end());
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq);
 
     /* == Deal with unpaired consensuses == */
-	up_consensus_mtx.lock();
+	mtx.lock();
 	std::vector<consensus_t*>& unpaired_consensuses = unpaired_consensuses_by_chr[contig_name];
 	unpaired_consensuses.insert(unpaired_consensuses.end(), rc_sr_consensuses.begin(), rc_sr_consensuses.end());
 	unpaired_consensuses.insert(unpaired_consensuses.end(), lc_sr_consensuses.begin(), lc_sr_consensuses.end());
 	unpaired_consensuses.insert(unpaired_consensuses.end(), rc_hsr_consensuses.begin(), rc_hsr_consensuses.end());
 	unpaired_consensuses.insert(unpaired_consensuses.end(), lc_hsr_consensuses.begin(), lc_hsr_consensuses.end());
-	up_consensus_mtx.unlock();
+	mtx.unlock();
 }
-
 
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
 		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
 
-	std::vector<deletion_t*> local_dels;
-	std::vector<duplication_t*> local_dups;
+	std::vector<sv_t*> local_svs;
 
 	char* contig_seq = chr_seqs.get_seq(contig_name);
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
-	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
 
 	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start, consensuses->begin()+end);
@@ -343,49 +310,15 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 			continue;
 		}
 
-		for (sv_t* sv : svs) {
-			if (sv->svtype() == "DEL") {
-				local_dels.push_back((deletion_t*) sv);
-			} else {
-				local_dups.push_back((duplication_t*) sv);
-			}
-		}
+		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
 	close_samFile(bam_file);
 	for (ext_read_t* read : candidate_reads_for_extension) delete read;
 
-	indel_out_mtx.lock();
-	deletions_by_chr[contig_name].insert(deletions_by_chr[contig_name].end(), local_dels.begin(), local_dels.end());
-	duplications_by_chr[contig_name].insert(duplications_by_chr[contig_name].end(), local_dups.begin(), local_dups.end());
-	indel_out_mtx.unlock();
+	mtx.lock();
+	svs_by_chr[contig_name].insert(svs_by_chr[contig_name].end(), local_svs.begin(), local_svs.end());
+	mtx.unlock();
 }
-
-
-void size_and_depth_filtering(int id, std::string contig_name) {
-    open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
-
-    out_mtx.lock();
-    std::vector<sv2_deletion_t*>& deletions = sv2_deletions_by_chr[contig_name];
-    out_mtx.unlock();
-    std::vector<double> temp1;
-    std::vector<uint32_t> temp2;
-    calculate_confidence_interval_size(contig_name, temp1, temp2, deletions, bam_file, stats, config.min_sv_size);
-    depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
-
-    out_mtx.lock();
-    std::vector<sv2_duplication_t*>& duplications = sv2_duplications_by_chr[contig_name];
-    out_mtx.unlock();
-//    std::vector<duplication_t*> duplications_w_cleanup, duplications_wo_cleanup;
-//    for (duplication_t* dup : duplications) {
-//        if (dup->len() >= config.min_size_for_depth_filtering) duplications_w_cleanup.push_back(dup);
-//        else duplications_wo_cleanup.push_back(dup);
-//    }
-//    depth_filter_dup_w_cleanup(contig_name, duplications_w_cleanup, bam_file, stats, config, max_allowed_frac_normalized, workdir);
-//    depth_filter_dup(contig_name, duplications_wo_cleanup, bam_file, config.min_size_for_depth_filtering, config);
-	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
-    release_bam_reader(bam_file);
-}
-
 
 int main(int argc, char* argv[]) {
 
@@ -514,177 +447,52 @@ int main(int argc, char* argv[]) {
 
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-		
-		auto& deletions = deletions_by_chr[contig_name];
-		for (int i = 0; i < deletions.size(); i++) {
-			if (-deletions[i]->svlen() < config.min_sv_size) {
-				delete deletions[i];
-				deletions[i] = NULL;
+
+		auto& svs = svs_by_chr[contig_name];
+		for (int i = 0; i < svs.size(); i++) {
+			if (svs[i]->svtype() == "DEL" && -svs[i]->svlen() < config.min_sv_size) {
+				delete svs[i];
+				svs[i] = NULL;
+			} else if ((svs[i]->svtype() == "DUP" || svs[i]->svtype() == "INS") && svs[i]->svlen() < config.min_sv_size) {
+				delete svs[i];
+				svs[i] = NULL;
 			}
 		}
-		deletions_by_chr[contig_name].erase(std::remove(deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end(), (deletion_t*) NULL), deletions_by_chr[contig_name].end());
-		
-		auto& duplications = duplications_by_chr[contig_name];
-		for (int i = 0; i < duplications.size(); i++) {
-			if (duplications[i]->svlen() < config.min_sv_size) {
-				delete duplications[i];
-				duplications[i] = NULL;
-			}
-		}
-		duplications_by_chr[contig_name].erase(std::remove(duplications_by_chr[contig_name].begin(), duplications_by_chr[contig_name].end(), (duplication_t*) NULL), duplications_by_chr[contig_name].end());
-	}
-
-	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-		std::string contig_name = contig_map.get_name(contig_id);
-		std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-		for (deletion_t* del : deletions) {
-			sv2_deletions_by_chr[contig_name].push_back(new sv2_deletion_t(del));
-		}
-
-		std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
-		for (duplication_t* dup : duplications) {
-			sv2_duplications_by_chr[contig_name].push_back(new sv2_duplication_t(dup));
-		}
+		svs.erase(std::remove(svs.begin(), svs.end(), (sv_t*) NULL), svs.end());
 	}
 
     // create VCF out files
-	bcf_hdr_t* out_vcf_header = sv2_generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
+	bcf_hdr_t* out_vcf_header = generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
     std::string out_vcf_fname = workdir + "/sr.vcf.gz";
 	htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-	std::cout << "Computing statistics for indels." << std::endl;
-	start_time = std::chrono::high_resolution_clock::now();
-
-    ctpl::thread_pool thread_pool3(config.threads);
-    for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-        std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = thread_pool3.push(size_and_depth_filtering, contig_name);
-        futures.push_back(std::move(future));
-    }
-    thread_pool3.stop(true);
-    for (size_t i = 0; i < futures.size(); i++) {
-        futures[i].get();
-    }
-    futures.clear();
-
-	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
-	std::cout << "Statistics computed in " << elapsed_time << " seconds" << std::endl;
-
-    std::unordered_map<std::string, std::vector<bcf1_t*>> bcf_entries;
     bcf1_t* bcf_entry = bcf_init();
-    int del_id = 0;
+	std::unordered_map<std::string, int> svtype_id;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	if (!sv2_deletions_by_chr.count(contig_name)) continue;
-		std::vector<sv2_deletion_t*>& dels = sv2_deletions_by_chr[contig_name];
-		std::sort(dels.begin(), dels.end(), [](sv2_deletion_t* del1, sv2_deletion_t* del2) {
-			return std::tie(del1->sv->start, del1->sv->end) < std::tie(del2->sv->start, del2->sv->end);
+		std::vector<sv_t*>& svs = svs_by_chr[contig_name];
+		std::sort(svs.begin(), svs.end(), [](sv_t* sv1, sv_t* sv2) {
+			return std::tie(sv1->start, sv1->end) < std::tie(sv2->start, sv2->end);
 		});
-        for (sv2_deletion_t* del : dels) {
-        	del->sv->id = "DEL_SR_" + std::to_string(del_id++);
-            std::vector<std::string> filters;
 
-            if (-del->sv->svlen() < stats.max_is) {
-            	if (-del->sv->svlen()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
-            }
-            if (del->remap_boundary_lower > del->sv->start) {
-                filters.push_back("REMAP_BOUNDARY_FILTER");
-            } else if (del->remap_boundary_upper < del->sv->end) {
-                filters.push_back("REMAP_BOUNDARY_FILTER");
-            }
-            if (-del->sv->svlen() >= config.min_size_for_depth_filtering &&
-                    (del->med_left_flanking_cov*0.74<=del->med_indel_left_cov || del->med_right_flanking_cov*0.74<=del->med_indel_right_cov)) {
-            	filters.push_back("DEPTH_FILTER");
-            }
-            if (del->med_left_flanking_cov > stats.max_depth || del->med_right_flanking_cov > stats.max_depth ||
-            	del->med_left_flanking_cov < stats.min_depth || del->med_right_flanking_cov < stats.min_depth ||
-				del->med_left_cluster_cov > stats.max_depth || del->med_right_cluster_cov > stats.max_depth) {
-                filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-            }
-            if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
-                filters.push_back("ANOMALOUS_DEL_DEPTH");
-            }
-            if (del->sv->full_junction_aln != NULL && del->sv->left_anchor_aln->best_score+del->sv->right_anchor_aln->best_score-del->sv->full_junction_aln->best_score < config.min_score_diff) {
-            	filters.push_back("WEAK_SPLIT_ALIGNMENT");
-            }
-            if ((del->sv->lc_consensus == NULL || del->sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-            	(del->sv->rc_consensus == NULL || del->sv->rc_consensus->max_mapq < config.high_confidence_mapq)) {
-				filters.push_back("LOW_MAPQ_CONSENSUSES");
-            }
-            if (del->sv->source == "1SR_RC" || del->sv->source == "1HSR_RC") {
-            	if (del->sv->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-            } else if (del->sv->source == "1SR_LC" || del->sv->source == "1HSR_LC") {
-            	if (del->sv->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-            }
-
-            if (filters.empty()) {
-                filters.push_back("PASS");
-            }
-
-            sv2_del2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
-            bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
-            delete del;
-        }
-    }
-
-    int dup_id = 0;
-    for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	if (!sv2_duplications_by_chr.count(contig_name)) continue;
-    	std::vector<sv2_duplication_t*>& dups = sv2_duplications_by_chr[contig_name];
-    	std::sort(dups.begin(), dups.end(), [](sv2_duplication_t* dup1, sv2_duplication_t* dup2) {
-    		return std::tie(dup1->sv->start, dup1->sv->end) < std::tie(dup2->sv->start, dup2->sv->end);
-    	});
-        for (sv2_duplication_t* dup : dups) {
-        	dup->sv->id = "DUP_SR_" + std::to_string(dup_id++);
-            std::vector<std::string> filters;
-
-            if (dup->sv->svlen() >= config.min_size_for_depth_filtering &&
-                    (dup->med_left_flanking_cov*1.26>=dup->med_indel_left_cov || dup->med_indel_right_cov<=dup->med_right_flanking_cov*1.26)) {
-                // note: using >= so that a 0 0 0 0 depth will not be accepted
-                filters.push_back("DEPTH_FILTER");
-            }
-
-            if (dup->med_left_flanking_cov > stats.max_depth || dup->med_right_flanking_cov > stats.max_depth ||
-                dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
-                filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-            }
-            if (dup->sv->full_junction_aln != NULL && dup->sv->left_anchor_aln->best_score+dup->sv->right_anchor_aln->best_score-dup->sv->full_junction_aln->best_score < config.min_score_diff) {
-				filters.push_back("WEAK_SPLIT_ALIGNMENT");
+		std::vector<std::string> filters;
+        for (sv_t* sv : svs) {
+			sv->id = sv->svtype() +  "_SR_" + std::to_string(svtype_id[sv->svtype()]++);
+			if (sv->svtype() == "DEL") {
+            	del2bcf(out_vcf_header, bcf_entry, (deletion_t*) sv, chr_seqs.get_seq(contig_name), filters);
+			} else if (sv->svtype() == "DUP") {
+				dup2bcf(out_vcf_header, bcf_entry, (duplication_t*) sv, chr_seqs.get_seq(contig_name), filters);
+			} else {
+				ins2bcf(out_vcf_header, bcf_entry, (insertion_t*) sv, chr_seqs.get_seq(contig_name), filters);
 			}
-            if ((dup->sv->lc_consensus == NULL || dup->sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-				(dup->sv->rc_consensus == NULL || dup->sv->rc_consensus->max_mapq < config.high_confidence_mapq)) {
-				filters.push_back("LOW_MAPQ_CONSENSUSES");
-			}
-            if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
-                filters.push_back("NOT_ENOUGH_OW_PAIRS");
-            }
-            if (dup->sv->source == "1SR_RC" || dup->sv->source == "1HSR_RC") {
-				if (dup->sv->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-            } else if (dup->sv->source == "1SR_LC" || dup->sv->source == "1HSR_LC") {
-            	if (dup->sv->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
-			}
-
-            if (filters.empty()) {
-                filters.push_back("PASS");
-            }
-
-			sv2_dup2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
-            bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
-            delete dup;
-        }
-    }
-
-    for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	auto& bcf_entries_contig = bcf_entries[contig_name];
-    	std::sort(bcf_entries_contig.begin(), bcf_entries_contig.end(), [](const bcf1_t* b1, const bcf1_t* b2) {return b1->pos < b2->pos;});
-		for (bcf1_t* bcf_entry : bcf_entries_contig) {
- 			if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
+            if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
-		}
-	
+            delete sv;
+        }
+		
 		for (consensus_t* consensus : unpaired_consensuses_by_chr[contig_name]) delete consensus;
     }
 

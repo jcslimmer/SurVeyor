@@ -219,10 +219,10 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_wor
 add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(add_sr_filtering_info_cmd)
 
-normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
+normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
 exec(normalise_cmd)
 
-merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/survindel2_merge_identical_calls %s/sr.norm.vcf.gz %s/sr.norm.dedup.vcf.gz" % (survindel2_workdir, survindel2_workdir)
+merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/survindel2_merge_identical_calls %s/sr.annotated.norm.vcf.gz %s/sr.norm.dedup.vcf.gz" % (survindel2_workdir, survindel2_workdir)
 exec(merge_identical_calls_cmd)
 
 dp_clusterer = SURVEYOR_PATH + "/bin/survindel2_dp_clusterer %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)

@@ -1,10 +1,10 @@
 #include <string>
+#include <algorithm>
 
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
 #include "../src/sam_utils.h"
-#include "../src/sam_utils.h"
-#include "utils.h"
+#include "../src/vcf_utils.h"
 
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
@@ -70,12 +70,71 @@ void normalise_dup(bcf1_t* vcf_record) {
 	bcf_update_info_int32(hdr, vcf_record, "END", &end_1based, 1);
 }
 
+bool normalise_ins(bcf1_t* vcf_record) {
+
+	char* chr_seq = chr_seqs.get_seq(bcf_hdr_id2name(hdr, vcf_record->rid));
+	int end = get_sv_end(hdr, vcf_record);
+
+	// try to shorten deletion if ins_seq
+	std::string ins_seq = get_ins_seq(hdr, vcf_record);
+	std::string orig_ins_seq = ins_seq;
+	std::replace(ins_seq.begin(), ins_seq.end(), ' ', '-');
+
+	int start_is = 0;
+	while (start_is < ins_seq.length() && vcf_record->pos < end && toupper(ins_seq[start_is]) == toupper(chr_seq[vcf_record->pos+1])) {
+		start_is++;
+		vcf_record->pos++;
+	}
+	ins_seq = ins_seq.substr(start_is);
+
+	int end_is = ins_seq.length();
+	while (end_is > 0 && vcf_record->pos < end && toupper(ins_seq[end_is-1]) == toupper(chr_seq[end])) {
+		end_is--;
+		end--;
+	}
+	ins_seq = ins_seq.substr(0, end_is);
+
+	if (vcf_record->pos == end) {
+		while (toupper(chr_seq[vcf_record->pos]) == toupper(ins_seq[ins_seq.length()-1])) {
+			for (int i = ins_seq.length()-1; i >= 1; i--) {
+				ins_seq[i] = ins_seq[i-1];
+			}
+			ins_seq[0] = toupper(chr_seq[vcf_record->pos]);
+			vcf_record->pos--;
+			end--;
+		}
+	}
+
+	if (ins_seq != orig_ins_seq) {
+		if (ins_seq.empty()) {
+			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", NULL);
+		} else {
+			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", ins_seq.c_str());
+			if (bcf_get_info_flag(hdr, vcf_record, "INCOMPLETE_ASSEMBLY", NULL, NULL)) {
+				int len = ins_seq.length();
+				bcf_update_info_int32(hdr, vcf_record, "SVLEN", &len, 1);
+			}
+		}
+	}
+
+	int end_1based = end+1;
+	bcf_update_info_int32(hdr, vcf_record, "END", &end_1based, 1);
+
+	std::string alleles = std::string(1, chr_seq[vcf_record->pos]) + "," + vcf_record->d.allele[1];
+	bcf_update_alleles_str(hdr, vcf_record, alleles.c_str());
+
+	return (vcf_record->pos >= 0 && ins_seq[ins_seq.length()-1] != '-');
+}
+
+
 void normalise(bcf1_t* vcf_record) {
 	std::string svtype = get_sv_type(hdr, vcf_record);
 	if (svtype == "DEL") {
 		normalise_del(vcf_record);
 	} else if (svtype == "DUP") {
 		normalise_dup(vcf_record);
+	} else if (svtype == "INS") {
+		normalise_ins(vcf_record);
 	}
 }
 
