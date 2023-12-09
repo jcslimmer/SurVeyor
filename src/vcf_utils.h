@@ -199,7 +199,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	return header;
 }
 
-void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vector<std::string>& filters) {
+void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	bcf_clear(bcf_entry);
 	
 	bcf_entry->rid = bcf_hdr_name2id(hdr, sv->chr.c_str());
@@ -210,7 +210,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	// add FILTERs
-	for (std::string& filter : filters) {
+	for (std::string& filter : sv->filters) {
 		int filter_id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter.c_str());
 		bcf_add_filter(hdr, bcf_entry, filter_id);
 	}
@@ -293,25 +293,13 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 	gt[0] = bcf_gt_unphased(1);
 	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
 
-	if (!filters.empty()) {
-		const char* ft_val = (filters[0] == "PASS") ? "PASS" : "FAIL";
-		bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
-	}
-}
+	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
+	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
 
-void del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, deletion_t* del, char* chr_seq, std::vector<std::string>& filters) {
-	sv2bcf(hdr, bcf_entry, del, chr_seq, filters);
-}
-
-void dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, duplication_t* dup, char* chr_seq, std::vector<std::string>& filters) {
-	sv2bcf(hdr, bcf_entry, dup, chr_seq, filters);
-}
-
-void ins2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, insertion_t* ins, char* chr_seq, std::vector<std::string>& filters) {
-	sv2bcf(hdr, bcf_entry, ins, chr_seq, filters);
-
-	if (ins->ins_seq.find("-") != std::string::npos) {
-		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
+	if (sv->svtype() == "INS") {
+		if (sv->ins_seq.find("-") != std::string::npos) {
+			bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
+		}
 	}
 }
 
@@ -542,6 +530,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
+
+	for (int i = 0; i < b->d.n_flt; i++) {
+		sv->filters.push_back(bcf_hdr_int2id(hdr, BCF_DT_ID, b->d.flt[i]));
+	}
 
 	return sv;
 }

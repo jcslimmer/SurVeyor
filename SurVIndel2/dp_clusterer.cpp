@@ -322,39 +322,37 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 	mtx.lock();
 	bcf1_t* bcf_entry = bcf_init();
 	for (sv2_deletion_t* del : sv2_deletions) {
-		std::vector<std::string> filters;
-
 		if (-del->sv->svlen() < config.min_sv_size) {
 			continue;
 		}
 		if (del->ks_pval > 0.01) {
-			filters.push_back("KS_FILTER");
-		} else
+			del->sv->filters.push_back("KS_FILTER");
+		}
 		if (-del->sv->svlen() >= stats.max_is && double(del->sv->disc_pairs)/(del->sv->disc_pairs+del->conc_pairs) < 0.25) {
-			filters.push_back("LOW_PTN_RATIO");
+			del->sv->filters.push_back("LOW_PTN_RATIO");
 		}
 
 		if (del->med_left_flanking_cov*0.74<=del->med_indel_left_cov || del->med_right_flanking_cov*0.74<=del->med_indel_right_cov) {
-			filters.push_back("DEPTH_FILTER");
+			del->sv->filters.push_back("DEPTH_FILTER");
 		}
 		if (del->med_left_flanking_cov > stats.max_depth || del->med_right_flanking_cov > stats.max_depth ||
 			del->med_left_flanking_cov < stats.min_depth || del->med_right_flanking_cov < stats.min_depth ||
 			del->med_left_cluster_cov > stats.max_depth || del->med_right_cluster_cov > stats.max_depth) {
-			filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+			del->sv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
 		}
 		if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
-			filters.push_back("ANOMALOUS_DEL_DEPTH");
+			del->sv->filters.push_back("ANOMALOUS_DEL_DEPTH");
 		}
 
 		if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sv->disc_pairs || del->r_cluster_region_disc_pairs >= del->sv->disc_pairs)) {
-			filters.push_back("AMBIGUOUS_REGION");
+			del->sv->filters.push_back("AMBIGUOUS_REGION");
 		}
 
-		if (filters.empty()) {
-			filters.push_back("PASS");
+		if (del->sv->filters.empty()) {
+			del->sv->filters.push_back("PASS");
 		}
 
-		sv2_del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
+		sv2_del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del);
 		float ks_pval = del->ks_pval;
 		bcf_update_info_float(dp_vcf_header, bcf_entry, "KS_PVAL", &ks_pval, 1);
 		if (!del->original_range.empty()) bcf_update_info_string(dp_vcf_header, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());

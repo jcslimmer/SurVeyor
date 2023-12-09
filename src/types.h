@@ -1,7 +1,9 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <vector>
 #include <string>
+#include <sstream>
 #include <htslib/sam.h>
 
 struct consensus_t {
@@ -112,6 +114,8 @@ struct sv_t {
     double mismatch_rate = 0.0;
     std::string source;
 
+    std::vector<std::string> filters;
+
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
         anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
@@ -124,6 +128,8 @@ struct sv_t {
     int rc_rev_reads() { return rc_consensus ? rc_consensus->rev_clipped : 0; }
     int lc_fwd_reads() { return lc_consensus ? lc_consensus->fwd_clipped : 0; }
     int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_clipped : 0; }
+
+    bool is_pass() { return filters.size() == 1 && filters[0] == "PASS"; }
 
     std::string unique_key() {
         return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;

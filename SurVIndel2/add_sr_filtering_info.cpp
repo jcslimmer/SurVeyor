@@ -203,60 +203,58 @@ int main(int argc, char* argv[]) {
 			return std::tie(del1->sv->start, del1->sv->end) < std::tie(del2->sv->start, del2->sv->end);
 		});
         for (sv2_deletion_t* del : dels) {
-            std::vector<std::string> filters;
-
             if (-del->sv->svlen() < stats.max_is) {
-            	if (-del->sv->svlen()/2 > del->max_conf_size) filters.push_back("SIZE_FILTER");
+            	if (-del->sv->svlen()/2 > del->max_conf_size) del->sv->filters.push_back("SIZE_FILTER");
             }
             if (del->remap_boundary_lower > del->sv->start) {
-                filters.push_back("REMAP_BOUNDARY_FILTER");
+                del->sv->filters.push_back("REMAP_BOUNDARY_FILTER");
             } else if (del->remap_boundary_upper < del->sv->end) {
-                filters.push_back("REMAP_BOUNDARY_FILTER");
+                del->sv->filters.push_back("REMAP_BOUNDARY_FILTER");
             }
             if (-del->sv->svlen() >= config.min_size_for_depth_filtering &&
                     (del->med_left_flanking_cov*0.74<=del->med_indel_left_cov || del->med_right_flanking_cov*0.74<=del->med_indel_right_cov)) {
-            	filters.push_back("DEPTH_FILTER");
+            	del->sv->filters.push_back("DEPTH_FILTER");
             }
             if (del->med_left_flanking_cov > stats.max_depth || del->med_right_flanking_cov > stats.max_depth ||
             	del->med_left_flanking_cov < stats.min_depth || del->med_right_flanking_cov < stats.min_depth ||
 				del->med_left_cluster_cov > stats.max_depth || del->med_right_cluster_cov > stats.max_depth) {
-                filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+                del->sv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
-                filters.push_back("ANOMALOUS_DEL_DEPTH");
+                del->sv->filters.push_back("ANOMALOUS_DEL_DEPTH");
             }
 
             if (del->sv->full_junction_aln != NULL && del->sv->left_anchor_aln->best_score+del->sv->right_anchor_aln->best_score-del->sv->full_junction_aln->best_score < config.min_score_diff) {
-            	filters.push_back("WEAK_SPLIT_ALIGNMENT");
+            	del->sv->filters.push_back("WEAK_SPLIT_ALIGNMENT");
             }
             if ((del->sv->lc_consensus == NULL || del->sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
             	(del->sv->rc_consensus == NULL || del->sv->rc_consensus->max_mapq < config.high_confidence_mapq) &&
                  del->sv->source != "DP") {
-				filters.push_back("LOW_MAPQ_CONSENSUSES");
+				del->sv->filters.push_back("LOW_MAPQ_CONSENSUSES");
             }
             if (del->sv->source == "1SR_RC" || del->sv->source == "1HSR_RC") {
-            	if (del->sv->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
+            	if (del->sv->rc_consensus->right_ext_reads < 3) del->sv->filters.push_back("FAILED_TO_EXTEND");
             } else if (del->sv->source == "1SR_LC" || del->sv->source == "1HSR_LC") {
-            	if (del->sv->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
+            	if (del->sv->lc_consensus->left_ext_reads < 3) del->sv->filters.push_back("FAILED_TO_EXTEND");
             }
             
             if (del->sv->source == "DP") {
                 if (del->ks_pval > 0.01) {
-                    filters.push_back("KS_FILTER");
+                    del->sv->filters.push_back("KS_FILTER");
                 }
                 if (-del->sv->svlen() >= stats.max_is && double(del->sv->disc_pairs)/(del->sv->disc_pairs+del->conc_pairs) < 0.25) {
-                    filters.push_back("LOW_PTN_RATIO");
+                    del->sv->filters.push_back("LOW_PTN_RATIO");
                 }
                 if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sv->disc_pairs || del->r_cluster_region_disc_pairs >= del->sv->disc_pairs)) {
-                    filters.push_back("AMBIGUOUS_REGION");
+                    del->sv->filters.push_back("AMBIGUOUS_REGION");
                 }
             }
 
-            if (filters.empty()) {
-                filters.push_back("PASS");
+            if (del->sv->filters.empty()) {
+                del->sv->filters.push_back("PASS");
             }
 
-            sv2_del2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
+            sv2_del2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del);
             bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
             delete del;
         }
@@ -270,39 +268,37 @@ int main(int argc, char* argv[]) {
     		return std::tie(dup1->sv->start, dup1->sv->end) < std::tie(dup2->sv->start, dup2->sv->end);
     	});
         for (sv2_duplication_t* dup : dups) {
-            std::vector<std::string> filters;
-
             if (dup->sv->svlen() >= config.min_size_for_depth_filtering &&
                     (dup->med_left_flanking_cov*1.26>=dup->med_indel_left_cov || dup->med_indel_right_cov<=dup->med_right_flanking_cov*1.26)) {
                 // note: using >= so that a 0 0 0 0 depth will not be accepted
-                filters.push_back("DEPTH_FILTER");
+                dup->sv->filters.push_back("DEPTH_FILTER");
             }
 
             if (dup->med_left_flanking_cov > stats.max_depth || dup->med_right_flanking_cov > stats.max_depth ||
                 dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
-                filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+                dup->sv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (dup->sv->full_junction_aln != NULL && dup->sv->left_anchor_aln->best_score+dup->sv->right_anchor_aln->best_score-dup->sv->full_junction_aln->best_score < config.min_score_diff) {
-				filters.push_back("WEAK_SPLIT_ALIGNMENT");
+				dup->sv->filters.push_back("WEAK_SPLIT_ALIGNMENT");
 			}
             if ((dup->sv->lc_consensus == NULL || dup->sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
 				(dup->sv->rc_consensus == NULL || dup->sv->rc_consensus->max_mapq < config.high_confidence_mapq)) {
-				filters.push_back("LOW_MAPQ_CONSENSUSES");
+				dup->sv->filters.push_back("LOW_MAPQ_CONSENSUSES");
 			}
             if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->sv->disc_pairs < 3) {
-                filters.push_back("NOT_ENOUGH_OW_PAIRS");
+                dup->sv->filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
             if (dup->sv->source == "1SR_RC" || dup->sv->source == "1HSR_RC") {
-				if (dup->sv->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
+				if (dup->sv->rc_consensus->right_ext_reads < 3) dup->sv->filters.push_back("FAILED_TO_EXTEND");
             } else if (dup->sv->source == "1SR_LC" || dup->sv->source == "1HSR_LC") {
-            	if (dup->sv->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
+            	if (dup->sv->lc_consensus->left_ext_reads < 3) dup->sv->filters.push_back("FAILED_TO_EXTEND");
 			}
 
-            if (filters.empty()) {
-                filters.push_back("PASS");
+            if (dup->sv->filters.empty()) {
+                dup->sv->filters.push_back("PASS");
             }
 
-			sv2_dup2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
+			sv2_dup2bcf(out_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup);
             bcf_entries[contig_name].push_back(bcf_dup(bcf_entry));
             delete dup;
         }

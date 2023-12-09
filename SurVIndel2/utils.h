@@ -139,8 +139,8 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	return header;
 }
 
-void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del, std::vector<std::string>& filters) {
-	sv2bcf(hdr, bcf_entry, del->sv, chr_seq, filters);
+void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_deletion_t* del) {
+	sv2bcf(hdr, bcf_entry, del->sv, chr_seq);
 	
 	int int_conv;
 
@@ -166,8 +166,8 @@ void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
 }
 
-void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup, std::vector<std::string>& filters) {
-	sv2bcf(hdr, bcf_entry, dup->sv, chr_seq, filters);
+void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& contig_name, sv2_duplication_t* dup) {
+	sv2bcf(hdr, bcf_entry, dup->sv, chr_seq);
 
 	// add info
 	int int_conv;

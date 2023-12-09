@@ -477,16 +477,9 @@ int main(int argc, char* argv[]) {
 			return std::tie(sv1->start, sv1->end) < std::tie(sv2->start, sv2->end);
 		});
 
-		std::vector<std::string> filters;
         for (sv_t* sv : svs) {
 			sv->id = sv->svtype() +  "_SR_" + std::to_string(svtype_id[sv->svtype()]++);
-			if (sv->svtype() == "DEL") {
-            	del2bcf(out_vcf_header, bcf_entry, (deletion_t*) sv, chr_seqs.get_seq(contig_name), filters);
-			} else if (sv->svtype() == "DUP") {
-				dup2bcf(out_vcf_header, bcf_entry, (duplication_t*) sv, chr_seqs.get_seq(contig_name), filters);
-			} else {
-				ins2bcf(out_vcf_header, bcf_entry, (insertion_t*) sv, chr_seqs.get_seq(contig_name), filters);
-			}
+			sv2bcf(out_vcf_header, bcf_entry, sv, chr_seqs.get_seq(contig_name));
             if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
