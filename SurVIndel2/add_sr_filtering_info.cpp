@@ -25,6 +25,9 @@ std::mutex mtx;
 chr_seqs_map_t chr_seqs;
 contig_map_t contig_map;
 
+std::vector<double> global_crossing_isize_dist;
+std::vector<uint32_t> median_crossing_count_geqi_by_isize;
+
 std::mutex bam_pool_mtx;
 std::queue<open_samFile_t*> bam_pool;
 open_samFile_t* get_bam_reader(std::string bam_fname) {
@@ -52,31 +55,52 @@ std::unordered_map<std::string, std::vector<insertion_t*> > insertions_by_chr;
 std::unordered_map<std::string, std::vector<sv2_deletion_t*> > sv2_deletions_by_chr;
 std::unordered_map<std::string, std::vector<sv2_duplication_t*> > sv2_duplications_by_chr;
 
-void size_and_depth_filtering(int id, std::string contig_name) {
+void size_and_depth_filtering_del(int id, std::string contig_name) {
     open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
 
     mtx.lock();
     std::vector<sv2_deletion_t*>& deletions = sv2_deletions_by_chr[contig_name];
     mtx.unlock();
-    std::vector<double> temp1;
-    std::vector<uint32_t> temp2;
-    calculate_confidence_interval_size(contig_name, temp1, temp2, deletions, bam_file, stats, config.min_sv_size);
+    // TODO: we are only computing the ks-test p-value for large deletions and DP deletions for efficienty reasons. Investigate why it takes so long calculating it for all deletions.
+    std::vector<sv2_deletion_t*> large_dp_deletions, small_dp_deletions, sr_deletions;
+    for (sv2_deletion_t* del : deletions) {
+        if (-del->sv->svlen() >= stats.max_is && del->sv->source == "DP") {
+            large_dp_deletions.push_back(del);
+        } else if (del->sv->source == "DP") {
+            small_dp_deletions.push_back(del);
+        } else {
+            sr_deletions.push_back(del);
+        }
+    }
+    std::vector<double> v1;
+    std::vector<uint32_t> v2;
+    calculate_confidence_interval_size(contig_name, v1, v2, sr_deletions, bam_file, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, small_dp_deletions, bam_file, stats, config.min_sv_size);
+    calculate_ptn_ratio(contig_name, large_dp_deletions, bam_file, stats);
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
+
+    release_bam_reader(bam_file);
+}
+
+void size_and_depth_filtering_dup(int id, std::string contig_name) {
+    open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
 
     mtx.lock();
     std::vector<sv2_duplication_t*>& duplications = sv2_duplications_by_chr[contig_name];
     mtx.unlock();
-	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
+    depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
+
     release_bam_reader(bam_file);
 }
 
 int main(int argc, char* argv[]) {
 
     complete_bam_fname = argv[1];
-    workdir = argv[2];
-    std::string workspace = workdir + "/workspace";
-    reference_fname = argv[3];
-    std::string sample_name = argv[4];
+	std::string in_vcf_fname = argv[2];
+    std::string out_vcf_fname = argv[3];
+    workdir = argv[4];
+    reference_fname = argv[5];
+    std::string sample_name = argv[6];
 
     std::string full_cmd_fname = workdir + "/full_cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);
@@ -89,19 +113,33 @@ int main(int argc, char* argv[]) {
 
     chr_seqs.read_fasta_into_map(reference_fname);
 
-	// open vcf file sr.vcf.gz
-	std::string sr_vcf_fname = workdir + "/sr.vcf.gz";
-	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
-	if (sr_vcf_file == NULL) {
-		throw std::runtime_error("Unable to open file " + sr_vcf_fname + ".");
+    std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
+	int isize, count;
+	while (crossing_isizes_dist_fin >> isize >> count) {
+		for (int i = 0; i < count; i++) global_crossing_isize_dist.push_back(isize);
 	}
-	bcf_hdr_t* sr_vcf_header = bcf_hdr_read(sr_vcf_file);
+	std::random_shuffle(global_crossing_isize_dist.begin(), global_crossing_isize_dist.end());
+	global_crossing_isize_dist.resize(100000);
+	crossing_isizes_dist_fin.close();
+
+    std::ifstream crossing_isizes_count_geq_i_fin(workdir + "/crossing_isizes_count_geq_i.txt");
+	int median;
+	while (crossing_isizes_count_geq_i_fin >> isize >> median) {
+		median_crossing_count_geqi_by_isize.push_back(median);
+	}
+	crossing_isizes_count_geq_i_fin.close();
+
+	htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
+	if (in_vcf_file == NULL) {
+		throw std::runtime_error("Unable to open file " + in_vcf_fname + ".");
+	}
+	bcf_hdr_t* sr_vcf_header = bcf_hdr_read(in_vcf_file);
 	if (sr_vcf_header == NULL) {
-		throw std::runtime_error("Unable to read the header of file " + sr_vcf_fname + ".");
+		throw std::runtime_error("Unable to read the header of file " + in_vcf_fname + ".");
 	}
 
 	bcf1_t* bcf_entry = bcf_init();
-	while (bcf_read(sr_vcf_file, sr_vcf_header, bcf_entry) == 0) {
+	while (bcf_read(in_vcf_file, sr_vcf_header, bcf_entry) == 0) {
 		sv_t* sv = bcf_to_sv(sr_vcf_header, bcf_entry);
 		if (sv->svtype() == "DEL") {
 			deletions_by_chr[sv->chr].push_back((deletion_t*) sv);
@@ -135,7 +173,9 @@ int main(int argc, char* argv[]) {
 	std::vector<std::future<void> > futures;
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = thread_pool3.push(size_and_depth_filtering, contig_name);
+        std::future<void> future = thread_pool3.push(size_and_depth_filtering_del, contig_name);
+        futures.push_back(std::move(future));
+        future = thread_pool3.push(size_and_depth_filtering_dup, contig_name);
         futures.push_back(std::move(future));
     }
     thread_pool3.stop(true);
@@ -149,7 +189,6 @@ int main(int argc, char* argv[]) {
 
 	// create VCF out files
 	bcf_hdr_t* out_vcf_header = sv2_generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
-    std::string out_vcf_fname = workdir + "/sr.annotated.vcf.gz";
 	htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
@@ -157,7 +196,6 @@ int main(int argc, char* argv[]) {
 
 
     std::unordered_map<std::string, std::vector<bcf1_t*>> bcf_entries;
-    int del_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!sv2_deletions_by_chr.count(contig_name)) continue;
 		std::vector<sv2_deletion_t*>& dels = sv2_deletions_by_chr[contig_name];
@@ -165,7 +203,6 @@ int main(int argc, char* argv[]) {
 			return std::tie(del1->sv->start, del1->sv->end) < std::tie(del2->sv->start, del2->sv->end);
 		});
         for (sv2_deletion_t* del : dels) {
-        	del->sv->id = "DEL_SR_" + std::to_string(del_id++);
             std::vector<std::string> filters;
 
             if (-del->sv->svlen() < stats.max_is) {
@@ -188,17 +225,31 @@ int main(int argc, char* argv[]) {
             if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
                 filters.push_back("ANOMALOUS_DEL_DEPTH");
             }
+
             if (del->sv->full_junction_aln != NULL && del->sv->left_anchor_aln->best_score+del->sv->right_anchor_aln->best_score-del->sv->full_junction_aln->best_score < config.min_score_diff) {
             	filters.push_back("WEAK_SPLIT_ALIGNMENT");
             }
             if ((del->sv->lc_consensus == NULL || del->sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-            	(del->sv->rc_consensus == NULL || del->sv->rc_consensus->max_mapq < config.high_confidence_mapq)) {
+            	(del->sv->rc_consensus == NULL || del->sv->rc_consensus->max_mapq < config.high_confidence_mapq) &&
+                 del->sv->source != "DP") {
 				filters.push_back("LOW_MAPQ_CONSENSUSES");
             }
             if (del->sv->source == "1SR_RC" || del->sv->source == "1HSR_RC") {
             	if (del->sv->rc_consensus->right_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
             } else if (del->sv->source == "1SR_LC" || del->sv->source == "1HSR_LC") {
             	if (del->sv->lc_consensus->left_ext_reads < 3) filters.push_back("FAILED_TO_EXTEND");
+            }
+            
+            if (del->sv->source == "DP") {
+                if (del->ks_pval > 0.01) {
+                    filters.push_back("KS_FILTER");
+                }
+                if (-del->sv->svlen() >= stats.max_is && double(del->sv->disc_pairs)/(del->sv->disc_pairs+del->conc_pairs) < 0.25) {
+                    filters.push_back("LOW_PTN_RATIO");
+                }
+                if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sv->disc_pairs || del->r_cluster_region_disc_pairs >= del->sv->disc_pairs)) {
+                    filters.push_back("AMBIGUOUS_REGION");
+                }
             }
 
             if (filters.empty()) {
@@ -212,7 +263,6 @@ int main(int argc, char* argv[]) {
     }
 
 
-    int dup_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!sv2_duplications_by_chr.count(contig_name)) continue;
     	std::vector<sv2_duplication_t*>& dups = sv2_duplications_by_chr[contig_name];
@@ -220,7 +270,6 @@ int main(int argc, char* argv[]) {
     		return std::tie(dup1->sv->start, dup1->sv->end) < std::tie(dup2->sv->start, dup2->sv->end);
     	});
         for (sv2_duplication_t* dup : dups) {
-        	dup->sv->id = "DUP_SR_" + std::to_string(dup_id++);
             std::vector<std::string> filters;
 
             if (dup->sv->svlen() >= config.min_size_for_depth_filtering &&
@@ -240,7 +289,7 @@ int main(int argc, char* argv[]) {
 				(dup->sv->rc_consensus == NULL || dup->sv->rc_consensus->max_mapq < config.high_confidence_mapq)) {
 				filters.push_back("LOW_MAPQ_CONSENSUSES");
 			}
-            if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
+            if (dup->sv->svlen() >= config.min_size_for_depth_filtering && dup->sv->disc_pairs < 3) {
                 filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
             if (dup->sv->source == "1SR_RC" || dup->sv->source == "1HSR_RC") {

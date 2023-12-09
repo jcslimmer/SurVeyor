@@ -23,9 +23,7 @@ std::string reference_fname;
 
 bcf_hdr_t* dp_vcf_header;
 
-std::unordered_map<std::string, std::vector<sv2_deletion_t*>> deletions_by_chr;
-std::unordered_map<std::string, std::vector<std::vector<std::string>>> deletion_ra_reads_by_chr, deletion_la_reads_by_chr;
-std::unordered_map<std::string, std::vector<sv2_duplication_t*>> duplications_by_chr;
+std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
 std::unordered_map<std::string, std::vector<bcf1_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
 std::unordered_map<std::string, std::vector<bcf1_t*>> dp_entries_by_chr;
 std::mutex maps_mtx;
@@ -34,17 +32,13 @@ int max_cluster_size, min_cluster_size;
 std::vector<double> global_crossing_isize_dist;
 std::vector<uint32_t> median_crossing_count_geqi_by_isize;
 
-enum cluster_type_enum { LONG_PAIR, OUTWARD_PAIR };
-
 struct cluster_t {
 	hts_pos_t la_start, la_end, ra_start, ra_end;
 	bool la_end_clipped, ra_start_clipped;
 	int count = 1, confident_count = 0;
 	uint8_t max_mapq;
 	bool used = false;
-	cluster_type_enum type;
 	std::string rightmost_lseq, leftmost_rseq; // right-most right-facing sequence and left-most left-facing seq
-	std::vector<std::string> reads_seqs;
 
 	cluster_t() : la_start(0), la_end(0), ra_start(0), ra_end(0), max_mapq(0) {}
 	cluster_t(bam1_t* read) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
@@ -54,8 +48,6 @@ struct cluster_t {
 		ra_start_clipped = is_mate_left_clipped(read, config.min_clip_len);
 		rightmost_lseq = get_sequence(read);
 		leftmost_rseq = bam_get_qname(read);
-		type = read->core.isize < 0 ? OUTWARD_PAIR : LONG_PAIR;
-		reads_seqs.push_back(get_sequence(read));
 	}
 };
 bool operator < (const cluster_t& c1, const cluster_t& c2) {
@@ -81,9 +73,6 @@ cluster_t* merge(cluster_t* c1, cluster_t* c2) {
 	merged->count = c1->count + c2->count;
 	merged->confident_count = c1->confident_count + c2->confident_count;
 	merged->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
-	merged->type = c1->type;
-	merged->reads_seqs.insert(merged->reads_seqs.end(), c1->reads_seqs.begin(), c1->reads_seqs.end());
-	merged->reads_seqs.insert(merged->reads_seqs.end(), c2->reads_seqs.begin(), c2->reads_seqs.end());
 
 	// set rightmost_lseq
 	if (c1->la_end > c2->la_end) merged->rightmost_lseq = c1->rightmost_lseq;
@@ -107,8 +96,6 @@ struct cc_pair {
 	cc_pair(cluster_t* c1, cluster_t* c2) : c1(c1), c2(c2), dist(distance(c1, c2)) {}
 
 	bool compatible() {
-//		if (c1->la_end_clipped && c2->la_end > c1->la_end+config.min_clip_len) return false;
-//		if (c2->la_end_clipped && c1->la_end > c2->la_end+config.min_clip_len) return false;
 		return dist <= stats.max_is;
 	}
 };
@@ -186,6 +173,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters) {
 
 void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname,
 		std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
+	
 	std::string dp_fname = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".bam";
 	if (!file_exists(dp_fname)) return;
 
@@ -197,10 +185,10 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
 		cluster_t* cluster = new cluster_t(read);
-		if (cluster->type == LONG_PAIR) {
+		if (read->core.isize > 0) {
 			lp_clusters.push_back(cluster);
 		} else {
-//			ow_clusters.push_back(cluster);
+			ow_clusters.push_back(cluster);
 		}
 	}
 	close_samFile(dp_bam_file);
@@ -208,47 +196,54 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	if (!lp_clusters.empty()) cluster_clusters(lp_clusters);
 	if (!ow_clusters.empty()) cluster_clusters(ow_clusters);
 
-	auto set_indel_info = [&contig_name](indel_t* indel, cluster_t* c) {
-		indel->disc_pairs = c->count;
-		indel->disc_pairs_maxmapq = c->max_mapq;
-		indel->disc_pairs_high_mapq = c->confident_count;
-
-		indel->rightmost_rightfacing_seq = c->rightmost_lseq;
-		indel->leftmost_leftfacing_seq = c->leftmost_rseq;
-	};
-
-	std::vector<sv2_deletion_t*> deletions;
-	std::vector<std::vector<std::string>> deletion_ra_reads;
+	// set leftmost_rseq
+	std::unordered_map<std::string, cluster_t*> mateseqs_to_retrieve;
 	for (cluster_t* c : lp_clusters) {
-		if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue; //config.high_confidence_mapq) continue;
-
-		if (c->la_end < c->ra_start) {
-			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
-			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
-			sv_t* sv = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
-			sv->source = "DP";
-			sv2_deletion_t* del = new sv2_deletion_t(sv);
-			set_indel_info(del, c);
-			deletions.push_back(del);
-			deletion_ra_reads.push_back(c->reads_seqs);
-		}
+		mateseqs_to_retrieve[c->leftmost_rseq] = c;
 	}
 
-	std::vector<sv2_duplication_t*> duplications;
-	// for (cluster_t* c : ow_clusters) {
-	// 	if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue; //config.high_confidence_mapq) continue;
+	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
+	std::string qname, seq;
+	while (mateseqs_fin >> qname >> seq) {
+		if (!mateseqs_to_retrieve.count(qname)) continue;
+		mateseqs_to_retrieve[qname]->leftmost_rseq = seq;
+	}
+	mateseqs_to_retrieve.clear();
 
-	// 	if (c->la_end > c->ra_start) {
-	// 		sv2_duplication_t* dup = new sv2_duplication_t(NULL, c->ra_start, c->la_end, c->la_start, c->ra_end, NULL, NULL, "DP", "");
-	// 		set_indel_info(dup, c);
-	// 		duplications.push_back(dup);
-	// 	}
-	// }
+	// find deletions from clusters
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+	StripedSmithWaterman::Filter filter;
+	
+	std::vector<deletion_t*> deletions;
+	for (cluster_t* c : lp_clusters) {
+		if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue;
 
+		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->rightmost_lseq, 0, 0, 0, 0, 0, 0);
+		consensus_t* lc_consensus = new consensus_t(false, 0, c->ra_start, 0, c->leftmost_rseq, 0, 0, 0, 0, 0, 0);
+		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, stats.read_len/3, config.min_clip_len, 0.0);
+
+		deletion_t* del = NULL;
+		if (!svs.empty() && svs[0]->svtype() == "DEL") { // first check if I can obtain precise coordinates for the deletion
+			del = (deletion_t*) svs[0];
+			del->original_range = std::to_string(c->la_end) + "-" + std::to_string(c->ra_start);
+			del->remapped = true;
+		} else if (c->la_end < c->ra_start) {
+			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
+			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
+			del = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
+		}
+
+		if (del) {
+			del->disc_pairs = c->count;
+			del->disc_pairs_maxmapq = c->max_mapq;
+			del->disc_pairs_high_mapq = c->confident_count;
+			del->source = "DP";
+			deletions.push_back(del);
+		}
+	}
+	
 	maps_mtx.lock();
 	deletions_by_chr[contig_name] = deletions;
-	deletion_ra_reads_by_chr[contig_name] = deletion_ra_reads;
-	duplications_by_chr[contig_name] = duplications;
 	maps_mtx.unlock();
 
 	for (cluster_t* c : lp_clusters) {
@@ -261,8 +256,7 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 
 void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_hdr) {
 	maps_mtx.lock();
-	std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
-	std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
+	std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
 	std::vector<bcf1_t*>& sr_entries = sr_entries_by_chr[contig_name];
 	maps_mtx.unlock();
 
@@ -281,114 +275,53 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_h
 	IntervalTree<bcf1_t*> dup_tree = IntervalTree<bcf1_t*>(dup_intervals);
 
 	for (int i = 0; i < deletions.size(); i++) {
-		sv2_deletion_t* del = deletions[i];
-		std::vector<Interval<bcf1_t*> > iv = del_tree.findContained(del->sv->left_anchor_aln->start, del->sv->right_anchor_aln->end);
-		if (iv.size() != 1) continue;
+		deletion_t* del = deletions[i];
+		std::vector<Interval<bcf1_t*> > iv = del_tree.findContained(del->left_anchor_aln->start, del->right_anchor_aln->end);
 
-		bcf1_t* corr_sr_del = iv[0].value;
-		if (corr_sr_del->pos-del->sv->left_anchor_aln->start <= stats.max_is && del->sv->right_anchor_aln->end-get_sv_end(sr_hdr, corr_sr_del) <= stats.max_is) {
-			if (bcf_has_filter(sr_hdr, corr_sr_del, (char*) "PASS")) {
+		if (iv.size() == 1) {
+			bcf1_t* corr_sr_del = iv[0].value;
+			if (corr_sr_del->pos-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-get_sv_end(sr_hdr, corr_sr_del) <= stats.max_is) {
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS", &del->disc_pairs, 1);
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_MAXMAPQ", &del->disc_pairs_maxmapq, 1);
 				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_HIGHMAPQ", &del->disc_pairs_high_mapq, 1);
 				deletions[i] = NULL;
-			} else { // if the SR deletion failed the filters, just borrow the coordinates (and the split reads)
-				del->sv->start = corr_sr_del->pos;
-				del->sv->end = get_sv_end(sr_hdr, corr_sr_del);
-				del->sv->ins_seq = get_sv_info_str(sr_hdr, corr_sr_del, "SVINSSEQ");
-
-				int* clipped_reads = NULL, n = 0;
-				bcf_get_info_int32(sr_hdr, corr_sr_del, "SPLIT_READS", &clipped_reads, &n);
-				if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
-
-				// we are only interested in the number of split reads
-				del->sv->rc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[0], 0, 0, 0, 0, 0);
-				del->sv->lc_consensus = new consensus_t(false, 0, 0, 0, "", clipped_reads[1], 0, 0, 0, 0, 0);
 			}
 		}
 	}
-	deletions.erase(std::remove(deletions.begin(), deletions.end(), (sv2_deletion_t*) NULL), deletions.end());
+	deletions.erase(std::remove(deletions.begin(), deletions.end(), (deletion_t*) NULL), deletions.end());
 
-// 	for (int i = 0; i < duplications.size(); i++) {
-// 		sv2_duplication_t* dup = duplications[i];
-// 		std::vector<Interval<bcf1_t*> > iv = dup_tree.findContained(dup->lc_anchor_end-config.max_is,  dup->rc_anchor_start+config.max_is);
-// 		if (iv.size() != 1) continue;
-
-// 		bcf1_t* corr_sr_dup = iv[0].value;
-// 		if (corr_sr_dup->pos < dup->lc_anchor_end && get_sv_end(sr_hdr, corr_sr_dup) > dup->rc_anchor_start) {
-// 			if (bcf_has_filter(sr_hdr, corr_sr_dup, (char*) "PASS")) {
-// //				bcf_update_info_int32(sr_hdr, corr_sr_dup, "DISC_PAIRS", &dup->disc_pairs, 1);
-// //				duplications[i] = NULL;
-// 			}
-// 		} else { // if the SR deletion failed the filters, just borrow the coordinates (and the split reads)
-// 			int* clipped_reads = NULL, n = 0;
-// 			bcf_get_info_int32(sr_hdr, corr_sr_dup, "SPLIT_READS", &clipped_reads, &n);
-// 			if (clipped_reads[0] == 0 || clipped_reads[1] == 0) continue; // only use 2SR
-// 		}
-// 	}
-// 	duplications.erase(std::remove(duplications.begin(), duplications.end(), (sv2_duplication_t*) NULL), duplications.end());
-
-	std::unordered_map<std::string, sv2_deletion_t*> mateseqs_to_retrieve;
-	for (sv2_deletion_t* del : deletions) {
-		mateseqs_to_retrieve[del->leftmost_leftfacing_seq] = del;
-	}
-
-	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
-	std::string qname, seq;
-	while (mateseqs_fin >> qname >> seq) {
-		if (!mateseqs_to_retrieve.count(qname)) continue;
-		mateseqs_to_retrieve[qname]->leftmost_leftfacing_seq = seq;
-		mateseqs_to_retrieve.erase(qname);
-	}
-
-	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, true);
-	StripedSmithWaterman::Filter filter;
-	for (int i = 0; i < deletions.size(); i++) {
-		sv2_deletion_t* del = deletions[i];
-
-		consensus_t* rc_consensus = new consensus_t(false, 0, del->sv->start, 0, del->rightmost_rightfacing_seq, 0, 0, 0, 0, 0, 0);
-		consensus_t* lc_consensus = new consensus_t(false, 0, del->sv->end, 0, del->leftmost_leftfacing_seq, 0, 0, 0, 0, 0, 0);
-		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, stats.read_len/3, config.min_clip_len, 0.0);
-		if (svs.empty()) continue;
-
-		sv_t* sv = svs[0];
-		if (sv->svtype() != "DEL") {
-			deletions[i] = NULL;
-			continue;
-		}
-
-		del->original_range = std::to_string(del->sv->start) + "-" + std::to_string(del->sv->end);
-		del->sv = sv;
-		del->remapped = true;
-	}
-	deletions.erase(std::remove(deletions.begin(), deletions.end(), (sv2_deletion_t*) NULL), deletions.end());
+	std::vector<sv2_deletion_t*> sv2_deletions;
 }
 
 void add_filtering_info(int id, std::string contig_name, std::string bam_fname) {
 	maps_mtx.lock();
-	std::vector<sv2_deletion_t*>& deletions = deletions_by_chr[contig_name];
-	std::vector<sv2_duplication_t*>& duplications = duplications_by_chr[contig_name];
+	std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
 	maps_mtx.unlock();
 	if (deletions.empty()) return;
 
+	std::vector<sv2_deletion_t*> sv2_deletions;
+	for (deletion_t* del : deletions) {
+		sv2_deletions.push_back(new sv2_deletion_t(del));
+	}
+	
 	std::vector<sv2_deletion_t*> shorter_deletions, longer_deletions;
-	for (sv2_deletion_t* deletion : deletions) {
+	for (sv2_deletion_t* deletion : sv2_deletions) {
 		if (-deletion->sv->svlen() < stats.max_is) shorter_deletions.push_back(deletion);
 		else longer_deletions.push_back(deletion);
 	}
 
 	open_samFile_t* bam_file = open_samFile(bam_fname, false);
 	hts_set_fai_filename(bam_file->file, reference_fname.c_str());
-	depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
-	depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
+	depth_filter_del(contig_name, sv2_deletions, bam_file, config.min_size_for_depth_filtering, stats);
+	// depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
 	if (!shorter_deletions.empty()) calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, shorter_deletions, bam_file, stats, config.min_sv_size);
 	if (!longer_deletions.empty()) calculate_ptn_ratio(contig_name, longer_deletions, bam_file, stats);
-	if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
+	// if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
 	close_samFile(bam_file);
 
 	mtx.lock();
 	bcf1_t* bcf_entry = bcf_init();
-	for (sv2_deletion_t* del : deletions) {
+	for (sv2_deletion_t* del : sv2_deletions) {
 		std::vector<std::string> filters;
 
 		if (-del->sv->svlen() < config.min_sv_size) {
@@ -397,7 +330,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 		if (del->ks_pval > 0.01) {
 			filters.push_back("KS_FILTER");
 		} else
-		if (-del->sv->svlen() >= stats.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
+		if (-del->sv->svlen() >= stats.max_is && double(del->sv->disc_pairs)/(del->sv->disc_pairs+del->conc_pairs) < 0.25) {
 			filters.push_back("LOW_PTN_RATIO");
 		}
 
@@ -413,7 +346,7 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 			filters.push_back("ANOMALOUS_DEL_DEPTH");
 		}
 
-		if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs || del->r_cluster_region_disc_pairs >= del->disc_pairs)) {
+		if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sv->disc_pairs || del->r_cluster_region_disc_pairs >= del->sv->disc_pairs)) {
 			filters.push_back("AMBIGUOUS_REGION");
 		}
 
@@ -424,33 +357,32 @@ void add_filtering_info(int id, std::string contig_name, std::string bam_fname) 
 		sv2_del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del, filters);
 		float ks_pval = del->ks_pval;
 		bcf_update_info_float(dp_vcf_header, bcf_entry, "KS_PVAL", &ks_pval, 1);
-//		if (!del->genotype.empty()) bcf_update_info_string(dp_vcf_header, bcf_entry, "GENOTYPE", del->genotype.c_str());
 		if (!del->original_range.empty()) bcf_update_info_string(dp_vcf_header, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
 		dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
 	}
 
-	for (sv2_duplication_t* dup : duplications) {
-		std::vector<std::string> filters;
+	// for (sv2_duplication_t* dup : duplications) {
+	// 	std::vector<std::string> filters;
 
-		if (dup->med_left_flanking_cov*1.25>dup->med_indel_left_cov || dup->med_right_flanking_cov*1.25>dup->med_indel_right_cov) {
-			filters.push_back("DEPTH_FILTER");
-		}
-		if (dup->med_left_flanking_cov > stats.max_depth || dup->med_right_flanking_cov > stats.max_depth ||
-			dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
-			filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-		}
+	// 	if (dup->med_left_flanking_cov*1.25>dup->med_indel_left_cov || dup->med_right_flanking_cov*1.25>dup->med_indel_right_cov) {
+	// 		filters.push_back("DEPTH_FILTER");
+	// 	}
+	// 	if (dup->med_left_flanking_cov > stats.max_depth || dup->med_right_flanking_cov > stats.max_depth ||
+	// 		dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
+	// 		filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+	// 	}
 
-		if (dup->lc_cluster_region_disc_pairs >= dup->disc_pairs || dup->rc_cluster_region_disc_pairs >= dup->disc_pairs) {
-			filters.push_back("AMBIGUOUS_REGION");
-		}
+	// 	if (dup->lc_cluster_region_disc_pairs >= dup->sv->disc_pairs || dup->rc_cluster_region_disc_pairs >= dup->sv->disc_pairs) {
+	// 		filters.push_back("AMBIGUOUS_REGION");
+	// 	}
 
-		if (filters.empty()) {
-			filters.push_back("PASS");
-		}
+	// 	if (filters.empty()) {
+	// 		filters.push_back("PASS");
+	// 	}
 
-		sv2_dup2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
-		dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
-	}
+	// 	sv2_dup2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
+	// 	dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
+	// }
 
 	bcf_destroy(bcf_entry);
 	mtx.unlock();
@@ -535,7 +467,7 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(sr_vcf_file, sr_vcf_hdr, bcf_entry) == 0) {
 		int* split_reads = NULL, n = 0;
 		bcf_get_info_int32(sr_vcf_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
-		if (bcf_has_filter(sr_vcf_hdr, bcf_entry, (char*) "PASS") || (split_reads[0] == 0 && split_reads[1] == 0)) { // only use 2SR or PASS
+		if (bcf_has_filter(sr_vcf_hdr, bcf_entry, (char*) "PASS") || (split_reads[0] != 0 && split_reads[1] != 0 && false)) { // only use 2SR or PASS
 			sr_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
 		} else {
 			sr_nonpass_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
@@ -592,7 +524,6 @@ int main(int argc, char* argv[]) {
 
 	tbx_index_build(dp_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 
-
 	std::string merged_vcf_fname = workdir + "/out.vcf.gz";
 	htsFile* merged_vcf_file = bcf_open(merged_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(merged_vcf_file, dp_vcf_header) != 0) {
@@ -614,13 +545,15 @@ int main(int argc, char* argv[]) {
 			return b1->pos < b2->pos;
 		});
 		for (bcf1_t* bcf_entry : all_entries) {
-			if (bcf_write(merged_vcf_file, dp_vcf_header, bcf_entry) != 0) {
-				throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
-			}
 			if (bcf_has_filter(dp_vcf_header, bcf_entry, (char*) "PASS")) {
 				if (bcf_write(merged_pass_vcf_file, dp_vcf_header, bcf_entry) != 0) {
 					throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
 				}
+			}
+			// remove filters
+			bcf_update_filter(dp_vcf_header, bcf_entry, NULL, 0);
+			if (bcf_write(merged_vcf_file, dp_vcf_header, bcf_entry) != 0) {
+				throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
 			}
 		}
 	}

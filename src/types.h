@@ -106,6 +106,7 @@ struct sv_t {
     std::string ins_seq;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
+    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
 
     int overlap = 0;
     double mismatch_rate = 0.0;
@@ -133,21 +134,24 @@ struct sv_t {
 
     std::string left_anchor_aln_string() {
         if (left_anchor_aln == NULL) return "NA";
-        return std::to_string(left_anchor_aln->start) + "-" + std::to_string(left_anchor_aln->end);
+        return std::to_string(left_anchor_aln->start+1) + "-" + std::to_string(left_anchor_aln->end+1);
     }
     std::string right_anchor_aln_string() {
         if (right_anchor_aln == NULL) return "NA";
-        return std::to_string(right_anchor_aln->start) + "-" + std::to_string(right_anchor_aln->end);
+        return std::to_string(right_anchor_aln->start+1) + "-" + std::to_string(right_anchor_aln->end+1);
     }
     std::string full_junction_aln_string() {
         if (full_junction_aln == NULL) return "NA";
-        return std::to_string(full_junction_aln->start) + "-" + std::to_string(full_junction_aln->end);
+        return std::to_string(full_junction_aln->start+1) + "-" + std::to_string(full_junction_aln->end+1);
     }
 
     virtual ~sv_t() {}
 };
 
 struct deletion_t : sv_t {
+    bool remapped = false;
+    std::string original_range;
+
     using sv_t::sv_t;
 
     std::string svtype() { return "DEL"; }

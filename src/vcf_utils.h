@@ -42,7 +42,7 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	char size_flt_tag[1000];
 	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"SV smaller than %d bp.\">", config.min_sv_size); // TODO: remove this filter
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
-	
+
 	const char* anomalous_fl_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"The insertion region has anomalous depth.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_fl_depth_flt_tag, &len));
 
@@ -122,6 +122,57 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
 
+	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=1,Type=Integer,Description=\"Discordant pairs supporting the SV.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
+
+	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
+
+	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=1,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
+
+	// add ALT
+	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));
+
+	const char* dup_alt_tag = "##ALT=<ID=DUP,Description=\"Tandem Duplication\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dup_alt_tag, &len));
+
+	const char* ins_alt_tag = "##ALT=<ID=INS,Description=\"Insertion\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ins_alt_tag, &len));
+
+	// add FORMAT tags
+	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
+
+	const char* ft_tag = "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Filter. PASS indicates a reliable call. Any other value means the call is not reliable.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ft_tag, &len));
+
+	std::string cmd_tag = "##SurVeyorCommand=" + command;
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
+
+	auto now = std::chrono::system_clock::now();
+	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+	std::string version_tag = "##SurVeyorVersion=" + config.version + "; Date=" + std::ctime(&now_time);
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, version_tag.c_str(), &len));
+
+	std::stringstream called_by_ss;
+	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
+	called_by_ss << "seed: " << config.seed << "; ";
+	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
+	called_by_ss << "min-sv-size: " << config.min_sv_size << "; ";
+	called_by_ss << "min-clip-len: " << config.min_clip_len << "; ";
+	called_by_ss << "max-seq-error: " << config.max_seq_error << "; ";
+	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
+	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
+	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
+	called_by_ss << "min-size-for-depth-filtering: " << config.min_size_for_depth_filtering << "; ";
+	called_by_ss << "min-diff-hsr: " << config.min_diff_hsr << "; ";
+	called_by_ss << "sampling-regions: " << (config.sampling_regions.empty() ? "no" : config.sampling_regions) << "; ";
+	called_by_ss << "per-contig-stats: " << (config.per_contig_stats ? "true" : "false") << "; ";
+	std::string called_by = called_by_ss.str();
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, called_by.c_str(), &len));
+
 	return header;
 }
 bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
@@ -141,36 +192,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* algo_tag = "##INFO=<ID=ALGORITHM,Number=1,Type=String,Description=\"Algorithm used to report the call.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, algo_tag, &len));
-
-	// add FORMAT tags
-	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
-
-	// add ALT
-	const char* ins_alt_tag = "##ALT=<ID=INS,Description=\"Insertion\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ins_alt_tag, &len));
-
-	std::string cmd_tag = "##SurVeyorCommand=" + command;
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
-
-	auto now = std::chrono::system_clock::now();
-	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-	std::string version_tag = "##SurVeyorVersion=" + config.version + "; Date=" + std::ctime(&now_time);
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, version_tag.c_str(), &len));
-
-	std::stringstream called_by_ss;
-	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
-	called_by_ss << "seed: " << config.seed << "; ";
-	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
-	called_by_ss << "min-sv-size: " << config.min_sv_size << "; ";
-	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
-	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
-	called_by_ss << "min-clip-len: " << config.min_clip_len << "; ";
-	called_by_ss << "max-seq-error: " << config.max_seq_error << "; ";
-	called_by_ss << "sampling-regions: " << (config.sampling_regions.empty() ? "no" : config.sampling_regions) << "; ";
-	called_by_ss << "per-contig-stats: " << (config.per_contig_stats ? "true" : "false") << "; ";
-	std::string called_by = called_by_ss.str();
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, called_by.c_str(), &len));
 
 	// add samples
 	bcf_hdr_add_sample(header, sample_name.c_str());
@@ -257,6 +278,14 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, std::vec
 		if (sv->lc_consensus->remap_boundary != consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
 			bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
 		}
+	}
+	
+	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &sv->disc_pairs, 1);
+	if (sv->disc_pairs > 0) {
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", &sv->disc_pairs_maxmapq, 1);
+	}
+	if (sv->source == "DP") {
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", &sv->disc_pairs_high_mapq, 1);
 	}
 
 	// add GT info
@@ -347,7 +376,6 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 
 sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
-	// MAX_MAPQ
 	int* data = NULL;
 	int len = 0;
 	bcf_get_info_int32(hdr, b, "MAX_MAPQ", &data, &len);
@@ -439,10 +467,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
 	}
 
-	int left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")));
-	int left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1));
-	int right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")));
-	int right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1));
+	int left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
+	int left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
+	int right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
+	int right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
 
 	data = NULL;
 	len = 0;
@@ -471,6 +499,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	}
 
 	int full_junction_score = 0;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "FULL_JUNCTION_SCORE", &data, &len);
 	if (len > 0) full_junction_score = data[0];
 
@@ -482,7 +511,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, left_split_size, left_split_score, left_split_score2, left_split_cigar);
 	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
-	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar);
+	sv_t::anchor_aln_t* full_junction_aln = full_junction_score > 0 ? new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar) : NULL;
 
 	std::string svtype = get_sv_type(hdr, b);
 	sv_t* sv;
@@ -496,6 +525,22 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		throw std::runtime_error("Unsupported SV type: " + svtype);
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "DISC_PAIRS", &data, &len);
+	if (len > 0) sv->disc_pairs = data[0];
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "DISC_PAIRS_MAXMAPQ", &data, &len);
+	if (len > 0) sv->disc_pairs_maxmapq = data[0];
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "DISC_PAIRS_HIGHMAPQ", &data, &len);
+	if (len > 0) sv->disc_pairs_high_mapq = data[0];
+
+	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
 
 	return sv;

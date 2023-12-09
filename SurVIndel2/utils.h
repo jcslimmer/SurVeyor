@@ -21,11 +21,9 @@
 
 struct indel_t {
 	sv_t* sv;
-    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
     int med_left_flanking_cov = 0, med_indel_left_cov = 0, med_indel_right_cov = 0, med_right_flanking_cov = 0;
     int med_left_cluster_cov = 0, med_right_cluster_cov = 0;
     bool remapped = false;
-    std::string rightmost_rightfacing_seq, leftmost_leftfacing_seq;
 
     indel_t(sv_t* sv) : sv(sv) {}
 
@@ -116,12 +114,6 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
 
-	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
-
-	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
-
 	const char* median_depths_tag = "##INFO=<ID=MEDIAN_DEPTHS,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
 			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, median_depths_tag, &len));
@@ -129,60 +121,17 @@ bcf_hdr_t* sv2_generate_vcf_header(chr_seqs_map_t& contigs, std::string& sample_
 	const char* cluster_depths_tag = "##INFO=<ID=CLUSTER_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the left and right cluster regions.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cluster_depths_tag, &len));
 
-	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=1,Type=Integer,Description=\"Discordant pairs supporting the SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
-
-	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=1,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
-
 	const char* disc_pairs_surr_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING,Number=2,Type=Integer,Description=\"Discordant pairs around the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_tag, &len));
 
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=1,Type=Integer,Description=\"Concordant pairs supporting the absence of a SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
-	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
-
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));
 
 	const char* og_range_tag = "##INFO=<ID=ORIGINAL_RANGE,Number=1,Type=String,Description=\"Unadjusted imprecise range predicted by discordant pairs. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, og_range_tag, &len));
-
-	// add FORMAT tags
-	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
-
-	const char* ft_tag = "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Filter. PASS indicates a reliable call. Any other value means the call is not reliable.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ft_tag, &len));
-
-	// add ALT
-	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));
-
-	const char* dup_alt_tag = "##ALT=<ID=DUP,Description=\"Tandem Duplication\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dup_alt_tag, &len));
-
-	std::string cmd_tag = "##SurVeyorCommand=" + command;
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
-
-	auto now = std::chrono::system_clock::now();
-	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-	std::string version_tag = "##SurVeyor=" + config.version + "; Date=" + std::ctime(&now_time);
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, version_tag.c_str(), &len));
-
-	std::stringstream called_by_ss;
-	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
-	called_by_ss << "seed: " << config.seed << "; ";
-	called_by_ss << "min_sv_size: " << config.min_sv_size << "; ";
-	called_by_ss << "min_clip_len: " << config.min_clip_len << "; ";
-	called_by_ss << "max_seq_error: " << config.max_seq_error << "; ";
-	called_by_ss << "max_clipped_pos_dist: " << config.max_clipped_pos_dist << "; ";
-	called_by_ss << "min_size_for_depth_filtering: " << config.min_size_for_depth_filtering << "; ";
-	called_by_ss << "sampling-regions: " << (config.sampling_regions.empty() ? "no" : config.sampling_regions) << "; ";
-	std::string called_by = called_by_ss.str();
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, called_by.c_str(), &len));
 
 	// add samples
 	bcf_hdr_add_sample(header, sample_name.c_str());
@@ -210,13 +159,6 @@ void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
 	int cluster_depths[] = {del->med_left_cluster_cov, del->med_right_cluster_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
-	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &del->disc_pairs, 1);
-	if (del->disc_pairs > 0) {
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", &del->disc_pairs_maxmapq, 1);
-	}
-	if (del->sv->source == "DP") {
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", &del->disc_pairs_high_mapq, 1);
-	}
 	int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", &del->conc_pairs, 1);
@@ -232,7 +174,6 @@ void sv2_dup2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 
 	int median_depths[] = {dup->med_left_flanking_cov, dup->med_indel_left_cov, dup->med_indel_right_cov, dup->med_right_flanking_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
-	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &dup->disc_pairs, 1);
 	int disc_pairs_surr[] = {dup->rc_cluster_region_disc_pairs, dup->lc_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 }
