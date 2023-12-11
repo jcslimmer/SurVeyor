@@ -130,6 +130,17 @@ struct sv_t {
     int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_clipped : 0; }
 
     bool is_pass() { return filters.size() == 1 && filters[0] == "PASS"; }
+    bool is_fail() { return !filters.empty() && filters[0] != "PASS"; }
+
+    hts_pos_t remap_boundary_upper() {
+        if (rc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
+        return rc_consensus->remap_boundary;
+    }
+
+    hts_pos_t remap_boundary_lower() {
+        if (lc_consensus == NULL) return consensus_t::LOWER_BOUNDARY_NON_CALCULATED;
+        return lc_consensus->remap_boundary;
+    }
 
     std::string unique_key() {
         return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;

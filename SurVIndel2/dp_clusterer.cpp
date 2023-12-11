@@ -25,6 +25,7 @@ bcf_hdr_t* dp_vcf_header;
 
 std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
 std::unordered_map<std::string, std::vector<bcf1_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
+std::unordered_map<std::string, std::vector<sv_t*>> sv_entries_by_chr, sv_nonpass_entries_by_chr;
 std::unordered_map<std::string, std::vector<bcf1_t*>> dp_entries_by_chr;
 std::mutex maps_mtx;
 
@@ -458,17 +459,30 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-	std::string sr_vcf_fname = workdir + "/sr.norm.dedup.vcf.gz";
+	std::string sr_vcf_fname = workdir + "/sr.dedup.vcf.gz";
 	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
 	bcf_hdr_t* sr_vcf_hdr = bcf_hdr_read(sr_vcf_file);
+
+	bcf_hdr_t* out_vcf_hdr = bcf_hdr_dup(dp_vcf_header);
+	out_vcf_hdr = bcf_hdr_merge(out_vcf_hdr, sr_vcf_hdr);
+
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sr_vcf_file, sr_vcf_hdr, bcf_entry) == 0) {
+		sv_t* sv = bcf_to_sv(sr_vcf_hdr, bcf_entry);
+
 		int* split_reads = NULL, n = 0;
 		bcf_get_info_int32(sr_vcf_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
-		if (bcf_has_filter(sr_vcf_hdr, bcf_entry, (char*) "PASS") || (split_reads[0] != 0 && split_reads[1] != 0 && false)) { // only use 2SR or PASS
-			sr_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
+		std::string sv_type = get_sv_type(sr_vcf_hdr, bcf_entry);
+		sv_type = "DEL"; // TODO: remove
+
+		bcf1_t* b = bcf_dup(bcf_entry);
+		bcf_translate(out_vcf_hdr, sr_vcf_hdr, b);
+		if (split_reads[0] > 0 && split_reads[1] > 0) { // only use 2SR or PASS DELs
+			sr_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(b);
+			sv_entries_by_chr[sv->chr].push_back(sv);
 		} else {
-			sr_nonpass_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(bcf_dup(bcf_entry));
+			sr_nonpass_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(b);
+			sv_nonpass_entries_by_chr[sv->chr].push_back(sv);
 		}
 	}
 	bcf_close(sr_vcf_file);
@@ -477,7 +491,7 @@ int main(int argc, char* argv[]) {
 	ctpl::thread_pool thread_pool3(config.threads);
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-		std::future<void> future = thread_pool3.push(merge_sr_dp, contig_id, contig_name, sr_vcf_hdr);
+		std::future<void> future = thread_pool3.push(merge_sr_dp, contig_id, contig_name, dp_vcf_header);
 		futures.push_back(std::move(future));
 	}
 	thread_pool3.stop(true);
@@ -524,13 +538,13 @@ int main(int argc, char* argv[]) {
 
 	std::string merged_vcf_fname = workdir + "/out.vcf.gz";
 	htsFile* merged_vcf_file = bcf_open(merged_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(merged_vcf_file, dp_vcf_header) != 0) {
+	if (bcf_hdr_write(merged_vcf_file, out_vcf_hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + merged_vcf_fname + ".");
 	}
 
 	std::string merged_pass_vcf_fname = workdir + "/out.pass.vcf.gz";
 	htsFile* merged_pass_vcf_file = bcf_open(merged_pass_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(merged_pass_vcf_file, dp_vcf_header) != 0) {
+	if (bcf_hdr_write(merged_pass_vcf_file, out_vcf_hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + merged_pass_vcf_fname + ".");
 	}
 
@@ -543,14 +557,14 @@ int main(int argc, char* argv[]) {
 			return b1->pos < b2->pos;
 		});
 		for (bcf1_t* bcf_entry : all_entries) {
-			if (bcf_has_filter(dp_vcf_header, bcf_entry, (char*) "PASS")) {
-				if (bcf_write(merged_pass_vcf_file, dp_vcf_header, bcf_entry) != 0) {
+			if (bcf_has_filter(out_vcf_hdr, bcf_entry, (char*) "PASS")) {
+				if (bcf_write(merged_pass_vcf_file, out_vcf_hdr, bcf_entry) != 0) {
 					throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
 				}
 			}
 			// remove filters
-			bcf_update_filter(dp_vcf_header, bcf_entry, NULL, 0);
-			if (bcf_write(merged_vcf_file, dp_vcf_header, bcf_entry) != 0) {
+			bcf_update_filter(out_vcf_hdr, bcf_entry, NULL, 0);
+			if (bcf_write(merged_vcf_file, out_vcf_hdr, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
 			}
 		}

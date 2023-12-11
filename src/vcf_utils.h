@@ -43,6 +43,12 @@ bcf_hdr_t* generate_vcf_header_base(chr_seqs_map_t& contigs, std::string sample_
 	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"SV smaller than %d bp.\">", config.min_sv_size); // TODO: remove this filter
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
 
+	const char* remap_boundary_flt_tag = "##FILTER=<ID=REMAP_BOUNDARY_FILTER,Description=\"One of the breakpoints is incompatible with mate locations.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_boundary_flt_tag, &len));
+
+	const char* failed_to_ext_flt_tag = "##FILTER=<ID=FAILED_TO_EXTEND,Description=\"No reads can extend the consensus.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, failed_to_ext_flt_tag, &len));
+
 	const char* anomalous_fl_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"The insertion region has anomalous depth.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_fl_depth_flt_tag, &len));
 

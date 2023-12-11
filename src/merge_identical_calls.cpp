@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) {
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
 			// if this is not PASS and there is an equivalent indel already stored, ignore
-			if (!sv->is_pass()) continue;
-			else if (!sv_entries[unique_id]->is_pass()) {
+			if (sv->is_fail()) continue;
+			else if (sv_entries[unique_id]->is_fail()) {
 				// if stored indel is not PASS, but there is an equivalent PASS indel, store that instead
 				sv_entries[unique_id] = sv;
 				continue;

@@ -173,10 +173,14 @@ else:
 find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(find_svs_from_sr_consensuses_cmd)
 
+merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/sr.vcf.gz %s/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+exec(merge_identical_calls_cmd)
+
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
 
 cp(cmd_args.workdir + "/sr.vcf.gz", survindel2_workdir)
+cp(cmd_args.workdir + "/sr.dedup.vcf.gz", survindel2_workdir)
 
 cp(cmd_args.workdir + "/config.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
@@ -216,17 +220,17 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s/sr.vcf.gz %s/sr.annotated.vcf.gz %s %s %s" % (cmd_args.bam_file, survindel2_workdir, survindel2_workdir, survindel2_workdir, cmd_args.reference, sample_name)
-exec(add_sr_filtering_info_cmd)
-
-# normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
-# exec(normalise_cmd)
-
-merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/sr.annotated.vcf.gz %s/sr.norm.dedup.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
-exec(merge_identical_calls_cmd)
-
 dp_clusterer = SURVEYOR_PATH + "/bin/survindel2_dp_clusterer %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
 exec(dp_clusterer)
+
+add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s/out.vcf.gz %s/out.annotated.vcf.gz %s %s %s" % (cmd_args.bam_file, survindel2_workdir, survindel2_workdir, survindel2_workdir, cmd_args.reference, sample_name)
+exec(add_sr_filtering_info_cmd)
+
+filter_cmd = "bcftools view -f PASS %s/out.annotated.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (survindel2_workdir, survindel2_workdir)
+exec(filter_cmd)
+
+tabix_cmd = "tabix -f -p vcf %s/out.pass.vcf.gz" % survindel2_workdir
+exec(tabix_cmd)
 
 dc_remapper_cmd = SURVEYOR_PATH + "/bin/insurveyor_dc_remapper %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
 exec(dc_remapper_cmd)
@@ -239,3 +243,7 @@ exec(filter_cmd)
 
 concat_cmd = "bcftools concat -a %s/out.pass.vcf.gz %s/out.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (survindel2_workdir, insurveyor_workdir, cmd_args.workdir)
 exec(concat_cmd)
+
+# normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
+# exec(normalise_cmd)
+
