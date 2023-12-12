@@ -33,9 +33,10 @@ struct indel_t {
 struct sv2_deletion_t : indel_t {
 	static const int SIZE_NOT_COMPUTED = INT32_MAX;
 	static const int REMAP_LB_NOT_COMPUTED = 0, REMAP_UB_NOT_COMPUTED = INT32_MAX;
+	static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
 
     int max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED, conc_pairs = 0;
-    double ks_pval = -1.0;
+    double ks_pval = KS_PVAL_NOT_COMPUTED;
     hts_pos_t remap_boundary_lower = REMAP_LB_NOT_COMPUTED, remap_boundary_upper = REMAP_UB_NOT_COMPUTED;
     int l_cluster_region_disc_pairs = 0, r_cluster_region_disc_pairs = 0;
 
@@ -156,6 +157,14 @@ void sv2_del2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, std::string& 
 	int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", &del->conc_pairs, 1);
+
+	if (del->ks_pval != sv2_deletion_t::KS_PVAL_NOT_COMPUTED) {
+		float ks_pval = del->ks_pval;
+		bcf_update_info_float(hdr, bcf_entry, "KS_PVAL", &ks_pval, 1);
+	}
+	if (!del->original_range.empty()) {
+		bcf_update_info_string(hdr, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
+	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", del->imprecise());
 }

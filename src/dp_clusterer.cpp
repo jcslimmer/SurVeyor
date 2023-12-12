@@ -6,36 +6,25 @@
 
 #include "../libs/cptl_stl.h"
 #include "../libs/IntervalTree.h"
-#include "utils.h"
-#include "../src/sam_utils.h"
-#include "stat_tests.h"
-#include "../src/sw_utils.h"
 #include "../libs/kdtree.h"
-#include "../src/vcf_utils.h"
+#include "sam_utils.h"
+#include "sw_utils.h"
+#include "vcf_utils.h"
 
 std::string workdir;
-std::mutex mtx;
 
 config_t config;
 stats_t stats;
 chr_seqs_map_t chr_seqs;
-std::string reference_fname;
-
-bcf_hdr_t* dp_vcf_header;
 
 std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
-std::unordered_map<std::string, std::vector<bcf1_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
-std::unordered_map<std::string, std::vector<sv_t*>> sv_entries_by_chr, sv_nonpass_entries_by_chr;
-std::unordered_map<std::string, std::vector<bcf1_t*>> dp_entries_by_chr;
+std::unordered_map<std::string, std::vector<sv_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
 std::mutex maps_mtx;
 
 int max_cluster_size, min_cluster_size;
-std::vector<double> global_crossing_isize_dist;
-std::vector<uint32_t> median_crossing_count_geqi_by_isize;
 
 struct cluster_t {
 	hts_pos_t la_start, la_end, ra_start, ra_end;
-	bool la_end_clipped, ra_start_clipped;
 	int count = 1, confident_count = 0;
 	uint8_t max_mapq;
 	bool used = false;
@@ -45,8 +34,6 @@ struct cluster_t {
 	cluster_t(bam1_t* read) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
 			max_mapq(std::min(read->core.qual, (uint8_t) get_mq(read))) {
 		confident_count = max_mapq == config.high_confidence_mapq;
-		la_end_clipped = is_right_clipped(read, config.min_clip_len);
-		ra_start_clipped = is_mate_left_clipped(read, config.min_clip_len);
 		rightmost_lseq = get_sequence(read);
 		leftmost_rseq = bam_get_qname(read);
 	}
@@ -234,7 +221,7 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 			del = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 		}
 
-		if (del) {
+		if (del && -del->svlen() >= config.min_sv_size) {
 			del->disc_pairs = c->count;
 			del->disc_pairs_maxmapq = c->max_mapq;
 			del->disc_pairs_high_mapq = c->confident_count;
@@ -255,136 +242,37 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	}
 }
 
-void merge_sr_dp(int id, int contig_id, std::string contig_name, bcf_hdr_t* sr_hdr) {
+void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 	maps_mtx.lock();
 	std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-	std::vector<bcf1_t*>& sr_entries = sr_entries_by_chr[contig_name];
+	std::vector<sv_t*>& sv_sr_entries = sr_entries_by_chr[contig_name];
 	maps_mtx.unlock();
 
-	if (deletions.empty() || sr_entries.empty()) return;
+	if (deletions.empty() || sv_sr_entries.empty()) return;
 
-	std::vector<Interval<bcf1_t*> > del_intervals, dup_intervals;
-	for (bcf1_t* sr_entry : sr_entries) {
-		std::string sv_type = get_sv_type(sr_hdr, sr_entry);
-		if (sv_type == "DEL") {
-			del_intervals.push_back(Interval<bcf1_t*>(sr_entry->pos, get_sv_end(sr_hdr, sr_entry), sr_entry));
-		} else {
-			dup_intervals.push_back(Interval<bcf1_t*>(sr_entry->pos, get_sv_end(sr_hdr, sr_entry), sr_entry));
+	std::vector<Interval<sv_t*> > del_intervals, dup_intervals;
+	for (sv_t* sr_entry : sv_sr_entries) {
+		if (sr_entry->svtype() == "DEL") {
+			del_intervals.push_back(Interval<sv_t*>(sr_entry->start, sr_entry->end, sr_entry));
 		}
 	}
-	IntervalTree<bcf1_t*> del_tree = IntervalTree<bcf1_t*>(del_intervals);
-	IntervalTree<bcf1_t*> dup_tree = IntervalTree<bcf1_t*>(dup_intervals);
+	IntervalTree<sv_t*> del_tree = IntervalTree<sv_t*>(del_intervals);
 
 	for (int i = 0; i < deletions.size(); i++) {
 		deletion_t* del = deletions[i];
-		std::vector<Interval<bcf1_t*> > iv = del_tree.findContained(del->left_anchor_aln->start, del->right_anchor_aln->end);
+		std::vector<Interval<sv_t*> > iv = del_tree.findContained(del->left_anchor_aln->start, del->right_anchor_aln->end);
 
 		if (iv.size() == 1) {
-			bcf1_t* corr_sr_del = iv[0].value;
-			if (corr_sr_del->pos-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-get_sv_end(sr_hdr, corr_sr_del) <= stats.max_is) {
-				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS", &del->disc_pairs, 1);
-				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_MAXMAPQ", &del->disc_pairs_maxmapq, 1);
-				bcf_update_info_int32(sr_hdr, corr_sr_del, "DISC_PAIRS_HIGHMAPQ", &del->disc_pairs_high_mapq, 1);
+			sv_t* corr_sr_del = iv[0].value;
+			if (corr_sr_del->start-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-corr_sr_del->end <= stats.max_is) {
+				corr_sr_del->disc_pairs = del->disc_pairs;
+				corr_sr_del->disc_pairs_maxmapq = del->disc_pairs_maxmapq;
+				corr_sr_del->disc_pairs_high_mapq = del->disc_pairs_high_mapq;
 				deletions[i] = NULL;
 			}
 		}
 	}
 	deletions.erase(std::remove(deletions.begin(), deletions.end(), (deletion_t*) NULL), deletions.end());
-
-	std::vector<sv2_deletion_t*> sv2_deletions;
-}
-
-void add_filtering_info(int id, std::string contig_name, std::string bam_fname) {
-	maps_mtx.lock();
-	std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-	maps_mtx.unlock();
-	if (deletions.empty()) return;
-
-	std::vector<sv2_deletion_t*> sv2_deletions;
-	for (deletion_t* del : deletions) {
-		sv2_deletions.push_back(new sv2_deletion_t(del));
-	}
-	
-	std::vector<sv2_deletion_t*> shorter_deletions, longer_deletions;
-	for (sv2_deletion_t* deletion : sv2_deletions) {
-		if (-deletion->sv->svlen() < stats.max_is) shorter_deletions.push_back(deletion);
-		else longer_deletions.push_back(deletion);
-	}
-
-	open_samFile_t* bam_file = open_samFile(bam_fname, false);
-	hts_set_fai_filename(bam_file->file, reference_fname.c_str());
-	depth_filter_del(contig_name, sv2_deletions, bam_file, config.min_size_for_depth_filtering, stats);
-	// depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
-	if (!shorter_deletions.empty()) calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, shorter_deletions, bam_file, stats, config.min_sv_size);
-	if (!longer_deletions.empty()) calculate_ptn_ratio(contig_name, longer_deletions, bam_file, stats);
-	// if (!duplications.empty()) calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
-	close_samFile(bam_file);
-
-	mtx.lock();
-	bcf1_t* bcf_entry = bcf_init();
-	for (sv2_deletion_t* del : sv2_deletions) {
-		if (-del->sv->svlen() < config.min_sv_size) {
-			continue;
-		}
-		if (del->ks_pval > 0.01) {
-			del->sv->filters.push_back("KS_FILTER");
-		}
-		if (-del->sv->svlen() >= stats.max_is && double(del->sv->disc_pairs)/(del->sv->disc_pairs+del->conc_pairs) < 0.25) {
-			del->sv->filters.push_back("LOW_PTN_RATIO");
-		}
-
-		if (del->med_left_flanking_cov*0.74<=del->med_indel_left_cov || del->med_right_flanking_cov*0.74<=del->med_indel_right_cov) {
-			del->sv->filters.push_back("DEPTH_FILTER");
-		}
-		if (del->med_left_flanking_cov > stats.max_depth || del->med_right_flanking_cov > stats.max_depth ||
-			del->med_left_flanking_cov < stats.min_depth || del->med_right_flanking_cov < stats.min_depth ||
-			del->med_left_cluster_cov > stats.max_depth || del->med_right_cluster_cov > stats.max_depth) {
-			del->sv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-		}
-		if (del->med_indel_left_cov > stats.max_depth || del->med_indel_right_cov > stats.max_depth) {
-			del->sv->filters.push_back("ANOMALOUS_DEL_DEPTH");
-		}
-
-		if (-del->sv->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sv->disc_pairs || del->r_cluster_region_disc_pairs >= del->sv->disc_pairs)) {
-			del->sv->filters.push_back("AMBIGUOUS_REGION");
-		}
-
-		if (del->sv->filters.empty()) {
-			del->sv->filters.push_back("PASS");
-		}
-
-		sv2_del2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, del);
-		float ks_pval = del->ks_pval;
-		bcf_update_info_float(dp_vcf_header, bcf_entry, "KS_PVAL", &ks_pval, 1);
-		if (!del->original_range.empty()) bcf_update_info_string(dp_vcf_header, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
-		dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
-	}
-
-	// for (sv2_duplication_t* dup : duplications) {
-	// 	std::vector<std::string> filters;
-
-	// 	if (dup->med_left_flanking_cov*1.25>dup->med_indel_left_cov || dup->med_right_flanking_cov*1.25>dup->med_indel_right_cov) {
-	// 		filters.push_back("DEPTH_FILTER");
-	// 	}
-	// 	if (dup->med_left_flanking_cov > stats.max_depth || dup->med_right_flanking_cov > stats.max_depth ||
-	// 		dup->med_left_flanking_cov < stats.min_depth || dup->med_right_flanking_cov < stats.min_depth) {
-	// 		filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-	// 	}
-
-	// 	if (dup->lc_cluster_region_disc_pairs >= dup->sv->disc_pairs || dup->rc_cluster_region_disc_pairs >= dup->sv->disc_pairs) {
-	// 		filters.push_back("AMBIGUOUS_REGION");
-	// 	}
-
-	// 	if (filters.empty()) {
-	// 		filters.push_back("PASS");
-	// 	}
-
-	// 	sv2_dup2bcf(dp_vcf_header, bcf_entry, chr_seqs.get_seq(contig_name), contig_name, dup, filters);
-	// 	dp_entries_by_chr[contig_name].push_back(bcf_dup(bcf_entry));
-	// }
-
-	bcf_destroy(bcf_entry);
-	mtx.unlock();
 }
 
 int main(int argc, char* argv[]) {
@@ -393,7 +281,7 @@ int main(int argc, char* argv[]) {
 
     workdir = argv[2];
     std::string workspace = workdir + "/workspace";
-    reference_fname = argv[3];
+    std::string reference_fname = argv[3];
     std::string sample_name = argv[4];
 
     std::string full_cmd_fname = workdir + "/full_cmd.txt";
@@ -409,29 +297,6 @@ int main(int argc, char* argv[]) {
 	max_cluster_size = (stats.max_depth * stats.max_is)/stats.read_len;
 
 	chr_seqs.read_fasta_into_map(reference_fname);
-
-	std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
-	int isize, count;
-	while (crossing_isizes_dist_fin >> isize >> count) {
-		for (int i = 0; i < count; i++) global_crossing_isize_dist.push_back(isize);
-	}
-	std::random_shuffle(global_crossing_isize_dist.begin(), global_crossing_isize_dist.end());
-	global_crossing_isize_dist.resize(100000);
-	crossing_isizes_dist_fin.close();
-
-	std::ifstream crossing_isizes_count_geq_i_fin(workdir + "/crossing_isizes_count_geq_i.txt");
-	int median;
-	while (crossing_isizes_count_geq_i_fin >> isize >> median) {
-		median_crossing_count_geqi_by_isize.push_back(median);
-	}
-	crossing_isizes_count_geq_i_fin.close();
-
-	dp_vcf_header = sv2_generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
-	std::string dp_vcf_fname = workdir + "/dp.vcf.gz";
-	htsFile* dp_vcf_file = bcf_open(dp_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(dp_vcf_file, dp_vcf_header) != 0) {
-		throw std::runtime_error("Failed to write the VCF header to " + dp_vcf_fname + ".");
-	}
 
 	ctpl::thread_pool thread_pool1(config.threads);
 	std::vector<std::future<void> > futures;
@@ -459,42 +324,30 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
+
 	std::string sr_vcf_fname = workdir + "/sr.dedup.vcf.gz";
 	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
-	bcf_hdr_t* sr_vcf_hdr = bcf_hdr_read(sr_vcf_file);
-
-	bcf_hdr_t* out_vcf_hdr = bcf_hdr_dup(dp_vcf_header);
-	out_vcf_hdr = bcf_hdr_merge(out_vcf_hdr, sr_vcf_hdr);
+	bcf_hdr_t* hdr = bcf_hdr_read(sr_vcf_file);
 
 	bcf1_t* bcf_entry = bcf_init();
-	while (bcf_read(sr_vcf_file, sr_vcf_hdr, bcf_entry) == 0) {
-		sv_t* sv = bcf_to_sv(sr_vcf_hdr, bcf_entry);
-
-		int* split_reads = NULL, n = 0;
-		bcf_get_info_int32(sr_vcf_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
-		std::string sv_type = get_sv_type(sr_vcf_hdr, bcf_entry);
-		sv_type = "DEL"; // TODO: remove
-
-		bcf1_t* b = bcf_dup(bcf_entry);
-		bcf_translate(out_vcf_hdr, sr_vcf_hdr, b);
-		if (split_reads[0] > 0 && split_reads[1] > 0) { // only use 2SR or PASS DELs
-			sr_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(b);
-			sv_entries_by_chr[sv->chr].push_back(sv);
+	while (bcf_read(sr_vcf_file, hdr, bcf_entry) == 0) {
+		sv_t* sv = bcf_to_sv(hdr, bcf_entry);
+		if (sv->rc_consensus && sv->lc_consensus && sv->svtype() == "DEL") { // only use 2SR/2HSR
+			sr_entries_by_chr[sv->chr].push_back(sv);
 		} else {
-			sr_nonpass_entries_by_chr[bcf_seqname_safe(sr_vcf_hdr, bcf_entry)].push_back(b);
-			sv_nonpass_entries_by_chr[sv->chr].push_back(sv);
+			sr_nonpass_entries_by_chr[sv->chr].push_back(sv);
 		}
 	}
 	bcf_close(sr_vcf_file);
 
 	// merge SR and DISC
-	ctpl::thread_pool thread_pool3(config.threads);
+	ctpl::thread_pool thread_pool2(config.threads);
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-		std::future<void> future = thread_pool3.push(merge_sr_dp, contig_id, contig_name, dp_vcf_header);
+		std::future<void> future = thread_pool2.push(merge_sr_dp, contig_id, contig_name);
 		futures.push_back(std::move(future));
 	}
-	thread_pool3.stop(true);
+	thread_pool2.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
 		try {
 			futures[i].get();
@@ -504,29 +357,20 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-	ctpl::thread_pool thread_pool4(config.threads);
-	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-		std::string contig_name = contig_map.get_name(contig_id);
-		std::future<void> future = thread_pool4.push(add_filtering_info, contig_name, bam_fname);
-		futures.push_back(std::move(future));
-	}
-	thread_pool4.stop(true);
-	for (int i = 0; i < futures.size(); i++) {
-		try {
-			futures[i].get();
-		} catch (char const* s) {
-			std::cout << s << std::endl;
-		}
+	std::string dp_vcf_fname = workdir + "/dp.vcf.gz";
+	htsFile* dp_vcf_file = bcf_open(dp_vcf_fname.c_str(), "wz");
+	if (bcf_hdr_write(dp_vcf_file, hdr) != 0) {
+		throw std::runtime_error("Failed to write the VCF header to " + dp_vcf_fname + ".");
 	}
 
 	int del_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
-    	auto& bcf_entries_contig = dp_entries_by_chr[contig_name];
-    	std::sort(bcf_entries_contig.begin(), bcf_entries_contig.end(), [](const bcf1_t* b1, const bcf1_t* b2) {return b1->pos < b2->pos;});
-		for (bcf1_t* bcf_entry : bcf_entries_contig) {
-			std::string id = "DEL_DP_" + std::to_string(del_id++);
-			bcf_update_id(dp_vcf_header, bcf_entry, id.c_str());
-			if (bcf_write(dp_vcf_file, dp_vcf_header, bcf_entry) != 0) {
+		auto& deletions = deletions_by_chr[contig_name];
+		std::sort(deletions.begin(), deletions.end(), [](const sv_t* sv1, const sv_t* sv2) {return sv1->start < sv2->start;});
+		for (sv_t* del : deletions) {
+			del->id = "DEL_DP_" + std::to_string(del_id++);
+			sv2bcf(hdr, bcf_entry, del, chr_seqs.get_seq(contig_name));
+			if (bcf_write(dp_vcf_file, hdr, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + dp_vcf_fname + ".");
 			}
 		}
@@ -536,44 +380,30 @@ int main(int argc, char* argv[]) {
 
 	tbx_index_build(dp_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 
-	std::string merged_vcf_fname = workdir + "/out.vcf.gz";
+	std::string merged_vcf_fname = workdir + "/survindel2.out.vcf.gz";
 	htsFile* merged_vcf_file = bcf_open(merged_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(merged_vcf_file, out_vcf_hdr) != 0) {
+	if (bcf_hdr_write(merged_vcf_file, hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + merged_vcf_fname + ".");
 	}
 
-	std::string merged_pass_vcf_fname = workdir + "/out.pass.vcf.gz";
-	htsFile* merged_pass_vcf_file = bcf_open(merged_pass_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(merged_pass_vcf_file, out_vcf_hdr) != 0) {
-		throw std::runtime_error("Failed to write the VCF header to " + merged_pass_vcf_fname + ".");
-	}
-
 	for (std::string& contig_name : chr_seqs.ordered_contigs) {
-		std::vector<bcf1_t*> all_entries;
-		all_entries.insert(all_entries.end(), dp_entries_by_chr[contig_name].begin(), dp_entries_by_chr[contig_name].end());
+		std::vector<sv_t*> all_entries;
+		all_entries.insert(all_entries.end(), deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end());
 		all_entries.insert(all_entries.end(), sr_entries_by_chr[contig_name].begin(), sr_entries_by_chr[contig_name].end());
 		all_entries.insert(all_entries.end(), sr_nonpass_entries_by_chr[contig_name].begin(), sr_nonpass_entries_by_chr[contig_name].end());
-		std::sort(all_entries.begin(), all_entries.end(), [](bcf1_t* b1, bcf1_t* b2) {
-			return b1->pos < b2->pos;
+		std::sort(all_entries.begin(), all_entries.end(), [](sv_t* sv1, sv_t* sv2) {
+			return sv1->start < sv2->start;
 		});
-		for (bcf1_t* bcf_entry : all_entries) {
-			if (bcf_has_filter(out_vcf_hdr, bcf_entry, (char*) "PASS")) {
-				if (bcf_write(merged_pass_vcf_file, out_vcf_hdr, bcf_entry) != 0) {
-					throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
-				}
-			}
-			// remove filters
-			bcf_update_filter(out_vcf_hdr, bcf_entry, NULL, 0);
-			if (bcf_write(merged_vcf_file, out_vcf_hdr, bcf_entry) != 0) {
+		for (sv_t* sv : all_entries) {
+			sv2bcf(hdr, bcf_entry, sv, chr_seqs.get_seq(contig_name));
+			if (bcf_write(merged_vcf_file, hdr, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + merged_vcf_fname + ".");
 			}
 		}
 	}
 
 	bcf_close(merged_vcf_file);
-	bcf_close(merged_pass_vcf_file);
 
 	tbx_index_build(merged_vcf_fname.c_str(), 0, &tbx_conf_vcf);
-	tbx_index_build(merged_pass_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 
 }

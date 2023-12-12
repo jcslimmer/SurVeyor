@@ -176,11 +176,13 @@ exec(find_svs_from_sr_consensuses_cmd)
 merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/sr.vcf.gz %s/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
 exec(merge_identical_calls_cmd)
 
+dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+exec(dp_clusterer)
+
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
 
-cp(cmd_args.workdir + "/sr.vcf.gz", survindel2_workdir)
-cp(cmd_args.workdir + "/sr.dedup.vcf.gz", survindel2_workdir)
+cp(cmd_args.workdir + "/survindel2.out.vcf.gz", survindel2_workdir)
 
 cp(cmd_args.workdir + "/config.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
@@ -207,12 +209,6 @@ cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
 mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
 
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/long-pairs", survindel2_workdir + "/workspace/long-pairs"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", survindel2_workdir + "/workspace/mateseqs"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sc_mateseqs", survindel2_workdir + "/workspace/sc_mateseqs"))
-
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", survindel2_workdir + "/workspace/sr_consensuses"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/hsr_consensuses", survindel2_workdir + "/workspace/hsr_consensuses"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", insurveyor_workdir + "/workspace/sr_consensuses"))
 
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdir + "/workspace/clipped"))
@@ -220,16 +216,14 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-dp_clusterer = SURVEYOR_PATH + "/bin/survindel2_dp_clusterer %s %s %s %s" % (cmd_args.bam_file, survindel2_workdir, cmd_args.reference, sample_name)
-exec(dp_clusterer)
 
-add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s/out.vcf.gz %s/out.annotated.vcf.gz %s %s %s" % (cmd_args.bam_file, survindel2_workdir, survindel2_workdir, survindel2_workdir, cmd_args.reference, sample_name)
+add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s/survindel2.out.vcf.gz %s/out.annotated.vcf.gz %s %s %s" % (cmd_args.bam_file, survindel2_workdir, survindel2_workdir, survindel2_workdir, cmd_args.reference, sample_name)
 exec(add_sr_filtering_info_cmd)
 
 filter_cmd = "bcftools view -f PASS %s/out.annotated.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (survindel2_workdir, survindel2_workdir)
 exec(filter_cmd)
 
-tabix_cmd = "tabix -f -p vcf %s/out.pass.vcf.gz" % survindel2_workdir
+tabix_cmd = "tabix -p vcf %s/out.pass.vcf.gz" % survindel2_workdir
 exec(tabix_cmd)
 
 dc_remapper_cmd = SURVEYOR_PATH + "/bin/insurveyor_dc_remapper %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)

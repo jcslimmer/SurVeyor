@@ -481,11 +481,20 @@ int main(int argc, char* argv[]) {
 			sv->id = sv->svtype() +  "_SR_" + std::to_string(svtype_id[sv->svtype()]++);
 
 			// do some light filtering here - it helps merge_identical_calls not merge good calls with calls that will get filtered
-			if (sv->remap_boundary_lower() > sv->start) {
-                sv->filters.push_back("REMAP_BOUNDARY_FILTER");
-            } else if (sv->remap_boundary_upper() < sv->end) {
-                sv->filters.push_back("REMAP_BOUNDARY_FILTER");
-            }
+			if (sv->svtype() == "DEL") {
+				if (sv->remap_boundary_lower() > sv->start) {
+					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+				} else if (sv->remap_boundary_upper() < sv->end) {
+					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+				}
+			} else if (sv->svtype() == "DUP") {
+				if (sv->start > sv->remap_boundary_upper()) {
+					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+				} else if (sv->end < sv->remap_boundary_lower()) {
+					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+				}
+			}
+
 			if (sv->source == "1SR_RC" || sv->source == "1HSR_RC") {
             	if (sv->rc_consensus->right_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
             } else if (sv->source == "1SR_LC" || sv->source == "1HSR_LC") {
