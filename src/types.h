@@ -108,7 +108,11 @@ struct sv_t {
     std::string ins_seq;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
-    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0;
+    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0, conc_pairs = 0;
+
+    int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
+    int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
+    int l_cluster_region_disc_pairs = 0, r_cluster_region_disc_pairs = 0;
 
     int overlap = 0;
     double mismatch_rate = 0.0;
@@ -162,17 +166,26 @@ struct sv_t {
         return std::to_string(full_junction_aln->start+1) + "-" + std::to_string(full_junction_aln->end+1);
     }
 
+    virtual bool imprecise() { return false; }
+
     virtual ~sv_t() {}
 };
 
 struct deletion_t : sv_t {
+    static const int SIZE_NOT_COMPUTED = INT32_MAX;
+    static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
+
     bool remapped = false;
     std::string original_range;
+    int max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;;
+    double ks_pval = KS_PVAL_NOT_COMPUTED;
 
     using sv_t::sv_t;
 
     std::string svtype() { return "DEL"; }
     hts_pos_t svlen() { return start - end + ins_seq.length(); }
+
+    bool imprecise() { return lc_consensus == NULL && rc_consensus == NULL && remapped == false; }
 };
 
 struct duplication_t : sv_t {

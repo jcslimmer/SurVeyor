@@ -83,7 +83,6 @@ with open(cmd_args.workdir + "/config.txt", "w") as config_file:
 
 bam_file = pysam.AlignmentFile(cmd_args.bam_file, reference_filename=cmd_args.reference)
 
-# TODO: remove contig_map use
 with open("%s/contig_map" % cmd_args.workdir, "w") as contig_map:
     for k in bam_file.references:
         contig_map.write("%s\n" % (k))
@@ -142,8 +141,8 @@ with open(cmd_args.workdir + "/stats.txt", "w") as stats_file:
     stats_file.write("avg_is %d\n" % mean_is)
     stats_file.write("max_is %d\n" % max_is)
 
-survindel2_workdir = cmd_args.workdir + "/survindel2"
-mkdir(survindel2_workdir)
+# survindel2_workdir = cmd_args.workdir + "/survindel2"
+# mkdir(survindel2_workdir)
 insurveyor_workdir = cmd_args.workdir + "/insurveyor"
 mkdir(insurveyor_workdir)
 
@@ -179,52 +178,29 @@ exec(merge_identical_calls_cmd)
 dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(dp_clusterer)
 
+add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/survindel2.out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
+exec(add_filtering_info_cmd)
+
 def cp(src, dst):
     os.system("cp %s %s" % (src, dst))
 
-cp(cmd_args.workdir + "/survindel2.out.vcf.gz", survindel2_workdir)
-
-cp(cmd_args.workdir + "/config.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
 
 def append(src, dst):
     os.system("cat %s >> %s" % (src, dst))
 
-append(cmd_args.workdir + "/stats.txt", survindel2_workdir + "/config.txt")
 append(cmd_args.workdir + "/stats.txt", insurveyor_workdir + "/config.txt")
-
-cp(cmd_args.workdir + "/stats.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/stats.txt", insurveyor_workdir)
-
-cp(cmd_args.workdir + "/contig_map", survindel2_workdir)
 cp(cmd_args.workdir + "/contig_map", insurveyor_workdir)
-
-cp(cmd_args.workdir + "/full_cmd.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/full_cmd.txt", insurveyor_workdir)
-
-cp(cmd_args.workdir + "/crossing_isizes.txt", survindel2_workdir)
-cp(cmd_args.workdir + "/crossing_isizes_count_geq_i.txt", survindel2_workdir)
 cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
-
-mkdir(survindel2_workdir + "/workspace")
 mkdir(insurveyor_workdir + "/workspace")
 
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", insurveyor_workdir + "/workspace/sr_consensuses"))
-
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdir + "/workspace/clipped"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workdir + "/workspace/mateseqs"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
-
-
-add_sr_filtering_info_cmd = SURVEYOR_PATH + "/bin/survindel2_add_sr_filtering_info %s %s/survindel2.out.vcf.gz %s/out.annotated.vcf.gz %s %s %s" % (cmd_args.bam_file, survindel2_workdir, survindel2_workdir, survindel2_workdir, cmd_args.reference, sample_name)
-exec(add_sr_filtering_info_cmd)
-
-filter_cmd = "bcftools view -f PASS %s/out.annotated.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (survindel2_workdir, survindel2_workdir)
-exec(filter_cmd)
-
-tabix_cmd = "tabix -p vcf %s/out.pass.vcf.gz" % survindel2_workdir
-exec(tabix_cmd)
 
 dc_remapper_cmd = SURVEYOR_PATH + "/bin/insurveyor_dc_remapper %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
 exec(dc_remapper_cmd)
@@ -235,7 +211,7 @@ exec(add_filtering_info_cmd)
 filter_cmd = SURVEYOR_PATH + "/bin/insurveyor_filter %s %s 0.25" % (insurveyor_workdir, cmd_args.reference)
 exec(filter_cmd)
 
-concat_cmd = "bcftools concat -a %s/out.pass.vcf.gz %s/out.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (survindel2_workdir, insurveyor_workdir, cmd_args.workdir)
+concat_cmd = "bcftools concat -a %s/out.pass.vcf.gz %s/survindel2.out.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (insurveyor_workdir, cmd_args.workdir, cmd_args.workdir)
 exec(concat_cmd)
 
 # normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)

@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <vector>
+#include <algorithm>
 
 void mMultiply(double *A,double *B,double *C,int m) { int i,j,k; double s;
     for(i=0;i<m;i++) for(j=0; j<m; j++)
