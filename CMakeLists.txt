@@ -14,7 +14,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include_directories(htslib-1.18)
 include_directories(htslib-1.18/include)
 
-add_executable(survindel2_normalise SurVIndel2/normalise.cpp)
+add_executable(normalise utils/normalise.cpp)
 
 add_executable(insurveyor_dc_remapper libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/dc_remapper.cpp)
 add_executable(insurveyor_add_filtering_info INSurVeyor/add_filtering_info.cpp)
@@ -30,7 +30,6 @@ add_executable(add_filtering_info src/add_filtering_info.cpp)
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
 find_library(HTS_LIB hts PATHS htslib-1.18/lib NO_DEFAULT_PATH)
-target_link_libraries(survindel2_normalise "${HTS_LIB}")
 
 target_link_libraries(insurveyor_dc_remapper "${HTS_LIB}")
 target_link_libraries(insurveyor_add_filtering_info "${HTS_LIB}")
@@ -44,3 +43,4 @@ target_link_libraries(dp_clusterer "${HTS_LIB}")
 target_link_libraries(add_filtering_info "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")
+target_link_libraries(normalise "${HTS_LIB}")
