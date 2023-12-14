@@ -7,59 +7,28 @@
 #include <sstream>
 #include <unistd.h>
 #include <emmintrin.h>
+#include <htslib/sam.h>
+#include <htslib/vcf.h>
+#include <htslib/kseq.h>
 
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
-#include "htslib/sam.h"
-#include "htslib/vcf.h"
-#include "htslib/kseq.h"
-KSEQ_INIT(int, read)
+#include "../src/utils.h"
 
-struct config_t {
+struct inss_config_t {
 
-	int threads, seed;
-    bool per_contig_stats;
-    int min_sv_size, max_trans_size;
-    int max_clipped_pos_dist, min_clip_len, min_stable_mapq;
-    double max_seq_error;
-    std::string sampling_regions;
-    std::string version;
+    config_t config;
 
-    int clip_penalty = 7;
-    int max_mh_len = 100;
-
-    int max_is, read_len;
+    static const int clip_penalty = 7;
 
     void parse(std::string config_fname) {
-        std::unordered_map<std::string, std::string> config_params;
-        std::ifstream fin(config_fname);
-        std::string name, value;
-        while (fin >> name >> value) {
-            config_params[name] = value;
-        }
-        fin.close();
-
-        threads = stoi(config_params["threads"]);
-        seed = stoi(config_params["seed"]);
-        per_contig_stats = stoi(config_params["per_contig_stats"]);
-
-        min_sv_size = stoi(config_params["min_sv_size"]);
-        max_trans_size = stoi(config_params["max_trans_size"]);
-        max_clipped_pos_dist = stoi(config_params["max_clipped_pos_dist"]);
-        min_clip_len = stoi(config_params["min_clip_len"]);
-        max_seq_error = std::stod(config_params["max_seq_error"]);
-        min_stable_mapq = stoi(config_params["min_stable_mapq"]);
-
-        max_is = stoi(config_params["max_is"]);
-        read_len = stoi(config_params["read_len"]);
-
-        sampling_regions = config_params["sampling_regions"];
-        version = config_params["version"];
+        config.parse(config_fname);
     };
 };
 
-struct stats_t {
+struct inss_stats_t {
 
+    int max_is, read_len;
 	bool per_contig_stats;
 	std::unordered_map<std::string, int> min_depth, median_depth, max_depth, min_avg_base_qual;
 
@@ -68,10 +37,12 @@ struct stats_t {
 		std::ifstream fin(stats_fname);
 		std::string name, value;
 		while (fin >> name >> value) {
-			if (name == "min_depth") min_depth["."] = stoi(value);
-			if (name == "median_depth") median_depth["."] = stoi(value);
-			if (name == "max_depth") max_depth["."] = stoi(value);
-			if (name == "min_avg_base_qual") min_avg_base_qual["."] = stoi(value);
+			if (name == "min_depth") min_depth["."] = std::stoi(value);
+			if (name == "median_depth") median_depth["."] = std::stoi(value);
+			if (name == "max_depth") max_depth["."] = std::stoi(value);
+			if (name == "min_avg_base_qual") min_avg_base_qual["."] = std::stoi(value);
+            if (name == "max_is") max_is = std::stoi(value);
+            if (name == "read_len") read_len = std::stoi(value);
 		}
 		this->per_contig_stats = per_contig_stats;
 		fin.close();
@@ -100,7 +71,7 @@ struct stats_t {
 };
 
 
-struct contig_map_t {
+struct inss_contig_map_t {
 
     std::unordered_map<std::string, size_t> name_to_id;
     std::vector<std::string> id_to_name;
@@ -121,15 +92,15 @@ struct contig_map_t {
     size_t get_id(std::string& name) {return name_to_id[name];};
 };
 
-struct chr_seq_t {
+struct inss_chr_seq_t {
     char* seq;
     hts_pos_t len;
 
-    chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
-    ~chr_seq_t() {delete[] seq;}
+    inss_chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
+    ~inss_chr_seq_t() {delete[] seq;}
 };
-struct chr_seqs_map_t {
-    std::unordered_map<std::string, chr_seq_t*> seqs;
+struct inss_chr_seqs_map_t {
+    std::unordered_map<std::string, inss_chr_seq_t*> seqs;
     std::vector<std::string> ordered_contigs;
 
     void read_fasta_into_map(std::string& reference_fname) {
@@ -139,7 +110,7 @@ struct chr_seqs_map_t {
             std::string seq_name = seq->name.s;
             char* chr_seq = new char[seq->seq.l + 1];
             strcpy(chr_seq, seq->seq.s);
-            seqs[seq_name] = new chr_seq_t(chr_seq, seq->seq.l);
+            seqs[seq_name] = new inss_chr_seq_t(chr_seq, seq->seq.l);
             ordered_contigs.push_back(seq_name);
         }
         kseq_destroy(seq);
@@ -161,22 +132,19 @@ struct chr_seqs_map_t {
         }
     }
 
-    ~chr_seqs_map_t() {
+    ~inss_chr_seqs_map_t() {
         clear();
     }
 };
 
-struct suffix_prefix_aln_t {
+struct inss_suffix_prefix_aln_t {
     int overlap, score, mismatches;
 
-    suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
+    inss_suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
 };
 
 
 int popcnt(uint32_t x) {
-	// return __builtin_popcount(x);
-
-    // count number of 1 bits in x
     x = x - ((x >> 1) & 0x55555555);
     x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
     return (((x + (x >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
@@ -202,7 +170,7 @@ int number_of_mismatches_SIMD(const char* s1, const char* s2, int len) {
 
 // Finds the best alignment between a suffix of s1 and a prefix of s2
 // Disallows gaps
-suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
+inss_suffix_prefix_aln_t inss_aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
                                       int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
     int best_score = 0, best_aln_mismatches = 0;
     int overlap = 0;
@@ -231,16 +199,16 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
             overlap = sp_len;
         }
     }
-    return suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
+    return inss_suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
 }
 
 template<typename T>
-inline T max(T a, T b, T c) { return std::max(std::max(a,b), c); }
+inline T inss_max(T a, T b, T c) { return std::max(std::max(a,b), c); }
 
 template<typename T>
-inline T max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
+inline T inss_max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
 
-int max_pos(int* a, int n) {
+int inss_max_pos(int* a, int n) {
 	int pos = 0;
 	for (int i = 1; i < n; i++) {
 		if (a[i] > a[pos]) pos = i;
@@ -248,16 +216,16 @@ int max_pos(int* a, int n) {
 	return pos;
 }
 
-bool file_exists(std::string& fname) {
+bool inss_file_exists(std::string& fname) {
 	return std::ifstream(fname).good();
 }
 
-int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
+int64_t inss_overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
     return std::max(int64_t(0), overlap);
 }
 
-struct insertion_t {
+struct inss_insertion_t {
     std::string id;
     std::string chr;
     hts_pos_t start, end;
@@ -270,7 +238,7 @@ struct insertion_t {
     bool left_bp_precise = false, right_bp_precise = false;
     double rc_avg_nm = 0.0, lc_avg_nm = 0.0;
 
-    insertion_t(std::string chr, hts_pos_t start, hts_pos_t end, int r_disc_pairs, int l_disc_pairs,
+    inss_insertion_t(std::string chr, hts_pos_t start, hts_pos_t end, int r_disc_pairs, int l_disc_pairs,
     		int rc_fwd_reads, int rc_rev_reads, int lc_fwd_reads, int lc_rev_reads, int overlap, std::string ins_seq) :
 	chr(chr), start(start), end(end), r_disc_pairs(r_disc_pairs), l_disc_pairs(l_disc_pairs),
 	rc_fwd_reads(rc_fwd_reads), rc_rev_reads(rc_rev_reads), lc_fwd_reads(lc_fwd_reads), lc_rev_reads(lc_rev_reads),
@@ -278,90 +246,30 @@ struct insertion_t {
 
     int rc_reads() { return rc_fwd_reads + rc_rev_reads; }
     int lc_reads() { return lc_fwd_reads + lc_rev_reads; }
+
+    std::string unique_key() {
+        return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + ins_seq;
+    }
 };
-std::string unique_key(insertion_t* ins) {
-	return ins->chr + ":" + std::to_string(ins->start) + ":" + std::to_string(ins->end) + ":" + ins->ins_seq;
-}
 
-int score(char a, char b, int match_score, int mismatch_penalty) {
-	return (toupper(a) == toupper(b) || a == 'N' || b == 'N') ? match_score : mismatch_penalty;
-}
-int* smith_waterman_gotoh(const char* ref, int ref_len, const char* read, int read_len, int match_score, int mismatch_penalty, int gap_open, int gap_extend) {
-	const int INF = 1000000;
-
-	int** dab = new int*[ref_len+1];
-	int** dag = new int*[ref_len+1];
-	int** dgb = new int*[ref_len+1];
-	for (int i = 0; i <= ref_len; i++) {
-		dab[i] = new int[read_len+1];
-		dag[i] = new int[read_len+1];
-		dgb[i] = new int[read_len+1];
-		std::fill(dab[i], dab[i]+read_len+1, 0);
-		std::fill(dag[i], dag[i]+read_len+1, 0);
-		std::fill(dgb[i], dgb[i]+read_len+1, 0);
-	}
-
-	for (int i = 1; i <= ref_len; i++) {
-		dab[i][0] = -INF;
-		dag[i][0] = -INF;
-		dgb[i][0] = gap_open + (i-1)*gap_extend;
-	}
-	for (int i = 1; i <= read_len; i++) {
-		dab[0][i] = -INF;
-		dag[0][i] = gap_open + (i-1)*gap_extend;
-		dgb[0][i] = -INF;
-	}
-
-	for (int i = 1; i <= ref_len; i++) {
-		for (int j = 1; j <= read_len; j++) {
-			dab[i][j] = score(ref[i-1], read[j-1], match_score, mismatch_penalty) + max(dab[i-1][j-1], dag[i-1][j-1], dgb[i-1][j-1], 0);
-			dag[i][j] = max(gap_open + dab[i][j-1], gap_extend + dag[i][j-1], gap_open + dgb[i][j-1]);
-			dgb[i][j] = max(gap_open + dab[i-1][j], gap_open + dag[i-1][j], gap_extend + dgb[i-1][j]);
-		}
-	}
-
-	int* prefix_scores = new int[read_len];
-	std::fill(prefix_scores, prefix_scores+read_len, 0);
-	for (int i = 1; i <= ref_len; i++) {
-		for (int j = 1; j <= read_len; j++) {
-			prefix_scores[j-1] = std::max(prefix_scores[j-1], dab[i][j]);
-		}
-	}
-
-	for (int i = 0; i <= ref_len; i++) {
-		delete[] dab[i];
-		delete[] dag[i];
-		delete[] dgb[i];
-	}
-	delete[] dab;
-	delete[] dag;
-	delete[] dgb;
-
-	for (int i = 1; i < read_len; i++) {
-		prefix_scores[i] = std::max(prefix_scores[i], prefix_scores[i-1]);
-	}
-
-	return prefix_scores;
-}
-
-int get_left_clip_size(const StripedSmithWaterman::Alignment& aln) {
+int inss_get_left_clip_size(const StripedSmithWaterman::Alignment& aln) {
     uint32_t l = aln.cigar[0];
     return cigar_int_to_op(l) == 'S' ? cigar_int_to_len(l) : 0;
 }
-int get_right_clip_size(const StripedSmithWaterman::Alignment& aln) {
+int inss_get_right_clip_size(const StripedSmithWaterman::Alignment& aln) {
     uint32_t r = aln.cigar[aln.cigar.size()-1];
     return cigar_int_to_op(r) == 'S' ? cigar_int_to_len(r) : 0;
 }
-bool is_left_clipped(const StripedSmithWaterman::Alignment& aln) {
-	return get_left_clip_size(aln) > 0;
+bool inss_is_left_clipped(const StripedSmithWaterman::Alignment& aln) {
+	return inss_get_left_clip_size(aln) > 0;
 }
-bool is_right_clipped(const StripedSmithWaterman::Alignment& aln) {
-    return get_right_clip_size(aln) > 0;
+bool inss_is_right_clipped(const StripedSmithWaterman::Alignment& aln) {
+    return inss_get_right_clip_size(aln) > 0;
 }
 
 // Returns a vector scores s.t. scores[N] contains the score of the alignment between reference[aln.ref_begin:aln.ref_begin+N]
 // and query[aln.query_begin:aln.query_begin+M]
-std::vector<int> ssw_cigar_to_prefix_ref_scores(uint32_t* cigar, int cigar_len,
+std::vector<int> inss_ssw_cigar_to_prefix_ref_scores(uint32_t* cigar, int cigar_len,
 		int match = 1, int mismatch = -4, int gap_open = -6, int gap_extend = -1) {
 
 	std::vector<int> scores;
@@ -390,13 +298,13 @@ std::vector<int> ssw_cigar_to_prefix_ref_scores(uint32_t* cigar, int cigar_len,
 	return scores;
 }
 
-void to_uppercase(char* s) {
+void inss_to_uppercase(char* s) {
     for (int i = 0; s[i] != '\0'; i++) {
         s[i] = toupper(s[i]);
     }
 }
 
-std::string cigar_to_string(std::vector<uint32_t>& cigar) {
+std::string inss_cigar_to_string(std::vector<uint32_t>& cigar) {
 	std::stringstream ss;
 	for (uint32_t c : cigar) {
 		ss << cigar_int_to_len(c) << cigar_int_to_op(c);

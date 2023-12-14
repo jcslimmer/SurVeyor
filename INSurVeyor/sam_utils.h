@@ -194,7 +194,7 @@ std::string get_qual_ascii(bam1_t* r, bool fastq_seq = false) {
 	return qual_ascii;
 }
 
-bool is_homopolymer(const char* seq, int len) {
+bool inss_is_homopolymer(const char* seq, int len) {
 	int a = 0, c = 0, g = 0, t = 0;
 	for (int i = 0; i < len; i++) {
 		char b = std::toupper(seq[i]);
@@ -203,7 +203,7 @@ bool is_homopolymer(const char* seq, int len) {
 		else if (b == 'G') g++;
 		else if (b == 'T') t++;
 	}
-	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
+	return inss_max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
 
 bool is_homopolymer(std::string seq) {

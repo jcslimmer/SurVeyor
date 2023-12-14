@@ -10,18 +10,18 @@
 #include "vcf_utils.h"
 
 config_t config;
-stats_t stats;
+inss_stats_t stats;
 double min_ptn_ratio;
 
-contig_map_t contig_map;
+inss_contig_map_t contig_map;
 
 std::vector<uint32_t> min_disc_pairs_by_size;
 
-std::pair<int, int> support(insertion_t* insertion) {
+std::pair<int, int> support(inss_insertion_t* insertion) {
 	return {insertion->r_disc_pairs+insertion->rc_reads(), insertion->l_disc_pairs+insertion->lc_reads()};
 }
 
-std::pair<double, double> ptn_score(insertion_t* insertion) {
+std::pair<double, double> ptn_score(inss_insertion_t* insertion) {
 	int r_positive = insertion->r_disc_pairs + insertion->rc_reads();
 	int r_negative = insertion->r_conc_pairs;
 	int l_positive = insertion->l_disc_pairs + insertion->lc_reads();
@@ -30,7 +30,7 @@ std::pair<double, double> ptn_score(insertion_t* insertion) {
 }
 
 // filters for all categories
-void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) {
+void add_AST_filters(inss_insertion_t* insertion, std::vector<std::string>& filters) {
 	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
 	if (insertion->median_lf_cov > stats.get_max_depth(insertion->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->chr) ||
 		insertion->median_lf_cov < stats.get_min_depth(insertion->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->chr))
@@ -41,14 +41,14 @@ void add_AST_filters(insertion_t* insertion, std::vector<std::string>& filters) 
 	if (insertion->rc_reads() > stats.get_max_depth() || insertion->lc_reads() > stats.get_max_depth()) filters.push_back("ANOMALOUS_SC_NUMBER");
 }
 
-void add_AT_filters(insertion_t* insertion, std::vector<std::string>& filters) {
+void add_AT_filters(inss_insertion_t* insertion, std::vector<std::string>& filters) {
 	auto supports = support(insertion);
 	if (insertion->l_disc_pairs + insertion->r_disc_pairs == 0) filters.push_back("NO_DISC_SUPPORT");
 	else if (supports.first < stats.get_median_depth(insertion->chr)/5 && supports.second < stats.get_median_depth(insertion->chr)/5)
 		filters.push_back("LOW_SUPPORT");
 }
 
-std::vector<std::string> get_transurveyor_insertions_filterlist(insertion_t* insertion) {
+std::vector<std::string> get_transurveyor_insertions_filterlist(inss_insertion_t* insertion) {
 	std::vector<std::string> filters;
 	add_AST_filters(insertion, filters);
 	add_AT_filters(insertion, filters);
@@ -57,12 +57,11 @@ std::vector<std::string> get_transurveyor_insertions_filterlist(insertion_t* ins
 	int svlen = insertion->ins_seq.length();
 	if (svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
 	if (insertion->r_disc_pairs + insertion->l_disc_pairs < min_disc_pairs_by_size[svlen]) filters.push_back("NOT_ENOUGH_DISC_PAIRS");
-	if (insertion->mh_len > config.max_mh_len) filters.push_back("MH_TOO_LONG");
 	if (filters.empty()) filters.push_back("PASS");
 	return filters;
 }
 
-std::vector<std::string> get_assembled_insertions_filterlist(insertion_t* insertion) {
+std::vector<std::string> get_assembled_insertions_filterlist(inss_insertion_t* insertion) {
 	std::vector<std::string> filters;
 	add_AST_filters(insertion, filters);
 	add_AT_filters(insertion, filters);
@@ -71,7 +70,7 @@ std::vector<std::string> get_assembled_insertions_filterlist(insertion_t* insert
 	int svlen = insertion->ins_seq.length();
 	if (incomplete_assembly || svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
 	if (insertion->r_disc_pairs + insertion->l_disc_pairs < min_disc_pairs_by_size[svlen]) filters.push_back("NOT_ENOUGH_DISC_PAIRS");
-	if (incomplete_assembly && (divide < config.read_len && insertion->ins_seq.length()-divide < config.read_len)) filters.push_back("LOW_QUAL_ASSEMBLY");
+	if (incomplete_assembly && (divide < stats.read_len && insertion->ins_seq.length()-divide < stats.read_len)) filters.push_back("LOW_QUAL_ASSEMBLY");
 	if (filters.empty()) filters.push_back("PASS");
 	return filters;
 }
@@ -87,7 +86,7 @@ int main(int argc, char* argv[]) {
 
     contig_map.parse(workdir);
 
-	chr_seqs_map_t contigs;
+	inss_chr_seqs_map_t contigs;
 	contigs.read_fasta_into_map(reference_fname);
 
 	std::ifstream mdpbs_fin(workdir + "/min_disc_pairs_by_size.txt");
@@ -97,7 +96,7 @@ int main(int argc, char* argv[]) {
 
 	std::vector<bcf1_t*> final_insertions_set;
 
-	std::unordered_map<std::string, std::vector<insertion_t*> > final_insertions_by_contig;
+	std::unordered_map<std::string, std::vector<inss_insertion_t*> > final_insertions_by_contig;
 
 	/* == Insertions predicted by TranSurVeyor == */
 	std::string transurveyor_ins_vcf_fname = workdir + "/transurveyor_ins.annotated.vcf.gz";
@@ -114,8 +113,8 @@ int main(int argc, char* argv[]) {
 
 		std::string ins_seq = get_ins_seq(bcf_entry, transurveyor_ins_hdr);
 
-		std::vector<insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		insertion_t* insertion = new insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, transurveyor_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
+		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, transurveyor_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
 
 		int* stable_depths = NULL;
 		int size = 0;
@@ -204,8 +203,8 @@ int main(int argc, char* argv[]) {
 
 		std::string ins_seq = get_ins_seq(bcf_entry, assembled_ins_hdr);
 
-		std::vector<insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		insertion_t* insertion = new insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, assembled_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
+		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, assembled_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
 
 		int* stable_depths = NULL;
 		int size = 0;

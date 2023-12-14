@@ -26,18 +26,18 @@
 
 
 config_t config;
-stats_t stats;
+inss_stats_t stats;
 std::string workdir;
 std::mutex mtx;
 
-contig_map_t contig_map;
-chr_seqs_map_t contigs;
+inss_contig_map_t contig_map;
+inss_chr_seqs_map_t contigs;
 
 std::ofstream assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer, assembly_failed_bad_anchors_writer;
-std::ofstream assembly_failed_mh_too_long, assembly_failed_lt50bp, assembly_failed_no_seq, assembly_succeeded;
+std::ofstream assembly_failed_lt50bp, assembly_failed_no_seq, assembly_succeeded;
 std::ofstream graph_writer, consensus_flog;
 
-std::vector<insertion_t*> assembled_insertions, trans_insertions;
+std::vector<inss_insertion_t*> assembled_insertions, trans_insertions;
 
 const int SMALL_SAMPLE_SIZE = 15;
 const int CLUSTER_CANDIDATES = 3;
@@ -122,12 +122,12 @@ region_t get_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name)
     hts_pos_t start = INT_MAX;
     hts_pos_t end = 0;
     if (leftmost_reverse_mate != NULL) {
-        start = std::min(start, leftmost_reverse_mate->core.mpos-config.max_is);
+        start = std::min(start, leftmost_reverse_mate->core.mpos-stats.max_is);
         end = std::max(end, leftmost_reverse_mate->core.mpos+config.max_trans_size);
     }
     if (rightmost_forward_mate != NULL) {
         start = std::min(start, rightmost_forward_mate->core.mpos-config.max_trans_size);
-        end = std::max(end, rightmost_forward_mate->core.mpos+config.max_is);
+        end = std::max(end, rightmost_forward_mate->core.mpos+stats.max_is);
     }
 
     hts_pos_t contig_len = contigs.get_len(m_contig_name);
@@ -217,7 +217,7 @@ void remap_to_maxis_window(std::vector<remap_info_t>& remap_infos, remap_info_t&
 	int s = 0, score = 0;
 	int best_start = 0, best_end = 0, best_score = 0;
 	for (int e = 0; e < remap_infos.size(); e++) {
-		while (remap_infos[e].start-remap_infos[s].start > config.max_is) {
+		while (remap_infos[e].start-remap_infos[s].start > stats.max_is) {
 			score -= remap_infos[s].score;
 			s++;
 		}
@@ -234,7 +234,7 @@ void remap_to_maxis_window(std::vector<remap_info_t>& remap_infos, remap_info_t&
 
 
 	// add some additional space to remap the clip
-	int padding = config.max_is - strictest_region_len;
+	int padding = stats.max_is - strictest_region_len;
 	if (!clip_seq.empty() && padding > 0) {
 		if (clip_dir == 'L') {
 			strictest_region_start -= padding;
@@ -332,7 +332,7 @@ region_score_t compute_score_supp(region_t& region, reads_cluster_t* r_cluster, 
         max_end = std::max(max_end, remap_info.end);
         rc_remap_infos.push_back(remap_info);
     }
-    if (max_end-min_start > config.max_is) { // all the mappings need to be within a config.max_is bp window
+    if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
     	std::string clip_seq = r_cluster->clip_cluster ? r_cluster->clip_cluster->clipped_seq : "";
     	char clip_dir = do_rc ? 'R' : 'L'; // R means that the clip determines the right-most boundary of the inserted region/sequence, L the left-most
     	remap_to_maxis_window(rc_remap_infos, rc_remap_info, region_ptr, strict_region_start, strict_region_end,
@@ -348,7 +348,7 @@ region_score_t compute_score_supp(region_t& region, reads_cluster_t* r_cluster, 
         max_end = std::max(max_end, remap_info.end);
         lc_remap_infos.push_back(remap_info);
     }
-    if (max_end-min_start > config.max_is) { // all the mappings need to be within a config.max_is bp window
+    if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
     	std::string clip_seq = l_cluster->clip_cluster ? l_cluster->clip_cluster->clipped_seq : "";
     	char clip_dir = do_rc ? 'L' : 'R';
     	remap_to_maxis_window(lc_remap_infos, lc_remap_info, region_ptr, strict_region_start, strict_region_end,
@@ -497,7 +497,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	char* left_flanking = new char[r_cluster->end()-r_cluster->start()+2];
 	strncpy(left_flanking, contigs.get_seq(contig_name)+r_cluster->start(), r_cluster->end()-r_cluster->start()+1);
 	left_flanking[r_cluster->end()-r_cluster->start()+1] = '\0';
-	to_uppercase(left_flanking);
+	inss_to_uppercase(left_flanking);
 
 	int ins_seq_start = best_region.start + best_region.score.remap_start,
 		ins_seq_len = best_region.score.remap_end - best_region.score.remap_start + 1;
@@ -505,12 +505,12 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	strncpy(pred_ins_seq, contigs.get_seq(contig_map.get_name(best_region.contig_id))+ins_seq_start, ins_seq_len);
 	pred_ins_seq[ins_seq_len] = '\0';
 	if (is_rc) rc(pred_ins_seq);
-	to_uppercase(pred_ins_seq);
+	inss_to_uppercase(pred_ins_seq);
 
 	char* right_flanking = new char[l_cluster->end()-l_cluster->start()+2];
 	strncpy(right_flanking, contigs.get_seq(contig_name)+l_cluster->start(), l_cluster->end()-l_cluster->start()+1);
 	right_flanking[l_cluster->end()-l_cluster->start()+1] = '\0';
-	to_uppercase(right_flanking);
+	inss_to_uppercase(right_flanking);
 
 	// NOTE: prefixes and suffixes may be duplicated - i.e., suffix of left flanking also appearing as prefix of predicted ins seq
 	// This is a problem because it predicts an insertion where there is none. One such case is fragment LINE insertions.
@@ -519,7 +519,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	// However, because of the duplicated suffix/prefix, a small insertion is predicted
 	std::string left_flanking_str = left_flanking, pred_ins_seq_str = pred_ins_seq, right_flanking_str = right_flanking;
 
-	suffix_prefix_aln_t spa12 = aln_suffix_prefix(left_flanking_str, pred_ins_seq_str, 1, -4, 1.0, config.min_clip_len);
+	inss_suffix_prefix_aln_t spa12 = inss_aln_suffix_prefix(left_flanking_str, pred_ins_seq_str, 1, -4, 1.0, config.min_clip_len);
 	int overlap12 = spa12.overlap;
 	if (!overlap12) {
 		StripedSmithWaterman::Alignment aln;
@@ -528,7 +528,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 		if (aln.query_begin == 0 && aln.ref_end == left_flanking_str.length()-1) overlap12 = aln.query_end;
 	}
 
-	suffix_prefix_aln_t spa23 = aln_suffix_prefix(pred_ins_seq_str, right_flanking_str, 1, -4, 1.0, config.min_clip_len);
+	inss_suffix_prefix_aln_t spa23 = inss_aln_suffix_prefix(pred_ins_seq_str, right_flanking_str, 1, -4, 1.0, config.min_clip_len);
 	int overlap23 = spa23.overlap;
 	if (!overlap23) {
 		StripedSmithWaterman::Alignment aln;
@@ -549,7 +549,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	// assembled contigs
 	std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
 	std::vector<std::string> consensus_contigs = generate_reference_guided_consensus(full_junction_sequence, r_cluster, l_cluster, mateseqs,
-			aligner, harsh_aligner, consensus_contigs_alns, consensus_log);
+			aligner, harsh_aligner, consensus_contigs_alns, config, consensus_log);
 
 	if (consensus_contigs.empty()) return full_junction_sequence;
 
@@ -604,7 +604,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     std::vector<bam1_t*> subcluster;
     for (bam1_t* r : full_cluster) {
         if (!subcluster.empty() && (subcluster[0]->core.mtid != r->core.mtid ||
-                r->core.mpos-subcluster[0]->core.mpos > config.max_is)) {
+                r->core.mpos-subcluster[0]->core.mpos > stats.max_is)) {
             std::string m_contig_name = header->target_name[subcluster[0]->core.mtid];
             regions.push_back(get_region(subcluster, m_contig_name));
             subcluster.clear();
@@ -618,8 +618,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 
     std::string contig_name = contig_map.get_name(contig_id);
     if (regions.empty()) {
-		insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
-				aligner_to_base, harsh_aligner, kept);
+		inss_insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
+				aligner_to_base, harsh_aligner, kept, config);
 
 		if (ins != NULL) {
 			mtx.lock();
@@ -662,8 +662,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     region_t best_region = regions[0];
 
     // get base region
-    int start = r_cluster->start() - config.max_is;
-    int end = l_cluster->end() + config.max_is;
+    int start = r_cluster->start() - stats.max_is;
+    int end = l_cluster->end() + stats.max_is;
     int contig_len = contigs.get_len(contig_name);
     region_t base_region(contig_id, full_cluster[0]->core.tid, std::max(0, start), std::min(end, contig_len));
 
@@ -713,11 +713,9 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     std::string corrected_consensus_sequence;
 	std::vector<std::pair<int,int>> covered_segments;
     bool left_bp_precise = false, right_bp_precise = false;
-	std::stringstream ss;
     if (!refined_r_cluster->empty() && !refined_l_cluster->empty()) {
 		corrected_consensus_sequence = generate_consensus_sequences(contig_name, refined_r_cluster, refined_l_cluster,
 				best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, aligner_to_base, harsh_aligner, consensus_log);
-		ss << corrected_consensus_sequence << std::endl;
     }
 
     if (!corrected_consensus_sequence.empty()) {
@@ -727,48 +725,38 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 			std::string mate_qual = get_mate_qual(r_cluster->reads[i], matequals);
 			rc(mate_seq);
 			mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
-			std::string padded_mate_seq = std::string(config.clip_penalty, 'N') + mate_seq + std::string(config.clip_penalty, 'N');
+			std::string padded_mate_seq = std::string(inss_config_t::clip_penalty, 'N') + mate_seq + std::string(inss_config_t::clip_penalty, 'N');
 			harsh_aligner.Align(padded_mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			std::string log;
-			rc_remap_infos[i].accepted = accept(aln, log, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			rc_remap_infos[i].accepted = accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
 			if (rc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
-			ss << bam_get_qname(r_cluster->reads[i]) << " R " << mate_seq << " " << aln.cigar_string << " " << rc_remap_infos[i].accepted << std::endl;
-			ss << log << std::endl;
 		}
 		for (int i = 0; i < l_cluster->reads.size(); i++) {
 			std::string mate_seq = get_mate_seq(l_cluster->reads[i], mateseqs);
 			std::string mate_qual = get_mate_qual(l_cluster->reads[i], matequals);
-			std::string padded_mate_seq = std::string(config.clip_penalty, 'N') + mate_seq + std::string(config.clip_penalty, 'N');
+			std::string padded_mate_seq = std::string(inss_config_t::clip_penalty, 'N') + mate_seq + std::string(inss_config_t::clip_penalty, 'N');
 			harsh_aligner.Align(padded_mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			std::string log;
-			lc_remap_infos[i].accepted = accept(aln, log, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			lc_remap_infos[i].accepted = accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
 			if (lc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
-			ss << bam_get_qname(l_cluster->reads[i]) << " L " << mate_seq << " " << aln.cigar_string << " " << lc_remap_infos[i].accepted << std::endl;
-			ss << log << std::endl;
 		}
 		if (r_cluster->clip_cluster) {
-			std::string padded_clip_seq = std::string(config.clip_penalty, 'N') + r_cluster->clip_cluster->full_seq + std::string(config.clip_penalty, 'N');
+			std::string padded_clip_seq = std::string(inss_config_t::clip_penalty, 'N') + r_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
 			harsh_aligner.Align(padded_clip_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			std::string log;
-			rc_remap_infos.rbegin()->accepted = accept(aln, log, config.max_seq_error);
+			rc_remap_infos.rbegin()->accepted = accept(aln, config.max_seq_error);
 			if (rc_remap_infos.rbegin()->accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
-			ss << "R_CLIP " << r_cluster->clip_cluster->full_seq << " " << aln.cigar_string << " " << rc_remap_infos.rbegin()->accepted << std::endl;
 		}
 		if (l_cluster->clip_cluster) {
-			std::string padded_clip_seq = std::string(config.clip_penalty, 'N') + l_cluster->clip_cluster->full_seq + std::string(config.clip_penalty, 'N');
+			std::string padded_clip_seq = std::string(inss_config_t::clip_penalty, 'N') + l_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
 			harsh_aligner.Align(padded_clip_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			std::string log;
-			lc_remap_infos.rbegin()->accepted = accept(aln, log, config.max_seq_error);
+			lc_remap_infos.rbegin()->accepted = accept(aln, config.max_seq_error);
 			if (lc_remap_infos.rbegin()->accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
-			ss << "L_CLIP " << l_cluster->clip_cluster->full_seq << " " << aln.cigar_string << " " << lc_remap_infos.rbegin()->accepted << std::endl;
 		}
     }
 
@@ -779,8 +767,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 	for (remap_info_t& remap_info : lc_remap_infos) lc_accepted_reads += remap_info.accepted;
 	int tot_reads = r_cluster->reads.size() + l_cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
-		insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
-				aligner_to_base, harsh_aligner, kept);
+		inss_insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
+				aligner_to_base, harsh_aligner, kept, config);
 
 		if (ins != NULL) {
 			mtx.lock();
@@ -837,11 +825,11 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 		if (remap_start < remap_end) {
 			std::vector<std::string> v = { corrected_consensus_sequence };
 			auto p = remap_assembled_sequence(v, contigs.get_seq(contig_name)+remap_start, remap_end-remap_start, aligner_to_base,
-					good_left_anchor, good_right_anchor, ins_seq, full_assembled_seq);
+					good_left_anchor, good_right_anchor, ins_seq, full_assembled_seq, config);
 			if (good_left_anchor && good_right_anchor && ins_seq.find("N") == std::string::npos) {
 				// Get transposed sequence coverage
-				int ins_seq_start = p.first.query_end - config.clip_penalty;
-				int ins_seq_end = corrected_consensus_sequence.length() - (p.second.query_end - p.second.query_begin + 1 - config.clip_penalty);
+				int ins_seq_start = p.first.query_end - inss_config_t::clip_penalty;
+				int ins_seq_end = corrected_consensus_sequence.length() - (p.second.query_end - p.second.query_begin + 1 - inss_config_t::clip_penalty);
 
 				int i = 0;
 				int left_seq_cov = ins_seq_start;
@@ -869,7 +857,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 					lc_rev_reads = neg_cluster->clip_cluster->c->a1.rev_sc_reads;
 				}
 
-				insertion_t* insertion = new insertion_t(contig_name, remap_start + p.first.ref_end, remap_start + p.second.ref_begin-1,
+				inss_insertion_t* insertion = new inss_insertion_t(contig_name, remap_start + p.first.ref_end, remap_start + p.second.ref_begin-1,
 						pos_cluster->reads.size(), neg_cluster->reads.size(), rc_fwd_reads, rc_rev_reads, lc_fwd_reads, lc_rev_reads, 0, ins_seq);
 				insertion->left_anchor = std::to_string(remap_start + p.first.ref_begin) + "-" + std::to_string(remap_start + p.first.ref_end);
 				insertion->right_anchor = std::to_string(remap_start + p.second.ref_begin) + "-" + std::to_string(remap_start + p.second.ref_end);
@@ -885,21 +873,21 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 
 				// remove the Xs caused by the padding
 				std::vector<uint32_t> cigar = p.first.cigar;
-				if (cigar_int_to_op(cigar[0]) == 'X' && cigar_int_to_len(cigar[0]) > config.clip_penalty) {
-					cigar[0] = to_cigar_int(cigar_int_to_len(cigar[0])-config.clip_penalty, 'X');
+				if (cigar_int_to_op(cigar[0]) == 'X' && cigar_int_to_len(cigar[0]) > inss_config_t::clip_penalty) {
+					cigar[0] = to_cigar_int(cigar_int_to_len(cigar[0])-inss_config_t::clip_penalty, 'X');
 				} else {
 					cigar.erase(cigar.begin());
 				}
-				insertion->left_anchor_cigar = cigar_to_string(cigar);
+				insertion->left_anchor_cigar = inss_cigar_to_string(cigar);
 
 				cigar = p.second.cigar;
 				int le = cigar.size()-1;
-				if (cigar_int_to_op(cigar[le]) == 'X' && cigar_int_to_len(cigar[le]) > config.clip_penalty) {
-					cigar[le] = to_cigar_int(cigar_int_to_len(cigar[le])-config.clip_penalty, 'X');
+				if (cigar_int_to_op(cigar[le]) == 'X' && cigar_int_to_len(cigar[le]) > inss_config_t::clip_penalty) {
+					cigar[le] = to_cigar_int(cigar_int_to_len(cigar[le])-inss_config_t::clip_penalty, 'X');
 				} else {
 					cigar.pop_back();
 				}
-				insertion->right_anchor_cigar = cigar_to_string(cigar);
+				insertion->right_anchor_cigar = inss_cigar_to_string(cigar);
 
 				insertion->left_seq_cov = std::min(left_seq_cov - ins_seq_start, (int) ins_seq.length());
 				insertion->right_seq_cov = std::min(ins_seq_end - right_seq_cov, (int) ins_seq.length());
@@ -1026,11 +1014,11 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
 
     std::priority_queue<cc_distance_t> pq;
     for (cluster_t* c1 : clusters) {
-        auto end = clusters_map.upper_bound(c1->a1.end+std::max(config.max_is, 0));
+        auto end = clusters_map.upper_bound(c1->a1.end+std::max(stats.max_is, 0));
         for (auto map_it = clusters_map.lower_bound(c1->a1.start); map_it != end; map_it++) {
             cluster_t* c2 = map_it->second;
             int dist = anchor_t::distance(c1->a1, c2->a1);
-            if (c1 != c2 && anchor_t::can_merge(c1->a1, c2->a1, config) && c1->a1.start <= c2->a1.start && dist <= config.max_is) {
+            if (c1 != c2 && anchor_t::can_merge(c1->a1, c2->a1, config, stats) && c1->a1.start <= c2->a1.start && dist <= stats.max_is) {
                 pq.push(cc_distance_t(dist, c1, c2));
             }
         }
@@ -1052,10 +1040,10 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
         ccd.c2->dead = true;
         remove_cluster_from_mm(clusters_map, ccd.c2);
 
-        auto end = clusters_map.upper_bound(new_cluster->a1.end + config.max_is);
-        for (auto map_it = clusters_map.lower_bound(new_cluster->a1.start - config.max_is);
+        auto end = clusters_map.upper_bound(new_cluster->a1.end + stats.max_is);
+        for (auto map_it = clusters_map.lower_bound(new_cluster->a1.start - stats.max_is);
              map_it != end; map_it++) {
-            if (!map_it->second->dead && cluster_t::can_merge(new_cluster, map_it->second, config)) {
+            if (!map_it->second->dead && cluster_t::can_merge(new_cluster, map_it->second, config, stats)) {
                 pq.push(cc_distance_t(cluster_t::distance(new_cluster, map_it->second), new_cluster,
                                       map_it->second));
             }
@@ -1100,7 +1088,7 @@ bool is_semi_mapped(bam1_t* read) {
 
 void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads_cluster_t*>& r_clusters, std::vector<reads_cluster_t*>& l_clusters) {
 
-	if (!file_exists(clipped_fname)) return;
+	if (!inss_file_exists(clipped_fname)) return;
 
 	std::vector<bam1_t*> l_semi_mapped_pairs, r_semi_mapped_pairs;
 
@@ -1130,7 +1118,7 @@ void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads
 	IntervalTree<bam1_t*> r_it(r_iv), l_it(l_iv);
 	std::unordered_set<bam1_t*> used_sm_reads;
 	for (reads_cluster_t* rc : r_clusters) {
-		int end = rc->end(), start = end - config.max_is;
+		int end = rc->end(), start = end - stats.max_is;
 		auto sm_reads = r_it.findContained(start, end);
 		for (auto i : sm_reads) {
 			bam1_t* r = i.value;
@@ -1142,7 +1130,7 @@ void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads
 	}
 	for (reads_cluster_t* rc : l_clusters) {
 		int start, end;
-		start = rc->start(); end = start + config.max_is;
+		start = rc->start(); end = start + stats.max_is;
 		auto sm_reads = l_it.findContained(start, end);
 		for (auto i : sm_reads) {
 			bam1_t* r = i.value;
@@ -1164,7 +1152,7 @@ void remap(int id, int contig_id) {
 
     std::string r_dc_fname = workdir + "/workspace/R/" + std::to_string(contig_id) + ".noremap.bam";
     std::string l_dc_fname = workdir + "/workspace/L/" + std::to_string(contig_id) + ".noremap.bam";
-    if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
+    if (!inss_file_exists(r_dc_fname) || !inss_file_exists(l_dc_fname)) return;
 
     std::unordered_map<std::string, std::string> mateseqs;
     std::unordered_map<std::string, std::string> matequals;
@@ -1228,8 +1216,8 @@ void remap(int id, int contig_id) {
     }
     for (reads_cluster_t* r_cluster : r_clusters) {
         hts_pos_t cl_end = r_cluster->end();
-        auto begin = l_clusters_map.lower_bound(cl_end - config.max_is);
-        auto end = l_clusters_map.upper_bound(cl_end + config.max_is);
+        auto begin = l_clusters_map.lower_bound(cl_end - stats.max_is);
+        auto end = l_clusters_map.upper_bound(cl_end + stats.max_is);
 
         reads_cluster_t* l_cluster = NULL;
         for (auto it = begin; it != end; it++) {
@@ -1308,7 +1296,6 @@ int main(int argc, char* argv[]) {
     assembly_failed_cycle_writer.open(workdir + "/assembly_failed.w_cycle.sv");
     assembly_failed_too_many_reads_writer.open(workdir + "/assembly_failed.too_many_reads.sv");
     assembly_failed_bad_anchors_writer.open(workdir + "/assembly_failed.bad_anchors.sv");
-    assembly_failed_mh_too_long.open(workdir + "/assembly_failed.mh_too_long.sv");
     assembly_failed_lt50bp.open(workdir + "/assembly_failed.lt50bp.sv");
     assembly_succeeded.open(workdir + "/assembly_succeeded.sv");
 
@@ -1338,7 +1325,7 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + assembled_out_vcf_fname + ".");
 	}
 
-	std::sort(assembled_insertions.begin(), assembled_insertions.end(), [&out_vcf_header](const insertion_t* i1, const insertion_t* i2) {
+	std::sort(assembled_insertions.begin(), assembled_insertions.end(), [&out_vcf_header](const inss_insertion_t* i1, const inss_insertion_t* i2) {
 		int contig_id1 = bcf_hdr_name2id(out_vcf_header, i1->chr.c_str());
 		int contig_id2 = bcf_hdr_name2id(out_vcf_header, i2->chr.c_str());
 		int disc_score1 = -(i1->r_disc_pairs*i1->l_disc_pairs), disc_score2 = -(i2->r_disc_pairs*i2->l_disc_pairs);
@@ -1351,7 +1338,7 @@ int main(int argc, char* argv[]) {
 
 	bcf1_t* bcf_entry = bcf_init();
 	int a_id = 0;
-	for (insertion_t* insertion : assembled_insertions) {
+	for (inss_insertion_t* insertion : assembled_insertions) {
 		std::string id = "A_INS_" + std::to_string(a_id++);
 		insertion_to_bcf_entry(insertion, out_vcf_header, bcf_entry, id, contigs);
 
@@ -1380,7 +1367,7 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + transurveyor_out_vcf_fname + ".");
 	}
 
-	std::sort(trans_insertions.begin(), trans_insertions.end(), [&out_vcf_header](const insertion_t* i1, const insertion_t* i2) {
+	std::sort(trans_insertions.begin(), trans_insertions.end(), [&out_vcf_header](const inss_insertion_t* i1, const inss_insertion_t* i2) {
 		int contig_id1 = bcf_hdr_name2id(out_vcf_header, i1->chr.c_str());
 		int contig_id2 = bcf_hdr_name2id(out_vcf_header, i2->chr.c_str());
 		// negative because we want descending order
@@ -1391,7 +1378,7 @@ int main(int argc, char* argv[]) {
 	});
 
 	int t_id = 0;
-	for (insertion_t* insertion : trans_insertions) {
+	for (inss_insertion_t* insertion : trans_insertions) {
 		std::string id = "T_INS_" + std::to_string(t_id++);
 		insertion_to_bcf_entry(insertion, out_vcf_header, bcf_entry, id, contigs);
 

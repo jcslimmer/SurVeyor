@@ -22,7 +22,7 @@ bcf_hrec_t* generate_contig_hrec() {
 	}
 	return contig_hrec;
 }
-bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
+bcf_hdr_t* generate_vcf_header(inss_chr_seqs_map_t& contigs, std::string sample_name, config_t& config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
 	// add contigs
@@ -61,9 +61,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* homopolymer_flt_tag = "##FILTER=<ID=HOMOPOLYMER_INSSEQ,Description=\"Inserted sequence is a homopolymer.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, homopolymer_flt_tag, &len));
-
-	const char* mh_long_flt_tag = "##FILTER=<ID=MH_TOO_LONG,Description=\"Microhomology at the breakpoints is too long.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mh_long_flt_tag, &len));
 
 	const char* lq_ass_flt_tag = "##FILTER=<ID=LOW_QUAL_ASSEMBLY,Description=\"Assembled quality is deemed not reliable.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, lq_ass_flt_tag, &len));
@@ -257,7 +254,7 @@ std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	return "";
 }
 
-void insertion_to_bcf_entry(insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, chr_seqs_map_t& contigs) {
+void insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, inss_chr_seqs_map_t& contigs) {
 	bcf_clear(bcf_entry);
 	bcf_entry->rid = bcf_hdr_name2id(hdr, insertion->chr.c_str());
 	bcf_entry->pos = insertion->start;

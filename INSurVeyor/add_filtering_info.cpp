@@ -13,9 +13,9 @@
 std::string workdir;
 std::mutex mtx;
 
-stats_t stats;
 config_t config;
-contig_map_t contig_map;
+inss_stats_t stats;
+inss_contig_map_t contig_map;
 
 int MAX_READ_IS;
 
@@ -40,15 +40,15 @@ void release_bam_reader(open_samFile_t* reader) {
 }
 
 
-void find_spanning(int id, insertion_t* insertion, std::string bam_fname, std::string reference_fname) {
+void find_spanning(int id, inss_insertion_t* insertion, std::string bam_fname, std::string reference_fname) {
     mtx.lock();
     open_samFile_t* bam_file = get_bam_reader(bam_fname, reference_fname);
     mtx.unlock();
 
     char r_region[1000], l_region[1000];
     std::stringstream l_region_ss, r_region_ss;
-	l_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->start-config.max_is) << "-" << insertion->start+config.max_is;
-	r_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->end-config.max_is) << "-" << insertion->end+config.max_is;
+	l_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->start-stats.max_is) << "-" << insertion->start+stats.max_is;
+	r_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->end-stats.max_is) << "-" << insertion->end+stats.max_is;
 	strcpy(l_region, l_region_ss.str().c_str());
 	strcpy(r_region, r_region_ss.str().c_str());
 
@@ -64,7 +64,7 @@ void find_spanning(int id, insertion_t* insertion, std::string bam_fname, std::s
         if (avg_qual(read) < stats.get_min_avg_base_qual()) continue;
 
         if (read->core.isize > 0) {
-			int pair_start = read->core.pos+config.read_len/2, pair_end = get_mate_endpos(read)-config.read_len/2;
+			int pair_start = read->core.pos+stats.read_len/2, pair_end = get_mate_endpos(read)-stats.read_len/2;
 			int b = 0;
 			if (pair_start <= insertion->start && insertion->start <= pair_end) b |= 1;
 			if (pair_start <= insertion->end && insertion->end <= pair_end) b |= 2;
@@ -81,7 +81,7 @@ void find_spanning(int id, insertion_t* insertion, std::string bam_fname, std::s
     mtx.unlock();
 };
 
-void compute_coverage(int id, insertion_t* insertion, std::string bam_fname, std::string reference_fname) {
+void compute_coverage(int id, inss_insertion_t* insertion, std::string bam_fname, std::string reference_fname) {
 	mtx.lock();
 	open_samFile_t* bam_file = get_bam_reader(bam_fname, reference_fname);
 	mtx.unlock();
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
     contig_map.parse(workdir);
     stats.parse_stats(workdir + "/stats.txt", config.per_contig_stats);
 
-    std::vector<std::pair<insertion_t*, bcf1_t*> > assembled_insertions, transurveyor_insertions;
+    std::vector<std::pair<inss_insertion_t*, bcf1_t*> > assembled_insertions, transurveyor_insertions;
 
     bcf1_t* bcf_entry = bcf_init();
 
@@ -151,7 +151,7 @@ int main(int argc, char* argv[]) {
     htsFile* in_assembled_ins_file = bcf_open(in_assembled_ins_fname.c_str(), "r");
 	bcf_hdr_t* assembled_ins_hdr = bcf_hdr_read(in_assembled_ins_file);
 	while (bcf_read(in_assembled_ins_file, assembled_ins_hdr, bcf_entry) == 0) {
-		insertion_t* ins = new insertion_t(bcf_seqname_safe(assembled_ins_hdr, bcf_entry), bcf_entry->pos,
+		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(assembled_ins_hdr, bcf_entry), bcf_entry->pos,
 				get_sv_end(bcf_entry, assembled_ins_hdr), 0, 0, 0, 0, 0, 0, 0, "");
 		ins->left_anchor = get_left_anchor(bcf_entry, assembled_ins_hdr);
 		ins->right_anchor = get_right_anchor(bcf_entry, assembled_ins_hdr);
@@ -162,7 +162,7 @@ int main(int argc, char* argv[]) {
 	htsFile* in_transurveyor_ins_file = bcf_open(in_transurveyor_ins_fname.c_str(), "r");
 	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(in_transurveyor_ins_file);
 	while (bcf_read(in_transurveyor_ins_file, transurveyor_ins_hdr, bcf_entry) == 0) {
-		insertion_t* ins = new insertion_t(bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry), bcf_entry->pos,
+		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry), bcf_entry->pos,
 				get_sv_end(bcf_entry, transurveyor_ins_hdr), 0, 0, 0, 0, 0, 0, 0, "");
 		ins->left_anchor = get_left_anchor(bcf_entry, transurveyor_ins_hdr);
 		ins->right_anchor = get_right_anchor(bcf_entry, transurveyor_ins_hdr);
