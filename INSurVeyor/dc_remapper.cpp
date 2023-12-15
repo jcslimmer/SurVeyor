@@ -486,7 +486,7 @@ void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info
 
 std::string generate_consensus_sequences(std::string contig_name, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, region_t& best_region,
 		bool is_rc, bool& left_bp_precise, bool& right_bp_precise, std::unordered_map<std::string, std::string>& mateseqs,
-		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner, std::string& consensus_log) {
+		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner) {
 
 	left_bp_precise = false, right_bp_precise = false;
 
@@ -549,7 +549,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	// assembled contigs
 	std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
 	std::vector<std::string> consensus_contigs = generate_reference_guided_consensus(full_junction_sequence, r_cluster, l_cluster, mateseqs,
-			aligner, harsh_aligner, consensus_contigs_alns, config, consensus_log);
+			aligner, harsh_aligner, consensus_contigs_alns, config);
 
 	if (consensus_contigs.empty()) return full_junction_sequence;
 
@@ -709,13 +709,12 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 	}
 
     // build corrected consensus sequence and realign reads to it
-    std::string consensus_log;
     std::string corrected_consensus_sequence;
 	std::vector<std::pair<int,int>> covered_segments;
     bool left_bp_precise = false, right_bp_precise = false;
     if (!refined_r_cluster->empty() && !refined_l_cluster->empty()) {
 		corrected_consensus_sequence = generate_consensus_sequences(contig_name, refined_r_cluster, refined_l_cluster,
-				best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, aligner_to_base, harsh_aligner, consensus_log);
+				best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, aligner_to_base, harsh_aligner);
     }
 
     if (!corrected_consensus_sequence.empty()) {

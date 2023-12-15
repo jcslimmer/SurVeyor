@@ -108,17 +108,17 @@ bool accept(const StripedSmithWaterman::Alignment& aln, double max_seq_error = 1
 	double mismatch_rate = double(mismatches)/(aln.query_end-aln.query_begin-left_padding_matched-right_padding_matched);
 	return (lc_size <= inss_config_t::clip_penalty || lc_is_noise) && (rc_size <= inss_config_t::clip_penalty || rc_is_noise) && mismatch_rate <= max_seq_error;
 };
-bool accept_v2(const StripedSmithWaterman::Alignment& aln, double max_seq_error = 1.0, std::string qual_ascii = "", int min_avg_base_qual = 0) {
+bool accept_v2(const StripedSmithWaterman::Alignment& aln, int min_clip_len, double max_seq_error = 1.0, std::string qual_ascii = "", int min_avg_base_qual = 0) {
 	int lc_size = inss_get_left_clip_size(aln), rc_size = inss_get_right_clip_size(aln);
 
 	bool lc_is_noise = false, rc_is_noise = false;
 	if (!qual_ascii.empty()) {
-		if (lc_size > 0 && lc_size < qual_ascii.length()/2) {
+		if (lc_size > min_clip_len && lc_size < qual_ascii.length()/2) {
 			std::string lc_qual = qual_ascii.substr(0, lc_size);
 			std::string not_lc_qual = qual_ascii.substr(lc_size);
 			lc_is_noise = avg_qual(lc_qual) < min_avg_base_qual && avg_qual(not_lc_qual) >= min_avg_base_qual;
 		}
-		if (rc_size > 0 && rc_size < qual_ascii.length()/2) {
+		if (rc_size > min_clip_len && rc_size < qual_ascii.length()/2) {
 			std::string not_rc_qual = qual_ascii.substr(0, qual_ascii.length()-rc_size);
 			std::string rc_qual = qual_ascii.substr(qual_ascii.length()-rc_size);
 			rc_is_noise = avg_qual(rc_qual) < min_avg_base_qual && avg_qual(not_rc_qual) >= min_avg_base_qual;
@@ -126,38 +126,33 @@ bool accept_v2(const StripedSmithWaterman::Alignment& aln, double max_seq_error 
 	}
 
 	double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-	return (!lc_size || lc_is_noise) && (!rc_size || rc_is_noise) && mismatch_rate <= max_seq_error;
+	return (lc_size <= min_clip_len || lc_is_noise) && (rc_size <= min_clip_len || rc_is_noise) && mismatch_rate <= max_seq_error;
 }
 void add_alignment(std::string& reference, std::string& query, std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& accepted_alns,
-		std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& rejected_alns, StripedSmithWaterman::Aligner& aligner) {
+		std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& rejected_alns, StripedSmithWaterman::Aligner& aligner, config_t& config) {
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment aln;
-	std::string padded_query = std::string(inss_config_t::clip_penalty, 'N') + query + std::string(inss_config_t::clip_penalty, 'N');
-	aligner.Align(padded_query.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-	aln.ref_begin += inss_config_t::clip_penalty - inss_get_left_clip_size(aln);
-	aln.ref_end -= inss_config_t::clip_penalty - inss_get_right_clip_size(aln);
-	if (accept(aln)) {
+	aligner.Align(query.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+	if (accept_v2(aln, config.min_clip_len)) {
 		accepted_alns.push_back({query, aln});
 	} else {
 		rejected_alns.push_back({query, aln});
 	}
 }
 
-void correct_contig(std::string& contig, std::vector<std::string>& reads, StripedSmithWaterman::Aligner& harsh_aligner) {
+void correct_contig(std::string& contig, std::vector<std::string>& reads, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config) {
 	std::vector<int> As(contig.length()), Cs(contig.length()), Gs(contig.length()), Ts(contig.length());
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment aln;
 	for (std::string& read : reads) {
-		std::string padded_read = std::string(inss_config_t::clip_penalty, 'N') + read + std::string(inss_config_t::clip_penalty, 'N');
-		harsh_aligner.Align(padded_read.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
-		if (accept(aln)) {
-			int left_padding_aligned = inss_config_t::clip_penalty - inss_get_left_clip_size(aln);
-			for (int i = 0; i < read.length(); i++) {
+		harsh_aligner.Align(read.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
+		if (accept_v2(aln, config.min_clip_len)) {
+			for (int i = aln.query_begin; i < aln.query_end; i++) {
 				char c = read[i];
-				if (c == 'A') As[i+aln.ref_begin+left_padding_aligned]++;
-				else if (c == 'C') Cs[i+aln.ref_begin+left_padding_aligned]++;
-				else if (c == 'G') Gs[i+aln.ref_begin+left_padding_aligned]++;
-				else if (c == 'T') Ts[i+aln.ref_begin+left_padding_aligned]++;
+				if (c == 'A') As[i-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'C') Cs[i-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'G') Gs[i-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'T') Ts[i-aln.query_begin+aln.ref_begin]++;
 			}
 		}
 	}
@@ -174,7 +169,7 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, Stripe
 
 std::vector<std::string> generate_reference_guided_consensus(std::string reference, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
-		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, std::string& consensus_log) {
+		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config) {
 
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment aln;
@@ -182,22 +177,22 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > accepted_alns, _rejected_alns_lf, _rejected_alns_is, _rejected_alns_rf;
 	for (bam1_t* read : r_cluster->reads) {
 		std::string read_seq = get_sequence(read);
-		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_lf, aligner);
+		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_lf, aligner, config);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		rc(mate_seq);
-		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner);
+		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
 	}
 	for (bam1_t* read : l_cluster->reads) {
 		std::string read_seq = get_sequence(read);
-		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_rf, aligner);
+		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_rf, aligner, config);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
-		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner);
+		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
 	}
 	if (r_cluster->clip_cluster) {
-		add_alignment(reference, r_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_lf, aligner);
+		add_alignment(reference, r_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_lf, aligner, config);
 	}
 	if (l_cluster->clip_cluster) {
-		add_alignment(reference, l_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_rf, aligner);
+		add_alignment(reference, l_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_rf, aligner, config);
 	}
 
 	int n = accepted_alns.size();
@@ -245,7 +240,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		used[curr_vertex] = true;
 
 		std::string corrected_assembled_sequence = assembled_sequence;
-		correct_contig(corrected_assembled_sequence, used_reads, harsh_aligner);
+		correct_contig(corrected_assembled_sequence, used_reads, harsh_aligner, config);
 		assembled_sequences.push_back(corrected_assembled_sequence);
 	}
 	for (int i = 0; i < n; i++) {
@@ -256,7 +251,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	std::vector<std::string> retained_assembled_sequences;
 	for (std::string& assembled_sequence : assembled_sequences) {
 		aligner.Align(assembled_sequence.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		if (!accept(aln)) continue;
+		if (!accept_v2(aln, config.min_clip_len)) continue;
 
 		bool overlaps = false;
 		for (StripedSmithWaterman::Alignment& existing_aln : consensus_contigs_alns) {
@@ -275,8 +270,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 
 	int l_bp_in_seq = r_cluster->end()-r_cluster->start(), r_bp_in_seq = reference.length()-(l_cluster->end()-l_cluster->start());
 
-	std::stringstream ss_res2, ss;
-
 	// try scaffolding using rejected reads
 	std::stringstream ss_graph;
 	std::vector<seq_w_pp_t> rejected_alns_lf, rejected_alns_is, rejected_alns_rf;
@@ -288,24 +281,12 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	std::vector<std::string> scaffolds = assemble_reads(rejected_alns_lf, rejected_alns_is, rejected_alns_rf,
 			harsh_aligner, config, ss_graph);
 
-	ss << "Assembled " << n << " reads into " << assembled_sequences.size() << " sequences." << std::endl;
-	ss << reference.length() << " " << l_bp_in_seq << " " << r_bp_in_seq << std::endl;
 	for (std::string a : assembled_sequences) {
 		aligner.Align(a.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		ss << a.length() << "," << aln.ref_begin << "-" << aln.ref_end << "," << accept(aln) << " ";
 	}
-	ss << std::endl;
 	for (int i = 0; i < retained_assembled_sequences.size(); i++) {
 		StripedSmithWaterman::Alignment& aln = consensus_contigs_alns[i];
-		ss << retained_assembled_sequences[i].length() << "," << aln.ref_begin << "-" << aln.ref_end << "," << accept(aln) << " ";
 	}
-	ss << std::endl << std::endl;
-
-	ss << "RETAINED CONTIGS: " << retained_assembled_sequences.size() <<  std::endl;
-	for (std::string& a : retained_assembled_sequences) ss << a << std::endl;
-	ss << "SCAFFOLDS: " << scaffolds.size() << std::endl;
-	for (std::string& a : scaffolds) ss << a << std::endl;
-	ss << std::endl;
 
 	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > contigs_sorted_by_pos;
 	for (int i = 0; i < consensus_contigs_alns.size(); i++) {
@@ -355,17 +336,15 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	scaffolded_sequences.push_back(curr_seq);
 
 	std::vector<StripedSmithWaterman::Alignment> scaffolded_seqs_alns;
-	ss << "SCAFFOLDED SEQUENCES: " << scaffolded_sequences.size() << std::endl;
 	bool scaffolding_failed = false;
 	for (std::string s : scaffolded_sequences) {
 		aligner.Align(s.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		if (!accept(aln)) {
+		if (!accept_v2(aln, 0)) {
 			scaffolding_failed = true;
 			break;
 		}
 		scaffolded_seqs_alns.push_back(aln);
-		ss << s.length() << "," << aln.ref_begin << "-" << aln.ref_end << "," << accept(aln) << " ";
-	} ss << std::endl << std::endl;
+	}
 
 	if (!scaffolding_failed)
 	for (int i = 0; i < scaffolded_seqs_alns.size(); i++) {
@@ -377,10 +356,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		}
 		if (scaffolding_failed) break;
 	}
-
-	ss << reference << std::endl;
-
-	consensus_log = ss_res2.str() + ss.str();
 
 	if (!scaffolding_failed) scaffolded_seqs_alns.swap(consensus_contigs_alns);
 	return scaffolding_failed ? retained_assembled_sequences : scaffolded_sequences;
@@ -537,7 +512,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 			used_reads.push_back(read_seqs[curr_vertex]);
 		}
 		used[curr_vertex] = true;
-		correct_contig(assembled_sequence, used_reads, harsh_aligner);
+		correct_contig(assembled_sequence, used_reads, harsh_aligner, config);
 		assembled_sequences.push_back(assembled_sequence);
 		ss_graph << "-> " << read_seqs[curr_vertex] << std::endl;
 		ss_graph << assembled_sequence << std::endl << std::endl;
@@ -566,22 +541,19 @@ std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> rema
 	};
 
 	int a = 0, b = primary_assembled_sequence.length();
-	StripedSmithWaterman::Alignment lh_aln, rh_aln;
+	StripedSmithWaterman::Alignment _lh_aln, _rh_aln;
 	std::string	assembled_seq_lh, assembled_seq_rh;
-	std::string padded_assembled_seq_lh, padded_assembled_seq_rh;
 	while (true) {
 		int divide = (a+b)/2;
 		if (divide == a) break;
 
 		assembled_seq_lh = primary_assembled_sequence.substr(0, divide);
 		assembled_seq_rh = primary_assembled_sequence.substr(divide);
-		padded_assembled_seq_lh = std::string(inss_config_t::clip_penalty, 'N') + assembled_seq_lh;
-		padded_assembled_seq_rh = assembled_seq_rh + std::string(inss_config_t::clip_penalty, 'N');
-		aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, ref_len, filter, &lh_aln, 0);
-		aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref, ref_len, filter, &rh_aln, 0);
+		aligner_to_base.Align(assembled_seq_lh.c_str(), ref, ref_len, filter, &_lh_aln, 0);
+		aligner_to_base.Align(assembled_seq_rh.c_str(), ref, ref_len, filter, &_rh_aln, 0);
 
-		bool lh_fully_aln = is_fully_aln(lh_aln, padded_assembled_seq_lh.length());
-		bool rh_fully_aln = is_fully_aln(rh_aln, padded_assembled_seq_rh.length());
+		bool lh_fully_aln = is_fully_aln(_lh_aln, assembled_seq_lh.length());
+		bool rh_fully_aln = is_fully_aln(_rh_aln, assembled_seq_rh.length());
 
 		if (lh_fully_aln && rh_fully_aln) break;
 		else if (lh_fully_aln) {
@@ -590,6 +562,12 @@ std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> rema
 			b = divide;
 		} else break;
 	}
+
+	StripedSmithWaterman::Alignment lh_aln, rh_aln;
+	std::string padded_assembled_seq_lh = std::string(inss_config_t::clip_penalty, 'N') + assembled_seq_lh;
+	std::string padded_assembled_seq_rh = assembled_seq_rh + std::string(inss_config_t::clip_penalty, 'N');
+	aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, ref_len, filter, &lh_aln, 0);
+	aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref, ref_len, filter, &rh_aln, 0);
 
 	good_left_anchor = lh_aln.query_begin == 0 && lh_aln.query_end-lh_aln.query_begin >= config.min_clip_len+inss_config_t::clip_penalty;
 	good_right_anchor = rh_aln.query_end == padded_assembled_seq_rh.length()-1 &&
@@ -798,7 +776,6 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	std::string ins_seq_w_mh = mh_seq + ins_seq;
 
 	inss_insertion_t* ins = new inss_insertion_t(contig_name, ins_start, ins_end, 0, 0, 0, 0, 0, 0, 0, ins_seq_w_mh);
-//	ins->id = ins_full_id;
 
 	if (!good_left_anchor || !good_right_anchor) {
 		assembly_failed_bad_anchors_writer << ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
@@ -819,9 +796,8 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	StripedSmithWaterman::Filter filter;
 	if (r_cluster->clip_cluster) {
 		StripedSmithWaterman::Alignment aln;
-		std::string padded_clip_fullseq = std::string(inss_config_t::clip_penalty, 'N') + r_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
-		harsh_aligner.Align(padded_clip_fullseq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.max_seq_error)) {
+		harsh_aligner.Align(r_cluster->clip_cluster->full_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
+		if (accept_v2(aln, config.min_clip_len, config.max_seq_error)) {
 			ins->rc_fwd_reads = r_cluster->clip_cluster->c->a1.fwd_sc_reads;
 			ins->rc_rev_reads = r_cluster->clip_cluster->c->a1.rev_sc_reads;
 		}
@@ -831,10 +807,9 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		std::string mate_qual = get_mate_qual(read, matequals);
 		rc(mate_seq);
 		mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
-		mate_seq = std::string(inss_config_t::clip_penalty, 'N') + mate_seq + std::string(inss_config_t::clip_penalty, 'N');
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
+		if (accept_v2(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
 			ins->r_disc_pairs++;
 			ins->rc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
@@ -846,11 +821,11 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	}
 	ins->rc_avg_nm /= ins->r_disc_pairs;
 	for (bam1_t* read : l_cluster->reads) {
-		std::string mate_seq = std::string(inss_config_t::clip_penalty, 'N') + get_mate_seq(read, mateseqs) + std::string(inss_config_t::clip_penalty, 'N');
+		std::string mate_seq = get_mate_seq(read, mateseqs);
 		std::string mate_qual = get_mate_qual(read, matequals);
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
+		if (accept_v2(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
 			ins->l_disc_pairs++;
 			ins->lc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
@@ -863,9 +838,8 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	ins->lc_avg_nm /= ins->l_disc_pairs;
 	if (l_cluster->clip_cluster) {
 		StripedSmithWaterman::Alignment aln;
-		std::string padded_clip_fullseq = std::string(inss_config_t::clip_penalty, 'N') + l_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
-		harsh_aligner.Align(padded_clip_fullseq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.max_seq_error)) {
+		harsh_aligner.Align(l_cluster->clip_cluster->full_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
+		if (accept_v2(aln, config.min_clip_len, config.max_seq_error)) {
 			ins->lc_fwd_reads = l_cluster->clip_cluster->c->a1.fwd_sc_reads;
 			ins->lc_rev_reads = l_cluster->clip_cluster->c->a1.rev_sc_reads;
 		}
@@ -906,8 +880,6 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	for (bam1_t* read : assembled_reads) {
 		bam_aux_update_str(read, "ID", ins->id.length(), ins->id.c_str());
 	}
-
-
 
 	ins->left_anchor = std::to_string(remap_region_start + lh_aln.ref_begin) + "-" + std::to_string(remap_region_start + lh_aln.ref_end);
 	ins->right_anchor = std::to_string(remap_region_start + rh_aln.ref_begin) + "-" + std::to_string(remap_region_start + rh_aln.ref_end);
