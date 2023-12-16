@@ -724,9 +724,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 			std::string mate_qual = get_mate_qual(r_cluster->reads[i], matequals);
 			rc(mate_seq);
 			mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
-			std::string padded_mate_seq = std::string(inss_config_t::clip_penalty, 'N') + mate_seq + std::string(inss_config_t::clip_penalty, 'N');
-			harsh_aligner.Align(padded_mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			rc_remap_infos[i].accepted = accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
+			rc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
 			if (rc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
@@ -734,25 +733,22 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 		for (int i = 0; i < l_cluster->reads.size(); i++) {
 			std::string mate_seq = get_mate_seq(l_cluster->reads[i], mateseqs);
 			std::string mate_qual = get_mate_qual(l_cluster->reads[i], matequals);
-			std::string padded_mate_seq = std::string(inss_config_t::clip_penalty, 'N') + mate_seq + std::string(inss_config_t::clip_penalty, 'N');
-			harsh_aligner.Align(padded_mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			lc_remap_infos[i].accepted = accept(aln, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
+			lc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
 			if (lc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
 		}
 		if (r_cluster->clip_cluster) {
-			std::string padded_clip_seq = std::string(inss_config_t::clip_penalty, 'N') + r_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
-			harsh_aligner.Align(padded_clip_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			rc_remap_infos.rbegin()->accepted = accept(aln, config.max_seq_error);
+			harsh_aligner.Align(r_cluster->clip_cluster->full_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
+			rc_remap_infos.rbegin()->accepted = accept(aln, config.min_clip_len, config.max_seq_error);
 			if (rc_remap_infos.rbegin()->accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
 		}
 		if (l_cluster->clip_cluster) {
-			std::string padded_clip_seq = std::string(inss_config_t::clip_penalty, 'N') + l_cluster->clip_cluster->full_seq + std::string(inss_config_t::clip_penalty, 'N');
-			harsh_aligner.Align(padded_clip_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			lc_remap_infos.rbegin()->accepted = accept(aln, config.max_seq_error);
+			harsh_aligner.Align(l_cluster->clip_cluster->full_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
+			lc_remap_infos.rbegin()->accepted = accept(aln, config.min_clip_len, config.max_seq_error);
 			if (lc_remap_infos.rbegin()->accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
@@ -827,8 +823,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 					good_left_anchor, good_right_anchor, ins_seq, full_assembled_seq, config);
 			if (good_left_anchor && good_right_anchor && ins_seq.find("N") == std::string::npos) {
 				// Get transposed sequence coverage
-				int ins_seq_start = p.first.query_end - inss_config_t::clip_penalty;
-				int ins_seq_end = corrected_consensus_sequence.length() - (p.second.query_end - p.second.query_begin + 1 - inss_config_t::clip_penalty);
+				int ins_seq_start = p.first.first.query_end - inss_config_t::clip_penalty;
+				int ins_seq_end = corrected_consensus_sequence.length() - (p.first.second.query_end - p.first.second.query_begin + 1 - inss_config_t::clip_penalty);
 
 				int i = 0;
 				int left_seq_cov = ins_seq_start;
@@ -856,10 +852,10 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 					lc_rev_reads = neg_cluster->clip_cluster->c->a1.rev_sc_reads;
 				}
 
-				inss_insertion_t* insertion = new inss_insertion_t(contig_name, remap_start + p.first.ref_end, remap_start + p.second.ref_begin-1,
+				inss_insertion_t* insertion = new inss_insertion_t(contig_name, remap_start + p.first.first.ref_end, remap_start + p.first.second.ref_begin-1,
 						pos_cluster->reads.size(), neg_cluster->reads.size(), rc_fwd_reads, rc_rev_reads, lc_fwd_reads, lc_rev_reads, 0, ins_seq);
-				insertion->left_anchor = std::to_string(remap_start + p.first.ref_begin) + "-" + std::to_string(remap_start + p.first.ref_end);
-				insertion->right_anchor = std::to_string(remap_start + p.second.ref_begin) + "-" + std::to_string(remap_start + p.second.ref_end);
+				insertion->left_anchor = std::to_string(remap_start + p.first.first.ref_begin) + "-" + std::to_string(remap_start + p.first.first.ref_end);
+				insertion->right_anchor = std::to_string(remap_start + p.first.second.ref_begin) + "-" + std::to_string(remap_start + p.first.second.ref_end);
 				insertion->left_bp_precise = left_bp_precise, insertion->right_bp_precise = right_bp_precise;
 				for (bam1_t* read : pos_cluster->reads) {
 					insertion->rc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
@@ -871,7 +867,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 				insertion->lc_avg_nm /= neg_cluster->reads.size();
 
 				// remove the Xs caused by the padding
-				std::vector<uint32_t> cigar = p.first.cigar;
+				std::vector<uint32_t> cigar = p.first.first.cigar;
 				if (cigar_int_to_op(cigar[0]) == 'X' && cigar_int_to_len(cigar[0]) > inss_config_t::clip_penalty) {
 					cigar[0] = to_cigar_int(cigar_int_to_len(cigar[0])-inss_config_t::clip_penalty, 'X');
 				} else {
@@ -879,7 +875,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 				}
 				insertion->left_anchor_cigar = inss_cigar_to_string(cigar);
 
-				cigar = p.second.cigar;
+				cigar = p.first.second.cigar;
 				int le = cigar.size()-1;
 				if (cigar_int_to_op(cigar[le]) == 'X' && cigar_int_to_len(cigar[le]) > inss_config_t::clip_penalty) {
 					cigar[le] = to_cigar_int(cigar_int_to_len(cigar[le])-inss_config_t::clip_penalty, 'X');
