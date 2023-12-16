@@ -496,8 +496,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 	return assembled_sequences;
 }
 
-std::pair<std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment>, std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> > 
-	remap_assembled_sequence(
+std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> remap_assembled_sequence(
 		std::vector<std::string>& assembled_sequences, char* ref, int ref_len, StripedSmithWaterman::Aligner& aligner_to_base,
 		bool& good_left_anchor, bool& good_right_anchor, std::string& ins_seq, std::string& full_assembled_seq, config_t& config) {
 	std::string primary_assembled_sequence = assembled_sequences[0];
@@ -517,7 +516,7 @@ std::pair<std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Align
 	};
 
 	int a = 0, b = primary_assembled_sequence.length();
-	StripedSmithWaterman::Alignment _lh_aln, _rh_aln;
+	StripedSmithWaterman::Alignment lh_aln, rh_aln;
 	std::string	assembled_seq_lh, assembled_seq_rh;
 	while (true) {
 		int divide = (a+b)/2;
@@ -525,11 +524,11 @@ std::pair<std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Align
 
 		assembled_seq_lh = primary_assembled_sequence.substr(0, divide);
 		assembled_seq_rh = primary_assembled_sequence.substr(divide);
-		aligner_to_base.Align(assembled_seq_lh.c_str(), ref, ref_len, filter, &_lh_aln, 0);
-		aligner_to_base.Align(assembled_seq_rh.c_str(), ref, ref_len, filter, &_rh_aln, 0);
+		aligner_to_base.Align(assembled_seq_lh.c_str(), ref, ref_len, filter, &lh_aln, 0);
+		aligner_to_base.Align(assembled_seq_rh.c_str(), ref, ref_len, filter, &rh_aln, 0);
 
-		bool lh_fully_aln = is_fully_aln(_lh_aln, assembled_seq_lh.length());
-		bool rh_fully_aln = is_fully_aln(_rh_aln, assembled_seq_rh.length());
+		bool lh_fully_aln = is_fully_aln(lh_aln, assembled_seq_lh.length());
+		bool rh_fully_aln = is_fully_aln(rh_aln, assembled_seq_rh.length());
 
 		if (lh_fully_aln && rh_fully_aln) break;
 		else if (lh_fully_aln) {
@@ -539,90 +538,69 @@ std::pair<std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Align
 		} else break;
 	}
 
-	good_left_anchor = _lh_aln.query_begin < config.min_clip_len && _lh_aln.query_end-_lh_aln.query_begin >= config.min_clip_len;
-	good_right_anchor = _rh_aln.query_end >= assembled_seq_rh.length()-1-config.min_clip_len && _rh_aln.query_end-_rh_aln.query_begin >= config.min_clip_len;
-	
-	StripedSmithWaterman::Alignment lh_aln, rh_aln;
-	std::string padded_assembled_seq_lh = std::string(inss_config_t::clip_penalty, 'N') + assembled_seq_lh;
-	std::string padded_assembled_seq_rh = assembled_seq_rh + std::string(inss_config_t::clip_penalty, 'N');
-	aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, ref_len, filter, &lh_aln, 0);
-	aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref, ref_len, filter, &rh_aln, 0);
+	good_left_anchor = lh_aln.query_begin < config.min_clip_len && lh_aln.query_end-lh_aln.query_begin >= config.min_clip_len;
+	good_right_anchor = rh_aln.query_end >= assembled_seq_rh.length()-1-config.min_clip_len && rh_aln.query_end-rh_aln.query_begin >= config.min_clip_len;
 
-	int overlap_begin = std::max(_lh_aln.ref_begin, _rh_aln.ref_begin),
-		overlap_end = std::min(_lh_aln.ref_end, _rh_aln.ref_end);
+	int overlap_begin = std::max(lh_aln.ref_begin, rh_aln.ref_begin),
+		overlap_end = std::min(lh_aln.ref_end, rh_aln.ref_end);
 	if (good_left_anchor && good_right_anchor) {
-		if (overlap_end >= overlap_begin && _rh_aln.ref_end-_lh_aln.ref_begin >= 2*config.min_clip_len) { // alignments overlap, resolve that
-			std::vector<int> lh_prefix_scores = inss_ssw_cigar_to_prefix_ref_scores(_lh_aln.cigar.data(), _lh_aln.cigar.size());
-			std::vector<uint32_t> _rev_rh_cigar(_rh_aln.cigar.rbegin(), _rh_aln.cigar.rend());
-			std::vector<int> _rh_suffix_scores = inss_ssw_cigar_to_prefix_ref_scores(_rev_rh_cigar.data(), _rev_rh_cigar.size());
+		if (overlap_end >= overlap_begin && rh_aln.ref_end-lh_aln.ref_begin >= 2*config.min_clip_len) { // alignments overlap, resolve that
+			std::vector<int> lh_prefix_scores = inss_ssw_cigar_to_prefix_ref_scores(lh_aln.cigar.data(), lh_aln.cigar.size());
+			std::vector<uint32_t> rev_rh_cigar(rh_aln.cigar.rbegin(), rh_aln.cigar.rend());
+			std::vector<int> rh_suffix_scores = inss_ssw_cigar_to_prefix_ref_scores(rev_rh_cigar.data(), rev_rh_cigar.size());
 		
 			int best_i = overlap_begin, best_score = INT32_MIN;
 			for (int i = overlap_begin; i <= overlap_end; i++) {
-				int prefix_len = i - _lh_aln.ref_begin + 1, suffix_len = _rh_aln.ref_end - i;
-				if (lh_prefix_scores[prefix_len] + _rh_suffix_scores[suffix_len] > best_score) {
-					best_score = lh_prefix_scores[prefix_len] + _rh_suffix_scores[suffix_len];
+				int prefix_len = i - lh_aln.ref_begin + 1, suffix_len = rh_aln.ref_end - i;
+				if (lh_prefix_scores[prefix_len] + rh_suffix_scores[suffix_len] > best_score) {
+					best_score = lh_prefix_scores[prefix_len] + rh_suffix_scores[suffix_len];
 					best_i = i;
 				}
 			}
 
-			aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, best_i+1, filter, &lh_aln, 0);
-			aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref+best_i+1, ref_len-(best_i+1), filter, &rh_aln, 0);
+			aligner_to_base.Align(assembled_seq_lh.c_str(), ref, best_i+1, filter, &lh_aln, 0);
+			aligner_to_base.Align(assembled_seq_rh.c_str(), ref+best_i+1, ref_len-(best_i+1), filter, &rh_aln, 0);
 			rh_aln.ref_begin += best_i+1;
 			rh_aln.ref_end += best_i+1;
-			aligner_to_base.Align(assembled_seq_lh.c_str(), ref, best_i+1, filter, &_lh_aln, 0);
-			aligner_to_base.Align(assembled_seq_rh.c_str(), ref+best_i+1, ref_len-(best_i+1), filter, &_rh_aln, 0);
-			_rh_aln.ref_begin += best_i+1;
-			_rh_aln.ref_end += best_i+1;
 		} else if (rh_aln.ref_begin <= lh_aln.ref_end) { // outwardly mapping, force one of the alignments to align to a consistent location
-			if (_lh_aln.sw_score >= _rh_aln.sw_score) {
-				aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref+lh_aln.ref_end, ref_len-lh_aln.ref_end, filter, &rh_aln, 0);
+			if (lh_aln.sw_score >= rh_aln.sw_score) {
+				aligner_to_base.Align(assembled_seq_rh.c_str(), ref+lh_aln.ref_end, ref_len-lh_aln.ref_end, filter, &rh_aln, 0);
 				rh_aln.ref_begin += lh_aln.ref_end+1;
 				rh_aln.ref_end += lh_aln.ref_end+1;
-				aligner_to_base.Align(assembled_seq_rh.c_str(), ref+_lh_aln.ref_end, ref_len-_lh_aln.ref_end, filter, &_rh_aln, 0);
-				_rh_aln.ref_begin += lh_aln.ref_end+1;
-				_rh_aln.ref_end += lh_aln.ref_end+1;
 			} else {
-				aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, rh_aln.ref_begin, filter, &lh_aln, 0);
-				aligner_to_base.Align(assembled_seq_lh.c_str(), ref, _rh_aln.ref_begin, filter, &_lh_aln, 0);
+				aligner_to_base.Align(assembled_seq_lh.c_str(), ref, rh_aln.ref_begin, filter, &lh_aln, 0);
 			}
 		}
 
-		good_left_anchor = _lh_aln.query_begin < config.min_clip_len && _lh_aln.query_end-_lh_aln.query_begin >= config.min_clip_len;
-		good_right_anchor = _rh_aln.query_end >= padded_assembled_seq_rh.length()-1-config.min_clip_len && _rh_aln.query_end-_rh_aln.query_begin >= config.min_clip_len;
+		good_left_anchor = lh_aln.query_begin < config.min_clip_len && lh_aln.query_end-lh_aln.query_begin >= config.min_clip_len;
+		good_right_anchor = rh_aln.query_end >= assembled_seq_rh.length()-1-config.min_clip_len && rh_aln.query_end-rh_aln.query_begin >= config.min_clip_len;
 	}
 
 	// if one of the anchors is bad but the other is good, we may have two half assemblies
 	if (!good_left_anchor && good_right_anchor && assembled_sequences.size() >= 2) {
-		padded_assembled_seq_lh = std::string(inss_config_t::clip_penalty, 'N') + assembled_sequences[1];
-		aligner_to_base.Align(padded_assembled_seq_lh.c_str(), ref, rh_aln.ref_begin, filter, &lh_aln, 0);
-		aligner_to_base.Align(assembled_sequences[1].c_str(), ref, _rh_aln.ref_begin, filter, &_lh_aln, 0);
-		std::string _left_seq = assembled_sequences[1].substr(_lh_aln.query_end+1);
-		if (_left_seq.length() >= config.min_clip_len) {
-			good_left_anchor = _lh_aln.query_begin < config.min_clip_len && _lh_aln.query_end-_lh_aln.query_begin >= config.min_clip_len;
+		aligner_to_base.Align(assembled_sequences[1].c_str(), ref, rh_aln.ref_begin, filter, &lh_aln, 0);
+		std::string left_seq = assembled_sequences[1].substr(lh_aln.query_end+1);
+		if (left_seq.length() >= config.min_clip_len) {
+			good_left_anchor = lh_aln.query_begin < config.min_clip_len && lh_aln.query_end-lh_aln.query_begin >= config.min_clip_len;
 		}
-		ins_seq = _left_seq + "-" + assembled_seq_lh + assembled_seq_rh.substr(0, _rh_aln.query_begin);
+		ins_seq = left_seq + "-" + assembled_seq_lh + assembled_seq_rh.substr(0, rh_aln.query_begin);
 		full_assembled_seq = assembled_sequences[1] + "-" + primary_assembled_sequence;
 	} else if (good_left_anchor && !good_right_anchor && assembled_sequences.size() >= 2) {
-		padded_assembled_seq_rh = assembled_sequences[1] + std::string(inss_config_t::clip_penalty, 'N');
-		aligner_to_base.Align(padded_assembled_seq_rh.c_str(), ref+lh_aln.ref_end, ref_len-lh_aln.ref_end, filter, &rh_aln, 0);
-		aligner_to_base.Align(assembled_sequences[1].c_str(), ref+_lh_aln.ref_end, ref_len-_lh_aln.ref_end, filter, &_rh_aln, 0);
+		aligner_to_base.Align(assembled_sequences[1].c_str(), ref+lh_aln.ref_end, ref_len-lh_aln.ref_end, filter, &rh_aln, 0);
 		rh_aln.ref_begin += lh_aln.ref_end;
 		rh_aln.ref_end += lh_aln.ref_end;
-		_rh_aln.ref_begin += _lh_aln.ref_end;
-		_rh_aln.ref_end += _lh_aln.ref_end;
-		std::string right_seq = padded_assembled_seq_rh.substr(0, rh_aln.query_begin);
-		std::string _right_seq = assembled_sequences[1].substr(0, _rh_aln.query_begin);
-		if (_right_seq.length() >= config.min_clip_len) {
-			good_right_anchor = _rh_aln.query_end >= assembled_sequences[1].length()-1-config.min_clip_len && _rh_aln.query_end-_rh_aln.query_begin >= config.min_clip_len;
+		std::string right_seq = assembled_sequences[1].substr(0, rh_aln.query_begin);
+		if (right_seq.length() >= config.min_clip_len) {
+			good_right_anchor = rh_aln.query_end >= assembled_sequences[1].length()-1-config.min_clip_len && rh_aln.query_end-rh_aln.query_begin >= config.min_clip_len;
 		}
-		ins_seq = assembled_seq_lh.substr(_lh_aln.query_end+1) + assembled_seq_rh + "-" + _right_seq;
+		ins_seq = assembled_seq_lh.substr(lh_aln.query_end+1) + assembled_seq_rh + "-" + right_seq;
 		full_assembled_seq = primary_assembled_sequence + "-" + assembled_sequences[1];
 	} else {
-		ins_seq = assembled_seq_lh.substr(_lh_aln.query_end+1) + assembled_seq_rh.substr(0, _rh_aln.query_begin);
+		ins_seq = assembled_seq_lh.substr(lh_aln.query_end+1) + assembled_seq_rh.substr(0, rh_aln.query_begin);
 		full_assembled_seq = primary_assembled_sequence;
 	}
 
-	return {{lh_aln, rh_aln}, {_lh_aln, _rh_aln}};
+	return {lh_aln, rh_aln};
 }
 
 std::vector<std::string> assemble_sequences(std::string contig_name, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
@@ -729,7 +707,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 	bool good_left_anchor, good_right_anchor;
 	auto alns = remap_assembled_sequence(assembled_sequences, contig+remap_region_start, remap_region_end-remap_region_start, aligner_to_base,
 			good_left_anchor, good_right_anchor, ins_seq, full_assembled_seq, config);
-	StripedSmithWaterman::Alignment lh_aln = alns.second.first, rh_aln = alns.second.second;
+	StripedSmithWaterman::Alignment lh_aln = alns.first, rh_aln = alns.second;
 	if (ins_seq.find("N") != std::string::npos) return NULL;
 
 	std::string mh_seq;

@@ -15,17 +15,6 @@
 #include "../libs/ssw_cpp.h"
 #include "../src/utils.h"
 
-struct inss_config_t {
-
-    config_t config;
-
-    static const int clip_penalty = 7;
-
-    void parse(std::string config_fname) {
-        config.parse(config_fname);
-    };
-};
-
 struct inss_stats_t {
 
     int max_is, read_len;
