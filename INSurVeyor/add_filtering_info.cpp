@@ -15,7 +15,7 @@ std::mutex mtx;
 
 config_t config;
 stats_t stats;
-inss_contig_map_t contig_map;
+contig_map_t contig_map;
 
 int MAX_READ_IS;
 
@@ -140,8 +140,8 @@ int main(int argc, char* argv[]) {
     std::string reference_fname = argv[3];
 
     config.parse(workdir + "/config.txt");
-    contig_map.parse(workdir);
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
+    contig_map.load(workdir);
 
     std::vector<std::pair<inss_insertion_t*, bcf1_t*> > assembled_insertions, transurveyor_insertions;
 

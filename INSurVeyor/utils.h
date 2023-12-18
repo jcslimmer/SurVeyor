@@ -15,72 +15,6 @@
 #include "../libs/ssw_cpp.h"
 #include "../src/utils.h"
 
-struct inss_contig_map_t {
-
-    std::unordered_map<std::string, size_t> name_to_id;
-    std::vector<std::string> id_to_name;
-
-    void parse(std::string workdir) {
-    	std::ifstream fin(workdir + "/contig_map");
-		std::string name;
-		int id = 0;
-		while (fin >> name) {
-			name_to_id[name] = id;
-			id_to_name.push_back(name);
-			id++;
-		}
-    }
-
-    size_t size() {return id_to_name.size();}
-    std::string get_name(size_t id) {return id_to_name[id];};
-    size_t get_id(std::string& name) {return name_to_id[name];};
-};
-
-struct inss_chr_seq_t {
-    char* seq;
-    hts_pos_t len;
-
-    inss_chr_seq_t(char* seq, hts_pos_t len) : seq(seq), len(len) {}
-    ~inss_chr_seq_t() {delete[] seq;}
-};
-struct inss_chr_seqs_map_t {
-    std::unordered_map<std::string, inss_chr_seq_t*> seqs;
-    std::vector<std::string> ordered_contigs;
-
-    void read_fasta_into_map(std::string& reference_fname) {
-        FILE* fasta = fopen(reference_fname.c_str(), "r");
-        kseq_t* seq = kseq_init(fileno(fasta));
-        while (kseq_read(seq) >= 0) {
-            std::string seq_name = seq->name.s;
-            char* chr_seq = new char[seq->seq.l + 1];
-            strcpy(chr_seq, seq->seq.s);
-            seqs[seq_name] = new inss_chr_seq_t(chr_seq, seq->seq.l);
-            ordered_contigs.push_back(seq_name);
-        }
-        kseq_destroy(seq);
-        fclose(fasta);
-    }
-
-    char* get_seq(std::string seq_name) {
-        return seqs[seq_name]->seq;
-    }
-
-    hts_pos_t get_len(std::string seq_name) {
-        return seqs[seq_name]->len;
-    }
-
-    void clear() {
-        for (auto& e : seqs) {
-            delete e.second;
-            e.second = NULL;
-        }
-    }
-
-    ~inss_chr_seqs_map_t() {
-        clear();
-    }
-};
-
 struct inss_suffix_prefix_aln_t {
     int overlap, score, mismatches;
 
@@ -146,27 +80,12 @@ inss_suffix_prefix_aln_t inss_aln_suffix_prefix(std::string& s1, std::string& s2
     return inss_suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
 }
 
-template<typename T>
-inline T inss_max(T a, T b, T c) { return std::max(std::max(a,b), c); }
-
-template<typename T>
-inline T inss_max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
-
 int inss_max_pos(int* a, int n) {
 	int pos = 0;
 	for (int i = 1; i < n; i++) {
 		if (a[i] > a[pos]) pos = i;
 	}
 	return pos;
-}
-
-bool inss_file_exists(std::string& fname) {
-	return std::ifstream(fname).good();
-}
-
-int64_t inss_overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
-    int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
-    return std::max(int64_t(0), overlap);
 }
 
 struct inss_insertion_t {
@@ -240,20 +159,6 @@ std::vector<int> inss_ssw_cigar_to_prefix_ref_scores(uint32_t* cigar, int cigar_
 	}
 
 	return scores;
-}
-
-void inss_to_uppercase(char* s) {
-    for (int i = 0; s[i] != '\0'; i++) {
-        s[i] = toupper(s[i]);
-    }
-}
-
-std::string inss_cigar_to_string(std::vector<uint32_t>& cigar) {
-	std::stringstream ss;
-	for (uint32_t c : cigar) {
-		ss << cigar_int_to_len(c) << cigar_int_to_op(c);
-	}
-	return ss.str();
 }
 
 #endif //SMALLINSFINDER_UTILS_H

@@ -22,7 +22,7 @@ bcf_hrec_t* generate_contig_hrec() {
 	}
 	return contig_hrec;
 }
-bcf_hdr_t* generate_vcf_header(inss_chr_seqs_map_t& contigs, std::string sample_name, config_t& config, std::string command) {
+bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t& config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
 	// add contigs
@@ -254,7 +254,7 @@ std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	return "";
 }
 
-void insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, inss_chr_seqs_map_t& contigs) {
+void insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, chr_seqs_map_t& contigs) {
 	bcf_clear(bcf_entry);
 	bcf_entry->rid = bcf_hdr_name2id(hdr, insertion->chr.c_str());
 	bcf_entry->pos = insertion->start;

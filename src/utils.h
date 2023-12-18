@@ -196,6 +196,12 @@ bool is_homopolymer(const char* seq, int len) {
 	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
 
+void to_uppercase(char* s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        s[i] = toupper(s[i]);
+    }
+}
+
 int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
     return std::max(int64_t(0), overlap);

@@ -13,7 +13,7 @@ config_t config;
 stats_t stats;
 double min_ptn_ratio;
 
-inss_contig_map_t contig_map;
+contig_map_t contig_map;
 
 std::vector<uint32_t> min_disc_pairs_by_size;
 
@@ -84,9 +84,9 @@ int main(int argc, char* argv[]) {
     config.parse(workdir + "/config.txt");
 	stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
-    contig_map.parse(workdir);
+    contig_map.load(workdir);
 
-	inss_chr_seqs_map_t contigs;
+	chr_seqs_map_t contigs;
 	contigs.read_fasta_into_map(reference_fname);
 
 	std::ifstream mdpbs_fin(workdir + "/min_disc_pairs_by_size.txt");

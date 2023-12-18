@@ -128,7 +128,7 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, Stripe
 	}
 
 	for (int i = 0; i < contig.length(); i++) {
-		int max_freq = inss_max(As[i], Cs[i], Gs[i], Ts[i]);
+		int max_freq = max(As[i], Cs[i], Gs[i], Ts[i]);
 		if (max_freq == 0) continue;
 		if (max_freq == As[i]) contig[i] = 'A';
 		else if (max_freq == Cs[i]) contig[i] = 'C';
@@ -638,7 +638,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 	return assembled_sequences;
 }
 
-inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map_t& contigs,
+inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
 		reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
@@ -783,7 +783,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		harsh_aligner.Align(read_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		std::string qual_ascii = get_qual_ascii(read, true);
 		qual_ascii = std::string(qual_ascii.rbegin(), qual_ascii.rend());
-		if (inss_overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
+		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
 			ins->r_disc_pairs++;
 			assembled_reads.push_back(bam_dup1(read));
@@ -794,7 +794,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		std::string read_seq = get_sequence(read, true);
 		harsh_aligner.Align(read_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		std::string qual_ascii = get_qual_ascii(read, true);
-		if (inss_overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
+		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
 			ins->l_disc_pairs++;
 			assembled_reads.push_back(bam_dup1(read));

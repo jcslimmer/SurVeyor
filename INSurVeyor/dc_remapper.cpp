@@ -30,8 +30,8 @@ stats_t stats;
 std::string workdir;
 std::mutex mtx;
 
-inss_contig_map_t contig_map;
-inss_chr_seqs_map_t contigs;
+contig_map_t contig_map;
+chr_seqs_map_t contigs;
 
 std::ofstream assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer, assembly_failed_bad_anchors_writer;
 std::ofstream assembly_failed_lt50bp, assembly_failed_no_seq, assembly_succeeded;
@@ -496,7 +496,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	char* left_flanking = new char[r_cluster->end()-r_cluster->start()+2];
 	strncpy(left_flanking, contigs.get_seq(contig_name)+r_cluster->start(), r_cluster->end()-r_cluster->start()+1);
 	left_flanking[r_cluster->end()-r_cluster->start()+1] = '\0';
-	inss_to_uppercase(left_flanking);
+	to_uppercase(left_flanking);
 
 	int ins_seq_start = best_region.start + best_region.score.remap_start,
 		ins_seq_len = best_region.score.remap_end - best_region.score.remap_start + 1;
@@ -504,12 +504,12 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	strncpy(pred_ins_seq, contigs.get_seq(contig_map.get_name(best_region.contig_id))+ins_seq_start, ins_seq_len);
 	pred_ins_seq[ins_seq_len] = '\0';
 	if (is_rc) rc(pred_ins_seq);
-	inss_to_uppercase(pred_ins_seq);
+	to_uppercase(pred_ins_seq);
 
 	char* right_flanking = new char[l_cluster->end()-l_cluster->start()+2];
 	strncpy(right_flanking, contigs.get_seq(contig_name)+l_cluster->start(), l_cluster->end()-l_cluster->start()+1);
 	right_flanking[l_cluster->end()-l_cluster->start()+1] = '\0';
-	inss_to_uppercase(right_flanking);
+	to_uppercase(right_flanking);
 
 	// NOTE: prefixes and suffixes may be duplicated - i.e., suffix of left flanking also appearing as prefix of predicted ins seq
 	// This is a problem because it predicts an insertion where there is none. One such case is fragment LINE insertions.
@@ -1069,7 +1069,7 @@ bool is_semi_mapped(bam1_t* read) {
 
 void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads_cluster_t*>& r_clusters, std::vector<reads_cluster_t*>& l_clusters) {
 
-	if (!inss_file_exists(clipped_fname)) return;
+	if (!file_exists(clipped_fname)) return;
 
 	std::vector<bam1_t*> l_semi_mapped_pairs, r_semi_mapped_pairs;
 
@@ -1133,7 +1133,7 @@ void remap(int id, int contig_id) {
 
     std::string r_dc_fname = workdir + "/workspace/R/" + std::to_string(contig_id) + ".noremap.bam";
     std::string l_dc_fname = workdir + "/workspace/L/" + std::to_string(contig_id) + ".noremap.bam";
-    if (!inss_file_exists(r_dc_fname) || !inss_file_exists(l_dc_fname)) return;
+    if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
 
     std::unordered_map<std::string, std::string> mateseqs;
     std::unordered_map<std::string, std::string> matequals;
@@ -1271,7 +1271,7 @@ int main(int argc, char* argv[]) {
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contigs.read_fasta_into_map(reference_fname);
-    contig_map.parse(workdir);
+    contig_map.load(workdir);
 
     assembly_failed_no_seq.open(workdir + "/assembly_failed.no_seq.sv");
     assembly_failed_cycle_writer.open(workdir + "/assembly_failed.w_cycle.sv");

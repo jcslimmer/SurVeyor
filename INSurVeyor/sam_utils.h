@@ -203,7 +203,7 @@ bool inss_is_homopolymer(const char* seq, int len) {
 		else if (b == 'G') g++;
 		else if (b == 'T') t++;
 	}
-	return inss_max(a, c, g, t)/double(a+c+g+t) >= 0.8;
+	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
 
 bool is_homopolymer(std::string seq) {
