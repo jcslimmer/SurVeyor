@@ -335,7 +335,7 @@ int main(int argc, char* argv[]) {
 
     contig_map.load(workdir);
     config.parse(workdir + "/config.txt");
-    stats.parse(workdir + "/stats.txt");
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     chr_seqs.read_fasta_into_map(reference_fname);
 

@@ -10,7 +10,7 @@
 #include "vcf_utils.h"
 
 config_t config;
-inss_stats_t stats;
+stats_t stats;
 double min_ptn_ratio;
 
 inss_contig_map_t contig_map;
@@ -38,7 +38,7 @@ void add_AST_filters(inss_insertion_t* insertion, std::vector<std::string>& filt
 	int d = insertion->ins_seq.find("-");
 	if (is_homopolymer(insertion->ins_seq.substr(0, d))) filters.push_back("HOMOPOLYMER_INSSEQ");
 	else if (d != std::string::npos && is_homopolymer(insertion->ins_seq.substr(d+1))) filters.push_back("HOMOPOLYMER_INSSEQ");
-	if (insertion->rc_reads() > stats.get_max_depth() || insertion->lc_reads() > stats.get_max_depth()) filters.push_back("ANOMALOUS_SC_NUMBER");
+	if (insertion->rc_reads() > stats.get_max_depth(insertion->chr) || insertion->lc_reads() > stats.get_max_depth(insertion->chr)) filters.push_back("ANOMALOUS_SC_NUMBER");
 }
 
 void add_AT_filters(inss_insertion_t* insertion, std::vector<std::string>& filters) {
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     min_ptn_ratio = std::stod(argv[3]);
 
     config.parse(workdir + "/config.txt");
-	stats.parse_stats(workdir + "/stats.txt", config.per_contig_stats);
+	stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contig_map.parse(workdir);
 

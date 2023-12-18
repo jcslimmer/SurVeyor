@@ -116,7 +116,7 @@ int main(int argc, char* argv[]) {
 
     contig_map.load(workdir);
     config.parse(workdir + "/config.txt");
-    stats.parse(workdir + "/stats.txt");
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     chr_seqs.read_fasta_into_map(reference_fname);
 
@@ -213,12 +213,12 @@ int main(int argc, char* argv[]) {
                     (del->median_left_flanking_cov*0.74<=del->median_indel_left_cov || del->median_right_flanking_cov*0.74<=del->median_indel_right_cov)) {
             	del->filters.push_back("DEPTH_FILTER");
             }
-            if (del->median_left_flanking_cov > stats.max_depth || del->median_right_flanking_cov > stats.max_depth ||
-            	del->median_left_flanking_cov < stats.min_depth || del->median_right_flanking_cov < stats.min_depth ||
-				del->median_left_cluster_cov > stats.max_depth || del->median_right_cluster_cov > stats.max_depth) {
+            if (del->median_left_flanking_cov > stats.get_max_depth(contig_name) || del->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
+            	del->median_left_flanking_cov < stats.get_min_depth(contig_name) || del->median_right_flanking_cov < stats.get_min_depth(contig_name) ||
+				del->median_left_cluster_cov > stats.get_max_depth(contig_name) || del->median_right_cluster_cov > stats.get_max_depth(contig_name)) {
                 del->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
-            if (del->median_indel_left_cov > stats.max_depth || del->median_indel_right_cov > stats.max_depth) {
+            if (del->median_indel_left_cov > stats.get_max_depth(contig_name) || del->median_indel_right_cov > stats.get_max_depth(contig_name)) {
                 del->filters.push_back("ANOMALOUS_DEL_DEPTH");
             }
 
@@ -266,8 +266,8 @@ int main(int argc, char* argv[]) {
                 dup->filters.push_back("DEPTH_FILTER");
             }
 
-            if (dup->median_left_flanking_cov > stats.max_depth || dup->median_right_flanking_cov > stats.max_depth ||
-                dup->median_left_flanking_cov < stats.min_depth || dup->median_right_flanking_cov < stats.min_depth) {
+            if (dup->median_left_flanking_cov > stats.get_max_depth(contig_name) || dup->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
+                dup->median_left_flanking_cov < stats.get_min_depth(contig_name) || dup->median_right_flanking_cov < stats.get_min_depth(contig_name)) {
                 dup->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (dup->full_junction_aln != NULL && dup->left_anchor_aln->best_score+dup->right_anchor_aln->best_score-dup->full_junction_aln->best_score < config.min_score_diff) {
@@ -298,8 +298,8 @@ int main(int argc, char* argv[]) {
         if (!insertions_by_chr.count(contig_name)) continue;
         std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
         for (insertion_t* ins : insertions) {
-            if (ins->median_left_flanking_cov > stats.max_depth || ins->median_right_flanking_cov > stats.max_depth ||
-                ins->median_left_flanking_cov < stats.min_depth || ins->median_right_flanking_cov < stats.min_depth) {
+            if (ins->median_left_flanking_cov > stats.get_max_depth(contig_name) || ins->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
+                ins->median_left_flanking_cov < stats.get_min_depth(contig_name) || ins->median_right_flanking_cov < stats.get_min_depth(contig_name)) {
                 ins->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (ins->full_junction_aln != NULL && ins->left_anchor_aln->best_score+ins->right_anchor_aln->best_score-ins->full_junction_aln->best_score < config.min_score_diff) {

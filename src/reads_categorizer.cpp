@@ -56,7 +56,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     std::ofstream mateseqs_fout(workspace + "/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
 
     int curr_pos = 0;
-    std::vector<uint32_t> rnd_positions_depth(rnd_positions.size());
+    std::vector<uint32_t> local_depths(rnd_positions.size());
     std::vector<std::vector<uint32_t> > rnd_positions_dist_between_end_and_rnd(rnd_positions.size());
     uint64_t contig_qual_counts[256];
 	std::fill(contig_qual_counts, contig_qual_counts+256, uint64_t(0));
@@ -121,7 +121,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 		for (int i = curr_pos; i < rnd_positions.size() && rnd_positions[i] < read_endpos; i++) {
 			if (read->core.pos <= rnd_positions[i] && rnd_positions[i] <= read_endpos) {
 				sampled = true;
-				rnd_positions_depth[i]++;
+				local_depths[i]++;
 			}
 		}
 
@@ -164,19 +164,17 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     if (ow_writer) sam_close(ow_writer);
     mateseqs_fout.close();
 
-    rnd_positions_depth.erase(std::remove(rnd_positions_depth.begin(), rnd_positions_depth.end(), 0), rnd_positions_depth.end());
+    local_depths.erase(std::remove(local_depths.begin(), local_depths.end(), 0), local_depths.end());
     mtx.lock();
-    if (rnd_positions_depth.size() >= MIN_RND_POS) {
-		std::sort(rnd_positions_depth.begin(), rnd_positions_depth.end());
-		min_depth_by_contig[contig_name] = rnd_positions_depth[rnd_positions_depth.size()/100];
-		median_depth_by_contig[contig_name] = rnd_positions_depth[rnd_positions_depth.size()/2];
-		max_depth_by_contig[contig_name] = rnd_positions_depth[rnd_positions_depth.size()-rnd_positions_depth.size()/100];
+    if (local_depths.size() >= MIN_RND_POS) {
+		std::sort(local_depths.begin(), local_depths.end());
+		min_depth_by_contig[contig_name] = local_depths[local_depths.size()/100];
+		median_depth_by_contig[contig_name] = local_depths[local_depths.size()/2];
+		max_depth_by_contig[contig_name] = local_depths[local_depths.size()-local_depths.size()/100];
     }
+    depths.insert(depths.end(), local_depths.begin(), local_depths.end());
 
     partial_sums.push_back({sum_is, n_is});
-    for (uint32_t d : rnd_positions_depth) {
-		if (d > 0) depths.push_back(d);
-	}
 	for (int i = 0; i < 256; i++) qual_counts[i] += contig_qual_counts[i];
 	for (auto& v : rnd_positions_dist_between_end_and_rnd) {
 		if (v.empty()) continue;
@@ -214,7 +212,7 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[3];
 
     config.parse(workdir + "/config.txt");
-    stats.parse(workdir + "/stats.txt", true);
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contig_map_t contig_map(workdir);
 
@@ -312,18 +310,18 @@ int main(int argc, char* argv[]) {
 
     std::ofstream stats_out(workdir + "/stats.txt", std::ios_base::app);
 	std::sort(depths.begin(), depths.end());
-	stats_out << "min_depth " << depths[depths.size()/100] << std::endl;
-	stats_out << "median_depth " << depths[depths.size()/2] << std::endl;
-	stats_out << "max_depth " << depths[depths.size()-depths.size()/100] << std::endl;
-    stats_out << "min_avg_base_qual " << min_avg_base_qual << std::endl;
+	stats_out << "min_depth . " << depths[depths.size()/100] << std::endl;
+	stats_out << "median_depth . " << depths[depths.size()/2] << std::endl;
+	stats_out << "max_depth . " << depths[depths.size()-depths.size()/100] << std::endl;
+    stats_out << "min_avg_base_qual . " << min_avg_base_qual << std::endl;
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
 		if (!min_depth_by_contig.count(contig_name)) continue;
-    	stats_out << "min_depth_" << contig_name << " " << min_depth_by_contig[contig_name] << std::endl;
-    	stats_out << "median_depth_" << contig_name << " " << median_depth_by_contig[contig_name] << std::endl;
-    	stats_out << "max_depth_" << contig_name << " " << max_depth_by_contig[contig_name] << std::endl;
+    	stats_out << "min_depth " << contig_name << " " << min_depth_by_contig[contig_name] << std::endl;
+    	stats_out << "median_depth " << contig_name << " " << median_depth_by_contig[contig_name] << std::endl;
+    	stats_out << "max_depth " << contig_name << " " << max_depth_by_contig[contig_name] << std::endl;
     }
-    stats_out << "pop_avg_crossing_is " << sum_is / n_is << std::endl;
+    stats_out << "pop_avg_crossing_is . " << sum_is / n_is << std::endl;
 
     std::ofstream crossing_isizes_dist_fout(workdir + "/crossing_isizes.txt");
     for (int i = 0; i <= stats.max_is; i++) {
@@ -340,6 +338,6 @@ int main(int argc, char* argv[]) {
 	}
 	crossing_isizes_dist_fout.close();
 
-	stats_out << "min_disc_pairs " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
+	stats_out << "min_disc_pairs . " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
 	stats_out.close();
 }

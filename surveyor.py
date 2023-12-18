@@ -25,7 +25,8 @@ cmd_parser.add_argument('--max-clipped-pos-dist', type=int, default=5, help='Max
 cmd_parser.add_argument('--sampling-regions', help='File in BED format containing a list of regions to be used to estimate'
                                                    'statistics such as depth.')
 cmd_parser.add_argument('--per-contig-stats', action='store_true',
-                        help='Statistics are computed separately for each contig (experimental).')
+                        help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
+                        'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
 cmd_parser.add_argument('--log', action='store_true', help='Activate in-depth logging.')
 cmd_parser.add_argument('--version', action='version', version="SurVeyor v%s" % VERSION, help='Print version number.')
 
@@ -136,10 +137,10 @@ higher_stddev_is = int(np.sqrt(np.mean([(x-mean_is)**2 for x in general_dist if 
 min_is, max_is = mean_is-3*lower_stddev_is, mean_is+3.5*higher_stddev_is
 
 with open(cmd_args.workdir + "/stats.txt", "w") as stats_file: 
-    stats_file.write("read_len %d\n" % read_len)
-    stats_file.write("min_is %d\n" % min_is)
-    stats_file.write("avg_is %d\n" % mean_is)
-    stats_file.write("max_is %d\n" % max_is)
+    stats_file.write("read_len . %d\n" % read_len)
+    stats_file.write("min_is . %d\n" % min_is)
+    stats_file.write("avg_is . %d\n" % mean_is)
+    stats_file.write("max_is . %d\n" % max_is)
 
 # survindel2_workdir = cmd_args.workdir + "/survindel2"
 # mkdir(survindel2_workdir)
@@ -186,10 +187,6 @@ def cp(src, dst):
 
 cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
 
-def append(src, dst):
-    os.system("cat %s >> %s" % (src, dst))
-
-append(cmd_args.workdir + "/stats.txt", insurveyor_workdir + "/config.txt")
 cp(cmd_args.workdir + "/stats.txt", insurveyor_workdir)
 cp(cmd_args.workdir + "/contig_map", insurveyor_workdir)
 cp(cmd_args.workdir + "/full_cmd.txt", insurveyor_workdir)

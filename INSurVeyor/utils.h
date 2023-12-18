@@ -15,51 +15,6 @@
 #include "../libs/ssw_cpp.h"
 #include "../src/utils.h"
 
-struct inss_stats_t {
-
-    int max_is, read_len;
-	bool per_contig_stats;
-	std::unordered_map<std::string, int> min_depth, median_depth, max_depth, min_avg_base_qual;
-
-    void parse_stats(std::string stats_fname, bool per_contig_stats) {
-		std::unordered_map<std::string, std::string> params;
-		std::ifstream fin(stats_fname);
-		std::string name, value;
-		while (fin >> name >> value) {
-			if (name == "min_depth") min_depth["."] = std::stoi(value);
-			if (name == "median_depth") median_depth["."] = std::stoi(value);
-			if (name == "max_depth") max_depth["."] = std::stoi(value);
-			if (name == "min_avg_base_qual") min_avg_base_qual["."] = std::stoi(value);
-            if (name == "max_is") max_is = std::stoi(value);
-            if (name == "read_len") read_len = std::stoi(value);
-		}
-		this->per_contig_stats = per_contig_stats;
-		fin.close();
-	}
-
-    int get_min_depth(std::string contig_name = ".") {
-    	if (per_contig_stats && min_depth.count(contig_name))
-    		return min_depth[contig_name];
-    	else return min_depth["."];
-    }
-    int get_median_depth(std::string contig_name = ".") {
-    	if (per_contig_stats && median_depth.count(contig_name))
-			return median_depth[contig_name];
-		else return median_depth["."];
-    }
-    int get_max_depth(std::string contig_name = ".") {
-    	if (per_contig_stats && max_depth.count(contig_name))
-			return max_depth[contig_name];
-		else return max_depth["."];
-    }
-    int get_min_avg_base_qual(std::string contig_name = ".") {
-    	if (per_contig_stats && min_avg_base_qual.count(contig_name))
-			return min_avg_base_qual[contig_name];
-		else return min_avg_base_qual["."];
-    }
-};
-
-
 struct inss_contig_map_t {
 
     std::unordered_map<std::string, size_t> name_to_id;

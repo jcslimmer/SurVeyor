@@ -26,7 +26,7 @@
 
 
 config_t config;
-inss_stats_t stats;
+stats_t stats;
 std::string workdir;
 std::mutex mtx;
 
@@ -35,7 +35,6 @@ inss_chr_seqs_map_t contigs;
 
 std::ofstream assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer, assembly_failed_bad_anchors_writer;
 std::ofstream assembly_failed_lt50bp, assembly_failed_no_seq, assembly_succeeded;
-std::ofstream graph_writer, consensus_flog;
 
 std::vector<inss_insertion_t*> assembled_insertions, trans_insertions;
 
@@ -549,7 +548,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	// assembled contigs
 	std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
 	std::vector<std::string> consensus_contigs = generate_reference_guided_consensus(full_junction_sequence, r_cluster, l_cluster, mateseqs,
-			aligner, harsh_aligner, consensus_contigs_alns, config);
+			aligner, harsh_aligner, consensus_contigs_alns, config, stats);
 
 	if (consensus_contigs.empty()) return full_junction_sequence;
 
@@ -586,7 +585,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
                    int contig_id, bam_hdr_t* header, std::unordered_map<std::string, std::string>& mateseqs,
 				   std::unordered_map<std::string, std::string>& matequals,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
-                   StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner) {
+                   StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
+                   stats_t& stats) {
 
 	if (l_cluster->reads.size() + r_cluster->reads.size() > TOO_MANY_READS) return;
 
@@ -619,7 +619,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     std::string contig_name = contig_map.get_name(contig_id);
     if (regions.empty()) {
 		inss_insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
-				aligner_to_base, harsh_aligner, kept, config);
+				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
 			mtx.lock();
@@ -725,7 +725,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 			rc(mate_seq);
 			mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
 			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			rc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			rc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual);
 			if (rc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
@@ -734,7 +734,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 			std::string mate_seq = get_mate_seq(l_cluster->reads[i], mateseqs);
 			std::string mate_qual = get_mate_qual(l_cluster->reads[i], matequals);
 			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
-			lc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual());
+			lc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual);
 			if (lc_remap_infos[i].accepted) {
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
@@ -763,7 +763,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 	int tot_reads = r_cluster->reads.size() + l_cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		inss_insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
-				aligner_to_base, harsh_aligner, kept, config);
+				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
 			mtx.lock();
@@ -1226,7 +1226,7 @@ void remap(int id, int contig_id) {
         // remap clusters
         std::vector<bam1_t*> to_write;
 		remap_cluster(c1, c2, to_write, contig_id, r_dc_file->header, mateseqs, matequals, aligner, permissive_aligner,
-				aligner_to_base, harsh_aligner);
+				aligner_to_base, harsh_aligner, stats);
 
         for (bam1_t* r : to_write) {
             if (bam_is_rev(r)) {
@@ -1268,7 +1268,7 @@ int main(int argc, char* argv[]) {
     std::getline(full_cmd_fin, full_cmd_str);
 
     config.parse(workdir + "/config.txt");
-    stats.parse_stats(workdir + "/stats.txt", config.per_contig_stats);
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contigs.read_fasta_into_map(reference_fname);
     contig_map.parse(workdir);
@@ -1279,9 +1279,6 @@ int main(int argc, char* argv[]) {
     assembly_failed_bad_anchors_writer.open(workdir + "/assembly_failed.bad_anchors.sv");
     assembly_failed_lt50bp.open(workdir + "/assembly_failed.lt50bp.sv");
     assembly_succeeded.open(workdir + "/assembly_succeeded.sv");
-
-    graph_writer.open(workdir + "/graph.txt");
-    consensus_flog.open(workdir + "/consensus_log.txt");
 
     ctpl::thread_pool thread_pool(config.threads);
 

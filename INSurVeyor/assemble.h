@@ -7,14 +7,12 @@
 #include "dc_remapper.h"
 #include "../libs/ssw.h"
 
-extern inss_stats_t stats;
-extern std::ofstream graph_writer;
 extern std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
-assembly_failed_bad_anchors_writer, assembly_failed_mh_too_long, assembly_failed_lt50bp, assembly_succeeded;
+assembly_failed_bad_anchors_writer, assembly_failed_lt50bp, assembly_succeeded;
 
 extern const int TOO_MANY_READS;
 
-std::mutex graph_mtx, failed_assembly_mtx;
+std::mutex failed_assembly_mtx;
 
 struct edge_t {
 	int next, score, overlap;
@@ -36,9 +34,6 @@ struct seq_w_pp_t {
 		clip_pair.can_end_path = can_end_path;
 	}
 };
-
-std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_read_seqs, std::vector<seq_w_pp_t>& unstable_read_seqs,
-		std::vector<seq_w_pp_t>& right_stable_read_seqs, StripedSmithWaterman::Aligner& aligner, config_t& config, std::stringstream& ss_graph);
 
 std::vector<int> find_rev_topological_order(int n, std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj_rev) {
 
@@ -142,9 +137,154 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, Stripe
 	}
 }
 
+void build_graph(std::vector<std::string>& read_seqs, std::vector<int>& order, std::vector<int>& out_edges,
+		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev,
+		int max_mismatches, int min_overlap) {
+
+	int n = read_seqs.size();
+
+	for (int i = 0; i < n; i++) {
+		for (int j = i+1; j < n; j++) {
+			std::string& s1 = read_seqs[i];
+			std::string& s2 = read_seqs[j];
+
+			int max_overlap = std::min(s1.length(), s2.length())-1;
+			inss_suffix_prefix_aln_t spa1 = inss_aln_suffix_prefix(s1, s2, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
+			bool spa1_homopolymer = is_homopolymer(s2.c_str(), spa1.overlap);
+			inss_suffix_prefix_aln_t spa2 = inss_aln_suffix_prefix(s2, s1, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
+			bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
+			if (spa1.overlap && spa2.overlap) {
+				if (spa1.score >= spa2.score && order[i] <= order[j]) {
+					if (!spa1_homopolymer) {
+						out_edges[i]++;
+						l_adj[i].push_back({j, spa1.score, spa1.overlap});
+						l_adj_rev[j].push_back({i, spa1.score, spa1.overlap});
+					}
+				} else if (spa1.score < spa2.score && order[j] <= order[i]) {
+					if (!spa2_homopolymer) {
+						out_edges[j]++;
+						l_adj[j].push_back({i, spa2.score, spa2.overlap});
+						l_adj_rev[i].push_back({j, spa2.score, spa2.overlap});
+					}
+				}
+			} else if (spa1.overlap && order[i] <= order[j]) {
+				if (!spa1_homopolymer) {
+					out_edges[i]++;
+					l_adj[i].push_back({j, spa1.score, spa1.overlap});
+					l_adj_rev[j].push_back({i, spa1.score, spa1.overlap});
+				}
+			} else if (spa2.overlap && order[j] <= order[i]) {
+				if (!spa2_homopolymer) {
+					out_edges[j]++;
+					l_adj[j].push_back({i, spa2.score, spa2.overlap});
+					l_adj_rev[i].push_back({j, spa2.score, spa2.overlap});
+				}
+			}
+		}
+	}
+}
+
+std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_read_seqs, std::vector<seq_w_pp_t>& unstable_read_seqs,
+		std::vector<seq_w_pp_t>& right_stable_read_seqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
+
+	std::vector<std::string> read_seqs;
+	std::vector<path_permission_t> path_permissions;
+	std::vector<int> order;
+	for (seq_w_pp_t& s : left_stable_read_seqs) {
+		read_seqs.push_back(s.seq);
+		path_permissions.push_back(s.clip_pair);
+		order.push_back(1);
+	}
+	for (seq_w_pp_t& s : unstable_read_seqs) {
+		read_seqs.push_back(s.seq);
+		path_permissions.push_back(s.clip_pair);
+		order.push_back(2);
+	}
+	for (seq_w_pp_t& s : right_stable_read_seqs) {
+		read_seqs.push_back(s.seq);
+		path_permissions.push_back(s.clip_pair);
+		order.push_back(3);
+	}
+
+	int n = read_seqs.size();
+	std::vector<int> out_edges(n);
+	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
+
+	build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 1, config.min_clip_len);
+
+	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
+
+	if (rev_topological_order.size() < n) {
+		build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 0.0, config.min_clip_len);
+
+		int min_overlap = config.min_clip_len;
+		for (; min_overlap <= stats.read_len/2; min_overlap += 10) {
+			for (int i = 0; i < n; i++) {
+				l_adj[i].erase(std::remove_if(l_adj[i].begin(), l_adj[i].end(),
+						[&min_overlap](edge_t& e) { return e.overlap < min_overlap; }), l_adj[i].end());
+				l_adj_rev[i].erase(std::remove_if(l_adj_rev[i].begin(), l_adj_rev[i].end(),
+						[&min_overlap](edge_t& e) { return e.overlap < min_overlap; }), l_adj_rev[i].end());
+				out_edges[i] = l_adj[i].size();
+			}
+
+			rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
+
+			if (rev_topological_order.size() == n) {
+				break;
+			}
+		}
+		if (rev_topological_order.size() < n) {
+			return {"HAS_CYCLE"};
+		}
+	}
+
+	std::vector<std::string> assembled_sequences;
+	std::vector<bool> used(n);
+	while (true) {
+		// compute longest paths
+		std::vector<int> best_scores(n);
+		std::vector<edge_t> best_edges(n);
+		for (int i : rev_topological_order) {
+			if (used[i]) continue;
+			if (best_scores[i] == 0 && !path_permissions[i].can_end_path) continue; // sink and cannot end path => discard
+			for (edge_t& e : l_adj_rev[i]) {
+				if (best_scores[e.next] < e.score + best_scores[i]) {
+					best_scores[e.next] = e.score + best_scores[i];
+					best_edges[e.next] = {i, e.score, e.overlap};
+				}
+			}
+		}
+
+		int best_score = 0, curr_vertex = 0;
+		for (int i = 0; i < best_scores.size(); i++) {
+			if (path_permissions[i].can_start_path && best_score < best_scores[i]) {
+				best_score = best_scores[i];
+				curr_vertex = i;
+			}
+		}
+		if (best_score == 0) break;
+
+		std::string assembled_sequence = read_seqs[curr_vertex];
+		std::vector<std::string> used_reads; // track reads used to build this contig, so that we can use them for correction
+		used_reads.push_back(read_seqs[curr_vertex]);
+		while (best_edges[curr_vertex].overlap) {
+			used[curr_vertex] = true;
+			int overlap = best_edges[curr_vertex].overlap;
+			curr_vertex = best_edges[curr_vertex].next;
+			assembled_sequence += read_seqs[curr_vertex].substr(overlap);
+			used_reads.push_back(read_seqs[curr_vertex]);
+		}
+		used[curr_vertex] = true;
+		correct_contig(assembled_sequence, used_reads, harsh_aligner, config);
+		assembled_sequences.push_back(assembled_sequence);
+	}
+
+	return assembled_sequences;
+}
+
 std::vector<std::string> generate_reference_guided_consensus(std::string reference, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
-		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config) {
+		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
 
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment aln;
@@ -246,7 +386,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	int l_bp_in_seq = r_cluster->end()-r_cluster->start(), r_bp_in_seq = reference.length()-(l_cluster->end()-l_cluster->start());
 
 	// try scaffolding using rejected reads
-	std::stringstream ss_graph;
 	std::vector<seq_w_pp_t> rejected_alns_lf, rejected_alns_is, rejected_alns_rf;
 	for (auto& e : _rejected_alns_lf) rejected_alns_lf.push_back({e.first, true, true});
 	for (auto& e : _rejected_alns_is) rejected_alns_is.push_back({e.first, true, true});
@@ -254,7 +393,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	std::vector<char> rejected_alns_lf_clipped(rejected_alns_lf.size(), 'N'), rejected_alns_is_clipped(rejected_alns_is.size(), 'N'),
 			rejected_alns_rf_clipped(rejected_alns_rf.size(), 'N');
 	std::vector<std::string> scaffolds = assemble_reads(rejected_alns_lf, rejected_alns_is, rejected_alns_rf,
-			harsh_aligner, config, ss_graph);
+			harsh_aligner, config, stats);
 
 	for (std::string a : assembled_sequences) {
 		aligner.Align(a.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
@@ -334,166 +473,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 
 	if (!scaffolding_failed) scaffolded_seqs_alns.swap(consensus_contigs_alns);
 	return scaffolding_failed ? retained_assembled_sequences : scaffolded_sequences;
-}
-
-void build_graph(std::vector<std::string>& read_seqs, std::vector<int>& order, std::vector<int>& out_edges,
-		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev,
-		int max_mismatches, int min_overlap, std::stringstream& ss_graph) {
-
-	int n = read_seqs.size();
-
-	for (int i = 0; i < n; i++) {
-		for (int j = i+1; j < n; j++) {
-			std::string& s1 = read_seqs[i];
-			std::string& s2 = read_seqs[j];
-
-			int max_overlap = std::min(s1.length(), s2.length())-1;
-			inss_suffix_prefix_aln_t spa1 = inss_aln_suffix_prefix(s1, s2, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
-			bool spa1_homopolymer = is_homopolymer(s2.c_str(), spa1.overlap);
-			inss_suffix_prefix_aln_t spa2 = inss_aln_suffix_prefix(s2, s1, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
-			bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
-			if (spa1.overlap && spa2.overlap) {
-				if (spa1.score >= spa2.score && order[i] <= order[j]) {
-					ss_graph << i << " -> " << j << " " << spa1.score << " " << spa1.overlap << " " << spa1_homopolymer << std::endl;
-					if (!spa1_homopolymer) {
-						out_edges[i]++;
-						l_adj[i].push_back({j, spa1.score, spa1.overlap});
-						l_adj_rev[j].push_back({i, spa1.score, spa1.overlap});
-					}
-				} else if (spa1.score < spa2.score && order[j] <= order[i]) {
-					ss_graph << j << " -> " << i << " " << spa2.score << " " << spa2.overlap << " " << spa2_homopolymer << std::endl;
-					if (!spa2_homopolymer) {
-						out_edges[j]++;
-						l_adj[j].push_back({i, spa2.score, spa2.overlap});
-						l_adj_rev[i].push_back({j, spa2.score, spa2.overlap});
-					}
-				}
-			} else if (spa1.overlap && order[i] <= order[j]) {
-				ss_graph << i << " -> " << j << " " << spa1.score << " " << spa1.overlap << " " << spa1_homopolymer << std::endl;
-				if (!spa1_homopolymer) {
-					out_edges[i]++;
-					l_adj[i].push_back({j, spa1.score, spa1.overlap});
-					l_adj_rev[j].push_back({i, spa1.score, spa1.overlap});
-				}
-			} else if (spa2.overlap && order[j] <= order[i]) {
-				ss_graph << j << " -> " << i << " " << spa2.score << " " << spa2.overlap << " " << spa2_homopolymer << std::endl;
-				if (!spa2_homopolymer) {
-					out_edges[j]++;
-					l_adj[j].push_back({i, spa2.score, spa2.overlap});
-					l_adj_rev[i].push_back({j, spa2.score, spa2.overlap});
-				}
-			}
-		}
-	} ss_graph << std::endl;
-}
-
-std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_read_seqs, std::vector<seq_w_pp_t>& unstable_read_seqs,
-		std::vector<seq_w_pp_t>& right_stable_read_seqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, std::stringstream& ss_graph) {
-
-	std::vector<std::string> read_seqs;
-	std::vector<path_permission_t> path_permissions;
-	std::vector<int> order;
-	for (seq_w_pp_t& s : left_stable_read_seqs) {
-		read_seqs.push_back(s.seq);
-		path_permissions.push_back(s.clip_pair);
-		order.push_back(1);
-	}
-	for (seq_w_pp_t& s : unstable_read_seqs) {
-		read_seqs.push_back(s.seq);
-		path_permissions.push_back(s.clip_pair);
-		order.push_back(2);
-	}
-	for (seq_w_pp_t& s : right_stable_read_seqs) {
-		read_seqs.push_back(s.seq);
-		path_permissions.push_back(s.clip_pair);
-		order.push_back(3);
-	}
-
-	int n = read_seqs.size();
-	std::vector<int> out_edges(n);
-	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-
-	for (int i = 0; i < n; i++) {
-		ss_graph << i << " " << read_seqs[i] << " " << order[i] << std::endl;
-	} ss_graph << std::endl;
-
-	build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 1, config.min_clip_len, ss_graph);
-
-	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
-
-	if (rev_topological_order.size() < n) {
-		build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 0.0, config.min_clip_len, ss_graph);
-
-		int min_overlap = config.min_clip_len;
-		for (; min_overlap <= stats.read_len/2; min_overlap += 10) {
-			ss_graph << "HAS A CYCLE, TRYING NO MISMATCHES AND min_overlap = " << min_overlap << std::endl;
-
-			for (int i = 0; i < n; i++) {
-				l_adj[i].erase(std::remove_if(l_adj[i].begin(), l_adj[i].end(),
-						[&min_overlap](edge_t& e) { return e.overlap < min_overlap; }), l_adj[i].end());
-				l_adj_rev[i].erase(std::remove_if(l_adj_rev[i].begin(), l_adj_rev[i].end(),
-						[&min_overlap](edge_t& e) { return e.overlap < min_overlap; }), l_adj_rev[i].end());
-				out_edges[i] = l_adj[i].size();
-			}
-
-			rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
-
-			if (rev_topological_order.size() == n) {
-				ss_graph << "CYCLE DISAPPEARED!" << std::endl;
-				break;
-			}
-		}
-		if (rev_topological_order.size() < n) {
-			return {"HAS_CYCLE"};
-		}
-	}
-
-	std::vector<std::string> assembled_sequences;
-	std::vector<bool> used(n);
-	while (true) {
-		// compute longest paths
-		std::vector<int> best_scores(n);
-		std::vector<edge_t> best_edges(n);
-		for (int i : rev_topological_order) {
-			if (used[i]) continue;
-			if (best_scores[i] == 0 && !path_permissions[i].can_end_path) continue; // sink and cannot end path => discard
-			for (edge_t& e : l_adj_rev[i]) {
-				if (best_scores[e.next] < e.score + best_scores[i]) {
-					best_scores[e.next] = e.score + best_scores[i];
-					best_edges[e.next] = {i, e.score, e.overlap};
-				}
-			}
-		}
-
-		int best_score = 0, curr_vertex = 0;
-		for (int i = 0; i < best_scores.size(); i++) {
-			if (path_permissions[i].can_start_path && best_score < best_scores[i]) {
-				best_score = best_scores[i];
-				curr_vertex = i;
-			}
-		}
-		if (best_score == 0) break;
-
-		std::string assembled_sequence = read_seqs[curr_vertex];
-		std::vector<std::string> used_reads; // track reads used to build this contig, so that we can use them for correction
-		used_reads.push_back(read_seqs[curr_vertex]);
-		while (best_edges[curr_vertex].overlap) {
-			ss_graph << curr_vertex << " -> " << best_edges[curr_vertex].next << " , " << best_edges[curr_vertex].overlap << " ";
-			ss_graph << read_seqs[curr_vertex] << std::endl;
-			used[curr_vertex] = true;
-			int overlap = best_edges[curr_vertex].overlap;
-			curr_vertex = best_edges[curr_vertex].next;
-			assembled_sequence += read_seqs[curr_vertex].substr(overlap);
-			used_reads.push_back(read_seqs[curr_vertex]);
-		}
-		used[curr_vertex] = true;
-		correct_contig(assembled_sequence, used_reads, harsh_aligner, config);
-		assembled_sequences.push_back(assembled_sequence);
-		ss_graph << "-> " << read_seqs[curr_vertex] << std::endl;
-		ss_graph << assembled_sequence << std::endl << std::endl;
-	}
-
-	return assembled_sequences;
 }
 
 std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> remap_assembled_sequence(
@@ -604,7 +583,7 @@ std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> rema
 }
 
 std::vector<std::string> assemble_sequences(std::string contig_name, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
-		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config) {
+		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
 	if (r_cluster->clip_cluster) left_stable_read_seqs.push_back({r_cluster->clip_cluster->full_seq, true, false});
@@ -653,9 +632,8 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 
 	if (unstable_read_seqs.size() + left_stable_read_seqs.size() + right_stable_read_seqs.size() >= TOO_MANY_READS) return {"TOO_MANY_READS"};
 
-	std::stringstream ss_graph;
 	std::vector<std::string> assembled_sequences = assemble_reads(left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs,
-			harsh_aligner, config, ss_graph);
+			harsh_aligner, config, stats);
 
 	return assembled_sequences;
 }
@@ -664,9 +642,9 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
-		std::vector<bam1_t*>& assembled_reads, config_t& config) {
+		std::vector<bam1_t*>& assembled_reads, config_t& config, stats_t& stats) {
 
-	std::vector<std::string> assembled_sequences = assemble_sequences(contig_name, r_cluster, l_cluster, mateseqs, harsh_aligner, config);
+	std::vector<std::string> assembled_sequences = assemble_sequences(contig_name, r_cluster, l_cluster, mateseqs, harsh_aligner, config, stats);
 
 	std::string ins_full_id = "NO_ID";
 	if (assembled_sequences.empty()) {
@@ -760,7 +738,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
+		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			ins->r_disc_pairs++;
 			ins->rc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
@@ -776,7 +754,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		std::string mate_qual = get_mate_qual(read, matequals);
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
-		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.get_min_avg_base_qual())) {
+		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			ins->l_disc_pairs++;
 			ins->lc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
@@ -806,7 +784,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		std::string qual_ascii = get_qual_ascii(read, true);
 		qual_ascii = std::string(qual_ascii.rbegin(), qual_ascii.rend());
 		if (inss_overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
-				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.get_min_avg_base_qual())) {
+				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
 			ins->r_disc_pairs++;
 			assembled_reads.push_back(bam_dup1(read));
 		}
@@ -817,7 +795,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, inss_chr_seqs_map
 		harsh_aligner.Align(read_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		std::string qual_ascii = get_qual_ascii(read, true);
 		if (inss_overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
-				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.get_min_avg_base_qual())) {
+				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
 			ins->l_disc_pairs++;
 			assembled_reads.push_back(bam_dup1(read));
 		}

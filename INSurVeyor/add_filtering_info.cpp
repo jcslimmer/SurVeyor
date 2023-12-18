@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <numeric>
 
-#include "htslib/sam.h"
+#include <htslib/sam.h>
 #include "htslib/faidx.h"
 #include "cluster.h"
 #include "../libs/cptl_stl.h"
@@ -14,7 +14,7 @@ std::string workdir;
 std::mutex mtx;
 
 config_t config;
-inss_stats_t stats;
+stats_t stats;
 inss_contig_map_t contig_map;
 
 int MAX_READ_IS;
@@ -61,7 +61,7 @@ void find_spanning(int id, inss_insertion_t* insertion, std::string bam_fname, s
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read) || !(read->core.flag & BAM_FPROPER_PAIR)) continue;
         if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) continue;
-        if (avg_qual(read) < stats.get_min_avg_base_qual()) continue;
+        if (avg_qual(read) < stats.min_avg_base_qual) continue;
 
         if (read->core.isize > 0) {
 			int pair_start = read->core.pos+stats.read_len/2, pair_end = get_mate_endpos(read)-stats.read_len/2;
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
 
     config.parse(workdir + "/config.txt");
     contig_map.parse(workdir);
-    stats.parse_stats(workdir + "/stats.txt", config.per_contig_stats);
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     std::vector<std::pair<inss_insertion_t*, bcf1_t*> > assembled_insertions, transurveyor_insertions;
 

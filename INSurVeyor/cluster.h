@@ -32,7 +32,7 @@ struct anchor_t {
         }
     }
 
-    static bool can_merge(anchor_t& a1, anchor_t& a2, config_t& config, inss_stats_t& stats) {
+    static bool can_merge(anchor_t& a1, anchor_t& a2, config_t& config, stats_t& stats) {
         if (a1.sc_reads() > 0 && !check_clipped(a1, a2, config)) return false;
         if (a2.sc_reads() > 0 && !check_clipped(a2, a1, config)) return false;
         return distance(a1, a2) <= stats.max_is;
@@ -74,7 +74,7 @@ struct cluster_t {
         this->dead = c->dead;
     }
 
-    static bool can_merge(cluster_t* c1, cluster_t* c2, config_t& config, inss_stats_t& stats) {
+    static bool can_merge(cluster_t* c1, cluster_t* c2, config_t& config, stats_t& stats) {
         return anchor_t::can_merge(c1->a1, c2->a1, config, stats) && anchor_t::can_merge(c1->a2, c2->a2, config, stats);
     }
     static int distance(cluster_t* c1, cluster_t* c2) {

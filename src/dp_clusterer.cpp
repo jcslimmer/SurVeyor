@@ -21,8 +21,6 @@ std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
 std::unordered_map<std::string, std::vector<sv_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
 std::mutex maps_mtx;
 
-int max_cluster_size, min_cluster_size;
-
 struct cluster_t {
 	hts_pos_t la_start, la_end, ra_start, ra_end;
 	int count = 1, confident_count = 0;
@@ -89,7 +87,7 @@ struct cc_pair {
 };
 bool operator < (const cc_pair& cc1, const cc_pair& cc2) { return cc1.dist > cc2.dist; }
 
-void cluster_clusters(std::vector<cluster_t*>& clusters) {
+void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, int max_cluster_size) {
 	std::sort(clusters.begin(), clusters.end(), [](cluster_t* c1, cluster_t* c2) {
 		return std::make_tuple(c1->la_start, c1->la_end, c1->ra_start, c1->ra_end) < std::make_tuple(c2->la_start, c2->la_end, c2->ra_start, c2->ra_end);
 	});
@@ -156,6 +154,10 @@ void cluster_clusters(std::vector<cluster_t*>& clusters) {
 	}
 	kd_free(kd_tree_endpoints);
 
+	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](cluster_t* c) {
+		return c->count < min_cluster_size;
+	}), clusters.end());
+
 	std::sort(clusters.begin(), clusters.end());
 }
 
@@ -181,8 +183,11 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	}
 	close_samFile(dp_bam_file);
 
-	if (!lp_clusters.empty()) cluster_clusters(lp_clusters);
-	if (!ow_clusters.empty()) cluster_clusters(ow_clusters);
+	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
+	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
+
+	if (!lp_clusters.empty()) cluster_clusters(lp_clusters, min_cluster_size, max_cluster_size);
+	if (!ow_clusters.empty()) cluster_clusters(ow_clusters, min_cluster_size, max_cluster_size);
 
 	// set leftmost_rseq
 	std::unordered_map<std::string, cluster_t*> mateseqs_to_retrieve;
@@ -204,7 +209,7 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 	
 	std::vector<deletion_t*> deletions;
 	for (cluster_t* c : lp_clusters) {
-		if (c->used || c->count < min_cluster_size || c->max_mapq < 0) continue;
+		if (c->used) continue;
 
 		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->rightmost_lseq, 0, 0, 0, 0, 0, 0);
 		consensus_t* lc_consensus = new consensus_t(false, 0, c->ra_start, 0, c->leftmost_rseq, 0, 0, 0, 0, 0, 0);
@@ -292,9 +297,7 @@ int main(int argc, char* argv[]) {
     contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
 
-	stats.parse(workdir + "/stats.txt");
-	min_cluster_size = std::max(3, int(stats.median_depth+5)/10);
-	max_cluster_size = (stats.max_depth * stats.max_is)/stats.read_len;
+	stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
 	chr_seqs.read_fasta_into_map(reference_fname);
 
