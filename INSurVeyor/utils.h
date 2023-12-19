@@ -14,6 +14,7 @@
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "../src/utils.h"
+#include "../src/simd_macros.h"
 
 struct inss_suffix_prefix_aln_t {
     int overlap, score, mismatches;
@@ -21,29 +22,23 @@ struct inss_suffix_prefix_aln_t {
     inss_suffix_prefix_aln_t(int overlap, int score, int mismatches) : overlap(overlap), score(score), mismatches(mismatches) {}
 };
 
-
-int popcnt(uint32_t x) {
-    x = x - ((x >> 1) & 0x55555555);
-    x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
-    return (((x + (x >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
-}
-
-int number_of_mismatches_SIMD(const char* s1, const char* s2, int len) {
-    // count number of mismatches between the first len characters of s1 and s2 using SIMD instructions
-    int n_mismatches = 0;
-    __m128i* s1_128 = (__m128i*) s1;
-    __m128i* s2_128 = (__m128i*) s2;
-    int n_128 = len/16;
-    for (int i = 0; i < n_128; i++) {
-        __m128i cmp = _mm_cmpeq_epi8(_mm_loadu_si128(s1_128), _mm_loadu_si128(s2_128));
-        n_mismatches += 16-popcnt(_mm_movemask_epi8(cmp));
-        s1_128++;
-        s2_128++;
+int number_of_mismatches_fast(const char* s1, const char* s2, int len) {
+    // count number of mismatches between the first len characters of s1 and s2
+    int n_matches = 0;
+    SIMD_INT* s1_it = (SIMD_INT*) s1;
+    SIMD_INT* s2_it = (SIMD_INT*) s2;
+    int scaled_len = len/BYTES_PER_BLOCK;
+    for (int i = 0; i < scaled_len; i++) {
+        SIMD_INT n1 = LOADU_INT(s1_it);
+        SIMD_INT n2 = LOADU_INT(s2_it);
+        n_matches += COUNT_EQUAL_BYTES(n1, n2);
+        s1_it++;
+        s2_it++;
     }
-    for (int i = n_128*16; i < len; i++) {
-        if (s1[i] != s2[i]) n_mismatches++;
+    for (int i = scaled_len*BYTES_PER_BLOCK; i < len; i++) {
+        if (s1[i] == s2[i]) n_matches++;
     }
-    return n_mismatches;
+    return len-n_matches;
 }
 
 // Finds the best alignment between a suffix of s1 and a prefix of s2
@@ -54,20 +49,12 @@ inss_suffix_prefix_aln_t inss_aln_suffix_prefix(std::string& s1, std::string& s2
     int overlap = 0;
 
     for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
-        if (i+s2.length() < s1.length()) continue;
+        if (i+s2.length() < s1.length()) continue;  
 
         int sp_len = s1.length()-i;
         if (best_score >= sp_len*match_score) break; // current best score is unbeatable
 
-        const char* s1_suffix = s1.data()+i;
-        const char* s2_prefix = s2.data();
-        int mismatches = 0;
-//        mismatches = number_of_mismatches_SIMD(s1.data()+i, s2.data(), sp_len);
-        while (*s1_suffix) {
-            if (*s1_suffix != *s2_prefix) mismatches++;
-            s1_suffix++; s2_prefix++;
-        }
-
+        int mismatches = number_of_mismatches_fast(s1.data()+i, s2.data(), sp_len);
         int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
 
         int max_acceptable_mm = max_seq_error == 0.0 ? 0 : std::max(1.0, sp_len*max_seq_error);
@@ -78,14 +65,6 @@ inss_suffix_prefix_aln_t inss_aln_suffix_prefix(std::string& s1, std::string& s2
         }
     }
     return inss_suffix_prefix_aln_t(overlap, best_score, best_aln_mismatches);
-}
-
-int inss_max_pos(int* a, int n) {
-	int pos = 0;
-	for (int i = 1; i < n; i++) {
-		if (a[i] > a[pos]) pos = i;
-	}
-	return pos;
 }
 
 struct inss_insertion_t {

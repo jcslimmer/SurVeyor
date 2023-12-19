@@ -35,8 +35,6 @@ int* smith_waterman_gotoh(const char* ref, int ref_len, const char* read, int re
 
 	const int INF = 1000000;
 
-	const int BYTES_PER_BLOCK = INT_PER_BLOCK * 4;
-
 	// turn read_len+1 into a multiple of INT_PER_BLOCK
 	int read_len_rounded = (read_len+1+INT_PER_BLOCK-1)/INT_PER_BLOCK*INT_PER_BLOCK;
 
@@ -126,7 +124,7 @@ int* smith_waterman_gotoh(const char* ref, int ref_len, const char* read, int re
 		int j = 0;
 		for (; j < read_len_rounded; j += INT_PER_BLOCK) {
 			SIMD_INT H_curr_v = LOAD_INT((SIMD_INT*)&H_curr[j]);
-			auto cmp = CMP_INT(H_curr_v, gap_open_v_pos);
+			auto cmp = CMP_GT_INT32(H_curr_v, gap_open_v_pos);
 			if (cmp) break;
 			STORE_INT((SIMD_INT*)&F_curr[j], zero_v);
 		}
@@ -249,7 +247,8 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
     int overlap = 0;
 
     for (int i = std::max(0, (int) s1.length()-max_overlap); i < s1.length()-min_overlap+1; i++) {
-        if (i+s2.length() < s1.length()) continue;
+        if (i+s2.length() < s1.length()) continue;	// this means that the suffix of s1 I am considering is larger than the the whole s2,
+                                                    // therefore it wouldn't be a suffix-prefix alignment   
 
         int sp_len = s1.length()-i;
         if (best_score >= sp_len*match_score) break; // current best score is unbeatable
