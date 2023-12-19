@@ -7,7 +7,7 @@
     #define USE_AVX512
   #elif defined(__AVX2__)
     #define USE_AVX2
-  #elif defined(__SSE4_1__)
+  #elif defined(__SSE4_2__)
     #define USE_SSE
   #else
     #define USE_SCALAR

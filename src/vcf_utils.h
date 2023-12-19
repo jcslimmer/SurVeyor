@@ -301,8 +301,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
 	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
 	char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
-	sprintf(split_junction_cigar, "%s,%s", sv->left_anchor_aln->cigar.c_str(), sv->right_anchor_aln->cigar.c_str());
-	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", split_junction_cigar);
+	std::stringstream ss;
+	ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
+	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
 	std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
 	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
 

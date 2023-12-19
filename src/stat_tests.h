@@ -386,9 +386,9 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				if (est_size > range_end-range_start || est_size < min_sv_size) continue; // estimated size is grossly off - ignore
 
 				std::vector<int> depth_by_base(range_end-range_start+1);
-				char region[1000];
-				sprintf(region, "%s:%d-%d", contig_name.c_str(), (int) range_start, (int) range_end);
-				iter = sam_itr_querys(bam_file->idx, bam_file->header, region);
+				std::stringstream ss;
+				ss << contig_name << ":" << range_start << "-" << range_end;
+				iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
 				while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 					if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read) || read->core.qual < 0) continue;
 					if (!is_samechr(read) || is_samestr(read) || read->core.isize < -stats.max_is || read->core.isize > stats.max_is) continue;

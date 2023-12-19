@@ -41,8 +41,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	// add FILTER
 	char size_flt_tag[1000];
-	sprintf(size_flt_tag, "##FILTER=<ID=SMALL,Description=\"Insertion smaller than %d bp.\">", config.min_sv_size);
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
+	std::stringstream ss;
+	ss << "##FILTER=<ID=SMALL,Description=\"Insertion smaller than " << config.min_sv_size << " bp.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ss.str().c_str(), &len));
 
 	const char* anomalous_sc_flt_tag = "##FILTER=<ID=ANOMALOUS_SC_NUMBER,Description=\"The number of soft-clipped reads supporting this call is too large.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_sc_flt_tag, &len));
