@@ -14,7 +14,7 @@
 #include <htslib/kseq.h>
 
 #include "dc_remapper.h"
-#include "sam_utils.h"
+#include "../src/sam_utils.h"
 #include "utils.h"
 #include "vcf_utils.h"
 #include "assemble.h"
@@ -518,7 +518,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	// However, because of the duplicated suffix/prefix, a small insertion is predicted
 	std::string left_flanking_str = left_flanking, pred_ins_seq_str = pred_ins_seq, right_flanking_str = right_flanking;
 
-	inss_suffix_prefix_aln_t spa12 = inss_aln_suffix_prefix(left_flanking_str, pred_ins_seq_str, 1, -4, 1.0, config.min_clip_len);
+	suffix_prefix_aln_t spa12 = aln_suffix_prefix(left_flanking_str, pred_ins_seq_str, 1, -4, 1.0, config.min_clip_len);
 	int overlap12 = spa12.overlap;
 	if (!overlap12) {
 		StripedSmithWaterman::Alignment aln;
@@ -527,7 +527,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 		if (aln.query_begin == 0 && aln.ref_end == left_flanking_str.length()-1) overlap12 = aln.query_end;
 	}
 
-	inss_suffix_prefix_aln_t spa23 = inss_aln_suffix_prefix(pred_ins_seq_str, right_flanking_str, 1, -4, 1.0, config.min_clip_len);
+	suffix_prefix_aln_t spa23 = aln_suffix_prefix(pred_ins_seq_str, right_flanking_str, 1, -4, 1.0, config.min_clip_len);
 	int overlap23 = spa23.overlap;
 	if (!overlap23) {
 		StripedSmithWaterman::Alignment aln;
@@ -1064,7 +1064,7 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
 }
 
 bool is_semi_mapped(bam1_t* read) {
-	return is_proper_pair(read) && !is_mate_clipped(read);
+	return is_proper_pair(read, stats.max_is) && !is_mate_clipped(read);
 }
 
 void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads_cluster_t*>& r_clusters, std::vector<reads_cluster_t*>& l_clusters) {

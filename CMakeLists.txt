@@ -11,14 +11,16 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 add_definitions(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+set(CMAKE_OSX_ARCHITECTURES "x86_64")
+
 include_directories(htslib-1.18)
 include_directories(htslib-1.18/include)
 
 add_executable(normalise utils/normalise.cpp)
 
 add_executable(insurveyor_dc_remapper libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/dc_remapper.cpp)
-add_executable(insurveyor_add_filtering_info INSurVeyor/add_filtering_info.cpp)
-add_executable(insurveyor_filter INSurVeyor/filter.cpp)
+add_executable(insurveyor_add_filtering_info libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/add_filtering_info.cpp)
+add_executable(insurveyor_filter libs/ssw.c libs/ssw_cpp.cpp INSurVeyor/filter.cpp)
 
 add_executable(reads_categorizer src/reads_categorizer.cpp)
 add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)

@@ -195,6 +195,9 @@ bool is_homopolymer(const char* seq, int len) {
 	}
 	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
 }
+bool is_homopolymer(std::string seq) {
+	return is_homopolymer(seq.data(), seq.length());
+}
 
 void to_uppercase(char* s) {
     for (int i = 0; s[i] != '\0'; i++) {

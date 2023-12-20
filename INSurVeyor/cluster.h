@@ -4,7 +4,7 @@
 #include <iostream>
 #include <atomic>
 
-#include "sam_utils.h"
+#include "../src/sam_utils.h"
 #include "utils.h"
 #include "htslib/sam.h"
 

@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 
 #include "htslib/sam.h"
 #include "utils.h"
@@ -31,6 +32,13 @@ bool is_outward(bam1_t* r) {
 bool is_long(bam1_t* r, int max_is) {
 	return is_samechr(r) && ((!bam_is_rev(r) && r->core.isize > max_is) || (bam_is_rev(r) && r->core.isize < -max_is));
 }
+bool is_proper_pair(bam1_t* r, int max_is) {
+	return is_primary(r) && is_samechr(r) && !is_samestr(r) && !is_dc_pair(r) && !is_outward(r) && !is_long(r, max_is);
+}
+
+int get_endpoint(bam1_t* r) {
+    return bam_is_rev(r) ? r->core.pos : bam_endpos(r);
+}
 
 int get_left_clip_size(bam1_t* r) {
     uint32_t* cigar = bam_get_cigar(r);
@@ -49,19 +57,16 @@ bool is_right_clipped(bam1_t* r, int min_clip_len) {
     return get_right_clip_size(r) >= min_clip_len;
 }
 
-bool is_mate_left_clipped(bam1_t* r, int min_clip_len = 0) {
+bool is_mate_left_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (mc_tag == NULL) {
         throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
     }
     char* mc_tag_str = bam_aux2Z(mc_tag);
-    int i = 0, n = 0;
-    while (mc_tag_str[i] >= '0' && mc_tag_str[i] <= '9') {
-    	n = n*10 + mc_tag_str[i]-'0';
-    	i++;
-    }
-    return mc_tag_str[i] == 'S' && n >= min_clip_len;
+    int i = 0;
+    while (mc_tag_str[i] >= '0' && mc_tag_str[i] <= '9') i++;
+    return mc_tag_str[i] == 'S';
 }
 bool is_mate_right_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
@@ -72,6 +77,9 @@ bool is_mate_right_clipped(bam1_t* r) {
     char* mc_tag_str = bam_aux2Z(mc_tag);
     int i = strlen(mc_tag_str)-1;
     return mc_tag_str[i] == 'S';
+}
+bool is_mate_clipped(bam1_t* r) {
+	return is_mate_left_clipped(r) && is_mate_right_clipped(r);
 }
 
 bool is_hidden_split_read(bam1_t* r, config_t config) {
@@ -188,6 +196,11 @@ double avg_qual(bam1_t* read) {
 	}
 	return avg_qual/read->core.l_qseq;
 }
+double avg_qual(std::string& qual_ascii, int offset = 33) {
+	double tot = 0;
+	for (char c : qual_ascii) tot += int(c)-offset;
+	return tot/qual_ascii.length();
+}
 
 int get_aligned_portion_len(bam1_t* read) {
     return read->core.l_qseq - get_left_clip_size(read) - get_right_clip_size(read);
@@ -211,11 +224,40 @@ char* get_sequence_cstr(bam1_t* r, bool fastq_seq = false) {
 
 samFile* open_writer(std::string filename, bam_hdr_t* header) {
     samFile* writer = sam_open(filename.c_str(), "wb");
+    if (writer == NULL) {
+        throw "Unable to open " + filename;
+    }
     if (sam_hdr_write(writer, header) != 0) {
         throw "Could not write file " + filename;
     }
     return writer;
 }
+
+void write_and_index_file(std::vector<bam1_t*>& reads, std::string path, bam_hdr_t* header) {
+    samFile* file = open_writer(path, header);
+    if (file == NULL) {
+        throw "Unable to open " + path;
+    }
+
+    // write reads
+    std::sort(reads.begin(), reads.end(), [](bam1_t *r1, bam1_t *r2) { return r1->core.pos < r2->core.pos; });
+    for (bam1_t* r : reads) {
+        int ok = sam_write1(file, header, r);
+        if (ok < 0) throw "Unable to write to " + path;
+    }
+
+    sam_close(file);
+
+    file = sam_open(path.c_str(), "r");
+
+    int code = sam_index_build(path.c_str(), 0);
+    if (code != 0) {
+        throw "Cannot index " + path;
+    }
+
+    sam_close(file);
+}
+
 
 struct open_samFile_t {
     samFile* file;
@@ -256,10 +298,12 @@ open_samFile_t* open_samFile(std::string fname_str, bool index_file = false) {
 }
 
 void close_samFile(open_samFile_t* f) {
-    hts_idx_destroy(f->idx);
-    bam_hdr_destroy(f->header);
-    sam_close(f->file);
-    delete f;
+    if (f) {
+        hts_idx_destroy(f->idx);
+        bam_hdr_destroy(f->header);
+        sam_close(f->file);
+        delete f;
+    }
 }
 
 struct bam_redux_t {

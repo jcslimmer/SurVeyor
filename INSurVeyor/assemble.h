@@ -64,7 +64,7 @@ void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWater
 
 	for (int i = 0; i < alns.size(); i++) {
 		for (int j = i+1; j < alns.size() && alns[i].second.ref_end-alns[j].second.ref_begin >= config.min_clip_len; j++) {
-			inss_suffix_prefix_aln_t spa = inss_aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
 			if (spa.overlap) {
 				out_edges[i]++;
 				l_adj[i].push_back({j, spa.score, spa.overlap});
@@ -78,8 +78,8 @@ void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWater
 	// 2 - in regular assembly, we only report contigs made of at last 2 reads. Here we report even single reads
 }
 
-bool accept(const StripedSmithWaterman::Alignment& aln, int min_clip_len, double max_seq_error = 1.0, std::string qual_ascii = "", int min_avg_base_qual = 0) {
-	int lc_size = inss_get_left_clip_size(aln), rc_size = inss_get_right_clip_size(aln);
+bool accept(StripedSmithWaterman::Alignment& aln, int min_clip_len, double max_seq_error = 1.0, std::string qual_ascii = "", int min_avg_base_qual = 0) {
+	int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
 
 	bool lc_is_noise = false, rc_is_noise = false;
 	if (!qual_ascii.empty()) {
@@ -149,9 +149,9 @@ void build_graph(std::vector<std::string>& read_seqs, std::vector<int>& order, s
 			std::string& s2 = read_seqs[j];
 
 			int max_overlap = std::min(s1.length(), s2.length())-1;
-			inss_suffix_prefix_aln_t spa1 = inss_aln_suffix_prefix(s1, s2, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
+			suffix_prefix_aln_t spa1 = aln_suffix_prefix(s1, s2, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
 			bool spa1_homopolymer = is_homopolymer(s2.c_str(), spa1.overlap);
-			inss_suffix_prefix_aln_t spa2 = inss_aln_suffix_prefix(s2, s1, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
+			suffix_prefix_aln_t spa2 = aln_suffix_prefix(s2, s1, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
 			bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
 			if (spa1.overlap && spa2.overlap) {
 				if (spa1.score >= spa2.score && order[i] <= order[j]) {
@@ -420,8 +420,8 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		for (int j = 0; j < contigs_sorted_by_pos.size()-1; j++) {
 			if (linked[j] >= 0) continue;
 
-			inss_suffix_prefix_aln_t spa1 = inss_aln_suffix_prefix(contigs_sorted_by_pos[j].first, scaffold, 1, -4, config.max_seq_error, config.min_clip_len);
-			inss_suffix_prefix_aln_t spa2 = inss_aln_suffix_prefix(scaffold, contigs_sorted_by_pos[j+1].first, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa1 = aln_suffix_prefix(contigs_sorted_by_pos[j].first, scaffold, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa2 = aln_suffix_prefix(scaffold, contigs_sorted_by_pos[j+1].first, 1, -4, config.max_seq_error, config.min_clip_len);
 			if (spa1.overlap && spa2.overlap && best_link_w < spa1.score+spa2.score) {
 				best_link = j, best_link_w = spa1.score+spa2.score;
 				best_link_overlap = {spa1.overlap, spa2.overlap};
@@ -592,7 +592,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		rc(mate_seq);
 		if (!used_ls.count(seq)) {
-			left_stable_read_seqs.push_back({seq, !is_left_clipped(read, 0), true});
+			left_stable_read_seqs.push_back({seq, !is_left_clipped(read, 1), true});
 			used_ls.insert(seq);
 		}
 		if (!used_us.count(mate_seq)) {
@@ -604,7 +604,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 		std::string seq = get_sequence(read);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		if (!used_rs.count(seq)) {
-			right_stable_read_seqs.push_back({seq, true, !is_right_clipped(read, 0)});
+			right_stable_read_seqs.push_back({seq, true, !is_right_clipped(read, 1)});
 			used_rs.insert(seq);
 		}
 		if (!used_us.count(mate_seq)) {
@@ -618,14 +618,14 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 		std::string read_seq = get_sequence(read, true);
 		rc(read_seq);
 		if (!used_us.count(read_seq)) {
-			unstable_read_seqs.push_back({read_seq, !is_left_clipped(read, 0), !is_right_clipped(read, 0)});
+			unstable_read_seqs.push_back({read_seq, !is_left_clipped(read, 1), !is_right_clipped(read, 1)});
 			used_us.insert(read_seq);
 		}
 	}
 	for (bam1_t* read : l_cluster->semi_mapped_reads) {
 		std::string read_seq = get_sequence(read, true);
 		if (!used_us.count(read_seq)) {
-			unstable_read_seqs.push_back({read_seq, !is_left_clipped(read, 0), !is_right_clipped(read, 0)});
+			unstable_read_seqs.push_back({read_seq, !is_left_clipped(read, 1), !is_right_clipped(read, 1)});
 			used_us.insert(read_seq);
 		}
 	}
