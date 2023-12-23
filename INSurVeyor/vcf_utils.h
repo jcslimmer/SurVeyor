@@ -257,27 +257,27 @@ std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 
 void insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, chr_seqs_map_t& contigs) {
 	bcf_clear(bcf_entry);
-	bcf_entry->rid = bcf_hdr_name2id(hdr, insertion->chr.c_str());
-	bcf_entry->pos = insertion->start;
+	bcf_entry->rid = bcf_hdr_name2id(hdr, insertion->ins->chr.c_str());
+	bcf_entry->pos = insertion->ins->start;
 	bcf_update_id(hdr, bcf_entry, id.c_str());
 
-	std::string alleles = std::string(1, contigs.get_seq(insertion->chr)[insertion->start]) + ",<INS>";
+	std::string alleles = std::string(1, contigs.get_seq(insertion->ins->chr)[insertion->ins->start]) + ",<INS>";
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	int int_conv; // current htslib does not support writing int64 yet
 
-	int_conv = insertion->end+1;
+	int_conv = insertion->ins->end+1;
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", "INS");
-	if (insertion->ins_seq.find("-") == std::string::npos) {
-		int_conv = insertion->ins_seq.length();
+	if (insertion->ins->ins_seq.find("-") == std::string::npos) {
+		int_conv = insertion->ins->ins_seq.length();
 		bcf_update_info_int32(hdr, bcf_entry, "SVINSLEN", &int_conv, 1);
-		int_conv = insertion->ins_seq.length() - (insertion->end-insertion->start);
+		int_conv = insertion->ins->ins_seq.length() - (insertion->ins->end-insertion->ins->start);
 		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 	} else {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 	}
-	bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", insertion->ins_seq.c_str());
+	bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", insertion->ins->ins_seq.c_str());
 
 	int int2_conv[2];
 	int2_conv[0] = insertion->rc_reads(), int2_conv[1] = insertion->lc_reads();

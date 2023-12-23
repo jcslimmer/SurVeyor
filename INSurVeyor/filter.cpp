@@ -31,20 +31,20 @@ std::pair<double, double> ptn_score(inss_insertion_t* insertion) {
 
 // filters for all categories
 void add_AST_filters(inss_insertion_t* insertion, std::vector<std::string>& filters) {
-	if (insertion->ins_seq.length()-(insertion->end-insertion->start) < config.min_sv_size) filters.push_back("SMALL");
-	if (insertion->median_lf_cov > stats.get_max_depth(insertion->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->chr) ||
-		insertion->median_lf_cov < stats.get_min_depth(insertion->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->chr))
+	if (insertion->ins->ins_seq.length()-(insertion->ins->end-insertion->ins->start) < config.min_sv_size) filters.push_back("SMALL");
+	if (insertion->median_lf_cov > stats.get_max_depth(insertion->ins->chr) || insertion->median_rf_cov > stats.get_max_depth(insertion->ins->chr) ||
+		insertion->median_lf_cov < stats.get_min_depth(insertion->ins->chr) || insertion->median_rf_cov < stats.get_min_depth(insertion->ins->chr))
 		filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-	int d = insertion->ins_seq.find("-");
-	if (is_homopolymer(insertion->ins_seq.substr(0, d))) filters.push_back("HOMOPOLYMER_INSSEQ");
-	else if (d != std::string::npos && is_homopolymer(insertion->ins_seq.substr(d+1))) filters.push_back("HOMOPOLYMER_INSSEQ");
-	if (insertion->rc_reads() > stats.get_max_depth(insertion->chr) || insertion->lc_reads() > stats.get_max_depth(insertion->chr)) filters.push_back("ANOMALOUS_SC_NUMBER");
+	int d = insertion->ins->ins_seq.find("-");
+	if (is_homopolymer(insertion->ins->ins_seq.substr(0, d))) filters.push_back("HOMOPOLYMER_INSSEQ");
+	else if (d != std::string::npos && is_homopolymer(insertion->ins->ins_seq.substr(d+1))) filters.push_back("HOMOPOLYMER_INSSEQ");
+	if (insertion->rc_reads() > stats.get_max_depth(insertion->ins->chr) || insertion->lc_reads() > stats.get_max_depth(insertion->ins->chr)) filters.push_back("ANOMALOUS_SC_NUMBER");
 }
 
 void add_AT_filters(inss_insertion_t* insertion, std::vector<std::string>& filters) {
 	auto supports = support(insertion);
 	if (insertion->l_disc_pairs + insertion->r_disc_pairs == 0) filters.push_back("NO_DISC_SUPPORT");
-	else if (supports.first < stats.get_median_depth(insertion->chr)/5 && supports.second < stats.get_median_depth(insertion->chr)/5)
+	else if (supports.first < stats.get_median_depth(insertion->ins->chr)/5 && supports.second < stats.get_median_depth(insertion->ins->chr)/5)
 		filters.push_back("LOW_SUPPORT");
 }
 
@@ -54,7 +54,7 @@ std::vector<std::string> get_transurveyor_insertions_filterlist(inss_insertion_t
 	add_AT_filters(insertion, filters);
 	auto scores = ptn_score(insertion);
 	if (scores.first < min_ptn_ratio && scores.second < min_ptn_ratio) filters.push_back("LOW_SCORE");
-	int svlen = insertion->ins_seq.length();
+	int svlen = insertion->ins->ins_seq.length();
 	if (svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
 	if (insertion->r_disc_pairs + insertion->l_disc_pairs < min_disc_pairs_by_size[svlen]) filters.push_back("NOT_ENOUGH_DISC_PAIRS");
 	if (filters.empty()) filters.push_back("PASS");
@@ -65,12 +65,12 @@ std::vector<std::string> get_assembled_insertions_filterlist(inss_insertion_t* i
 	std::vector<std::string> filters;
 	add_AST_filters(insertion, filters);
 	add_AT_filters(insertion, filters);
-	size_t divide = insertion->ins_seq.find("-");
+	size_t divide = insertion->ins->ins_seq.find("-");
 	bool incomplete_assembly = (divide != std::string::npos);
-	int svlen = insertion->ins_seq.length();
+	int svlen = insertion->ins->ins_seq.length();
 	if (incomplete_assembly || svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
 	if (insertion->r_disc_pairs + insertion->l_disc_pairs < min_disc_pairs_by_size[svlen]) filters.push_back("NOT_ENOUGH_DISC_PAIRS");
-	if (incomplete_assembly && (divide < stats.read_len && insertion->ins_seq.length()-divide < stats.read_len)) filters.push_back("LOW_QUAL_ASSEMBLY");
+	if (incomplete_assembly && (divide < stats.read_len && insertion->ins->ins_seq.length()-divide < stats.read_len)) filters.push_back("LOW_QUAL_ASSEMBLY");
 	if (filters.empty()) filters.push_back("PASS");
 	return filters;
 }
@@ -149,26 +149,26 @@ int main(int argc, char* argv[]) {
 		std::string mh_seq;
 		int mh_len = 0;
 		// extract microhomology, if present
-		if (insertion->start > insertion->end) {
-			mh_len = insertion->start - insertion->end;
+		if (insertion->ins->start > insertion->ins->end) {
+			mh_len = insertion->ins->start - insertion->ins->end;
 			char* mh_seq_cstr = new char[mh_len+1];
-			strncpy(mh_seq_cstr, contigs.get_seq(contig_name)+insertion->end, mh_len);
+			strncpy(mh_seq_cstr, contigs.get_seq(contig_name)+insertion->ins->end, mh_len);
 			mh_seq_cstr[mh_len] = '\0';
 			for (int i = 0; i < mh_len; i++) {
 				mh_seq_cstr[i] = toupper(mh_seq_cstr[i]);
 			}
 			mh_seq = mh_seq_cstr;
 			delete[] mh_seq_cstr;
-			insertion->start = insertion->end;
+			insertion->ins->start = insertion->ins->end;
 			insertion->mh_len = mh_len;
 			bcf_entry->pos = get_sv_end(bcf_entry, transurveyor_ins_hdr);
 		}
 		std::string ins_seq_w_mh = mh_seq + get_ins_seq(bcf_entry, transurveyor_ins_hdr);
-		insertion->ins_seq = ins_seq_w_mh;
+		insertion->ins->ins_seq = ins_seq_w_mh;
 		bcf_update_info_string(out_vcf_header, bcf_entry, "SVINSSEQ", ins_seq_w_mh.c_str());
 		int int_conv = ins_seq_w_mh.length();
 		bcf_update_info_int32(out_vcf_header, bcf_entry, "SVINSLEN", &int_conv, 1);
-		int_conv = insertion->ins_seq.length() - (insertion->end-insertion->start);
+		int_conv = insertion->ins->ins_seq.length() - (insertion->ins->end-insertion->ins->start);
 		bcf_update_info_int32(out_vcf_header, bcf_entry, "SVLEN", &int_conv, 1);
 		bcf_update_info_int32(out_vcf_header, bcf_entry, "MHLEN", &insertion->mh_len, 1);
 

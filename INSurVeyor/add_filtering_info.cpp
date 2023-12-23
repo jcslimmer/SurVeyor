@@ -47,8 +47,8 @@ void find_spanning(int id, inss_insertion_t* insertion, std::string bam_fname, s
 
     char r_region[1000], l_region[1000];
     std::stringstream l_region_ss, r_region_ss;
-	l_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->start-stats.max_is) << "-" << insertion->start+stats.max_is;
-	r_region_ss << insertion->chr << ":" << std::max(hts_pos_t(1), insertion->end-stats.max_is) << "-" << insertion->end+stats.max_is;
+	l_region_ss << insertion->ins->chr << ":" << std::max(hts_pos_t(1), insertion->ins->start-stats.max_is) << "-" << insertion->ins->start+stats.max_is;
+	r_region_ss << insertion->ins->chr << ":" << std::max(hts_pos_t(1), insertion->ins->end-stats.max_is) << "-" << insertion->ins->end+stats.max_is;
 	strcpy(l_region, l_region_ss.str().c_str());
 	strcpy(r_region, r_region_ss.str().c_str());
 
@@ -66,8 +66,8 @@ void find_spanning(int id, inss_insertion_t* insertion, std::string bam_fname, s
         if (read->core.isize > 0) {
 			int pair_start = read->core.pos+stats.read_len/2, pair_end = get_mate_endpos(read)-stats.read_len/2;
 			int b = 0;
-			if (pair_start <= insertion->start && insertion->start <= pair_end) b |= 1;
-			if (pair_start <= insertion->end && insertion->end <= pair_end) b |= 2;
+			if (pair_start <= insertion->ins->start && insertion->ins->start <= pair_end) b |= 1;
+			if (pair_start <= insertion->ins->end && insertion->ins->end <= pair_end) b |= 2;
 			qname_is_concordant[bam_get_qname(read)] = b;
         } else if (read->core.isize < 0) {
         	int b = qname_is_concordant[bam_get_qname(read)];
@@ -95,8 +95,8 @@ void compute_coverage(int id, inss_insertion_t* insertion, std::string bam_fname
 	hts_pos_t right_flanking_len = right_flanking_end - right_flanking_start;
 
 	std::stringstream l_region_ss, r_region_ss;
-	l_region_ss << insertion->chr << ":" << left_flanking_start << "-" << left_flanking_end;
-	r_region_ss << insertion->chr << ":" << right_flanking_start << "-" << right_flanking_end;
+	l_region_ss << insertion->ins->chr << ":" << left_flanking_start << "-" << left_flanking_end;
+	r_region_ss << insertion->ins->chr << ":" << right_flanking_start << "-" << right_flanking_end;
 	char l_region[1000], r_region[1000];
 	strcpy(l_region, l_region_ss.str().c_str());
 	strcpy(r_region, r_region_ss.str().c_str());

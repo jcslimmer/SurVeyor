@@ -1,6 +1,8 @@
 #ifndef ASSEMBLE_H_
 #define ASSEMBLE_H_
 
+#include <queue>
+#include <unordered_set>
 #include <mutex>
 
 #include "utils.h"
@@ -303,11 +305,11 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
 	}
-	if (r_cluster->clip_cluster) {
-		add_alignment(reference, r_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_lf, aligner, config);
+	if (r_cluster->clip_consensus) {
+		add_alignment(reference, r_cluster->clip_consensus->sequence, accepted_alns, _rejected_alns_lf, aligner, config);
 	}
-	if (l_cluster->clip_cluster) {
-		add_alignment(reference, l_cluster->clip_cluster->full_seq, accepted_alns, _rejected_alns_rf, aligner, config);
+	if (l_cluster->clip_consensus) {
+		add_alignment(reference, l_cluster->clip_consensus->sequence, accepted_alns, _rejected_alns_rf, aligner, config);
 	}
 
 	int n = accepted_alns.size();
@@ -586,7 +588,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
-	if (r_cluster->clip_cluster) left_stable_read_seqs.push_back({r_cluster->clip_cluster->full_seq, true, false});
+	if (r_cluster->clip_consensus) left_stable_read_seqs.push_back({r_cluster->clip_consensus->sequence, true, false});
 	for (bam1_t* read : r_cluster->reads) {
 		std::string seq = get_sequence(read);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
@@ -612,7 +614,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 			used_us.insert(mate_seq);
 		}
 	}
-	if (l_cluster->clip_cluster) right_stable_read_seqs.push_back({l_cluster->clip_cluster->full_seq, false, true});
+	if (l_cluster->clip_consensus) right_stable_read_seqs.push_back({l_cluster->clip_consensus->sequence, false, true});
 
 	for (bam1_t* read : r_cluster->semi_mapped_reads) {
 		std::string read_seq = get_sequence(read, true);
@@ -707,28 +709,28 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 	inss_insertion_t* ins = new inss_insertion_t(contig_name, ins_start, ins_end, 0, 0, 0, 0, 0, 0, 0, ins_seq_w_mh);
 
 	if (!good_left_anchor || !good_right_anchor) {
-		assembly_failed_bad_anchors_writer << ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
+		assembly_failed_bad_anchors_writer << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
 		assembly_failed_bad_anchors_writer << contig_name << " " << l_cluster->start() << " - INS " << assembled_sequence << " ";
 		assembly_failed_bad_anchors_writer << contig_name << ":" << remap_region_start << "-" << remap_region_end << " ";
 		assembly_failed_bad_anchors_writer << lh_aln.cigar_string << " " << rh_aln.cigar_string << " ";
 		assembly_failed_bad_anchors_writer << std::endl;
 		return NULL;
-	} else if (ins->ins_seq.length() < config.min_sv_size) {
-		assembly_failed_lt50bp << ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_lt50bp << contig_name << " " << l_cluster->start() << " - INS " << ins->ins_seq << std::endl;
+	} else if (ins->ins->ins_seq.length() < config.min_sv_size) {
+		assembly_failed_lt50bp << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
+		assembly_failed_lt50bp << contig_name << " " << l_cluster->start() << " - INS " << ins->ins->ins_seq << std::endl;
 		return NULL;
 	} else {
-		assembly_succeeded << ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
+		assembly_succeeded << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
 		assembly_succeeded << contig_name << " " << l_cluster->start() << " - INS " << assembled_sequence << std::endl;
 	}
 
 	StripedSmithWaterman::Filter filter;
-	if (r_cluster->clip_cluster) {
+	if (r_cluster->clip_consensus) {
 		StripedSmithWaterman::Alignment aln;
-		harsh_aligner.Align(r_cluster->clip_cluster->full_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
+		harsh_aligner.Align(r_cluster->clip_consensus->sequence.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error)) {
-			ins->rc_fwd_reads = r_cluster->clip_cluster->c->a1.fwd_sc_reads;
-			ins->rc_rev_reads = r_cluster->clip_cluster->c->a1.rev_sc_reads;
+			ins->rc_fwd_reads = r_cluster->clip_consensus->fwd_clipped;
+			ins->rc_rev_reads = r_cluster->clip_consensus->rev_clipped;
 		}
 	}
 	for (bam1_t* read : r_cluster->reads) {
@@ -765,12 +767,12 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 		}
 	}
 	ins->lc_avg_nm /= ins->l_disc_pairs;
-	if (l_cluster->clip_cluster) {
+	if (l_cluster->clip_consensus) {
 		StripedSmithWaterman::Alignment aln;
-		harsh_aligner.Align(l_cluster->clip_cluster->full_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
+		harsh_aligner.Align(l_cluster->clip_consensus->sequence.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error)) {
-			ins->lc_fwd_reads = l_cluster->clip_cluster->c->a1.fwd_sc_reads;
-			ins->lc_rev_reads = l_cluster->clip_cluster->c->a1.rev_sc_reads;
+			ins->lc_fwd_reads = l_cluster->clip_consensus->fwd_clipped;
+			ins->lc_rev_reads = l_cluster->clip_consensus->rev_clipped;
 		}
 	}
 
@@ -802,7 +804,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 	}
 
 	for (bam1_t* read : assembled_reads) {
-		bam_aux_update_str(read, "ID", ins->id.length(), ins->id.c_str());
+		bam_aux_update_str(read, "ID", ins->ins->id.length(), ins->ins->id.c_str());
 	}
 
 	ins->left_anchor = std::to_string(remap_region_start + lh_aln.ref_begin) + "-" + std::to_string(remap_region_start + lh_aln.ref_end);

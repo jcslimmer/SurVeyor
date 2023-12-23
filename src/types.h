@@ -87,7 +87,30 @@ struct consensus_t {
 		}
     }
 
+    hts_pos_t anchor_start() {
+        if (left_clipped) {
+            return breakpoint;
+        } else {
+            return start;
+        }
+    }
+    hts_pos_t anchor_end() {
+        if (left_clipped) {
+            return end;
+        } else {
+            return breakpoint;
+        }
+    }
+
     int anchor_len() { return sequence.length() - clip_len; }
+
+    std::string clip_sequence() {
+        if (left_clipped) {
+            return sequence.substr(0, clip_len);
+        } else {
+            return sequence.substr(sequence.length()-clip_len);
+        }
+    }
 };
 
 struct sv_t {
