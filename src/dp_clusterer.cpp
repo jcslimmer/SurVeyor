@@ -22,21 +22,11 @@ std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
 std::unordered_map<std::string, std::vector<sv_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
 std::mutex maps_mtx;
 
-bool operator < (const cluster_t& c1, const cluster_t& c2) {
-	return std::make_tuple(c1.la_start, c1.la_end, c1.ra_start, c1.ra_end) < std::make_tuple(c2.la_start, c2.la_end, c2.ra_start, c2.ra_end);
-}
-bool operator == (const cluster_t& c1, const cluster_t& c2) {
-	return c1.la_start == c2.la_start && c1.la_end == c2.la_end && c1.ra_start == c2.ra_start && c1.ra_end == c2.ra_end;
-}
-bool operator != (const cluster_t& c1, const cluster_t& c2) {
-	return !(c1 == c2);
-}
-
 struct cc_pair {
 	cluster_t* c1, * c2;
 	hts_pos_t dist;
 
-	cc_pair(cluster_t* c1, cluster_t* c2) : c1(c1), c2(c2), dist(distance(c1, c2)) {}
+	cc_pair(cluster_t* c1, cluster_t* c2) : c1(c1), c2(c2), dist(cluster_t::distance(c1, c2)) {}
 
 	bool compatible() {
 		return dist <= stats.max_is;
@@ -92,7 +82,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, i
 		if (ccp.c1->used || ccp.c2->used) continue;
 		ccp.c1->used = ccp.c2->used = true;
 
-		cluster_t* merged = merge(ccp.c1, ccp.c2);
+		cluster_t* merged = cluster_t::merge(ccp.c1, ccp.c2);
 		double ps[2] = {double(merged->la_start), double(merged->ra_start)};
 		kdres* res = kd_nearest_range(kd_tree_endpoints, ps, 2*stats.max_is);
 		while (!kd_res_end(res)) {

@@ -5,8 +5,8 @@
 
 #include <htslib/sam.h>
 #include "htslib/faidx.h"
-#include "cluster.h"
 #include "../libs/cptl_stl.h"
+#include "../src/sam_utils.h"
 #include "utils.h"
 #include "vcf_utils.h"
 

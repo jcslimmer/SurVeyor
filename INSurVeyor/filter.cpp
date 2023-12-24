@@ -1,11 +1,11 @@
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 #include <unordered_set>
 
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
 #include "htslib/tbx.h"
-#include "cluster.h"
 #include "utils.h"
 #include "vcf_utils.h"
 

@@ -1,7 +1,8 @@
 #ifndef DC_REMAPPER_H_
 #define DC_REMAPPER_H_
 
-#include "cluster.h"
+#include "../src/types.h"
+#include "../src/sam_utils.h"
 
 struct reads_cluster_t {
     std::vector<bam1_t*> reads;
