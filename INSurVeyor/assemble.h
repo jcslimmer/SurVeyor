@@ -292,14 +292,14 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	StripedSmithWaterman::Alignment aln;
 
 	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > accepted_alns, _rejected_alns_lf, _rejected_alns_is, _rejected_alns_rf;
-	for (bam1_t* read : r_cluster->reads) {
+	for (bam1_t* read : r_cluster->cluster->reads) {
 		std::string read_seq = get_sequence(read);
 		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_lf, aligner, config);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		rc(mate_seq);
 		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
 	}
-	for (bam1_t* read : l_cluster->reads) {
+	for (bam1_t* read : l_cluster->cluster->reads) {
 		std::string read_seq = get_sequence(read);
 		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_rf, aligner, config);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
@@ -385,7 +385,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 
 	if (retained_assembled_sequences.empty()) return {};
 
-	int l_bp_in_seq = r_cluster->end()-r_cluster->start(), r_bp_in_seq = reference.length()-(l_cluster->end()-l_cluster->start());
+	int l_bp_in_seq = r_cluster->end-r_cluster->start, r_bp_in_seq = reference.length()-(l_cluster->end-l_cluster->start);
 
 	// try scaffolding using rejected reads
 	std::vector<seq_w_pp_t> rejected_alns_lf, rejected_alns_is, rejected_alns_rf;
@@ -589,7 +589,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
 	if (r_cluster->clip_consensus) left_stable_read_seqs.push_back({r_cluster->clip_consensus->sequence, true, false});
-	for (bam1_t* read : r_cluster->reads) {
+	for (bam1_t* read : r_cluster->cluster->reads) {
 		std::string seq = get_sequence(read);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		rc(mate_seq);
@@ -602,7 +602,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 			used_us.insert(mate_seq);
 		}
 	}
-	for (bam1_t* read : l_cluster->reads) {
+	for (bam1_t* read : l_cluster->cluster->reads) {
 		std::string seq = get_sequence(read);
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		if (!used_rs.count(seq)) {
@@ -651,20 +651,20 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 	std::string ins_full_id = "NO_ID";
 	if (assembled_sequences.empty()) {
 		failed_assembly_mtx.lock();
-		assembly_failed_no_seq << ins_full_id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_no_seq << contig_name << " " << l_cluster->start() << " - INS" << std::endl;
+		assembly_failed_no_seq << ins_full_id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_failed_no_seq << contig_name << " " << l_cluster->start << " - INS" << std::endl;
 		failed_assembly_mtx.unlock();
 		return NULL;
 	} else if (assembled_sequences[0] == "HAS_CYCLE") {
 		failed_assembly_mtx.lock();
-		assembly_failed_cycle_writer << ins_full_id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_cycle_writer << contig_name << " " << l_cluster->start() << " - INS HAS_CYCLE" << std::endl;
+		assembly_failed_cycle_writer << ins_full_id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_failed_cycle_writer << contig_name << " " << l_cluster->start << " - INS HAS_CYCLE" << std::endl;
 		failed_assembly_mtx.unlock();
 		return NULL;
 	} else if (assembled_sequences[0] == "TOO_MANY_READS") {
 		failed_assembly_mtx.lock();
-		assembly_failed_too_many_reads_writer << ins_full_id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_too_many_reads_writer << contig_name << " " << l_cluster->start() << " - INS TOO_MANY_READS" << std::endl;
+		assembly_failed_too_many_reads_writer << ins_full_id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_failed_too_many_reads_writer << contig_name << " " << l_cluster->start << " - INS TOO_MANY_READS" << std::endl;
 		failed_assembly_mtx.unlock();
 		return NULL;
 	}
@@ -677,9 +677,9 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 
 	// divide the assembled sequence into two and remap them
 	int extend = 2*assembled_sequence.length();
-	int remap_region_start = std::min(r_cluster->end(), l_cluster->start())-extend;
+	int remap_region_start = std::min(r_cluster->end, l_cluster->start)-extend;
 	remap_region_start = std::max(0, remap_region_start);
-	int remap_region_end = std::max(r_cluster->end(), l_cluster->start())+extend;
+	int remap_region_end = std::max(r_cluster->end, l_cluster->start)+extend;
 	remap_region_end = std::min(remap_region_end, contig_len-1);
 	int remap_region_len = remap_region_end - remap_region_start;
 
@@ -709,19 +709,19 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 	inss_insertion_t* ins = new inss_insertion_t(contig_name, ins_start, ins_end, 0, 0, 0, 0, 0, 0, 0, ins_seq_w_mh);
 
 	if (!good_left_anchor || !good_right_anchor) {
-		assembly_failed_bad_anchors_writer << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_bad_anchors_writer << contig_name << " " << l_cluster->start() << " - INS " << assembled_sequence << " ";
+		assembly_failed_bad_anchors_writer << ins->ins->id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_failed_bad_anchors_writer << contig_name << " " << l_cluster->start << " - INS " << assembled_sequence << " ";
 		assembly_failed_bad_anchors_writer << contig_name << ":" << remap_region_start << "-" << remap_region_end << " ";
 		assembly_failed_bad_anchors_writer << lh_aln.cigar_string << " " << rh_aln.cigar_string << " ";
 		assembly_failed_bad_anchors_writer << std::endl;
 		return NULL;
 	} else if (ins->ins->ins_seq.length() < config.min_sv_size) {
-		assembly_failed_lt50bp << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_failed_lt50bp << contig_name << " " << l_cluster->start() << " - INS " << ins->ins->ins_seq << std::endl;
+		assembly_failed_lt50bp << ins->ins->id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_failed_lt50bp << contig_name << " " << l_cluster->start << " - INS " << ins->ins->ins_seq << std::endl;
 		return NULL;
 	} else {
-		assembly_succeeded << ins->ins->id << " " << contig_name << " " << r_cluster->end() << " + ";
-		assembly_succeeded << contig_name << " " << l_cluster->start() << " - INS " << assembled_sequence << std::endl;
+		assembly_succeeded << ins->ins->id << " " << contig_name << " " << r_cluster->end << " + ";
+		assembly_succeeded << contig_name << " " << l_cluster->start << " - INS " << assembled_sequence << std::endl;
 	}
 
 	StripedSmithWaterman::Filter filter;
@@ -733,7 +733,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 			ins->rc_rev_reads = r_cluster->clip_consensus->rev_clipped;
 		}
 	}
-	for (bam1_t* read : r_cluster->reads) {
+	for (bam1_t* read : r_cluster->cluster->reads) {
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		std::string mate_qual = get_mate_qual(read, matequals);
 		rc(mate_seq);
@@ -751,7 +751,7 @@ inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& c
 		}
 	}
 	ins->rc_avg_nm /= ins->r_disc_pairs;
-	for (bam1_t* read : l_cluster->reads) {
+	for (bam1_t* read : l_cluster->cluster->reads) {
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		std::string mate_qual = get_mate_qual(read, matequals);
 		StripedSmithWaterman::Alignment aln;

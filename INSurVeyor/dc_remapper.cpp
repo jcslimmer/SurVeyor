@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <map>
 #include <set>
+#include <list>
 #include <algorithm>
 #include <queue>
 #include <unistd.h>
@@ -270,12 +271,12 @@ region_score_t compute_score_supp(region_t& region, reads_cluster_t* r_cluster, 
 
     // mateseqs contains seqs are stored as in fasta/q file
     std::vector<std::string> r_mates, l_mates;
-    for (bam1_t* read : r_cluster->reads) {
+    for (bam1_t* read : r_cluster->cluster->reads) {
         std::string s = get_mate_seq(read, mateseqs);
         if (!do_rc) rc(s);   // by default, we map mates of fwd reads on the rev strand
         r_mates.push_back(s);
     }
-    for (bam1_t* read : l_cluster->reads) {
+    for (bam1_t* read : l_cluster->cluster->reads) {
         std::string s = get_mate_seq(read, mateseqs);
         if (do_rc) rc(s);   // by default, we map mates of rev reads on the fwd strand
         l_mates.push_back(s);
@@ -459,13 +460,13 @@ void compute_score(region_t& region, reads_cluster_t* r_cluster, reads_cluster_t
 }
 
 reads_cluster_t* subsample_cluster(reads_cluster_t* reads_cluster, int size, std::default_random_engine& rng) {
-    std::vector<bam1_t*> subset(reads_cluster->reads);
+    std::vector<bam1_t*> subset(reads_cluster->cluster->reads);
     if (subset.size() > size) {
         std::shuffle(subset.begin(), subset.end(), rng);
         subset.erase(subset.begin() + size, subset.end());
     }
-    reads_cluster_t* subsampled_cluster = new reads_cluster_t();
-    for (bam1_t* read : subset) subsampled_cluster->add_read(read);
+    reads_cluster_t* subsampled_cluster = new reads_cluster_t(new cluster_t());
+    for (bam1_t* read : subset) subsampled_cluster->add_stable_read(read);
     subsampled_cluster->add_clip_cluster(reads_cluster->clip_consensus);
     return subsampled_cluster;
 }
@@ -492,11 +493,11 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 
 	if (best_region.score.remap_start >= best_region.score.remap_end) return "";
 
-	if (r_cluster->end()-r_cluster->start() <= 0 || l_cluster->end()-l_cluster->start() <= 0) return "";
+	if (r_cluster->end-r_cluster->start <= 0 || l_cluster->end-l_cluster->start <= 0) return "";
 
-	char* left_flanking = new char[r_cluster->end()-r_cluster->start()+2];
-	strncpy(left_flanking, contigs.get_seq(contig_name)+r_cluster->start(), r_cluster->end()-r_cluster->start()+1);
-	left_flanking[r_cluster->end()-r_cluster->start()+1] = '\0';
+	char* left_flanking = new char[r_cluster->end-r_cluster->start+2];
+	strncpy(left_flanking, contigs.get_seq(contig_name)+r_cluster->start, r_cluster->end-r_cluster->start+1);
+	left_flanking[r_cluster->end-r_cluster->start+1] = '\0';
 	to_uppercase(left_flanking);
 
 	int ins_seq_start = best_region.start + best_region.score.remap_start,
@@ -507,9 +508,9 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 	if (is_rc) rc(pred_ins_seq);
 	to_uppercase(pred_ins_seq);
 
-	char* right_flanking = new char[l_cluster->end()-l_cluster->start()+2];
-	strncpy(right_flanking, contigs.get_seq(contig_name)+l_cluster->start(), l_cluster->end()-l_cluster->start()+1);
-	right_flanking[l_cluster->end()-l_cluster->start()+1] = '\0';
+	char* right_flanking = new char[l_cluster->end-l_cluster->start+2];
+	strncpy(right_flanking, contigs.get_seq(contig_name)+l_cluster->start, l_cluster->end-l_cluster->start+1);
+	right_flanking[l_cluster->end-l_cluster->start+1] = '\0';
 	to_uppercase(right_flanking);
 
 	// NOTE: prefixes and suffixes may be duplicated - i.e., suffix of left flanking also appearing as prefix of predicted ins seq
@@ -553,7 +554,7 @@ std::string generate_consensus_sequences(std::string contig_name, reads_cluster_
 
 	if (consensus_contigs.empty()) return full_junction_sequence;
 
-	int l_bp_in_seq = r_cluster->end()-r_cluster->start(), r_bp_in_seq = full_junction_sequence.length()-(l_cluster->end()-l_cluster->start());
+	int l_bp_in_seq = r_cluster->end-r_cluster->start, r_bp_in_seq = full_junction_sequence.length()-(l_cluster->end-l_cluster->start);
 
 	const int OFFSET = 50;
 	for (StripedSmithWaterman::Alignment& aln : consensus_contigs_alns) {
@@ -589,14 +590,14 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
                    StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
                    stats_t& stats) {
 
-	if (l_cluster->reads.size() + r_cluster->reads.size() > TOO_MANY_READS) return;
+	if (l_cluster->cluster->reads.size() + r_cluster->cluster->reads.size() > TOO_MANY_READS) return;
 
     std::vector<region_t> regions;
 
     /* == Find candidate regions for remapping == */
     std::vector<bam1_t*> full_cluster;
-    full_cluster.insert(full_cluster.end(), l_cluster->reads.begin(), l_cluster->reads.end());
-    full_cluster.insert(full_cluster.end(), r_cluster->reads.begin(), r_cluster->reads.end());
+    full_cluster.insert(full_cluster.end(), l_cluster->cluster->reads.begin(), l_cluster->cluster->reads.end());
+    full_cluster.insert(full_cluster.end(), r_cluster->cluster->reads.begin(), r_cluster->cluster->reads.end());
     std::sort(full_cluster.begin(), full_cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
         if (r1->core.mtid != r2->core.mtid) return r1->core.mtid < r2->core.mtid;
         else return r1->core.mpos < r2->core.mpos;
@@ -663,8 +664,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     region_t best_region = regions[0];
 
     // get base region
-    int start = r_cluster->start() - stats.max_is;
-    int end = l_cluster->end() + stats.max_is;
+    int start = r_cluster->start - stats.max_is;
+    int end = l_cluster->end + stats.max_is;
     int contig_len = contigs.get_len(contig_name);
     region_t base_region(contig_id, full_cluster[0]->core.tid, std::max(0, start), std::min(end, contig_len));
 
@@ -678,7 +679,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     	int accepted_reads = 0;
 		for (remap_info_t& remap_info : rc_remap_infos) accepted_reads += remap_info.accepted;
 		for (remap_info_t& remap_info : lc_remap_infos) accepted_reads += remap_info.accepted;
-		int tot_reads = r_cluster->reads.size() + l_cluster->reads.size();
+		int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 		if (double(accepted_reads)/tot_reads >= 0.5) {
 			return;
 		}
@@ -690,16 +691,16 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 
     // in order to construct the corrected consensus, we rely on read clusters
     // we refine the reads by eliminating reads eexcluded by the remapping, in order to get the most precise possible locations
-    reads_cluster_t* refined_r_cluster = new reads_cluster_t();
-	reads_cluster_t* refined_l_cluster = new reads_cluster_t();
-	for (int i = 0; i < r_cluster->reads.size(); i++) {
+    reads_cluster_t* refined_r_cluster = new reads_cluster_t(new cluster_t());
+	reads_cluster_t* refined_l_cluster = new reads_cluster_t(new cluster_t());
+	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
 		if (rc_remap_infos[i].accepted) {
-			refined_r_cluster->add_read(r_cluster->reads[i]);
+			refined_r_cluster->add_stable_read(r_cluster->cluster->reads[i]);
 		}
 	}
-	for (int i = 0; i < l_cluster->reads.size(); i++) {
+	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
 		if (lc_remap_infos[i].accepted) {
-			refined_l_cluster->add_read(l_cluster->reads[i]);
+			refined_l_cluster->add_stable_read(l_cluster->cluster->reads[i]);
 		}
 	}
 	if (r_cluster->clip_consensus && rc_remap_infos.rbegin()->accepted) {
@@ -720,9 +721,9 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 
     if (!corrected_consensus_sequence.empty()) {
 		StripedSmithWaterman::Alignment aln;
-		for (int i = 0; i < r_cluster->reads.size(); i++) {
-			std::string mate_seq = get_mate_seq(r_cluster->reads[i], mateseqs);
-			std::string mate_qual = get_mate_qual(r_cluster->reads[i], matequals);
+		for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+			std::string mate_seq = get_mate_seq(r_cluster->cluster->reads[i], mateseqs);
+			std::string mate_qual = get_mate_qual(r_cluster->cluster->reads[i], matequals);
 			rc(mate_seq);
 			mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
 			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
@@ -731,9 +732,9 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 				covered_segments.push_back({aln.ref_begin, aln.ref_end});
 			}
 		}
-		for (int i = 0; i < l_cluster->reads.size(); i++) {
-			std::string mate_seq = get_mate_seq(l_cluster->reads[i], mateseqs);
-			std::string mate_qual = get_mate_qual(l_cluster->reads[i], matequals);
+		for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+			std::string mate_seq = get_mate_seq(l_cluster->cluster->reads[i], mateseqs);
+			std::string mate_qual = get_mate_qual(l_cluster->cluster->reads[i], matequals);
 			harsh_aligner.Align(mate_seq.c_str(), corrected_consensus_sequence.c_str(), corrected_consensus_sequence.length(), filter, &aln, 0);
 			lc_remap_infos[i].accepted = accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual);
 			if (lc_remap_infos[i].accepted) {
@@ -761,7 +762,7 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 	int rc_accepted_reads = 0, lc_accepted_reads = 0;
 	for (remap_info_t& remap_info : rc_remap_infos) rc_accepted_reads += remap_info.accepted;
 	for (remap_info_t& remap_info : lc_remap_infos) lc_accepted_reads += remap_info.accepted;
-	int tot_reads = r_cluster->reads.size() + l_cluster->reads.size();
+	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		inss_insertion_t* ins = assemble_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
 				aligner_to_base, harsh_aligner, kept, config, stats);
@@ -776,28 +777,28 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 
 	if (corrected_consensus_sequence.empty()) return;
 
-	reads_cluster_t* pos_cluster = new reads_cluster_t();
-    for (int i = 0; i < r_cluster->reads.size(); i++) {
-        bam1_t* r = r_cluster->reads[i];
+	reads_cluster_t* pos_cluster = new reads_cluster_t(new cluster_t());
+    for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+        bam1_t* r = r_cluster->cluster->reads[i];
         update_read(r, best_region, rc_remap_infos[i], is_rc);
         kept.push_back(r);
 
         if (rc_remap_infos[i].accepted) {
-            pos_cluster->add_read(r);
+            pos_cluster->add_stable_read(r);
         }
     }
 	if (r_cluster->clip_consensus && rc_remap_infos.rbegin()->accepted) {
         pos_cluster->add_clip_cluster(r_cluster->clip_consensus);
     }
     
-	reads_cluster_t* neg_cluster = new reads_cluster_t();
-    for (int i = 0; i < l_cluster->reads.size(); i++) {
-        bam1_t* r = l_cluster->reads[i];
+	reads_cluster_t* neg_cluster = new reads_cluster_t(new cluster_t());
+    for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+        bam1_t* r = l_cluster->cluster->reads[i];
         update_read(r, best_region, lc_remap_infos[i], is_rc);
         kept.push_back(r);
 
         if (lc_remap_infos[i].accepted) {
-            neg_cluster->add_read(r);
+            neg_cluster->add_stable_read(r);
         }
     }
     if (l_cluster->clip_consensus && lc_remap_infos.rbegin()->accepted) {
@@ -808,8 +809,8 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
     	// realign corrected consensus to find insertion
 		std::string full_assembled_seq, ins_seq;
 		bool good_left_anchor, good_right_anchor;
-		int remap_start = std::max(hts_pos_t(0), r_cluster->start()-50);
-		int remap_end = std::min(l_cluster->end()+50, contigs.get_len(contig_name)-1);
+		int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
+		int remap_end = std::min(l_cluster->end+50, contigs.get_len(contig_name)-1);
 		if (remap_start < remap_end) {
 			std::vector<std::string> v = { corrected_consensus_sequence };
 			auto p = remap_assembled_sequence(v, contigs.get_seq(contig_name)+remap_start, remap_end-remap_start, aligner_to_base,
@@ -847,18 +848,18 @@ void remap_cluster(reads_cluster_t* r_cluster, reads_cluster_t* l_cluster, std::
 				}
 
 				inss_insertion_t* insertion = new inss_insertion_t(contig_name, remap_start + lh_aln.ref_end, remap_start + rh_aln.ref_begin-1,
-						pos_cluster->reads.size(), neg_cluster->reads.size(), rc_fwd_reads, rc_rev_reads, lc_fwd_reads, lc_rev_reads, 0, ins_seq);
+						pos_cluster->cluster->reads.size(), neg_cluster->cluster->reads.size(), rc_fwd_reads, rc_rev_reads, lc_fwd_reads, lc_rev_reads, 0, ins_seq);
 				insertion->left_anchor = std::to_string(remap_start + lh_aln.ref_begin) + "-" + std::to_string(remap_start + lh_aln.ref_end);
 				insertion->right_anchor = std::to_string(remap_start + rh_aln.ref_begin) + "-" + std::to_string(remap_start + rh_aln.ref_end);
 				insertion->left_bp_precise = left_bp_precise, insertion->right_bp_precise = right_bp_precise;
-				for (bam1_t* read : pos_cluster->reads) {
+				for (bam1_t* read : pos_cluster->cluster->reads) {
 					insertion->rc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 				}
-				insertion->rc_avg_nm /= pos_cluster->reads.size();
-				for (bam1_t* read : neg_cluster->reads) {
+				insertion->rc_avg_nm /= pos_cluster->cluster->reads.size();
+				for (bam1_t* read : neg_cluster->cluster->reads) {
 					insertion->lc_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 				}
-				insertion->lc_avg_nm /= neg_cluster->reads.size();
+				insertion->lc_avg_nm /= neg_cluster->cluster->reads.size();
 
 				insertion->left_anchor_cigar = lh_aln.cigar_string;
 				insertion->right_anchor_cigar = rh_aln.cigar_string;
@@ -890,17 +891,23 @@ int find(int* parents, int i) {
     }
     return root;
 }
-void merge(int* parents, int* sizes, int x, int y) {
+int merge(int* parents, int* sizes, int x, int y) {
     int i = find(parents, x);
     int j = find(parents, y);
-    if (i == j) return;
+    if (i == j) {
+        // std::cerr << "OH NO " << x << " " << y << std::endl;
+        // exit(1);
+        return i;
+    }
 
     if (sizes[i] < sizes[j]) {
         parents[i] = j;
         sizes[j] += sizes[i];
+        return j;
     } else {
         parents[j] = i;
         sizes[i] += sizes[j];
+        return i;
     }
 }
 
@@ -929,7 +936,6 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
     std::vector<cluster_t*> clusters;
     while (sam_itr_next(dc_file->file, iter, read) >= 0) {
         std::string mate_seq = get_mate_seq(read, mateseqs);
-        std::string mate_qual = get_mate_qual(read, matequals);
 
         if (mate_seq.empty() || mate_seq.find("N") != std::string::npos) continue;
 
@@ -959,26 +965,29 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
     for (int i = 1; i < clusters.size(); i++) {
         if (*clusters[curr] == *clusters[i]) {
             cluster_t* merged = cluster_t::merge(clusters[curr], clusters[i]);
-            merged->id = curr;
-            merge(parents, sizes, curr, i);
+            int parent_id = merge(parents, sizes, curr, i);
+            merged->id = parent_id;
             delete clusters[curr];
             delete clusters[i];
-            clusters[curr] = merged;
-            clusters[i] = NULL;
+            clusters[parent_id] = merged;
+            clusters[curr+i-parent_id] = NULL;
         } else {
             curr = i;
         }
     }
-    clusters.erase(std::remove(clusters.begin(), clusters.end(), (cluster_t*) NULL), clusters.end());
 
+    std::list<cluster_t*> clusters_created_all; // keep track of clusters so we delete them all
     std::multimap<int, cluster_t*> clusters_map;
     for (cluster_t* c : clusters) {
+        if (c == NULL) continue;
+        clusters_created_all.push_back(c);
         clusters_map.insert(std::make_pair(c->la_start, c));
         clusters_map.insert(std::make_pair(c->la_end, c));
     }
 
     std::priority_queue<cc_distance_t> pq;
     for (cluster_t* c1 : clusters) {
+        if (c1 == NULL) continue;
         auto end = clusters_map.upper_bound(c1->la_end+stats.max_is);
         for (auto map_it = clusters_map.lower_bound(c1->la_start); map_it != end; map_it++) {
             cluster_t* c2 = map_it->second;
@@ -995,9 +1004,11 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
         if (ccd.c1->used || ccd.c2->used) continue;
 
         cluster_t* new_cluster = cluster_t::merge(ccd.c1, ccd.c2);
-        new_cluster->id = std::min(ccd.c1->id, ccd.c2->id);
-        merge(parents, sizes, ccd.c1->id, ccd.c2->id);
-        clusters.push_back(new_cluster);
+        int parent_id = merge(parents, sizes, ccd.c1->id, ccd.c2->id);
+        new_cluster->id = parent_id;
+        clusters[parent_id] = new_cluster;
+        clusters[ccd.c1->id+ccd.c2->id-parent_id] = NULL;
+        clusters_created_all.push_back(new_cluster);
 
         ccd.c1->used = true;
         remove_cluster_from_mm(clusters_map, ccd.c1);
@@ -1016,10 +1027,16 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
     }
 
     // for each set of reads, make a cluster-vector
-    std::vector<reads_cluster_t*> read_clusters(n_reads);
-    for (int i = 0; i < n_reads; i++) read_clusters[i] = new reads_cluster_t();
+    std::vector<reads_cluster_t*> read_clusters;
     for (int i = 0; i < n_reads; i++) {
-        read_clusters[find(parents, i)]->add_read(reads[i]);
+        clusters[find(parents, i)]->reads.push_back(reads[i]);
+    }
+    for (int i = 0; i < n_reads; i++) {
+        if (clusters[i] != NULL) read_clusters.push_back(new reads_cluster_t(clusters[i]));
+        if (clusters[i] != NULL && clusters[i]->used) {
+            std::cerr << "OH NO " << i << std::endl;
+            exit(1);
+        }
     }
 
     if (!clip_consensuses.empty()) { // TODO: temporary, enhance logic
@@ -1033,14 +1050,14 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
         std::vector<consensus_t*> clip_consensus_per_cluster(read_clusters.size(), NULL);
         if (left_facing) {
             std::sort(read_clusters.begin(), read_clusters.end(), [](reads_cluster_t* rc1, reads_cluster_t* rc2) {
-                return rc1->end() < rc2->end();
+                return rc1->end < rc2->end;
             });
 
             for (consensus_t* clip_consensus : clip_consensuses) {
-                while (curr_j < read_clusters.size() && read_clusters[curr_j]->end() < clip_consensus->breakpoint) curr_j++;
+                while (curr_j < read_clusters.size() && read_clusters[curr_j]->end < clip_consensus->breakpoint) curr_j++;
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
-                    if (read_clusters[j]->end() - clip_consensus->breakpoint <= stats.max_is) {
+                    if (read_clusters[j]->end - clip_consensus->breakpoint <= stats.max_is) {
                         if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
                             clip_consensus_per_cluster[j] = clip_consensus;
                         }
@@ -1049,14 +1066,14 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
             }
         } else {
             std::sort(read_clusters.begin(), read_clusters.end(), [](reads_cluster_t* rc1, reads_cluster_t* rc2) {
-                return rc1->start() < rc2->start();
+                return rc1->start < rc2->start;
             });
 
             for (consensus_t* clip_consensus : clip_consensuses) {
-                while (curr_j < read_clusters.size() && clip_consensus->breakpoint-read_clusters[curr_j]->start() > stats.max_is) curr_j++;
+                while (curr_j < read_clusters.size() && clip_consensus->breakpoint-read_clusters[curr_j]->start > stats.max_is) curr_j++;
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
-                    if (clip_consensus->breakpoint - read_clusters[j]->start() >= 0) {
+                    if (clip_consensus->breakpoint - read_clusters[j]->start >= 0) {
                         if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
                             clip_consensus_per_cluster[j] = clip_consensus;
                         }
@@ -1071,7 +1088,7 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
     }
 
     for (int i = 0; i < read_clusters.size(); i++) {
-        if (read_clusters[i]->reads.size() <= 1) {
+        if (read_clusters[i]->cluster->reads.size() <= 1) {
             read_clusters[i]->deallocate_reads();
             delete read_clusters[i];
             read_clusters[i] = nullptr;
@@ -1080,10 +1097,10 @@ std::vector<reads_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_
     read_clusters.erase(std::remove(read_clusters.begin(), read_clusters.end(), nullptr), read_clusters.end());
 
     std::sort(read_clusters.begin(), read_clusters.end(), [](const reads_cluster_t* rc1, const reads_cluster_t* rc2) {
-    	return rc1->reads.size() > rc2->reads.size();
+    	return rc1->cluster->reads.size() > rc2->cluster->reads.size();
     });
 
-    for (cluster_t* c : clusters) delete c;
+    for (cluster_t* c : clusters_created_all) if (c->used) delete c;
     delete[] parents;
     delete[] sizes;
 
@@ -1126,7 +1143,7 @@ void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads
 	IntervalTree<bam1_t*> r_it(r_iv), l_it(l_iv);
 	std::unordered_set<bam1_t*> used_sm_reads;
 	for (reads_cluster_t* rc : r_clusters) {
-		int end = rc->end(), start = end - stats.max_is;
+		int end = rc->end, start = end - stats.max_is;
 		auto sm_reads = r_it.findContained(start, end);
 		for (auto i : sm_reads) {
 			bam1_t* r = i.value;
@@ -1138,7 +1155,7 @@ void add_semi_mapped(std::string clipped_fname, int contig_id, std::vector<reads
 	}
 	for (reads_cluster_t* rc : l_clusters) {
 		int start, end;
-		start = rc->start(); end = start + stats.max_is;
+		start = rc->start; end = start + stats.max_is;
 		auto sm_reads = l_it.findContained(start, end);
 		for (auto i : sm_reads) {
 			bam1_t* r = i.value;
@@ -1210,21 +1227,21 @@ void remap(int id, int contig_id) {
     std::vector<bam1_t*> r_reads_to_write, l_reads_to_write;
 
     std::priority_queue<cc_v_distance_t> pq;
-    auto score_f = [](const reads_cluster_t* v1, const reads_cluster_t* v2) {return v1->reads.size()*v2->reads.size();};
+    auto score_f = [](const reads_cluster_t* v1, const reads_cluster_t* v2) {return v1->cluster->reads.size()*v2->cluster->reads.size();};
 
     std::multimap<int, reads_cluster_t*> l_clusters_map;
     for (reads_cluster_t* l_cluster : l_clusters) {
-        hts_pos_t cl_start = l_cluster->start();
+        hts_pos_t cl_start = l_cluster->start;
         l_clusters_map.insert({cl_start, l_cluster});
     }
     for (reads_cluster_t* r_cluster : r_clusters) {
-        hts_pos_t cl_end = r_cluster->end();
+        hts_pos_t cl_end = r_cluster->end;
         auto begin = l_clusters_map.lower_bound(cl_end - stats.max_is);
         auto end = l_clusters_map.upper_bound(cl_end + stats.max_is);
 
         reads_cluster_t* l_cluster = NULL;
         for (auto it = begin; it != end; it++) {
-            if (l_cluster == NULL || it->second->reads.size() > l_cluster->reads.size()) {
+            if (l_cluster == NULL || it->second->cluster->reads.size() > l_cluster->cluster->reads.size()) {
                 l_cluster = it->second;
             }
         }
@@ -1243,7 +1260,7 @@ void remap(int id, int contig_id) {
 
         reads_cluster_t* c1 = cc_v_distance.c1;
         reads_cluster_t* c2 = cc_v_distance.c2;
-        if (c1->used || c2->used) continue;
+        if (c1->cluster->used || c2->cluster->used) continue;
 
         // remap clusters
         std::vector<bam1_t*> to_write;
@@ -1257,7 +1274,7 @@ void remap(int id, int contig_id) {
                 r_reads_to_write.push_back(bam_dup1(r));
             }
         };
-        c1->used = true; c2->used = true;
+        c1->cluster->used = true; c2->cluster->used = true;
         c1->deallocate_reads();
         c2->deallocate_reads();
     }

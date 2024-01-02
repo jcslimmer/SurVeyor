@@ -3,6 +3,7 @@
 
 #include "htslib/sam.h"
 #include "sam_utils.h"
+#include <cstdint>
 
 // IMPORTANT: All of these functions do not consider contig and direction, because they assume that we are trying to cluster pairs 
 // from the same contig and compatible direction
@@ -15,13 +16,16 @@ struct cluster_t {
 	bool used = false;
 	std::string rightmost_lseq, leftmost_rseq; // right-most right-facing sequence and left-most left-facing seq
 	
-	cluster_t() : la_start(0), la_end(0), ra_start(0), ra_end(0), max_mapq(0) {}
+	std::vector<bam1_t*> reads; // reads that are part of this cluster
 
-	cluster_t(bam1_t* read, int high_confidence_mapq) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
+	cluster_t() : la_start(INT32_MAX), la_end(0), ra_start(INT32_MAX), ra_end(0), max_mapq(0) {}
+
+	cluster_t(bam1_t* read, int high_confidence_mapq, bool store_read = false) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
 			max_mapq(std::min(read->core.qual, (uint8_t) get_mq(read))) {
 		confident_count = max_mapq == high_confidence_mapq;
 		rightmost_lseq = get_sequence(read);
 		leftmost_rseq = bam_get_qname(read);
+		if (store_read) reads.push_back(bam_dup1(read));
 	}
 
 	cluster_t(hts_pos_t la_start, hts_pos_t la_end, hts_pos_t ra_start, hts_pos_t ra_end, int count) : 
@@ -58,7 +62,16 @@ struct cluster_t {
 		else if (c1->ra_start > c2->ra_start) merged->leftmost_rseq = c2->leftmost_rseq;
 		else if (c1->la_end < c2->la_end) merged->leftmost_rseq = c1->leftmost_rseq;
 		else merged->leftmost_rseq = c2->leftmost_rseq;
+
+		merged->reads.insert(merged->reads.end(), c1->reads.begin(), c1->reads.end());
+		merged->reads.insert(merged->reads.end(), c2->reads.begin(), c2->reads.end());
 		return merged;
+	}
+
+	~cluster_t() {
+		for (bam1_t* read : reads) {
+			bam_destroy1(read);
+		}
 	}
 };
 

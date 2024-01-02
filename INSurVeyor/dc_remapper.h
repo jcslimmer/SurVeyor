@@ -3,74 +3,52 @@
 
 #include "../src/types.h"
 #include "../src/sam_utils.h"
+#include "../src/clustering_utils.h"
+#include "htslib/hts.h"
 
 struct reads_cluster_t {
-    std::vector<bam1_t*> reads;
+
+    hts_pos_t start, end;
+    cluster_t* cluster = NULL;
     std::vector<bam1_t*> semi_mapped_reads;
     consensus_t* clip_consensus = NULL;
-    bool used = false;
 
-    void add_read(bam1_t* read) {
-        reads.push_back(read);
+    reads_cluster_t(cluster_t* cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {}
+
+    void add_stable_read(bam1_t* read) {
+        cluster->reads.push_back(read);
+        start = std::min(start, read->core.pos);
+        end = std::max(end, bam_endpos(read));
     }
     void add_semi_mapped_reads(bam1_t* read) {
     	semi_mapped_reads.push_back(read);
+        start = std::min(start, read->core.pos);
+        end = std::max(end, bam_endpos(read));
     }
     void add_clip_cluster(consensus_t* clip_consensus) {
         if (!clip_consensus) return;
         if (!this->clip_consensus || this->clip_consensus->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
             this->clip_consensus = clip_consensus;
-        }
-    }
-
-    hts_pos_t start() {
-        if (clip_consensus && clip_consensus->left_clipped) {
-            return clip_consensus->anchor_start();
-        } else {
-            hts_pos_t _start = INT32_MAX;
-            for (bam1_t* read : reads) {
-                _start = std::min(_start, read->core.pos);
-            }
-            for (bam1_t* read : semi_mapped_reads) {
-				_start = std::min(_start, read->core.pos);
-			}
-            if (clip_consensus && clip_consensus->anchor_start() < _start) {
-                _start = clip_consensus->anchor_start();
-            }
-            return _start;
-        }
-    }
-    hts_pos_t end() {
-        if (clip_consensus && !clip_consensus->left_clipped) {
-            return clip_consensus->anchor_end();
-        } else {
-            hts_pos_t _end = 0;
-            for (bam1_t* read : reads) {
-                _end = std::max(_end, bam_endpos(read));
-            }
-            for (bam1_t* read : semi_mapped_reads) {
-				_end = std::max(_end, bam_endpos(read));
-			}
-            if (clip_consensus && clip_consensus->anchor_end() > _end) {
-                _end = clip_consensus->anchor_end();
-            }
-            return _end;
+            if (clip_consensus->left_clipped) start = clip_consensus->anchor_start();
+            else start = std::min(start, clip_consensus->anchor_start());
+            if (!clip_consensus->left_clipped) end = clip_consensus->anchor_end();
+            else end = std::max(end, clip_consensus->anchor_end());
         }
     }
 
     void deallocate_reads() {
-        for (bam1_t* read : reads) {
+        for (bam1_t* read : cluster->reads) {
             bam_destroy1(read);
         }
+        cluster->reads.clear();
         for (bam1_t* read : semi_mapped_reads) {
         	bam_destroy1(read);
         }
-        reads.clear();
         semi_mapped_reads.clear();
     }
 
     bool empty() {
-    	return reads.empty() && !clip_consensus;
+    	return cluster->reads.empty() && !clip_consensus;
     }
 };
 
