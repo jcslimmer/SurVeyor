@@ -6,7 +6,6 @@
 
 #include "../libs/cptl_stl.h"
 #include "../libs/IntervalTree.h"
-#include "../libs/kdtree.h"
 #include "sam_utils.h"
 #include "sw_utils.h"
 #include "vcf_utils.h"
@@ -35,74 +34,11 @@ struct cc_pair {
 bool operator < (const cc_pair& cc1, const cc_pair& cc2) { return cc1.dist > cc2.dist; }
 
 void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, int max_cluster_size) {
-	std::sort(clusters.begin(), clusters.end(), [](cluster_t* c1, cluster_t* c2) {
-		return std::make_tuple(c1->la_start, c1->la_end, c1->ra_start, c1->ra_end) < std::make_tuple(c2->la_start, c2->la_end, c2->ra_start, c2->ra_end);
-	});
-
-	std::vector<cluster_t*> dedup_clusters;
-	dedup_clusters.push_back(clusters[0]);
-	for (int i = 1; i < clusters.size(); i++) {
-		if (*clusters[i-1] != *clusters[i]) {
-			dedup_clusters.push_back(clusters[i]);
-		}
-	}
-	clusters.swap(dedup_clusters);
-
-	std::priority_queue<cc_pair> pq;
-	for (int i = 0; i < clusters.size(); i++) {
-		if (clusters[i]->used) continue;
-
-		std::vector<cc_pair> ccps;
-		for (int j = i+1; j < clusters.size(); j++) {
-			if (clusters[j]->la_start-clusters[i]->la_start > stats.max_is || ccps.size() > max_cluster_size) break;
-			cc_pair ccp = cc_pair(clusters[i], clusters[j]);
-			if (ccp.compatible()) ccps.push_back(ccp);
-		}
-		if (ccps.size() <= max_cluster_size) {
-			for (cc_pair& ccp : ccps) pq.push(ccp);
-		} else { // very large cluster - probably abnormal region - mark all involved pairs to be discarded
-			clusters[i]->used = true;
-			for (cc_pair& ccp : ccps) {
-				ccp.c2->used = true;
-			}
-		}
-	}
-
-	kdtree* kd_tree_endpoints = kd_create(2);
-	for (int i = 0; i < clusters.size(); i++) {
-		if (clusters[i]->used) continue;
-		double p[2] = {double(clusters[i]->la_end), double(clusters[i]->ra_end)};
-		kd_insert(kd_tree_endpoints, p, clusters[i]);
-	}
-
-	while (!pq.empty()) {
-		cc_pair ccp = pq.top();
-		pq.pop();
-
-		if (ccp.c1->used || ccp.c2->used) continue;
-		ccp.c1->used = ccp.c2->used = true;
-
-		cluster_t* merged = cluster_t::merge(ccp.c1, ccp.c2);
-		double ps[2] = {double(merged->la_start), double(merged->ra_start)};
-		kdres* res = kd_nearest_range(kd_tree_endpoints, ps, 2*stats.max_is);
-		while (!kd_res_end(res)) {
-			cluster_t* c = (cluster_t*) kd_res_item_data(res);
-			if (!c->used) {
-				cc_pair ccp = cc_pair(merged, c);
-				if (ccp.compatible()) pq.push(ccp);
-			}
-			kd_res_next(res);
-		}
-		kd_res_free(res);
-
-		double pe[2] = {double(merged->la_end), double(merged->ra_end)};
-		kd_insert(kd_tree_endpoints, pe, merged);
-		clusters.push_back(merged);
-	}
-	kd_free(kd_tree_endpoints);
+	std::vector<bam1_t*> reads;
+	cluster_clusters(clusters, reads, stats.max_is, max_cluster_size, false);
 
 	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](cluster_t* c) {
-		return c->count < min_cluster_size;
+		return c == NULL || c->count < min_cluster_size;
 	}), clusters.end());
 
 	std::sort(clusters.begin(), clusters.end());

@@ -3,7 +3,12 @@
 
 #include "htslib/sam.h"
 #include "sam_utils.h"
+#include "types.h"
 #include <cstdint>
+#include <tuple>
+#include <list>
+#include <queue>
+#include <map>
 
 // IMPORTANT: All of these functions do not consider contig and direction, because they assume that we are trying to cluster pairs 
 // from the same contig and compatible direction
@@ -93,6 +98,201 @@ struct cc_distance_t {
 };
 bool operator < (const cc_distance_t& ccd1, const cc_distance_t& ccd2) { // reverse op for priority queue
     return ccd1.distance > ccd2.distance;
+}
+
+struct union_find_t {
+
+	int* parents;
+	int* sizes;
+	int n;
+
+	union_find_t(int n) : n(n) {
+		parents = new int[n];
+		sizes = new int[n];
+		for (int i = 0; i < n; i++) {
+			parents[i] = i;
+			sizes[i] = 1;
+		}
+	}
+
+	int find(int i) {
+		int root = i;
+		while (root != parents[root]) {
+			root = parents[root];
+		}
+		while (i != root) {
+			int newp = parents[i];
+			parents[i] = root;
+			i = newp;
+		}
+		return root;
+	}
+	int merge(int x, int y) {
+		int i = find(x);
+		int j = find(y);
+		if (i == j) {
+			return i;
+		}
+
+		if (sizes[i] < sizes[j]) {
+			parents[i] = j;
+			sizes[j] += sizes[i];
+			return j;
+		} else {
+			parents[j] = i;
+			sizes[i] += sizes[j];
+			return i;
+		}
+	}
+
+	~union_find_t() {
+		delete[] parents;
+		delete[] sizes;
+	}
+};
+
+void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c, int pos) {
+    auto bounds = mm.equal_range(pos);
+    for (auto it = bounds.first; it != bounds.second; it++) {
+        if (it->second == c) {
+            mm.erase(it);
+            break;
+        }
+    }
+}
+void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c) {
+    remove_cluster_from_mm(mm, c, c->la_start);
+    remove_cluster_from_mm(mm, c, c->la_end);
+}
+
+void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& reads, int max_distance, int max_cluster_size,
+	 bool assign_reads_to_clusters = false) {
+
+	if (clusters.empty()) return;
+	
+	if (assign_reads_to_clusters) { // sort clusters and reads consistently
+		if (clusters.size() != reads.size()) {
+			throw std::runtime_error("Error: number of clusters and reads do not match");
+		}
+
+		std::vector<std::pair<cluster_t*, bam1_t*>> cluster_reads;
+		for (int i = 0; i < clusters.size(); i++) {
+			cluster_reads.push_back(std::make_pair(clusters[i], reads[i]));
+		}
+		std::sort(cluster_reads.begin(), cluster_reads.end(), [](std::pair<cluster_t*, bam1_t*>& cr1, std::pair<cluster_t*, bam1_t*>& cr2) {
+			return  std::make_tuple(cr1.first->la_start, cr1.first->la_end, cr1.first->ra_start, cr1.first->ra_end) < 
+					std::make_tuple(cr2.first->la_start, cr2.first->la_end, cr2.first->ra_start, cr2.first->ra_end);
+		});
+
+		for (int i = 0; i < cluster_reads.size(); i++) {
+			clusters[i] = cluster_reads[i].first;
+			reads[i] = cluster_reads[i].second;
+		}
+		for (int i = 0; i < clusters.size(); i++) clusters[i]->id = i;
+	} else {
+		std::sort(clusters.begin(), clusters.end(), [](cluster_t* c1, cluster_t* c2) {
+			return  std::make_tuple(c1->la_start, c1->la_end, c1->ra_start, c1->ra_end) < 
+					std::make_tuple(c2->la_start, c2->la_end, c2->ra_start, c2->ra_end);
+		});
+		for (int i = 0; i < clusters.size(); i++) clusters[i]->id = i;
+	}
+
+	int n_reads = clusters.size();
+	union_find_t* uf = new union_find_t(n_reads);
+
+	int curr = 0;
+    for (int i = 1; i < clusters.size(); i++) {
+        if (*clusters[curr] == *clusters[i]) {
+            cluster_t* merged = cluster_t::merge(clusters[curr], clusters[i]);
+            int parent_id = uf->merge(curr, i);
+            merged->id = parent_id;
+            delete clusters[curr];
+            delete clusters[i];
+            clusters[parent_id] = merged;
+            clusters[curr+i-parent_id] = NULL;
+        } else {
+            curr = i;
+        }
+    }
+
+    std::priority_queue<cc_distance_t> pq;
+	for (int i = 0; i < clusters.size(); i++) {
+		if (clusters[i] == NULL || clusters[i]->used) continue;
+
+		std::vector<cc_distance_t> ccps;
+		for (int j = i+1; j < clusters.size(); j++) {
+			if (clusters[j] == NULL || clusters[j]->used) continue;
+			if (clusters[j]->la_start-clusters[i]->la_start > max_distance) break;
+			if (cluster_t::can_merge(clusters[i], clusters[j], max_distance)) {
+				ccps.push_back(cc_distance_t(clusters[i], clusters[j]));
+			}
+		}
+		if (ccps.size() <= max_cluster_size) {
+			for (cc_distance_t& ccp : ccps) pq.push(ccp);
+		} else { // very large cluster - probably abnormal region - mark all involved pairs to be discarded
+			clusters[i]->used = true;
+			for (cc_distance_t& ccp : ccps) {
+				ccp.c2->used = true;
+			}
+		}
+	}
+
+	std::list<cluster_t*> clusters_created_all; // keep track of clusters so we delete them all
+	std::multimap<int, cluster_t*> clusters_map;
+    for (cluster_t* c : clusters) {
+        if (c == NULL || c->used) continue;
+        clusters_created_all.push_back(c);
+        clusters_map.insert(std::make_pair(c->la_start, c));
+        clusters_map.insert(std::make_pair(c->la_end, c));
+    }
+
+	while (!pq.empty()) {
+        cc_distance_t ccd = pq.top();
+        pq.pop();
+
+        if (ccd.c1->used || ccd.c2->used) continue;
+
+        cluster_t* new_cluster = cluster_t::merge(ccd.c1, ccd.c2);
+        int parent_id = uf->merge(ccd.c1->id, ccd.c2->id);
+        new_cluster->id = parent_id;
+        clusters[parent_id] = new_cluster;
+        clusters[ccd.c1->id+ccd.c2->id-parent_id] = NULL;
+        clusters_created_all.push_back(new_cluster);
+
+        ccd.c1->used = true;
+        remove_cluster_from_mm(clusters_map, ccd.c1);
+        ccd.c2->used = true;
+        remove_cluster_from_mm(clusters_map, ccd.c2);
+
+        auto end = clusters_map.upper_bound(new_cluster->la_end + max_distance);
+        for (auto map_it = clusters_map.lower_bound(new_cluster->la_start - max_distance);
+             map_it != end; map_it++) {
+            if (!map_it->second->used && cluster_t::can_merge(new_cluster, map_it->second, max_distance)) {
+                pq.push(cc_distance_t(new_cluster, map_it->second));
+            }
+        }
+        clusters_map.insert(std::make_pair(new_cluster->la_start, new_cluster));
+        clusters_map.insert(std::make_pair(new_cluster->la_end, new_cluster));
+	}
+
+	for (int i = 0; i < clusters.size(); i++) {
+		if (clusters[i] != NULL && clusters[i]->used) {
+			delete clusters[i];
+			clusters[i] = NULL;
+		}
+	}
+
+	if (assign_reads_to_clusters) {
+		// for each set of reads, make a cluster-vector
+		for (int i = 0; i < n_reads; i++) {
+			int parent_id = uf->find(i);
+			if (clusters[parent_id] != NULL) {
+				clusters[parent_id]->reads.push_back(reads[i]);
+			}
+		}
+	}
+
+	for (cluster_t* c : clusters_created_all) if (c->used) delete c;
 }
 
 #endif // CLUSTERING_UTILS_H

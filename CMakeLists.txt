@@ -26,7 +26,7 @@ add_executable(reads_categorizer src/reads_categorizer.cpp)
 add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)
 add_executable(find_svs_from_sr_consensuses libs/ssw.c libs/ssw_cpp.cpp src/find_svs_from_sr_consensuses.cpp)
 add_executable(merge_identical_calls src/merge_identical_calls.cpp)
-add_executable(dp_clusterer libs/ssw.c libs/ssw_cpp.cpp libs/kdtree.c src/dp_clusterer.cpp)
+add_executable(dp_clusterer libs/ssw.c libs/ssw_cpp.cpp src/dp_clusterer.cpp)
 add_executable(add_filtering_info src/add_filtering_info.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
