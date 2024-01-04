@@ -111,10 +111,10 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(transurveyor_ins_vcf_file, transurveyor_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry);
 
-		std::string ins_seq = get_ins_seq(bcf_entry, transurveyor_ins_hdr);
+		std::string ins_seq = get_ins_seq(transurveyor_ins_hdr, bcf_entry);
 
 		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, transurveyor_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, ins_seq);
 
 		int* stable_depths = NULL;
 		int size = 0;
@@ -161,9 +161,9 @@ int main(int argc, char* argv[]) {
 			delete[] mh_seq_cstr;
 			insertion->ins->start = insertion->ins->end;
 			insertion->mh_len = mh_len;
-			bcf_entry->pos = get_sv_end(bcf_entry, transurveyor_ins_hdr);
+			bcf_entry->pos = get_sv_end(transurveyor_ins_hdr, bcf_entry);
 		}
-		std::string ins_seq_w_mh = mh_seq + get_ins_seq(bcf_entry, transurveyor_ins_hdr);
+		std::string ins_seq_w_mh = mh_seq + get_ins_seq(transurveyor_ins_hdr, bcf_entry);
 		insertion->ins->ins_seq = ins_seq_w_mh;
 		bcf_update_info_string(out_vcf_header, bcf_entry, "SVINSSEQ", ins_seq_w_mh.c_str());
 		int int_conv = ins_seq_w_mh.length();
@@ -201,10 +201,10 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(assembled_ins_vcf_file, assembled_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(assembled_ins_hdr, bcf_entry);
 
-		std::string ins_seq = get_ins_seq(bcf_entry, assembled_ins_hdr);
+		std::string ins_seq = get_ins_seq(assembled_ins_hdr, bcf_entry);
 
 		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(bcf_entry, assembled_ins_hdr), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, ins_seq);
 
 		int* stable_depths = NULL;
 		int size = 0;

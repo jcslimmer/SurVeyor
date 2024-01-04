@@ -5,15 +5,22 @@
 #include "../src/sam_utils.h"
 #include "../src/clustering_utils.h"
 #include "htslib/hts.h"
+#include "htslib/sam.h"
 
-struct reads_cluster_t {
+struct insertion_cluster_t {
 
     hts_pos_t start, end;
     cluster_t* cluster = NULL;
     std::vector<bam1_t*> semi_mapped_reads;
     consensus_t* clip_consensus = NULL;
 
-    reads_cluster_t(cluster_t* cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {}
+    insertion_cluster_t(cluster_t* cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {
+        std::vector<bam1_t*> reads;
+        reads.swap(cluster->reads);
+        for (bam1_t* read : reads) {
+            add_stable_read(read);
+        }
+    }
 
     void add_stable_read(bam1_t* read) {
         cluster->reads.push_back(read);
@@ -21,6 +28,15 @@ struct reads_cluster_t {
         end = std::max(end, bam_endpos(read));
     }
     void add_semi_mapped_reads(bam1_t* read) {
+        if (clip_consensus) {
+            bool sm_left_clipped = is_left_clipped(read, 0);
+            bool sm_right_clipped = is_right_clipped(read, 0);
+            if (sm_left_clipped && clip_consensus->left_clipped && read->core.pos == clip_consensus->breakpoint) {
+                return;
+            } else if (sm_right_clipped && !clip_consensus->left_clipped && bam_endpos(read) == clip_consensus->breakpoint) {
+                return;
+            }
+        }
     	semi_mapped_reads.push_back(read);
         start = std::min(start, read->core.pos);
         end = std::max(end, bam_endpos(read));

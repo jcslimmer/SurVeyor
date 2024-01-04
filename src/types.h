@@ -27,6 +27,20 @@ struct consensus_t {
                 : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
                 sequence(sequence), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), clip_len(clip_len), max_mapq(max_mapq), 
                 remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
+    
+    consensus_t(std::string& line, bool is_hsr) : is_hsr(is_hsr) {
+        std::stringstream ss(line);
+        char dir;
+        int max_mapq_int;
+        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_clipped >> rev_clipped >> max_mapq_int >> remap_boundary >> lowq_clip_portion;
+        left_clipped = dir == 'L';
+        max_mapq = (uint8_t) max_mapq_int;
+        if (is_hsr) {
+            clip_len = UNKNOWN_CLIP_LEN;
+        } else {
+            clip_len = left_clipped ? breakpoint - start : end - breakpoint;
+        }
+    }
 
     std::string name() {
         return std::to_string(start) + "_" + std::to_string(end) + "_" + (left_clipped ? "L" : "R");

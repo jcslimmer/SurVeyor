@@ -152,9 +152,9 @@ int main(int argc, char* argv[]) {
 	bcf_hdr_t* assembled_ins_hdr = bcf_hdr_read(in_assembled_ins_file);
 	while (bcf_read(in_assembled_ins_file, assembled_ins_hdr, bcf_entry) == 0) {
 		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(assembled_ins_hdr, bcf_entry), bcf_entry->pos,
-				get_sv_end(bcf_entry, assembled_ins_hdr), 0, 0, 0, 0, 0, 0, 0, "");
-		ins->left_anchor = get_left_anchor(bcf_entry, assembled_ins_hdr);
-		ins->right_anchor = get_right_anchor(bcf_entry, assembled_ins_hdr);
+				get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, "");
+		ins->left_anchor = inss_get_left_anchor(bcf_entry, assembled_ins_hdr);
+		ins->right_anchor = inss_get_right_anchor(bcf_entry, assembled_ins_hdr);
 		assembled_insertions.push_back({ins, bcf_dup(bcf_entry)});
 	}
 
@@ -163,9 +163,9 @@ int main(int argc, char* argv[]) {
 	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(in_transurveyor_ins_file);
 	while (bcf_read(in_transurveyor_ins_file, transurveyor_ins_hdr, bcf_entry) == 0) {
 		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry), bcf_entry->pos,
-				get_sv_end(bcf_entry, transurveyor_ins_hdr), 0, 0, 0, 0, 0, 0, 0, "");
-		ins->left_anchor = get_left_anchor(bcf_entry, transurveyor_ins_hdr);
-		ins->right_anchor = get_right_anchor(bcf_entry, transurveyor_ins_hdr);
+				get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, "");
+		ins->left_anchor = inss_get_left_anchor(bcf_entry, transurveyor_ins_hdr);
+		ins->right_anchor = inss_get_right_anchor(bcf_entry, transurveyor_ins_hdr);
 		int* discordant = NULL, * split_reads = NULL;
 		int n = 0;
 		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "DISCORDANT", &discordant, &n);

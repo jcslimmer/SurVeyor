@@ -7,22 +7,9 @@
 
 #include "htslib/vcf.h"
 #include "utils.h"
+#include "../src/vcf_utils.h"
 
-bcf_hrec_t* generate_contig_hrec() {
-	bcf_hrec_t* contig_hrec = new bcf_hrec_t;
-	contig_hrec->type = BCF_HL_CTG;
-	contig_hrec->key = strdup("contig");
-	contig_hrec->value = NULL;
-	contig_hrec->keys = contig_hrec->vals = NULL;
-	contig_hrec->nkeys = 0;
-	int r1 = bcf_hrec_add_key(contig_hrec, "ID", 2);
-	int r2 = bcf_hrec_add_key(contig_hrec, "length", 6);
-	if (r1 || r2) {
-		throw std::runtime_error("Failed to create contig to VCF header.");
-	}
-	return contig_hrec;
-}
-bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t& config, std::string command) {
+bcf_hdr_t* inss_generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t& config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
 	// add contigs
@@ -185,46 +172,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	return header;
 }
 
-int get_sv_end(bcf1_t* sv, bcf_hdr_t* hdr) {
-	bcf_unpack(sv, BCF_UN_INFO);
-
-    int* data = NULL;
-    int size = 0;
-    bcf_get_info_int32(hdr, sv, "END", &data, &size);
-    if (size > 0) {
-        int end = data[0];
-        delete[] data;
-        return end-1; // return 0-based
-    }
-
-    bcf_get_info_int32(hdr, sv, "SVLEN", &data, &size);
-    if (size > 0) {
-        int svlen = data[0];
-        delete[] data;
-        return sv->pos + abs(svlen);
-    }
-
-    throw std::runtime_error("SV " + std::string(sv->d.id) + " has no END or SVLEN annotation.");
-}
-
-std::string get_ins_seq(bcf1_t* sv, bcf_hdr_t* hdr) {
-	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
-	bcf_unpack(sv, BCF_UN_INFO);
-	char c = toupper(sv->d.allele[1][0]);
-	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
-		return sv->d.allele[1];
-	}
-
-	// otherwise, look for SVINSSEQ (compliant with Manta)
-	char* data = NULL;
-	int size = 0;
-	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
-	if (data) return data;
-
-	return "";
-}
-
-std::string get_left_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
+std::string inss_get_left_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	char* data = NULL;
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "LEFT_ANCHOR", (void**) &data, &size);
@@ -239,7 +187,7 @@ std::string get_left_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	
 	return "";
 }
-std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
+std::string inss_get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	char* data = NULL;
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "RIGHT_ANCHOR", (void**) &data, &size);
@@ -255,7 +203,7 @@ std::string get_right_anchor(bcf1_t* sv, bcf_hdr_t* hdr) {
 	return "";
 }
 
-void insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, chr_seqs_map_t& contigs) {
+void inss_insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bcf1_t* bcf_entry, std::string id, chr_seqs_map_t& contigs) {
 	bcf_clear(bcf_entry);
 	bcf_entry->rid = bcf_hdr_name2id(hdr, insertion->ins->chr.c_str());
 	bcf_entry->pos = insertion->ins->start;

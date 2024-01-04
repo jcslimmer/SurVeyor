@@ -317,7 +317,7 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
 
     std::ofstream clip_fout(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
     for (consensus_t* consensus : full_consensuses) {
-        clip_fout << contig_name << " " << consensus->to_string() << std::endl;
+        clip_fout << consensus->to_string() << std::endl;
     }
     clip_fout.close();
 }
@@ -400,7 +400,7 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
 
     std::ofstream clip_fout(workspace + "/hsr_consensuses/" + std::to_string(contig_id) + ".txt");
     for (consensus_t* consensus : all_consensuses) {
-        clip_fout << contig_name << " " << consensus->to_string() << std::endl;
+        clip_fout << consensus->to_string() << std::endl;
     }
     clip_fout.close();
 }

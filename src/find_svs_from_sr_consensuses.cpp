@@ -15,6 +15,7 @@
 #include "sam_utils.h"
 #include "extend_1sr_consensus.h"
 #include "sw_utils.h"
+#include "types.h"
 #include "vcf_utils.h"
 
 config_t config;
@@ -182,7 +183,7 @@ void remove_hsr_overlapping_clipped(std::vector<consensus_t*>& hsr_consensuses, 
 }
 
 void read_consensuses(int id, int contig_id, std::string contig_name) {
-	std::string chr, dir, seq;
+	std::string dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
     int max_mapq, lowq_clip_portion;
@@ -198,14 +199,13 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 	std::string sr_consensuses_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
 	if (file_exists(sr_consensuses_fname)) {
 		std::ifstream sr_consensuses_fin(sr_consensuses_fname);
-		while (sr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
-			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
-			if (dir == "L") {
-				lc_sr_consensuses.push_back(new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-					breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion));
+		std::string line;
+		while (std::getline(sr_consensuses_fin, line)) {
+			consensus_t* consensus = new consensus_t(line, false);
+			if (consensus->left_clipped) {
+				lc_sr_consensuses.push_back(consensus);
 			} else {
-				rc_sr_consensuses.push_back(new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-					end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion));
+				rc_sr_consensuses.push_back(consensus);
 			}
 		}
 	}
@@ -213,21 +213,27 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 	std::string hsr_consensuses_fname = workdir + "/workspace/hsr_consensuses/" + std::to_string(contig_id) + ".txt";
 	if (file_exists(hsr_consensuses_fname)) {
 		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
-		while (hsr_consensuses_fin >> chr >> start >> end >> breakpoint >> dir >> seq >> 
-			fwd_clipped >> rev_clipped >> max_mapq >> remap_boundary >> lowq_clip_portion) {
-			if (dir == "L") {
-				consensus_t* consensus = new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-					breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion);
-				consensus->is_hsr = true;
-				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+		std::string line;
+		while (std::getline(hsr_consensuses_fin, line)) {
+			consensus_t* consensus = new consensus_t(line, true);
+			if (consensus->left_clipped) {
 				lc_hsr_consensuses.push_back(consensus);
 			} else {
-				consensus_t* consensus = new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-					end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion);
-				consensus->is_hsr = true;
-				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
 				rc_hsr_consensuses.push_back(consensus);
 			}
+			// if (dir == "L") {
+			// 	consensus_t* consensus = new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+			// 		breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion);
+			// 	consensus->is_hsr = true;
+			// 	consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+			// 	lc_hsr_consensuses.push_back(consensus);
+			// } else {
+			// 	consensus_t* consensus = new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
+			// 		end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion);
+			// 	consensus->is_hsr = true;
+			// 	consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+			// 	rc_hsr_consensuses.push_back(consensus);
+			// }
 		}
 	}
 

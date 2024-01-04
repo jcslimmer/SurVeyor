@@ -284,7 +284,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 	return assembled_sequences;
 }
 
-std::vector<std::string> generate_reference_guided_consensus(std::string reference, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
+std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
 		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
 
@@ -584,7 +584,7 @@ std::pair<StripedSmithWaterman::Alignment, StripedSmithWaterman::Alignment> rema
 	return {lh_aln, rh_aln};
 }
 
-std::vector<std::string> assemble_sequences(std::string contig_name, reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
+std::vector<std::string> assemble_sequences(std::string contig_name, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
@@ -641,7 +641,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, reads_clust
 }
 
 inss_insertion_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
-		reads_cluster_t* r_cluster, reads_cluster_t* l_cluster,
+		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
 		std::vector<bam1_t*>& assembled_reads, config_t& config, stats_t& stats) {
