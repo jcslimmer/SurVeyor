@@ -240,10 +240,10 @@ int main(int argc, char* argv[]) {
                 if (del->ks_pval > 0.01) {
                     del->filters.push_back("KS_FILTER");
                 }
-                if (-del->svlen() >= stats.max_is && double(del->disc_pairs)/(del->disc_pairs+del->conc_pairs) < 0.25) {
+                if (-del->svlen() >= stats.max_is && double(del->disc_pairs_lf)/(del->disc_pairs_lf+del->conc_pairs) < 0.25) {
                     del->filters.push_back("LOW_PTN_RATIO");
                 }
-                if (-del->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs || del->r_cluster_region_disc_pairs >= del->disc_pairs)) {
+                if (-del->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs_lf || del->r_cluster_region_disc_pairs >= del->disc_pairs_lf)) {
                     del->filters.push_back("AMBIGUOUS_REGION");
                 }
             }
@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
 				(dup->rc_consensus == NULL || dup->rc_consensus->max_mapq < config.high_confidence_mapq)) {
 				dup->filters.push_back("LOW_MAPQ_CONSENSUSES");
 			}
-            if (dup->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs < 3) {
+            if (dup->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs_lf < 3) {
                 dup->filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
             if (dup->source == "1SR_RC" || dup->source == "1HSR_RC") {
@@ -306,7 +306,8 @@ int main(int argc, char* argv[]) {
                 ins->filters.push_back("WEAK_SPLIT_ALIGNMENT");
             }
             if ((ins->lc_consensus == NULL || ins->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-                (ins->rc_consensus == NULL || ins->rc_consensus->max_mapq < config.high_confidence_mapq)) {
+                (ins->rc_consensus == NULL || ins->rc_consensus->max_mapq < config.high_confidence_mapq) &&
+                 ins->source != "REFERENCE_GUIDED_ASSEMBLY" && ins->source != "DE_NOVO_ASSEMBLY") {
                 ins->filters.push_back("LOW_MAPQ_CONSENSUSES");
             }
             if (ins->source == "1SR_RC" || ins->source == "1HSR_RC") {

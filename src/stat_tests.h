@@ -427,8 +427,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
 				int homalt_idx = std::max(0, stats.max_is - est_size);
 				int het_idx = std::max(0, stats.max_is - 2*est_size);
-				int dev_if_homalt = abs((int) (del->disc_pairs-median_crossing_count_geqi_by_isize[homalt_idx]));
-				int dev_if_het = abs((int) (del->disc_pairs-median_crossing_count_geqi_by_isize[het_idx]/2));
+				int dev_if_homalt = abs((int) (del->disc_pairs_lf-median_crossing_count_geqi_by_isize[homalt_idx]));
+				int dev_if_het = abs((int) (del->disc_pairs_lf-median_crossing_count_geqi_by_isize[het_idx]/2));
 				if (dev_if_het <= dev_if_homalt) {
 					het_evidence++;
 				} else { // deletion is homalt

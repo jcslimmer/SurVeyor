@@ -101,6 +101,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
 
+	const char* prefix_mh_len = "##INFO=<ID=PREFIX_MH_LEN,Number=1,Type=Integer,Description=\"Length of the prefix of the inserted sequence that is a microhomology.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,prefix_mh_len, &len));
+
+	const char* suffix_mh_len = "##INFO=<ID=SUFFIX_MH_LEN,Number=1,Type=Integer,Description=\"Length of the suffix of the inserted sequence that is a microhomology.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,suffix_mh_len, &len));
+
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
@@ -164,18 +170,21 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
 
-	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=1,Type=Integer,Description=\"Discordant pairs supporting the SV.\">";
+	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=2,Type=Integer,Description=\"Discordant pairs supporting the SV (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
 
-	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=1,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs.\">";
+	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
 
-	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=1,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV.\">";
+	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=2,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
+
+	const char* avg_nm_tag = "##INFO=<ID=DISC_AVG_NM,Number=2,Type=Float,Description=\"Average NM of discordant pairs (left and right flanking regions, respectively).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, avg_nm_tag, &len));
 
 	const char* disc_pairs_surr_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING,Number=2,Type=Integer,Description=\"Discordant pairs around the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_tag, &len));
-
+\
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=1,Type=Integer,Description=\"Concordant pairs supporting the absence of a SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
@@ -201,6 +210,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* cluster_depths_tag = "##INFO=<ID=CLUSTER_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the left and right cluster regions.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cluster_depths_tag, &len));
+
+	const char* ipc_tag = "##INFO=<ID=INS_PREFIX_COV,Number=2,Type=Integer,Description=\"Portion of the prefix of the inserted sequence that was actually supported by reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,ipc_tag, &len));
+
+	const char* isc_tag = "##INFO=<ID=INS_SUFFIX_COV,Number=2,Type=Integer,Description=\"Portion of the suffix of the inserted sequence that was actually supported by reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,isc_tag, &len));
 
 	// add ALT
 	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
@@ -274,12 +289,19 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		int_conv = sv->svlen();
 		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 		if (!sv->ins_seq.empty()) {
+			int_conv = sv->ins_seq.length();
 			bcf_update_info_int32(hdr, bcf_entry, "SVINSLEN", &int_conv, 1);
 		}
 	}
 	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
 	if (!sv->ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
+		if (sv->prefix_mh_len > 0) {
+			bcf_update_info_int32(hdr, bcf_entry, "PREFIX_MH_LEN", &sv->prefix_mh_len, 1);
+		}
+		if (sv->suffix_mh_len > 0) {
+			bcf_update_info_int32(hdr, bcf_entry, "SUFFIX_MH_LEN", &sv->suffix_mh_len, 1);
+		}
 	}
 
 	int int2_conv[2];
@@ -330,13 +352,18 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 			bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
 		}
 	}
-	
-	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", &sv->disc_pairs, 1);
-	if (sv->disc_pairs > 0) {
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", &sv->disc_pairs_maxmapq, 1);
+
+	int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
+	if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+		int disc_pairs_maxmapq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", disc_pairs_maxmapq, 2);
+		float avg_nm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
+		bcf_update_info_float(hdr, bcf_entry, "DISC_AVG_NM", avg_nm, 2);
 	}
 	if (sv->source == "DP") {
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", &sv->disc_pairs_high_mapq, 1);
+		int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
 	}
 
 	int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
@@ -380,6 +407,15 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		if (sv->ins_seq.find("-") != std::string::npos) {
 			bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 		}
+		insertion_t* ins = (insertion_t*) sv;
+		int prefix_cov_start = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->prefix_cov_start;
+		int prefix_cov_end = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->prefix_cov_end;
+		int suffix_cov_start = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->suffix_cov_start;
+		int suffix_cov_end = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->suffix_cov_end;
+		int ipc[] = {prefix_cov_start, prefix_cov_end};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_COV", ipc, 2);
+		int isc[] = {suffix_cov_start, suffix_cov_end};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_COV", isc, 2);
 	}
 }
 
@@ -595,18 +631,49 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
+	bcf_get_info_int32(hdr, b, "PREFIX_MH_LEN", &data, &len);
+	if (len > 0) {
+		sv->prefix_mh_len = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SUFFIX_MH_LEN", &data, &len);
+	if (len > 0) {
+		sv->suffix_mh_len = data[0];
+	}
+
+	data = NULL;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "DISC_PAIRS", &data, &len);
-	if (len > 0) sv->disc_pairs = data[0];
+	if (len > 0) {
+		sv->disc_pairs_lf = data[0];
+		sv->disc_pairs_rf = data[1];
+	}
 
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "DISC_PAIRS_MAXMAPQ", &data, &len);
-	if (len > 0) sv->disc_pairs_maxmapq = data[0];
+	if (len > 0) {
+		sv->disc_pairs_lf_maxmapq = data[0];
+		sv->disc_pairs_rf_maxmapq = data[1];
+	}
 
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "DISC_PAIRS_HIGHMAPQ", &data, &len);
-	if (len > 0) sv->disc_pairs_high_mapq = data[0];
+	if (len > 0) {
+		sv->disc_pairs_lf_high_mapq = data[0];
+		sv->disc_pairs_rf_high_mapq = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "DISC_AVG_NM", &data, &len);
+	if (len > 0) {
+		sv->disc_pairs_lf_avg_nm = data[0];
+		sv->disc_pairs_rf_avg_nm = data[1];
+	}
 
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");

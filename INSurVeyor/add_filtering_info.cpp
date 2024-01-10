@@ -9,6 +9,8 @@
 #include "../src/sam_utils.h"
 #include "utils.h"
 #include "vcf_utils.h"
+#include "../src/vcf_utils.h"
+#include "../src/stat_tests.h"
 
 std::string workdir;
 std::mutex mtx;
@@ -122,11 +124,11 @@ void compute_coverage(int id, inss_insertion_t* insertion, std::string bam_fname
 
 	std::sort(flanking_left_cov.begin(), flanking_left_cov.end(), std::greater<int64_t>());
 	int end = std::find(flanking_left_cov.begin(), flanking_left_cov.end(), 0)-flanking_left_cov.begin();
-	insertion->median_lf_cov = flanking_left_cov[end/2];
+	insertion->median_lf_cov = left_flanking_len > 0 ? flanking_left_cov[end/2] : 0;
 
 	std::sort(flanking_right_cov.begin(), flanking_right_cov.end(), std::greater<int64_t>());
 	end = std::find(flanking_right_cov.begin(), flanking_right_cov.end(), 0)-flanking_right_cov.begin();
-	insertion->median_rf_cov = flanking_right_cov[end/2];
+	insertion->median_rf_cov = right_flanking_len > 0 ? flanking_right_cov[end/2] : 0;
 
 	mtx.lock();
     release_bam_reader(bam_file);
@@ -152,29 +154,29 @@ int main(int argc, char* argv[]) {
 	bcf_hdr_t* assembled_ins_hdr = bcf_hdr_read(in_assembled_ins_file);
 	while (bcf_read(in_assembled_ins_file, assembled_ins_hdr, bcf_entry) == 0) {
 		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(assembled_ins_hdr, bcf_entry), bcf_entry->pos,
-				get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, "");
+				get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, "");
 		ins->left_anchor = inss_get_left_anchor(bcf_entry, assembled_ins_hdr);
 		ins->right_anchor = inss_get_right_anchor(bcf_entry, assembled_ins_hdr);
 		assembled_insertions.push_back({ins, bcf_dup(bcf_entry)});
 	}
 
-	std::string in_transurveyor_ins_fname = workdir + "/transurveyor_ins.vcf.gz";
-	htsFile* in_transurveyor_ins_file = bcf_open(in_transurveyor_ins_fname.c_str(), "r");
-	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(in_transurveyor_ins_file);
-	while (bcf_read(in_transurveyor_ins_file, transurveyor_ins_hdr, bcf_entry) == 0) {
-		inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry), bcf_entry->pos,
-				get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, "");
-		ins->left_anchor = inss_get_left_anchor(bcf_entry, transurveyor_ins_hdr);
-		ins->right_anchor = inss_get_right_anchor(bcf_entry, transurveyor_ins_hdr);
-		int* discordant = NULL, * split_reads = NULL;
-		int n = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "DISCORDANT", &discordant, &n);
-		n = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
-		if (discordant[0]+split_reads[0] > 1 && discordant[1]+split_reads[1] > 1) {
-			transurveyor_insertions.push_back({ins, bcf_dup(bcf_entry)});
-		}
-	}
+	// std::string in_transurveyor_ins_fname = workdir + "/transurveyor_ins.vcf.gz";
+	// htsFile* in_transurveyor_ins_file = bcf_open(in_transurveyor_ins_fname.c_str(), "r");
+	// bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(in_transurveyor_ins_file);
+	// while (bcf_read(in_transurveyor_ins_file, transurveyor_ins_hdr, bcf_entry) == 0) {
+	// 	inss_insertion_t* ins = new inss_insertion_t(bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry), bcf_entry->pos,
+	// 			get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, "");
+	// 	ins->left_anchor = inss_get_left_anchor(bcf_entry, transurveyor_ins_hdr);
+	// 	ins->right_anchor = inss_get_right_anchor(bcf_entry, transurveyor_ins_hdr);
+	// 	int* discordant = NULL, * split_reads = NULL;
+	// 	int n = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "DISCORDANT", &discordant, &n);
+	// 	n = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &n);
+	// 	if (discordant[0]+split_reads[0] > 1 && discordant[1]+split_reads[1] > 1) {
+	// 		transurveyor_insertions.push_back({ins, bcf_dup(bcf_entry)});
+	// 	}
+	// }
 
     ctpl::thread_pool thread_pool(config.threads);
 
@@ -211,25 +213,25 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	std::string out_transurveyor_ins_fname = workdir + "/transurveyor_ins.annotated.vcf.gz";
-	htsFile* out_transurveyor_ins_file = bcf_open(out_transurveyor_ins_fname.c_str(), "wz");
-	if (bcf_hdr_write(out_transurveyor_ins_file, transurveyor_ins_hdr) != 0) {
-		throw std::runtime_error("Failed to write header to " + out_transurveyor_ins_fname);
-	}
-	for (auto& p : transurveyor_insertions) {
-		int int2_conv[] = {p.first->median_lf_cov, p.first->median_rf_cov};
-		bcf_update_info_int32(transurveyor_ins_hdr, p.second, "STABLE_DEPTHS", int2_conv,  2);
-		int2_conv[0] = p.first->l_conc_pairs; int2_conv[1] = p.first->r_conc_pairs;
-		bcf_update_info_int32(transurveyor_ins_hdr, p.second, "SPANNING_READS", int2_conv,  2);
-		if (bcf_write(out_transurveyor_ins_file, transurveyor_ins_hdr, p.second) != 0) {
-			throw std::runtime_error("Failed to write VCF record to " + out_transurveyor_ins_fname);
-		}
-	}
+	// std::string out_transurveyor_ins_fname = workdir + "/transurveyor_ins.annotated.vcf.gz";
+	// htsFile* out_transurveyor_ins_file = bcf_open(out_transurveyor_ins_fname.c_str(), "wz");
+	// if (bcf_hdr_write(out_transurveyor_ins_file, transurveyor_ins_hdr) != 0) {
+	// 	throw std::runtime_error("Failed to write header to " + out_transurveyor_ins_fname);
+	// }
+	// for (auto& p : transurveyor_insertions) {
+	// 	int int2_conv[] = {p.first->median_lf_cov, p.first->median_rf_cov};
+	// 	bcf_update_info_int32(transurveyor_ins_hdr, p.second, "STABLE_DEPTHS", int2_conv,  2);
+	// 	int2_conv[0] = p.first->l_conc_pairs; int2_conv[1] = p.first->r_conc_pairs;
+	// 	bcf_update_info_int32(transurveyor_ins_hdr, p.second, "SPANNING_READS", int2_conv,  2);
+	// 	if (bcf_write(out_transurveyor_ins_file, transurveyor_ins_hdr, p.second) != 0) {
+	// 		throw std::runtime_error("Failed to write VCF record to " + out_transurveyor_ins_fname);
+	// 	}
+	// }
 
 	bcf_close(in_assembled_ins_file);
 	bcf_close(out_assembled_ins_file);
-	bcf_close(in_transurveyor_ins_file);
-	bcf_close(out_transurveyor_ins_file);
+	// bcf_close(in_transurveyor_ins_file);
+	// bcf_close(out_transurveyor_ins_file);
 
     while (!bam_pool.empty()) {
         close_samFile(bam_pool.front());

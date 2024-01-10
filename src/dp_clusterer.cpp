@@ -44,20 +44,29 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, i
 	std::sort(clusters.begin(), clusters.end());
 }
 
-void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname,
-		std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
+void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname) {
 	
 	std::string dp_fname = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".bam";
 	if (!file_exists(dp_fname)) return;
 
 	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 
-	std::vector<cluster_t*> lp_clusters, ow_clusters;
+	// contains NM for mates
+	std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
+	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
+	std::string qname, seq;
+	int64_t nm;
+	while (mateseqs_fin >> qname >> seq >> nm) {
+		qname_to_mate_nm[qname] = nm;
+	}
 
+	std::vector<cluster_t*> lp_clusters, ow_clusters;
+	
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
-		cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq);
+		std::string qname = bam_get_qname(read);
+		cluster_t* cluster = new cluster_t(read, qname_to_mate_nm[qname], config.high_confidence_mapq);
 		if (read->core.isize > 0) {
 			lp_clusters.push_back(cluster);
 		} else {
@@ -65,6 +74,7 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		}
 	}
 	close_samFile(dp_bam_file);
+	qname_to_mate_nm.clear();
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
@@ -78,9 +88,9 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		mateseqs_to_retrieve[c->leftmost_rseq] = c;
 	}
 
-	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
-	std::string qname, seq;
-	while (mateseqs_fin >> qname >> seq) {
+	mateseqs_fin.clear();
+	mateseqs_fin.seekg(0);
+	while (mateseqs_fin >> qname >> seq >> nm) {
 		if (!mateseqs_to_retrieve.count(qname)) continue;
 		mateseqs_to_retrieve[qname]->leftmost_rseq = seq;
 	}
@@ -110,9 +120,11 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 		}
 
 		if (del && -del->svlen() >= config.min_sv_size) {
-			del->disc_pairs = c->count;
-			del->disc_pairs_maxmapq = c->max_mapq;
-			del->disc_pairs_high_mapq = c->confident_count;
+			del->disc_pairs_lf = del->disc_pairs_rf = c->count;
+			del->disc_pairs_lf_maxmapq = del->disc_pairs_rf_maxmapq = c->max_mapq;
+			del->disc_pairs_lf_high_mapq = del->disc_pairs_rf_high_mapq = c->confident_count;
+			del->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
+			del->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 			del->source = "DP";
 			deletions.push_back(del);
 		}
@@ -153,9 +165,12 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 		if (iv.size() == 1) {
 			sv_t* corr_sr_del = iv[0].value;
 			if (corr_sr_del->start-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-corr_sr_del->end <= stats.max_is) {
-				corr_sr_del->disc_pairs = del->disc_pairs;
-				corr_sr_del->disc_pairs_maxmapq = del->disc_pairs_maxmapq;
-				corr_sr_del->disc_pairs_high_mapq = del->disc_pairs_high_mapq;
+				corr_sr_del->disc_pairs_lf = del->disc_pairs_lf;
+				corr_sr_del->disc_pairs_rf = del->disc_pairs_rf;
+				corr_sr_del->disc_pairs_lf_maxmapq = del->disc_pairs_lf_maxmapq;
+				corr_sr_del->disc_pairs_rf_maxmapq = del->disc_pairs_rf_maxmapq;
+				corr_sr_del->disc_pairs_lf_high_mapq = del->disc_pairs_lf_high_mapq;
+				corr_sr_del->disc_pairs_rf_high_mapq = del->disc_pairs_rf_high_mapq;
 				deletions[i] = NULL;
 			}
 		}
@@ -186,18 +201,9 @@ int main(int argc, char* argv[]) {
 
 	ctpl::thread_pool thread_pool1(config.threads);
 	std::vector<std::future<void> > futures;
-	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-
-		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
-		std::ifstream fin(fname);
-		std::string qname, read_seq, qual; int mapq;
-		while (fin >> qname >> read_seq >> qual >> mapq) {
-			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
-		}
-
-		std::future<void> future = thread_pool1.push(cluster_dps, contig_id, contig_name, bam_fname, &mateseqs_w_mapq[contig_id]);
+		std::future<void> future = thread_pool1.push(cluster_dps, contig_id, contig_name, bam_fname);
 		futures.push_back(std::move(future));
 	}
 	thread_pool1.stop(true);

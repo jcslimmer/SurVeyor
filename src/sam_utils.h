@@ -135,6 +135,14 @@ int64_t get_mq(bam1_t* r) {
     return bam_aux2i(mq);
 }
 
+int64_t get_nm(bam1_t* r) {
+    uint8_t* nm = bam_aux_get(r, "NM");
+    if (nm == NULL) {
+        return 0;
+    }
+    return bam_aux2i(nm);
+}
+
 void rc(std::string& read) {
     int len = read.length();
     for (int i = 0; i < len/2; i++) {

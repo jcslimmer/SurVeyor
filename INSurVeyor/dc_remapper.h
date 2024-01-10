@@ -63,8 +63,12 @@ struct insertion_cluster_t {
         semi_mapped_reads.clear();
     }
 
+    int size() {
+        return cluster->reads.size() + semi_mapped_reads.size() + (clip_consensus ? 1 : 0);
+    }
+
     bool empty() {
-    	return cluster->reads.empty() && !clip_consensus;
+    	return this->size() == 0;
     }
 };
 

@@ -221,19 +221,6 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 			} else {
 				rc_hsr_consensuses.push_back(consensus);
 			}
-			// if (dir == "L") {
-			// 	consensus_t* consensus = new consensus_t(true, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-			// 		breakpoint-start, max_mapq, remap_boundary, lowq_clip_portion);
-			// 	consensus->is_hsr = true;
-			// 	consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
-			// 	lc_hsr_consensuses.push_back(consensus);
-			// } else {
-			// 	consensus_t* consensus = new consensus_t(false, start, breakpoint, end, seq, fwd_clipped, rev_clipped, 
-			// 		end-breakpoint, max_mapq, remap_boundary, lowq_clip_portion);
-			// 	consensus->is_hsr = true;
-			// 	consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
-			// 	rc_hsr_consensuses.push_back(consensus);
-			// }
 		}
 	}
 

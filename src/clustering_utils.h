@@ -17,6 +17,7 @@ struct cluster_t {
 	int id = -1;
 	hts_pos_t la_start, la_end, ra_start, ra_end;
 	int count = 1, confident_count = 0;
+	int la_cum_nm, ra_cum_nm = 0;
 	uint8_t max_mapq;
 	bool used = false;
 	std::string rightmost_lseq, leftmost_rseq; // right-most right-facing sequence and left-most left-facing seq
@@ -25,16 +26,20 @@ struct cluster_t {
 
 	cluster_t() : la_start(INT32_MAX), la_end(0), ra_start(INT32_MAX), ra_end(0), max_mapq(0) {}
 
-	cluster_t(bam1_t* read, int high_confidence_mapq, bool store_read = false) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
+	cluster_t(bam1_t* read, int64_t mate_nm, int high_confidence_mapq, bool store_read = false) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
 			max_mapq(std::min(read->core.qual, (uint8_t) get_mq(read))) {
 		confident_count = max_mapq == high_confidence_mapq;
+		if (bam_is_rev(read)) {
+			la_cum_nm = mate_nm;
+			ra_cum_nm = get_nm(read);
+		} else {
+			la_cum_nm = get_nm(read);
+			ra_cum_nm = mate_nm;
+		}
 		rightmost_lseq = get_sequence(read);
 		leftmost_rseq = bam_get_qname(read);
 		if (store_read) reads.push_back(bam_dup1(read));
 	}
-
-	cluster_t(hts_pos_t la_start, hts_pos_t la_end, hts_pos_t ra_start, hts_pos_t ra_end, int count) : 
-		la_start(la_start), la_end(la_end), ra_start(ra_start), ra_end(ra_end), count(count), max_mapq(0) {}
 
 	static hts_pos_t distance(cluster_t* c1, cluster_t* c2) {
 		hts_pos_t la_dist = std::max(c1->la_end, c2->la_end) - std::min(c1->la_start, c2->la_start);
@@ -54,6 +59,8 @@ struct cluster_t {
 		merged->ra_end = std::max(c1->ra_end, c2->ra_end);
 		merged->count = c1->count + c2->count;
 		merged->confident_count = c1->confident_count + c2->confident_count;
+		merged->la_cum_nm = c1->la_cum_nm + c2->la_cum_nm;
+		merged->ra_cum_nm = c1->ra_cum_nm + c2->ra_cum_nm;
 		merged->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
 
 		// set rightmost_lseq

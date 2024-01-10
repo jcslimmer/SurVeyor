@@ -205,10 +205,13 @@ exec(dc_remapper_cmd)
 add_filtering_info_cmd = SURVEYOR_PATH + "/bin/insurveyor_add_filtering_info %s %s %s" % (cmd_args.bam_file, insurveyor_workdir, cmd_args.reference)
 exec(add_filtering_info_cmd)
 
+add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/insurveyor/transurveyor_and_assembled_ins.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
+exec(add_filtering_info_cmd)
+
 filter_cmd = SURVEYOR_PATH + "/bin/insurveyor_filter %s %s 0.25" % (insurveyor_workdir, cmd_args.reference)
 exec(filter_cmd)
 
-concat_cmd = "bcftools concat -a %s/out.pass.vcf.gz %s/survindel2.out.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (insurveyor_workdir, cmd_args.workdir, cmd_args.workdir)
+concat_cmd = "bcftools concat -a %s/out.pass.vcf.gz %s/survindel2.out.annotated.pass.vcf.gz %s/transurveyor_and_assembled_ins.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (insurveyor_workdir, cmd_args.workdir, insurveyor_workdir, cmd_args.workdir)
 exec(concat_cmd)
 
 # normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)

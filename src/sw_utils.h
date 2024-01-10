@@ -1,6 +1,8 @@
 #ifndef SW_UTILS_H
 #define SW_UTILS_H
 
+#include <iostream>
+
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "simd_macros.h"
@@ -358,7 +360,10 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	for (int i = 0; i < ref_remap_lh_len; i++) {
 		ref_lh_cstr[i] = toupper(contig_seq[ref_remap_lh_start+i]);
 	} ref_lh_cstr[ref_remap_lh_len] = '\0';
-    int* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_remap_lh_len, junction_seq.c_str(), junction_seq.length(), 1, -4, -6, -1);
+
+	int sep = junction_seq.find("-");
+	std::string prefix_junction_seq = sep == std::string::npos ? junction_seq : junction_seq.substr(0, sep);
+    int* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_remap_lh_len, prefix_junction_seq.c_str(), prefix_junction_seq.length(), 1, -4, -6, -1);
 
     char ref_rh_cstr[100000];
     for (int i = 0; i < ref_remap_rh_len; i++) {
@@ -370,13 +375,15 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
         ref_rh_cstr_rev[i] = ref_rh_cstr[ref_remap_rh_len-1-i];
     } ref_rh_cstr_rev[ref_remap_rh_len] = '\0';
 
-    std::string junction_seq_rev = std::string(junction_seq.rbegin(), junction_seq.rend());
-    int* suffix_scores = smith_waterman_gotoh(ref_rh_cstr_rev, ref_remap_rh_len, junction_seq_rev.c_str(), junction_seq_rev.length(), 1, -4, -6, -1);
+	std::string suffix_junction_seq = sep == std::string::npos ? junction_seq : junction_seq.substr(sep+1);
+    std::string suffix_junction_seq_rev = std::string(suffix_junction_seq.rbegin(), suffix_junction_seq.rend());
+    int* suffix_scores = smith_waterman_gotoh(ref_rh_cstr_rev, ref_remap_rh_len, suffix_junction_seq_rev.c_str(), suffix_junction_seq_rev.length(), 1, -4, -6, -1);
+	int suffix_begin = sep == std::string::npos ? 0 : sep+1;
 
     int max_score = 0, best_i = 0, best_j = 0;
-	for (int i = min_clip_len; i < junction_seq.length()-min_clip_len; i++) {
+	for (int i = min_clip_len; i < prefix_junction_seq.length()-min_clip_len; i++) {
         int prefix_score = prefix_scores[i-1]; // score of the best aln of [0..i-1]
-        for (int j = i; j <= junction_seq.length()-min_clip_len; j++) {
+        for (int j = std::max(i, suffix_begin); j <= junction_seq.length()-min_clip_len; j++) {
             int suffix_score = suffix_scores[junction_seq.length()-j-1]; // score of the best aln of [j..junction_seq.length()-1]
             // note that we want the score of the suffix of length junction_seq.length()-j, 
             // so we need to subtract 1 because suffix_scores[n] is the score of the best suffix of length n+1
@@ -432,6 +439,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	StripedSmithWaterman::Alignment& best_full_aln = full_aln_lh.sw_score >= full_aln_rh.sw_score ? full_aln_lh : full_aln_rh;
 	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+best_full_aln.ref_begin, ref_remap_lh_start+best_full_aln.ref_end, junction_seq.length(), best_full_aln.sw_score, best_full_aln.sw_score_next_best, best_full_aln.cigar_string);
 
+	int prefix_mh_len = 0, suffix_mh_len = 0;
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
         int mh_len = left_bp - right_bp;
         std::pair<int, int> lp_suffix_score = find_aln_suffix_score(left_part_aln.cigar, mh_len, 1, -4, -6, -1);
@@ -454,6 +462,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
             mh = right_part.substr(0, query_mh_bases);
             right_bp = left_bp + right_bp_adjustment;
             middle_part = middle_part + mh;
+			suffix_mh_len = mh.length();
         } else {
             // the prefix of the right part is more similar to the reference, hence we choose the suffix of the left part
             // to add as part of the inserted sequence
@@ -462,6 +471,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
             mh = left_part.substr(left_part.length() - query_mh_bases);
             left_bp = right_bp - left_bp_adjustment;
             middle_part = mh + middle_part;
+			prefix_mh_len = mh.length();
         }
     }
 
@@ -471,6 +481,8 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
     } else { // length of ALT > REF, insertion
         svs.push_back(new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln));
     }
+	svs[0]->prefix_mh_len = prefix_mh_len;
+	svs[0]->suffix_mh_len = suffix_mh_len;
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_start, right_anchor_end);

@@ -107,7 +107,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     if (ok < 0) throw "Failed to write to " + std::string(ow_writer->fn);
                 }
         	} else if (read->core.isize < -stats.max_is || read->core.isize > 0) {
-        		mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << "\n";
+        		mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
         	}
         }
 

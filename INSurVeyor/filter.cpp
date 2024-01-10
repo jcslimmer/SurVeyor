@@ -8,6 +8,8 @@
 #include "htslib/tbx.h"
 #include "utils.h"
 #include "vcf_utils.h"
+#include "../src/vcf_utils.h"
+#include "../src/types.h"
 
 config_t config;
 stats_t stats;
@@ -96,100 +98,100 @@ int main(int argc, char* argv[]) {
 
 	std::vector<bcf1_t*> final_insertions_set;
 
-	std::unordered_map<std::string, std::vector<inss_insertion_t*> > final_insertions_by_contig;
+	std::unordered_map<std::string, std::vector<inss_insertion_t*> > inss_final_insertions_by_contig;
 
 	/* == Insertions predicted by TranSurVeyor == */
-	std::string transurveyor_ins_vcf_fname = workdir + "/transurveyor_ins.annotated.vcf.gz";
-	htsFile* transurveyor_ins_vcf_file = bcf_open(transurveyor_ins_vcf_fname.c_str(), "r");
-	if (!transurveyor_ins_vcf_file) {
-		throw std::runtime_error("Unable to open file " + transurveyor_ins_vcf_fname + ".");
-	}
-	bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(transurveyor_ins_vcf_file);
-	bcf_hdr_t* out_vcf_header = bcf_hdr_dup(transurveyor_ins_hdr);
+	// std::string transurveyor_ins_vcf_fname = workdir + "/transurveyor_ins.annotated.vcf.gz";
+	// htsFile* transurveyor_ins_vcf_file = bcf_open(transurveyor_ins_vcf_fname.c_str(), "r");
+	// if (!transurveyor_ins_vcf_file) {
+	// 	throw std::runtime_error("Unable to open file " + transurveyor_ins_vcf_fname + ".");
+	// }
+	// bcf_hdr_t* transurveyor_ins_hdr = bcf_hdr_read(transurveyor_ins_vcf_file);
 	
 	bcf1_t* bcf_entry = bcf_init();
-	while (bcf_read(transurveyor_ins_vcf_file, transurveyor_ins_hdr, bcf_entry) == 0) {
-		std::string contig_name = bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry);
+	// while (bcf_read(transurveyor_ins_vcf_file, transurveyor_ins_hdr, bcf_entry) == 0) {
+	// 	std::string contig_name = bcf_seqname_safe(transurveyor_ins_hdr, bcf_entry);
+	// 	sv_t* sv = bcf_to_sv(transurveyor_ins_hdr, bcf_entry);
 
-		std::string ins_seq = get_ins_seq(transurveyor_ins_hdr, bcf_entry);
+	// 	std::string ins_seq = get_ins_seq(transurveyor_ins_hdr, bcf_entry);
 
-		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+	// 	std::vector<inss_insertion_t*>& dst_contig_insertions = inss_final_insertions_by_contig[contig_name];
+	// 	inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(transurveyor_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, ins_seq);
 
-		int* stable_depths = NULL;
-		int size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "STABLE_DEPTHS", &stable_depths, &size);
+	// 	int* stable_depths = NULL;
+	// 	int size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "STABLE_DEPTHS", &stable_depths, &size);
 
-		int* discordants = NULL;
-		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "DISCORDANT", &discordants, &size);
+	// 	int* discordants = NULL;
+	// 	size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "DISCORDANT", &discordants, &size);
 
-		int* split_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &size);
+	// 	int* split_reads = NULL;
+	// 	size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPLIT_READS", &split_reads, &size);
 
-		int* fwd_split_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "FWD_SPLIT_READS", &fwd_split_reads, &size);
+	// 	int* fwd_split_reads = NULL;
+	// 	size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "FWD_SPLIT_READS", &fwd_split_reads, &size);
 
-		int* rev_split_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "REV_SPLIT_READS", &rev_split_reads, &size);
+	// 	int* rev_split_reads = NULL;
+	// 	size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "REV_SPLIT_READS", &rev_split_reads, &size);
 
-		int* spanning_reads = NULL;
-		size = 0;
-		bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPANNING_READS", &spanning_reads, &size);
+	// 	int* spanning_reads = NULL;
+	// 	size = 0;
+	// 	bcf_get_info_int32(transurveyor_ins_hdr, bcf_entry, "SPANNING_READS", &spanning_reads, &size);
 
-		insertion->median_lf_cov = stable_depths[0], insertion->median_rf_cov = stable_depths[1];
-		insertion->r_disc_pairs = discordants[0], insertion->l_disc_pairs = discordants[1];
-		insertion->rc_fwd_reads = fwd_split_reads[0], insertion->lc_fwd_reads = fwd_split_reads[1];
-		insertion->rc_rev_reads = rev_split_reads[0], insertion->lc_rev_reads = rev_split_reads[1];
-		insertion->r_conc_pairs = spanning_reads[0], insertion->l_conc_pairs = spanning_reads[1];
+	// 	insertion->median_lf_cov = stable_depths[0], insertion->median_rf_cov = stable_depths[1];
+	// 	insertion->r_disc_pairs = discordants[0], insertion->l_disc_pairs = discordants[1];
+	// 	insertion->rc_fwd_reads = fwd_split_reads[0], insertion->lc_fwd_reads = fwd_split_reads[1];
+	// 	insertion->rc_rev_reads = rev_split_reads[0], insertion->lc_rev_reads = rev_split_reads[1];
+	// 	insertion->r_conc_pairs = spanning_reads[0], insertion->l_conc_pairs = spanning_reads[1];
 
-		std::string mh_seq;
-		int mh_len = 0;
-		// extract microhomology, if present
-		if (insertion->ins->start > insertion->ins->end) {
-			mh_len = insertion->ins->start - insertion->ins->end;
-			char* mh_seq_cstr = new char[mh_len+1];
-			strncpy(mh_seq_cstr, contigs.get_seq(contig_name)+insertion->ins->end, mh_len);
-			mh_seq_cstr[mh_len] = '\0';
-			for (int i = 0; i < mh_len; i++) {
-				mh_seq_cstr[i] = toupper(mh_seq_cstr[i]);
-			}
-			mh_seq = mh_seq_cstr;
-			delete[] mh_seq_cstr;
-			insertion->ins->start = insertion->ins->end;
-			insertion->mh_len = mh_len;
-			bcf_entry->pos = get_sv_end(transurveyor_ins_hdr, bcf_entry);
-		}
-		std::string ins_seq_w_mh = mh_seq + get_ins_seq(transurveyor_ins_hdr, bcf_entry);
-		insertion->ins->ins_seq = ins_seq_w_mh;
-		bcf_update_info_string(out_vcf_header, bcf_entry, "SVINSSEQ", ins_seq_w_mh.c_str());
-		int int_conv = ins_seq_w_mh.length();
-		bcf_update_info_int32(out_vcf_header, bcf_entry, "SVINSLEN", &int_conv, 1);
-		int_conv = insertion->ins->ins_seq.length() - (insertion->ins->end-insertion->ins->start);
-		bcf_update_info_int32(out_vcf_header, bcf_entry, "SVLEN", &int_conv, 1);
-		bcf_update_info_int32(out_vcf_header, bcf_entry, "MHLEN", &insertion->mh_len, 1);
+	// 	std::string mh_seq;
+	// 	int mh_len = 0;
+	// 	// extract microhomology, if present
+	// 	if (insertion->ins->start > insertion->ins->end) {
+	// 		mh_len = insertion->ins->start - insertion->ins->end;
+	// 		char* mh_seq_cstr = new char[mh_len+1];
+	// 		strncpy(mh_seq_cstr, contigs.get_seq(contig_name)+insertion->ins->end, mh_len);
+	// 		mh_seq_cstr[mh_len] = '\0';
+	// 		for (int i = 0; i < mh_len; i++) {
+	// 			mh_seq_cstr[i] = toupper(mh_seq_cstr[i]);
+	// 		}
+	// 		mh_seq = mh_seq_cstr;
+	// 		delete[] mh_seq_cstr;
+	// 		insertion->ins->start = insertion->ins->end;
+	// 		insertion->mh_len = mh_len;
+	// 		bcf_entry->pos = get_sv_end(transurveyor_ins_hdr, bcf_entry);
+	// 	}
+	// 	std::string ins_seq_w_mh = mh_seq + get_ins_seq(transurveyor_ins_hdr, bcf_entry);
+	// 	insertion->ins->ins_seq = ins_seq_w_mh;
+	// 	bcf_update_info_string(out_vcf_header, bcf_entry, "SVINSSEQ", ins_seq_w_mh.c_str());
+	// 	int int_conv = ins_seq_w_mh.length();
+	// 	bcf_update_info_int32(out_vcf_header, bcf_entry, "SVINSLEN", &int_conv, 1);
+	// 	int_conv = insertion->ins->ins_seq.length() - (insertion->ins->end-insertion->ins->start);
+	// 	bcf_update_info_int32(out_vcf_header, bcf_entry, "SVLEN", &int_conv, 1);
+	// 	bcf_update_info_int32(out_vcf_header, bcf_entry, "MHLEN", &insertion->mh_len, 1);
 
-		auto scores = ptn_score(insertion);
-		float float2_conv[2];
-		float2_conv[0] = scores.first, float2_conv[1] = scores.second;
-		bcf_update_info_float(out_vcf_header, bcf_entry, "SCORES", float2_conv, 2);
+	// 	auto scores = ptn_score(insertion);
+	// 	float float2_conv[2];
+	// 	float2_conv[0] = scores.first, float2_conv[1] = scores.second;
+	// 	bcf_update_info_float(out_vcf_header, bcf_entry, "SCORES", float2_conv, 2);
 
-		std::vector<std::string> filters = get_transurveyor_insertions_filterlist(insertion);
-		for (std::string filter : filters) {
-			int filter_id = bcf_hdr_id2int(out_vcf_header, BCF_DT_ID, filter.c_str());
-			bcf_add_filter(out_vcf_header, bcf_entry, filter_id);
-		}
+	// 	std::vector<std::string> filters = get_transurveyor_insertions_filterlist(insertion);
+	// 	for (std::string filter : filters) {
+	// 		int filter_id = bcf_hdr_id2int(out_vcf_header, BCF_DT_ID, filter.c_str());
+	// 		bcf_add_filter(out_vcf_header, bcf_entry, filter_id);
+	// 	}
 
-		if (bcf_has_filter(out_vcf_header, bcf_entry, (char*) "PASS")) {
-			final_insertions_by_contig[contig_name].push_back(insertion);
-		}
-		bcf_unpack(bcf_entry, BCF_UN_ALL);
-		bcf_translate(out_vcf_header, transurveyor_ins_hdr, bcf_entry);
-		final_insertions_set.push_back(bcf_dup(bcf_entry));
-	}
+	// 	if (bcf_has_filter(out_vcf_header, bcf_entry, (char*) "PASS")) {
+	// 		inss_final_insertions_by_contig[contig_name].push_back(insertion);
+	// 	}
+	// 	bcf_unpack(bcf_entry, BCF_UN_ALL);
+	// 	bcf_translate(out_vcf_header, transurveyor_ins_hdr, bcf_entry);
+	// 	final_insertions_set.push_back(bcf_dup(bcf_entry));
+	// }
 
 	/* == Assembled insertions == */
 	std::string assembled_ins_vcf_fname = workdir + "/assembled_ins.annotated.vcf.gz";
@@ -198,13 +200,14 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Unable to open file " + assembled_ins_vcf_fname + ".");
 	}
 	bcf_hdr_t* assembled_ins_hdr = bcf_hdr_read(assembled_ins_vcf_file);
+	bcf_hdr_t* out_vcf_header = bcf_hdr_dup(assembled_ins_hdr);
 	while (bcf_read(assembled_ins_vcf_file, assembled_ins_hdr, bcf_entry) == 0) {
 		std::string contig_name = bcf_seqname_safe(assembled_ins_hdr, bcf_entry);
 
 		std::string ins_seq = get_ins_seq(assembled_ins_hdr, bcf_entry);
 
-		std::vector<inss_insertion_t*>& dst_contig_insertions = final_insertions_by_contig[contig_name];
-		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, 0, 0, 0, 0, ins_seq);
+		std::vector<inss_insertion_t*>& dst_contig_insertions = inss_final_insertions_by_contig[contig_name];
+		inss_insertion_t* insertion = new inss_insertion_t(contig_name, bcf_entry->pos, get_sv_end(assembled_ins_hdr, bcf_entry), 0, 0, 0, ins_seq);
 
 		int* stable_depths = NULL;
 		int size = 0;
@@ -224,7 +227,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		if (bcf_has_filter(out_vcf_header, bcf_entry, (char*) "PASS")) {
-			final_insertions_by_contig[contig_name].push_back(insertion);
+			inss_final_insertions_by_contig[contig_name].push_back(insertion);
 		}
 		bcf_unpack(bcf_entry, BCF_UN_ALL);
 		bcf_translate(out_vcf_header, assembled_ins_hdr, bcf_entry);

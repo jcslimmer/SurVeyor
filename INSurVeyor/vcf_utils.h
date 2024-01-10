@@ -230,9 +230,9 @@ void inss_insertion_to_bcf_entry(inss_insertion_t* insertion, bcf_hdr_t* hdr, bc
 	int int2_conv[2];
 	int2_conv[0] = insertion->rc_reads(), int2_conv[1] = insertion->lc_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = insertion->rc_fwd_reads, int2_conv[1] = insertion->lc_fwd_reads;
+	int2_conv[0] = insertion->ins->rc_fwd_reads(), int2_conv[1] = insertion->ins->lc_fwd_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "FWD_SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = insertion->rc_rev_reads, int2_conv[1] = insertion->lc_rev_reads;
+	int2_conv[0] = insertion->ins->rc_rev_reads(), int2_conv[1] = insertion->ins->lc_rev_reads();
 	bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
 
 	// add GT info

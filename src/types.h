@@ -143,9 +143,12 @@ struct sv_t {
     std::string chr;
     hts_pos_t start, end;
     std::string ins_seq;
+    int prefix_mh_len = 0, suffix_mh_len = 0;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
-    int disc_pairs = 0, disc_pairs_high_mapq = 0, disc_pairs_maxmapq = 0, conc_pairs = 0;
+    int disc_pairs_lf = 0, disc_pairs_rf = 0, disc_pairs_lf_high_mapq = 0, disc_pairs_rf_high_mapq = 0, disc_pairs_lf_maxmapq = 0, 
+        disc_pairs_rf_maxmapq = 0, conc_pairs = 0;
+    double disc_pairs_lf_avg_nm = 0, disc_pairs_rf_avg_nm = 0;
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
     int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
@@ -235,8 +238,15 @@ struct duplication_t : sv_t {
 struct insertion_t : sv_t {
     using sv_t::sv_t;
 
+    static const int NOT_COMPUTED = INT32_MAX;
+
+    bool imprecise_bp = false;
+    int prefix_cov_start = NOT_COMPUTED, prefix_cov_end = NOT_COMPUTED, suffix_cov_start = NOT_COMPUTED, suffix_cov_end = NOT_COMPUTED; // start and end of the prefix and suffix of the inserted sequence actually supported by reads. Only applicable to long transpositions, for which the central part is inferred
+
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
+
+    bool imprecise() { return imprecise_bp; }
 };
 
 
