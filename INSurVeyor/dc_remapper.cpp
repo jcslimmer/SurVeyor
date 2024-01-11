@@ -17,16 +17,17 @@
 #include <htslib/kseq.h>
 #include <vector>
 
-#include "dc_remapper.h"
+#include "../libs/cptl_stl.h"
+#include "../libs/ssw.h"
+#include "../libs/ssw_cpp.h"
+#include "../libs/IntervalTree.h"
+#include "../src/dc_remapper.h"
 #include "../src/sam_utils.h"
 #include "../src/clustering_utils.h"
 #include "utils.h"
 #include "vcf_utils.h"
 #include "assemble.h"
-#include "../libs/cptl_stl.h"
-#include "../libs/ssw.h"
-#include "../libs/ssw_cpp.h"
-#include "../libs/IntervalTree.h"
+#include "guided_reference_assemble.h"
 #include "../src/vcf_utils.h"
 
 
@@ -40,7 +41,6 @@ chr_seqs_map_t contigs;
 
 std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer;
 
-std::vector<inss_insertion_t*> inss_assembled_insertions;
 std::vector<sv_t*> insertions;
 
 const int SMALL_SAMPLE_SIZE = 15;
@@ -1211,57 +1211,17 @@ int main(int argc, char* argv[]) {
         futures[i].get();
     }
 
-    // out assembled file
-	std::string assembled_out_vcf_fname = workdir + "/assembled_ins.vcf.gz";
-	htsFile* assembled_out_vcf_file = bcf_open(assembled_out_vcf_fname.c_str(), "wz");
-	if (assembled_out_vcf_file == NULL) {
-		throw std::runtime_error("Unable to open file " + assembled_out_vcf_fname + ".");
-	}
-	bcf_hdr_t* inss_out_vcf_header = inss_generate_vcf_header(contigs, sample_name, config, full_cmd_str);
-	if (bcf_hdr_write(assembled_out_vcf_file, inss_out_vcf_header) != 0) {
-		throw std::runtime_error("Failed to write the VCF header to " + assembled_out_vcf_fname + ".");
-	}
-
-	std::sort(inss_assembled_insertions.begin(), inss_assembled_insertions.end(), [&inss_out_vcf_header](const inss_insertion_t* i1, const inss_insertion_t* i2) {
-		int contig_id1 = bcf_hdr_name2id(inss_out_vcf_header, i1->ins->chr.c_str());
-		int contig_id2 = bcf_hdr_name2id(inss_out_vcf_header, i2->ins->chr.c_str());
-		// negative because we want descending order
-		int disc_score_mul1 = -(i1->ins->disc_pairs_lf*i1->ins->disc_pairs_rf), disc_score_mul2 = -(i2->ins->disc_pairs_lf*i2->ins->disc_pairs_rf);
-		int disc_score_sum1 = -(i1->ins->disc_pairs_lf+i1->ins->disc_pairs_rf), disc_score_sum2 = -(i2->ins->disc_pairs_lf+i2->ins->disc_pairs_rf);
-		return std::tie(contig_id1, i1->ins->start, i1->ins->end, i1->ins->ins_seq, disc_score_mul1, disc_score_sum1) <
-			   std::tie(contig_id2, i2->ins->start, i2->ins->end, i2->ins->ins_seq, disc_score_mul2, disc_score_sum2);
-	});
-
 	bcf1_t* bcf_entry = bcf_init();
-	int a_id = 0;
-	for (inss_insertion_t* insertion : inss_assembled_insertions) {
-		std::string id = "A_INS_" + std::to_string(a_id++);
-		inss_insertion_to_bcf_entry(insertion, inss_out_vcf_header, bcf_entry, id, contigs);
-
-		int int2_conv[2];
-		int2_conv[0] = insertion->ins->disc_pairs_lf, int2_conv[1] = insertion->ins->disc_pairs_rf;
-		bcf_update_info_int32(inss_out_vcf_header, bcf_entry, "DISCORDANT", int2_conv, 2);
-		bcf_update_info_string(inss_out_vcf_header, bcf_entry, "ALGORITHM", "assembly");
-		bcf_update_info_string(inss_out_vcf_header, bcf_entry, "LEFT_ANCHOR", insertion->ins->left_anchor_aln_string().c_str());
-		bcf_update_info_string(inss_out_vcf_header, bcf_entry, "RIGHT_ANCHOR", insertion->ins->right_anchor_aln_string().c_str());
-		float f2_conv[2];
-		f2_conv[0] = insertion->ins->disc_pairs_lf_avg_nm, f2_conv[1] = insertion->ins->disc_pairs_rf_avg_nm;
-		bcf_update_info_float(inss_out_vcf_header, bcf_entry, "AVG_STABLE_NM", f2_conv, 2);
-
-		if (bcf_write(assembled_out_vcf_file, inss_out_vcf_header, bcf_entry) != 0) {
-			throw std::runtime_error("Failed to write to " + assembled_out_vcf_fname + ".");
-		}
-	}
 
 	// out transurveyor insertions
-	std::string transurveyor_out_vcf_fname = workdir + "/transurveyor_and_assembled_ins.vcf.gz";
+	std::string out_vcf_fname = workdir + "/assembled_ins.vcf.gz";
     bcf_hdr_t* out_vcf_header = generate_vcf_header(contigs, sample_name, config, full_cmd_str);
-	htsFile* transurveyor_out_vcf_file = bcf_open(transurveyor_out_vcf_fname.c_str(), "wz");
-	if (transurveyor_out_vcf_file == NULL) {
-		throw std::runtime_error("Unable to open file " + transurveyor_out_vcf_fname + ".");
+	htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
+	if (out_vcf_file == NULL) {
+		throw std::runtime_error("Unable to open file " + out_vcf_fname + ".");
 	}
-	if (bcf_hdr_write(transurveyor_out_vcf_file, out_vcf_header) != 0) {
-		throw std::runtime_error("Failed to write the VCF header to " + transurveyor_out_vcf_fname + ".");
+	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
+		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
 	std::sort(insertions.begin(), insertions.end(), [&out_vcf_header](const sv_t* i1, const sv_t* i2) {
@@ -1274,15 +1234,16 @@ int main(int argc, char* argv[]) {
 			   std::tie(contig_id2, i2->start, i2->end, i2->ins_seq, disc_score_mul2, disc_score_sum2);
 	});
 
-	int t_id = 0;
+	int a_id = 0, t_id = 0;
 	for (sv_t* insertion : insertions) {
-        insertion->id = "T_INS_" + std::to_string(t_id++);
+        if (insertion->source == "REFERENCE_GUIDED_ASSEMBLY") insertion->id = "T_INS_" + std::to_string(t_id++);
+        else insertion->id = "A_INS_" + std::to_string(a_id++);
         sv2bcf(out_vcf_header, bcf_entry, insertion, contigs.get_seq(insertion->chr));
-		if (bcf_write(transurveyor_out_vcf_file, out_vcf_header, bcf_entry) != 0) {
-			throw std::runtime_error("Failed to write to " + transurveyor_out_vcf_fname + ".");
+		if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
+			throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 		}
 	}
 
-    bcf_close(assembled_out_vcf_file);
-    bcf_close(transurveyor_out_vcf_file);
+    // bcf_close(assembled_out_vcf_file);
+    bcf_close(out_vcf_file);
 }
