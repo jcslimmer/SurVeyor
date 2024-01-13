@@ -4,11 +4,12 @@
 #include <queue>
 #include <unordered_set>
 #include <mutex>
+#include <htslib/sam.h>
 
 #include "../libs/ssw.h"
-#include "../src/sw_utils.h"
-#include "../src/types.h"
-#include "../src/dc_remapper.h"
+#include "sw_utils.h"
+#include "types.h"
+#include "dc_remapper.h"
 
 extern std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer;
 std::mutex failed_assembly_mtx;
@@ -339,7 +340,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, insertion_c
 	return assembled_sequences;
 }
 
-sv_t* assemble_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
+sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
 		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,

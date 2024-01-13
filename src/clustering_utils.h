@@ -81,9 +81,9 @@ struct cluster_t {
 	}
 
 	~cluster_t() {
-		for (bam1_t* read : reads) {
-			bam_destroy1(read);
-		}
+		// for (bam1_t* read : reads) {
+			// bam_destroy1(read);
+		// }
 	}
 };
 
