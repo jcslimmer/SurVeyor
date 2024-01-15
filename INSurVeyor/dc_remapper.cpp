@@ -44,8 +44,6 @@ std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_fai
 
 std::vector<sv_t*> insertions;
 
-const int SMALL_SAMPLE_SIZE = 15;
-const int CLUSTER_CANDIDATES = 3;
 const double BASE_ACCEPTANCE_THRESHOLD = 0.95;
 const int TOO_MANY_READS = 1000;
 
@@ -59,367 +57,7 @@ bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // 
     return ccd1.distance < ccd2.distance;
 }
 
-remap_info_t remap_seq(char* region, int region_len, std::string& seq, StripedSmithWaterman::Aligner& aligner,
-                StripedSmithWaterman::Filter& filter, int min_clip_len) {
-    if (region_len <= 0) {
-        return remap_info_t();
-    }
-
-    StripedSmithWaterman::Alignment alignment;
-    aligner.Align(seq.c_str(), region, region_len, filter, &alignment, 0);
-    bool accepted = alignment.sw_score >= 30; //s.length(); TODO
-
-    return remap_info_t(alignment, accepted, min_clip_len);
-}
-remap_info_t remap_seq2(char* region, int region_len, std::string& seq, StripedSmithWaterman::Aligner& aligner,
-                StripedSmithWaterman::Filter& filter, int min_clip_len) {
-    if (region_len <= 0) {
-        return remap_info_t();
-    }
-
-    StripedSmithWaterman::Alignment alignment;
-    aligner.Align(seq.c_str(), region, region_len, filter, &alignment, 0);
-    bool accepted = 2*alignment.sw_score >= seq.length() && alignment.query_end-alignment.query_begin >= min_clip_len; 
-
-    return remap_info_t(alignment, accepted, min_clip_len);
-}
-
-int get_strict_region_start(std::vector<remap_info_t>& rc_remap_infos, std::vector<remap_info_t>& lc_remap_infos) {
-    std::vector<remap_info_t> remap_infos;
-    for (remap_info_t& ri : rc_remap_infos) {
-        if (ri.left_clipped) remap_infos.push_back(ri);
-    }
-    for (remap_info_t& ri : lc_remap_infos) {
-        if (ri.left_clipped) remap_infos.push_back(ri);
-    }
-    if (remap_infos.empty()) return 0;
-
-    remap_info_t guard; guard.start = 1000000;
-    remap_infos.push_back(guard);
-
-    std::sort(remap_infos.begin(), remap_infos.end(),
-              [](remap_info_t& ri1, remap_info_t& ri2) { return ri1.start < ri2.start; });
-
-    int strict_region_start = remap_infos[0].start, max_freq = 1, curr_freq = 1;
-    for (int i = 1; i < remap_infos.size(); i++) {
-        if (remap_infos[i-1].start != remap_infos[i].start) {
-            if (curr_freq > max_freq) {
-                strict_region_start = remap_infos[i-1].start;
-                max_freq = curr_freq;
-            }
-            curr_freq = 0;
-        }
-        curr_freq++;
-    }
-
-    return strict_region_start;
-}
-int get_strict_region_end(std::vector<remap_info_t>& rc_remap_infos, std::vector<remap_info_t>& lc_remap_infos) {
-    std::vector<remap_info_t> remap_infos;
-    for (remap_info_t& ri : rc_remap_infos) {
-        if (ri.right_clipped) remap_infos.push_back(ri);
-    }
-    for (remap_info_t& ri : lc_remap_infos) {
-        if (ri.right_clipped) remap_infos.push_back(ri);
-    }
-    if (remap_infos.empty()) return 0;
-
-    remap_info_t guard; guard.end = 0;
-    remap_infos.push_back(guard);
-
-    std::sort(remap_infos.begin(), remap_infos.end(),
-              [](remap_info_t& ri1, remap_info_t& ri2) { return ri1.end > ri2.end; });
-
-    int strict_region_end = remap_infos[0].end, max_freq = 1, curr_freq = 1;
-    for (int i = 1; i < remap_infos.size(); i++) {
-        if (remap_infos[i-1].end != remap_infos[i].end) {
-            if (curr_freq > max_freq) {
-                strict_region_end = remap_infos[i-1].end;
-                max_freq = curr_freq;
-            }
-            curr_freq = 0;
-        }
-        curr_freq++;
-    }
-
-    return strict_region_end;
-}
-
-// if remapped reads are too far away, find the max_is bp window where the sum of read scores is maximised, and remap all the reads there
-void remap_to_maxis_window(std::vector<remap_info_t>& remap_infos, remap_info_t& clip_remap_info, char* region_ptr,
-		int remapped_region_start, int remapped_region_end, std::vector<std::string>& read_seqs, std::string& clip_seq, char clip_dir,
-		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Filter& filter) {
-	std::sort(remap_infos.begin(), remap_infos.end(),
-			[](const remap_info_t& ri1, const remap_info_t& ri2) { return ri1.start < ri2.start; });
-	int s = 0, score = 0;
-	int best_start = 0, best_end = 0, best_score = 0;
-	for (int e = 0; e < remap_infos.size(); e++) {
-		while (remap_infos[e].start-remap_infos[s].start > stats.max_is) {
-			score -= remap_infos[s].score;
-			s++;
-		}
-		score += remap_infos[e].score;
-		if (score > best_score) {
-			best_score = score;
-			best_start = s, best_end = e;
-		}
-	}
-
-	int strictest_region_start = remap_infos[best_start].start, strictest_region_end = remap_infos[best_end].end;
-	int strictest_region_len = strictest_region_end - strictest_region_start;
-	remap_infos.clear();
-
-
-	// add some additional space to remap the clip
-	int padding = stats.max_is - strictest_region_len;
-	if (!clip_seq.empty() && padding > 0) {
-		if (clip_dir == 'L') {
-			strictest_region_start -= padding;
-			// we do not allow the new strictest region to cross the original remapped region - this is the simplest way to make sure
-			// it does not go out of the contig boundary and crash
-			strictest_region_start = std::max(strictest_region_start, remapped_region_start);
-		}
-		else if (clip_dir == 'R') {
-			strictest_region_end += padding;
-			strictest_region_end = std::min(strictest_region_end, remapped_region_end);
-		}
-		strictest_region_len = strictest_region_end - strictest_region_start;
-	}
-
-	for (std::string& s : read_seqs) {
-		remap_info_t remap_info = remap_seq(region_ptr+strictest_region_start, strictest_region_len, s, aligner, filter, config.min_clip_len);
-		remap_info.start += strictest_region_start;
-		remap_info.end += strictest_region_start;
-		remap_infos.push_back(remap_info);
-	}
-	if (!clip_seq.empty()) {
-		clip_remap_info = remap_seq(region_ptr+strictest_region_start, strictest_region_len, clip_seq, aligner, filter, config.min_clip_len);
-		clip_remap_info.start += strictest_region_start;
-		clip_remap_info.end += strictest_region_start;
-	}
-}
-
-region_score_t compute_score_supp(region_t& region, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
-                       std::unordered_map<std::string, std::string>& mateseqs,
-                       std::vector<remap_info_t>* rc_remap_infos_, std::vector<remap_info_t>* lc_remap_infos_,
-                       StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
-                       StripedSmithWaterman::Filter& filter, bool do_rc) {
-
-    // mateseqs contains seqs are stored as in fasta/q file
-    std::vector<std::string> r_mates, l_mates;
-    for (bam1_t* read : r_cluster->cluster->reads) {
-        std::string s = get_mate_seq(read, mateseqs);
-        if (!do_rc) rc(s);   // by default, we map mates of fwd reads on the rev strand
-        r_mates.push_back(s);
-    }
-    for (bam1_t* read : l_cluster->cluster->reads) {
-        std::string s = get_mate_seq(read, mateseqs);
-        if (do_rc) rc(s);   // by default, we map mates of rev reads on the fwd strand
-        l_mates.push_back(s);
-    }
-
-    char* region_ptr = contigs.get_seq(contig_map.get_name(region.contig_id)) + region.start;
-    int strict_region_start = 0, strict_region_end = region.end - region.start;
-
-    region_score_t score;
-    remap_info_t rc_remap_info, lc_remap_info;
-
-    // map the clips (if available)
-    if (r_cluster->clip_consensus) {
-        std::string s = r_cluster->clip_consensus->clip_sequence();
-        if (do_rc) rc(s);
-        remap_info_t remap_info = remap_seq2(region_ptr, region.end-region.start, s, aligner, filter, config.min_clip_len);
-        if (remap_info.accepted) {
-            score.total_score += remap_info.score;
-            if (!do_rc) {
-                strict_region_start = remap_info.start;
-            } else if (do_rc) {
-                strict_region_end = remap_info.end;
-            }
-        }
-        rc_remap_info = remap_info;
-    }
-    if (l_cluster->clip_consensus) {
-        std::string s = l_cluster->clip_consensus->clip_sequence();
-        if (do_rc) rc(s);
-        remap_info_t remap_info = remap_seq2(region_ptr, region.end-region.start, s, aligner, filter, config.min_clip_len);
-        if (remap_info.accepted) {
-            score.total_score += remap_info.score;
-            if (do_rc) {
-                strict_region_start = remap_info.start;
-            } else if (!do_rc) {
-                strict_region_end = remap_info.end;
-            }
-        }
-        lc_remap_info = remap_info;
-    }
-
-    // map the reads
-    std::vector<remap_info_t> rc_remap_infos, lc_remap_infos;
-    int strict_region_len = strict_region_end - strict_region_start;
-
-    int min_start = INT32_MAX, max_end = 0;
-    for (std::string& s : r_mates) {
-        remap_info_t remap_info = remap_seq(region_ptr+strict_region_start, strict_region_len, s, aligner, filter, config.min_clip_len);
-        remap_info.start += strict_region_start;
-        min_start = std::min(min_start, remap_info.start);
-        remap_info.end += strict_region_start;
-        max_end = std::max(max_end, remap_info.end);
-        rc_remap_infos.push_back(remap_info);
-    }
-    if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
-    	std::string clip_seq = r_cluster->clip_consensus ? r_cluster->clip_consensus->clip_sequence() : "";
-    	char clip_dir = do_rc ? 'R' : 'L'; // R means that the clip determines the right-most boundary of the inserted region/sequence, L the left-most
-    	remap_to_maxis_window(rc_remap_infos, rc_remap_info, region_ptr, strict_region_start, strict_region_end,
-    			r_mates, clip_seq, clip_dir, aligner, filter);
-    }
-
-    min_start = INT32_MAX, max_end = 0;
-    for (std::string& s : l_mates) {
-        remap_info_t remap_info = remap_seq(region_ptr+strict_region_start, strict_region_len, s, aligner, filter, config.min_clip_len);
-        remap_info.start += strict_region_start;
-        min_start = std::min(min_start, remap_info.start);
-        remap_info.end += strict_region_start;
-        max_end = std::max(max_end, remap_info.end);
-        lc_remap_infos.push_back(remap_info);
-    }
-    if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
-    	std::string clip_seq = l_cluster->clip_consensus ? l_cluster->clip_consensus->clip_sequence() : "";
-    	char clip_dir = do_rc ? 'L' : 'R';
-    	remap_to_maxis_window(lc_remap_infos, lc_remap_info, region_ptr, strict_region_start, strict_region_end,
-    			l_mates, clip_seq, clip_dir, aligner, filter);
-    }
-
-    // if strict limits not identified through remapping of the clips, choose most common start and most common ends
-    if (strict_region_start == 0) {
-        strict_region_start = get_strict_region_start(rc_remap_infos, lc_remap_infos);
-    }
-    if (strict_region_end == region.end-region.start) {
-        int temp = get_strict_region_end(rc_remap_infos, lc_remap_infos);
-        if (temp > 0) strict_region_end = temp;
-    }
-
-    // un-accept all remappings that fall outside the strict limits or they are not clipped correctly
-    for (remap_info_t& remap_info : rc_remap_infos) {
-        if (remap_info.left_clipped && strict_region_start < remap_info.start-config.max_clipped_pos_dist) remap_info.accepted = false;
-        if (remap_info.start < strict_region_start-config.max_clipped_pos_dist) remap_info.accepted = false;
-        if (remap_info.right_clipped && remap_info.end+5 < strict_region_end) remap_info.accepted = false;
-        if (strict_region_end < remap_info.start) remap_info.accepted = false;
-    }
-    for (remap_info_t& remap_info : lc_remap_infos) {
-        if (remap_info.left_clipped && strict_region_start < remap_info.start-5) remap_info.accepted = false;
-        if (remap_info.end < strict_region_start) remap_info.accepted = false;
-        if (remap_info.right_clipped && remap_info.end+5 < strict_region_end) remap_info.accepted = false;
-        if (strict_region_end < remap_info.start) remap_info.accepted = false;
-    }
-
-    for (remap_info_t& remap_info : rc_remap_infos) {
-        if (remap_info.accepted) score.total_score += remap_info.score;
-    }
-    for (remap_info_t& remap_info : lc_remap_infos) {
-        if (remap_info.accepted) score.total_score += remap_info.score;
-    }
-
-    // find inserted sequence coordinates
-    int rc_start = INT32_MAX, rc_end = 0;
-	if (rc_remap_info.accepted) {
-		rc_start = rc_remap_info.start;
-		rc_end = rc_remap_info.end;
-	} else {
-		for (remap_info_t& ri : rc_remap_infos) {
-			if (ri.accepted) {
-				rc_start = std::min(rc_start, ri.start);
-				rc_end = std::max(rc_end, ri.end);
-			}
-		}
-	}
-	int lc_start = INT32_MAX, lc_end = 0;
-	if (lc_remap_info.accepted) {
-		lc_start = lc_remap_info.start;
-		lc_end = lc_remap_info.end;
-	} else {
-		for (remap_info_t& ri : lc_remap_infos) {
-			if (ri.accepted) {
-				lc_start = std::min(lc_start, ri.start);
-				lc_end = std::max(lc_end, ri.end);
-			}
-		}
-	}
-
-	if (!do_rc) {
-		score.remap_start = rc_start;
-		score.remap_end = lc_end;
-	} else {
-		score.remap_start = lc_start;
-		score.remap_end = rc_end;
-	}
-
-    if (rc_remap_infos_ && r_cluster->clip_consensus) {
-        rc_remap_infos.push_back(rc_remap_info);
-    }
-    if (lc_remap_infos_ && l_cluster->clip_consensus) {
-        lc_remap_infos.push_back(lc_remap_info);
-    }
-
-    if (rc_remap_infos_) rc_remap_infos_->swap(rc_remap_infos);
-    if (lc_remap_infos_) lc_remap_infos_->swap(lc_remap_infos);
-
-    return score;
-}
-
-void compute_score(region_t& region, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
-                   std::unordered_map<std::string, std::string>& mateseqs,
-                   std::vector<remap_info_t>* rc_remap_infos, std::vector<remap_info_t>* lc_remap_infos,
-                   StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
-                   StripedSmithWaterman::Filter& filter, bool& is_rc) {
-
-    region_score_t score = compute_score_supp(region, r_cluster, l_cluster, mateseqs, NULL, NULL,
-                                              aligner,permissive_aligner, filter, false);
-    region_score_t rc_score = compute_score_supp(region, r_cluster, l_cluster, mateseqs, NULL, NULL,
-                                                 aligner, permissive_aligner, filter, true);
-    region.score = std::max(score, rc_score);
-    if (score >= rc_score) {
-        is_rc = false;
-        if (rc_remap_infos != NULL) {
-            compute_score_supp(region, r_cluster, l_cluster, mateseqs, rc_remap_infos, lc_remap_infos, aligner,
-                               permissive_aligner, filter, false);
-        }
-    } else {
-        is_rc = true;
-        if (rc_remap_infos != NULL) {
-            compute_score_supp(region, r_cluster, l_cluster, mateseqs, rc_remap_infos, lc_remap_infos, aligner,
-                               permissive_aligner, filter, true);
-        }
-    }
-}
-
-insertion_cluster_t* subsample_cluster(insertion_cluster_t* reads_cluster, int size, std::default_random_engine& rng) {
-    std::vector<bam1_t*> subset(reads_cluster->cluster->reads);
-    if (subset.size() > size) {
-        std::shuffle(subset.begin(), subset.end(), rng);
-        subset.erase(subset.begin() + size, subset.end());
-    }
-    insertion_cluster_t* subsampled_cluster = new insertion_cluster_t(new cluster_t());
-    for (bam1_t* read : subset) subsampled_cluster->add_stable_read(read);
-    subsampled_cluster->add_clip_cluster(reads_cluster->clip_consensus);
-    return subsampled_cluster;
-}
-
-void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info, bool region_is_rc) {
-    read->core.mtid = chosen_region.original_bam_id;
-    read->core.mpos = chosen_region.start + remap_info.start;
-    if (region_is_rc == bam_is_rev(read)) {
-        read->core.flag |= BAM_FMREVERSE; //sets flag to true
-    } else {
-        read->core.flag &= ~BAM_FMREVERSE; //sets flag to false
-    }
-    bam_aux_update_str(read, "MC", remap_info.cigar.length() + 1, remap_info.cigar.c_str());
-    char ok = remap_info.accepted ? 'T' : 'F';
-    bam_aux_append(read, "OK", 'A', 1, (const uint8_t*) &ok);
-    bam_aux_append(read, "MS", 'i', 4, (const uint8_t*) &remap_info.score);
-}
-
-bool remap_cluster(insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<bam1_t*>& kept,
+bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<bam1_t*>& kept,
                    int contig_id, bam_hdr_t* header, std::unordered_map<std::string, std::string>& mateseqs,
 				   std::unordered_map<std::string, std::string>& matequals,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
@@ -469,72 +107,34 @@ bool remap_cluster(insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluste
     }
 
     /* == Find best candidate region == */
-    StripedSmithWaterman::Filter filter, filter_w_cigar;
-    filter_w_cigar.report_cigar = true;
-    bool is_rc;
-
-    // if too many regions and too many reads, subsample
-    if (full_cluster.size() > 2*SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
-    	std::default_random_engine rng(config.seed);
-        insertion_cluster_t* subsampled_lc = subsample_cluster(l_cluster, SMALL_SAMPLE_SIZE, rng);
-        insertion_cluster_t* subsampled_rc = subsample_cluster(r_cluster, SMALL_SAMPLE_SIZE, rng);
-
-        // compute best score
-        for (int i = 0; i < regions.size(); i++) {
-            compute_score(regions[i], subsampled_rc, subsampled_lc, mateseqs, NULL, NULL,
-                          aligner, permissive_aligner, filter, is_rc);
-        }
-        std::sort(regions.begin(), regions.end(), std::greater<region_t>());
-
-        regions.erase(regions.begin()+CLUSTER_CANDIDATES, regions.end());
-        delete subsampled_lc;
-        delete subsampled_rc;
-    }
-
-    // compute best score
-    for (int i = 0; i < regions.size(); i++) {
-        compute_score(regions[i], r_cluster, l_cluster, mateseqs, NULL, NULL,
-                      aligner, permissive_aligner, filter, is_rc);
-    }
-    std::sort(regions.begin(), regions.end(), std::greater<region_t>());
-
-    region_t best_region = regions[0];
-
-    // get base region
-    int start = r_cluster->start - stats.max_is;
-    int end = l_cluster->end + stats.max_is;
-    int contig_len = contigs.get_len(contig_name);
-    region_t base_region(contig_id, full_cluster[0]->core.tid, std::max(0, start), std::min(end, contig_len));
-
-    compute_score(base_region, r_cluster, l_cluster, mateseqs, NULL, NULL,
-                  aligner_to_base, permissive_aligner, filter, is_rc);
+    auto best_and_base_region = compute_best_and_base_regions(contig_id, r_cluster, l_cluster, regions, mateseqs, contigs, 
+        contig_map, aligner, permissive_aligner, aligner_to_base, config, stats);
+    region_t best_region = best_and_base_region.first;
+    region_t base_region = best_and_base_region.second;
 
     if (base_region.score.total_score >= best_region.score.total_score*BASE_ACCEPTANCE_THRESHOLD) {
-    	std::vector<remap_info_t> rc_remap_infos, lc_remap_infos;
-    	compute_score(base_region, r_cluster, l_cluster, mateseqs, &rc_remap_infos, &lc_remap_infos,
-					  aligner_to_base, permissive_aligner, filter, is_rc);
-    	int accepted_reads = 0;
-		for (remap_info_t& remap_info : rc_remap_infos) accepted_reads += remap_info.accepted;
-		for (remap_info_t& remap_info : lc_remap_infos) accepted_reads += remap_info.accepted;
+    	int accepted_reads = base_region.score.ro_accepted + base_region.score.lo_accepted;
 		int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 		if (double(accepted_reads)/tot_reads >= 0.5) {
 			return false;
 		}
     }
 
-    std::vector<remap_info_t> rc_remap_infos, lc_remap_infos;
-    compute_score(best_region, r_cluster, l_cluster, mateseqs, &rc_remap_infos, &lc_remap_infos,
-                  aligner, permissive_aligner, filter_w_cigar, is_rc);
+    std::vector<remap_info_t> ro_remap_infos, lo_remap_infos;
+    char* contig_seq = contigs.get_seq(contig_map.get_name(best_region.contig_id));
+    bool is_rc;
+    compute_score(best_region, contig_seq, r_cluster, l_cluster, mateseqs, &ro_remap_infos, &lo_remap_infos,
+                  aligner, permissive_aligner, is_rc, config, stats);
 
     // build corrected consensus sequence and realign reads to it
     bool left_bp_precise = false, right_bp_precise = false;
-    std::string corrected_consensus_sequence = generate_consensus_sequences(contig_name, contigs, contig_map, r_cluster, l_cluster, rc_remap_infos, lc_remap_infos,
+    std::string corrected_consensus_sequence = generate_consensus_sequences(contig_name, contigs, contig_map, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos,
 				best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, matequals, aligner, harsh_aligner, config, stats);
 
     /* == Try assembly == */
 	int rc_accepted_reads = 0, lc_accepted_reads = 0;
-	for (remap_info_t& remap_info : rc_remap_infos) rc_accepted_reads += remap_info.accepted;
-	for (remap_info_t& remap_info : lc_remap_infos) lc_accepted_reads += remap_info.accepted;
+	for (remap_info_t& remap_info : ro_remap_infos) rc_accepted_reads += remap_info.accepted;
+	for (remap_info_t& remap_info : lo_remap_infos) lc_accepted_reads += remap_info.accepted;
 	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
@@ -550,135 +150,15 @@ bool remap_cluster(insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluste
 
 	if (corrected_consensus_sequence.empty()) return false;
 
-	insertion_cluster_t* pos_cluster = new insertion_cluster_t(new cluster_t());
-    for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-        bam1_t* r = r_cluster->cluster->reads[i];
-        if (rc_remap_infos[i].accepted) {
-            pos_cluster->add_stable_read(r);
-        }
-    }
-	if (r_cluster->clip_consensus && rc_remap_infos.rbegin()->accepted) {
-        pos_cluster->add_clip_cluster(r_cluster->clip_consensus);
-    }
-
-	insertion_cluster_t* neg_cluster = new insertion_cluster_t(new cluster_t());
-    for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-        bam1_t* r = l_cluster->cluster->reads[i];
-        if (lc_remap_infos[i].accepted) {
-            neg_cluster->add_stable_read(r);
-        }
-    }
-    if (l_cluster->clip_consensus && lc_remap_infos.rbegin()->accepted) {
-        neg_cluster->add_clip_cluster(l_cluster->clip_consensus);
-    }
-
     bool success = false;
-    if (!pos_cluster->empty() && !neg_cluster->empty()) {
-		int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
-		int remap_end = std::min(l_cluster->end+50, contigs.get_len(contig_name)-1);
-		if (remap_start < remap_end) {
-            std::vector<sv_t*> inss = detect_svs_from_junction(contig_name, contigs.get_seq(contig_name), corrected_consensus_sequence, 
-                remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len);
-			if (!inss.empty() && inss[0]->svtype() == "INS") {
-                sv_t* main_sv = inss[0];
-                std::vector<std::pair<int,int>> covered_segments;
-                StripedSmithWaterman::Alignment aln;
-                for (remap_info_t ri : rc_remap_infos) {
-                    if (ri.accepted) {
-                        covered_segments.push_back({ri.start, ri.end});
-                    }
-                }
-                for (remap_info_t ri : lc_remap_infos) {
-                    if (ri.accepted) {
-                        covered_segments.push_back({ri.start, ri.end});
-                    }
-                }
+    insertion_t* insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
 
-                // Get transposed sequence coverage
-                int ins_seq_start = main_sv->left_anchor_aln->seq_len - main_sv->prefix_mh_len;
-                int ins_seq_end = corrected_consensus_sequence.length() - (main_sv->right_anchor_aln->seq_len - main_sv->suffix_mh_len);
-
-                int i = 0;
-                std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.first < p2.first;});
-                while (i < covered_segments.size() && covered_segments[i].second <= ins_seq_start) i++; // find left-most segment that either overlaps or is fully contained in the inserted sequence
-                int prefix_cov_start = 0, prefix_cov_end = 0;
-                if (i < covered_segments.size()) {
-                    prefix_cov_start = std::max(ins_seq_start, covered_segments[i].first);
-                    prefix_cov_end = covered_segments[i].second;
-                    while (i < covered_segments.size() && covered_segments[i].first <= prefix_cov_end) {
-                        prefix_cov_end = std::max(prefix_cov_end, covered_segments[i].second);
-                        i++;
-                    }
-                    prefix_cov_start -= ins_seq_start;
-                    prefix_cov_end -= ins_seq_start;
-                    if (prefix_cov_end >= main_sv->ins_seq.length()) prefix_cov_end = main_sv->ins_seq.length()-1;
-                }
-
-                i = covered_segments.size()-1;
-                std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.second < p2.second;});
-                while (i >= 0 && covered_segments[i].first >= ins_seq_end) i--; // find right-most segment that either overlaps or is fully contained in the inserted sequence
-                int suffix_cov_start = 0, suffix_cov_end = 0;
-                if (i >= 0) {
-                    suffix_cov_end = std::min(ins_seq_end-1, covered_segments[i].second);
-                    suffix_cov_start = covered_segments[i].first;
-                    while (i >= 0 && covered_segments[i].second >= suffix_cov_start) {
-                        suffix_cov_start = std::min(suffix_cov_start, covered_segments[i].first);
-                        i--;
-                    }
-                    suffix_cov_start -= ins_seq_start;
-                    if (suffix_cov_start < 0) suffix_cov_start = 0;
-                    suffix_cov_end -= ins_seq_start;
-                }
-
-                if (pos_cluster->clip_consensus) main_sv->rc_consensus = pos_cluster->clip_consensus;
-                if (neg_cluster->clip_consensus) main_sv->lc_consensus = neg_cluster->clip_consensus;
-                main_sv->disc_pairs_lf = pos_cluster->cluster->reads.size();
-                main_sv->disc_pairs_rf = neg_cluster->cluster->reads.size();
-                for (bam1_t* read : pos_cluster->cluster->reads) {
-                    if (read->core.qual >= config.high_confidence_mapq) main_sv->disc_pairs_lf_high_mapq++;
-                }
-                for (bam1_t* read : neg_cluster->cluster->reads) {
-                    if (read->core.qual >= config.high_confidence_mapq) main_sv->disc_pairs_rf_high_mapq++;
-                }
-                main_sv->disc_pairs_lf_maxmapq = pos_cluster->cluster->max_mapq;
-                main_sv->disc_pairs_rf_maxmapq = neg_cluster->cluster->max_mapq;
-                for (bam1_t* read : pos_cluster->cluster->reads) {
-                    main_sv->disc_pairs_lf_avg_nm += get_nm(read);
-                }
-                main_sv->disc_pairs_lf_avg_nm /= std::max(1, (int) pos_cluster->cluster->reads.size());
-                for (bam1_t* read : neg_cluster->cluster->reads) {
-                    main_sv->disc_pairs_rf_avg_nm += get_nm(read);
-                }
-                main_sv->disc_pairs_rf_avg_nm /= std::max(1, (int) neg_cluster->cluster->reads.size());
-
-                ((insertion_t*) main_sv)->imprecise_bp = !left_bp_precise || !right_bp_precise;
-                ((insertion_t*) main_sv)->prefix_cov_start = prefix_cov_start;
-                ((insertion_t*) main_sv)->prefix_cov_end = prefix_cov_end;
-                ((insertion_t*) main_sv)->suffix_cov_start = suffix_cov_start;
-                ((insertion_t*) main_sv)->suffix_cov_end = suffix_cov_end;
-                main_sv->source = "REFERENCE_GUIDED_ASSEMBLY";
-
-                mtx.lock();
-                insertions.push_back(main_sv);
-                mtx.unlock();
-                success = true;
-
-                for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-                    bam1_t* r = r_cluster->cluster->reads[i];
-                    update_read(r, best_region, rc_remap_infos[i], is_rc);
-                    kept.push_back(r);
-                }
-                for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-                    bam1_t* r = l_cluster->cluster->reads[i];
-                    update_read(r, best_region, lc_remap_infos[i], is_rc);
-                    kept.push_back(r);
-                }
-            }
-		}
+    if (insertion != NULL) {
+        mtx.lock();
+        insertions.push_back(insertion);
+        mtx.unlock();
+        success = true;
     }
-
-    delete pos_cluster;
-    delete neg_cluster;
 
     std::sort(kept.begin(), kept.end(), [] (bam1_t* r1, bam1_t* r2) {return get_endpoint(r1) < get_endpoint(r2);});
 
@@ -930,7 +410,7 @@ void remap(int id, int contig_id) {
 
         // remap clusters
         std::vector<bam1_t*> to_write;
-		bool success = remap_cluster(c1, c2, to_write, contig_id, r_dc_file->header, mateseqs, matequals, 
+		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, r_dc_file->header, mateseqs, matequals, 
                                 aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
         if (!success) continue;
 

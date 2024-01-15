@@ -364,4 +364,146 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 	return corrected_junction_seq;
 }
 
+
+void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info, bool region_is_rc) {
+    read->core.mtid = chosen_region.original_bam_id;
+    read->core.mpos = chosen_region.start + remap_info.start;
+    if (region_is_rc == bam_is_rev(read)) {
+        read->core.flag |= BAM_FMREVERSE; //sets flag to true
+    } else {
+        read->core.flag &= ~BAM_FMREVERSE; //sets flag to false
+    }
+    bam_aux_update_str(read, "MC", remap_info.cigar.length() + 1, remap_info.cigar.c_str());
+    char ok = remap_info.accepted ? 'T' : 'F';
+    bam_aux_append(read, "OK", 'A', 1, (const uint8_t*) &ok);
+    bam_aux_append(read, "MS", 'i', 4, (const uint8_t*) &remap_info.score);
+}
+
+insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::string& junction_seq,
+		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
+		region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, StripedSmithWaterman::Aligner& aligner, config_t& config) {
+
+	int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
+	int remap_end = std::min(l_cluster->end+50, contig_len-1);
+	if (remap_start >= remap_end) return NULL;
+
+	 std::vector<sv_t*> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
+                remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len);
+
+	if (insertions.empty() || insertions[0]->svtype() != "INS") return NULL;
+
+	insertion_t* insertion = (insertion_t*) insertions[0];
+
+	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(new cluster_t());
+    for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+        bam1_t* r = r_cluster->cluster->reads[i];
+        if (ro_remap_infos[i].accepted) {
+            refined_r_cluster->add_stable_read(r);
+        }
+    }
+	if (r_cluster->clip_consensus && ro_remap_infos.rbegin()->accepted) {
+        refined_r_cluster->add_clip_cluster(r_cluster->clip_consensus);
+    }
+
+	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(new cluster_t());
+    for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+        bam1_t* r = l_cluster->cluster->reads[i];
+        if (lo_remap_infos[i].accepted) {
+            refined_l_cluster->add_stable_read(r);
+        }
+    }
+    if (l_cluster->clip_consensus && lo_remap_infos.rbegin()->accepted) {
+        refined_l_cluster->add_clip_cluster(l_cluster->clip_consensus);
+    }
+
+	if (refined_r_cluster->empty() || refined_l_cluster->empty()) {
+		delete refined_r_cluster;
+		delete refined_l_cluster;
+		return NULL;
+	}
+
+	// Get transposed sequence coverage
+	std::vector<std::pair<int,int>> covered_segments;
+	for (remap_info_t ri : ro_remap_infos) {
+		if (ri.accepted) covered_segments.push_back({ri.start, ri.end});
+	}
+	for (remap_info_t ri : lo_remap_infos) {
+		if (ri.accepted) covered_segments.push_back({ri.start, ri.end});
+	}
+
+	int ins_seq_start = insertion->left_anchor_aln->seq_len - insertion->prefix_mh_len;
+	int ins_seq_end = ins_seq_start + insertion->ins_seq.length();
+
+	int i = 0;
+	std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.first < p2.first;});
+	while (i < covered_segments.size() && covered_segments[i].second <= ins_seq_start) i++; // find left-most segment that either overlaps or is fully contained in the inserted sequence
+	insertion->prefix_cov_start = 0, insertion->prefix_cov_end = 0;
+	if (i < covered_segments.size()) {
+		insertion->prefix_cov_start = std::max(ins_seq_start, covered_segments[i].first);
+		insertion->prefix_cov_end = covered_segments[i].second;
+		while (i < covered_segments.size() && covered_segments[i].first <= insertion->prefix_cov_end) {
+			insertion->prefix_cov_end = std::max(insertion->prefix_cov_end, covered_segments[i].second);
+			i++;
+		}
+		insertion->prefix_cov_start -= ins_seq_start;
+		insertion->prefix_cov_end -= ins_seq_start;
+		if (insertion->prefix_cov_end >= insertion->ins_seq.length()) insertion->prefix_cov_end = insertion->ins_seq.length()-1;
+	}
+
+	i = covered_segments.size()-1;
+	std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.second < p2.second;});
+	while (i >= 0 && covered_segments[i].first >= ins_seq_end) i--; // find right-most segment that either overlaps or is fully contained in the inserted sequence
+	insertion->suffix_cov_start = 0, insertion->suffix_cov_end = 0;
+	if (i >= 0) {
+		insertion->suffix_cov_end = std::min(ins_seq_end-1, covered_segments[i].second);
+		insertion->suffix_cov_start = covered_segments[i].first;
+		while (i >= 0 && covered_segments[i].second >= insertion->suffix_cov_start) {
+			insertion->suffix_cov_start = std::min(insertion->suffix_cov_start, covered_segments[i].first);
+			i--;
+		}
+		insertion->suffix_cov_start -= ins_seq_start;
+		if (insertion->suffix_cov_start < 0) insertion->suffix_cov_start = 0;
+		insertion->suffix_cov_end -= ins_seq_start;
+	}
+
+	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;
+	if (refined_l_cluster->clip_consensus) insertion->lc_consensus = refined_l_cluster->clip_consensus;
+	insertion->disc_pairs_lf = refined_r_cluster->cluster->reads.size();
+	insertion->disc_pairs_rf = refined_l_cluster->cluster->reads.size();
+	for (bam1_t* read : refined_r_cluster->cluster->reads) {
+		if (read->core.qual >= config.high_confidence_mapq) insertion->disc_pairs_lf_high_mapq++;
+	}
+	for (bam1_t* read : refined_l_cluster->cluster->reads) {
+		if (read->core.qual >= config.high_confidence_mapq) insertion->disc_pairs_rf_high_mapq++;
+	}
+	insertion->disc_pairs_lf_maxmapq = refined_r_cluster->cluster->max_mapq;
+	insertion->disc_pairs_rf_maxmapq = refined_l_cluster->cluster->max_mapq;
+	for (bam1_t* read : refined_r_cluster->cluster->reads) {
+		insertion->disc_pairs_lf_avg_nm += get_nm(read);
+	}
+	insertion->disc_pairs_lf_avg_nm /= std::max(1, (int) refined_r_cluster->cluster->reads.size());
+	for (bam1_t* read : refined_l_cluster->cluster->reads) {
+		insertion->disc_pairs_rf_avg_nm += get_nm(read);
+	}
+	insertion->disc_pairs_rf_avg_nm /= std::max(1, (int) refined_l_cluster->cluster->reads.size());
+	insertion->imprecise_bp = !left_bp_precise || !right_bp_precise;
+	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
+
+	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+		bam1_t* r = r_cluster->cluster->reads[i];
+		update_read(r, best_region, ro_remap_infos[i], is_rc);
+		kept.push_back(r);
+	}
+	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+		bam1_t* r = l_cluster->cluster->reads[i];
+		update_read(r, best_region, lo_remap_infos[i], is_rc);
+		kept.push_back(r);
+	}
+
+	delete refined_r_cluster;
+	delete refined_l_cluster;
+
+	return insertion;
+}
+
 #endif // GUIDED_REFERENCE_ASSEMBLE_H
