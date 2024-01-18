@@ -8,8 +8,8 @@
 
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
-#include "../src/sam_utils.h"
-#include "../src/dc_remapper.h"
+#include "sam_utils.h"
+#include "dc_remapper.h"
 
 struct region_score_t {
     int total_score = 0;

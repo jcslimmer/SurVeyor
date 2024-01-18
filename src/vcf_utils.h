@@ -85,6 +85,18 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ambiguous_flt_tag = "##FILTER=<ID=AMBIGUOUS_REGION,Description=\"Region containing the deletion is ambiguous.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ambiguous_flt_tag, &len));
 
+	const char* low_support_flt_tag = "##FILTER=<ID=LOW_SUPPORT,Description=\"Insertion has low support.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_support_flt_tag, &len));
+
+	const char* no_disc_support_flt_tag = "##FILTER=<ID=NO_DISC_SUPPORT,Description=\"Insertion has no support from discordant pairs.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, no_disc_support_flt_tag, &len));
+
+	const char* weak_anchor_flt_tag = "##FILTER=<ID=WEAK_ANCHOR,Description=\"Left or right split junction alignment score is too low.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_anchor_flt_tag, &len));
+
+	const char* low_score_flt_tag = "##FILTER=<ID=LOW_SCORE,Description=\"Evidence against the insertion overwhelms the evidence in its favour.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_score_flt_tag, &len));
+
 	// add INFO tags
 	const char* svtype_tag = "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svtype_tag, &len));
@@ -217,6 +229,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* isc_tag = "##INFO=<ID=INS_SUFFIX_COV,Number=2,Type=Integer,Description=\"Portion of the suffix of the inserted sequence that was actually supported by reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,isc_tag, &len));
 
+	const char* pbc_tag = "##INFO=<ID=PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,pbc_tag, &len));
+
+	const char* sbc_tag = "##INFO=<ID=SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,sbc_tag, &len));
+
 	// add ALT
 	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));
@@ -279,7 +297,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		int filter_id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter.c_str());
 		bcf_add_filter(hdr, bcf_entry, filter_id);
 	}
-	
+
 	// add INFO
 	int int_conv = sv->end+1;
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
@@ -416,6 +434,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_COV", ipc, 2);
 		int isc[] = {suffix_cov_start, suffix_cov_end};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_COV", isc, 2);
+		int pbc[] = {ins->prefix_base_freqs.a, ins->prefix_base_freqs.c, ins->prefix_base_freqs.g, ins->prefix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "PREFIX_BASE_COUNT", pbc, 4);
+		int sbc[] = {ins->suffix_base_freqs.a, ins->suffix_base_freqs.c, ins->suffix_base_freqs.g, ins->suffix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "SUFFIX_BASE_COUNT", sbc, 4);
 	}
 }
 

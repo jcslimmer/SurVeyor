@@ -184,6 +184,35 @@ struct chr_seqs_map_t {
     }
 };
 
+struct base_frequencies_t {
+    int a = 0, c = 0, g = 0, t = 0;
+
+    base_frequencies_t() {}
+    base_frequencies_t(int a, int c, int g, int t) : a(a), c(c), g(g), t(t) {}
+
+    int max() {
+        return std::max(std::max(a, c), std::max(g, t));
+    }
+    int tot() {
+        return a + c + g + t;
+    }
+    double max_freq() {
+        return max()/double(std::max(1, tot()));
+    }
+};
+
+base_frequencies_t get_base_frequencies(const char* seq, int len) {
+    int a = 0, c = 0, g = 0, t = 0;
+    for (int i = 0; i < len; i++) {
+        char b = std::toupper(seq[i]);
+        if (b == 'A') a++;
+        else if (b == 'C') c++;
+        else if (b == 'G') g++;
+        else if (b == 'T') t++;
+    }
+    return base_frequencies_t(a, c, g, t);
+}
+
 bool is_homopolymer(const char* seq, int len) {
 	int a = 0, c = 0, g = 0, t = 0;
 	for (int i = 0; i < len; i++) {
@@ -193,7 +222,7 @@ bool is_homopolymer(const char* seq, int len) {
 		else if (b == 'G') g++;
 		else if (b == 'T') t++;
 	}
-	return max(a, c, g, t)/double(a+c+g+t) >= 0.8;
+	return get_base_frequencies(seq, len).max_freq() >= 0.8;
 }
 bool is_homopolymer(std::string seq) {
 	return is_homopolymer(seq.data(), seq.length());
@@ -209,5 +238,6 @@ int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     int64_t overlap = std::min(e1, e2) - std::max(s1, s2);
     return std::max(int64_t(0), overlap);
 }
+
 
 #endif

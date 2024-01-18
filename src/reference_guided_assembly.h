@@ -4,10 +4,10 @@
 #include <iostream>
 
 #include "../libs/ssw_cpp.h"
-#include "../src/utils.h"
-#include "../src/sam_utils.h"
-#include "../src/dc_remapper.h"
-#include "../src/assemble.h"
+#include "utils.h"
+#include "sam_utils.h"
+#include "dc_remapper.h"
+#include "assemble.h"
 #include "remapping.h"
 
 std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,

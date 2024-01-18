@@ -21,15 +21,13 @@
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/IntervalTree.h"
-#include "../src/dc_remapper.h"
-#include "../src/sam_utils.h"
-#include "../src/clustering_utils.h"
+#include "dc_remapper.h"
+#include "sam_utils.h"
+#include "clustering_utils.h"
 #include "remapping.h"
-#include "utils.h"
-#include "vcf_utils.h"
-#include "../src/assemble.h"
+#include "assemble.h"
 #include "reference_guided_assembly.h"
-#include "../src/vcf_utils.h"
+#include "vcf_utils.h"
 
 
 config_t config;
@@ -152,7 +150,6 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
 
     bool success = false;
     insertion_t* insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
-
     if (insertion != NULL) {
         mtx.lock();
         insertions.push_back(insertion);

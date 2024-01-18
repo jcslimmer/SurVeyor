@@ -74,7 +74,6 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     calculate_confidence_interval_size(contig_name, v1, v2, sr_deletions, bam_file, stats, config.min_sv_size);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, small_dp_deletions, bam_file, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_dp_deletions, bam_file, stats);
-
     release_bam_reader(bam_file);
 }
 
@@ -97,8 +96,35 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
     std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
     mtx.unlock();
     depth_filter_ins(contig_name, insertions, bam_file, config.min_size_for_depth_filtering, stats);
+    std::vector<insertion_t*> assembled_insertions;
+    for (insertion_t* ins : insertions) {
+        if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {
+            assembled_insertions.push_back(ins);
+        }
+    }
+    calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, stats);
 
     release_bam_reader(bam_file);
+}
+
+void apply_ALL_filters(sv_t* sv) {
+    if (sv->median_left_flanking_cov > stats.get_max_depth(sv->chr) || sv->median_right_flanking_cov > stats.get_max_depth(sv->chr) ||
+        sv->median_left_flanking_cov < stats.get_min_depth(sv->chr) || sv->median_right_flanking_cov < stats.get_min_depth(sv->chr)) {
+        sv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+    }
+    if (sv->full_junction_aln != NULL && sv->left_anchor_aln->best_score+sv->right_anchor_aln->best_score-sv->full_junction_aln->best_score < config.min_score_diff) {
+        sv->filters.push_back("WEAK_SPLIT_ALIGNMENT");
+    }
+    if ((sv->lc_consensus == NULL || sv->lc_consensus->max_mapq < config.high_confidence_mapq) &&
+        (sv->rc_consensus == NULL || sv->rc_consensus->max_mapq < config.high_confidence_mapq) &&
+        sv->source != "DP" && sv->source != "REFERENCE_GUIDED_ASSEMBLY" && sv->source != "DE_NOVO_ASSEMBLY") {
+        sv->filters.push_back("LOW_MAPQ_CONSENSUSES");
+    }
+    if (sv->source == "1SR_RC" || sv->source == "1HSR_RC") {
+        if (sv->rc_consensus->right_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
+    } else if (sv->source == "1SR_LC" || sv->source == "1HSR_LC") {
+        if (sv->lc_consensus->left_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -213,29 +239,17 @@ int main(int argc, char* argv[]) {
                     (del->median_left_flanking_cov*0.74<=del->median_indel_left_cov || del->median_right_flanking_cov*0.74<=del->median_indel_right_cov)) {
             	del->filters.push_back("DEPTH_FILTER");
             }
-            if (del->median_left_flanking_cov > stats.get_max_depth(contig_name) || del->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
-            	del->median_left_flanking_cov < stats.get_min_depth(contig_name) || del->median_right_flanking_cov < stats.get_min_depth(contig_name) ||
-				del->median_left_cluster_cov > stats.get_max_depth(contig_name) || del->median_right_cluster_cov > stats.get_max_depth(contig_name)) {
+            apply_ALL_filters(del);
+            if (del->median_left_cluster_cov > stats.get_max_depth(contig_name) || del->median_right_cluster_cov > stats.get_max_depth(contig_name)) {
                 del->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (del->median_indel_left_cov > stats.get_max_depth(contig_name) || del->median_indel_right_cov > stats.get_max_depth(contig_name)) {
                 del->filters.push_back("ANOMALOUS_DEL_DEPTH");
             }
+            if (del->rc_reads() > stats.get_max_depth(del->chr) || del->lc_reads() > stats.get_max_depth(del->chr)) {
+                del->filters.push_back("ANOMALOUS_SC_NUMBER");
+            }
 
-            if (del->full_junction_aln != NULL && del->left_anchor_aln->best_score+del->right_anchor_aln->best_score-del->full_junction_aln->best_score < config.min_score_diff) {
-            	del->filters.push_back("WEAK_SPLIT_ALIGNMENT");
-            }
-            if ((del->lc_consensus == NULL || del->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-            	(del->rc_consensus == NULL || del->rc_consensus->max_mapq < config.high_confidence_mapq) &&
-                 del->source != "DP") {
-				del->filters.push_back("LOW_MAPQ_CONSENSUSES");
-            }
-            if (del->source == "1SR_RC" || del->source == "1HSR_RC") {
-            	if (del->rc_consensus->right_ext_reads < 3) del->filters.push_back("FAILED_TO_EXTEND");
-            } else if (del->source == "1SR_LC" || del->source == "1HSR_LC") {
-            	if (del->lc_consensus->left_ext_reads < 3) del->filters.push_back("FAILED_TO_EXTEND");
-            }
-            
             if (del->source == "DP") {
                 if (del->ks_pval > 0.01) {
                     del->filters.push_back("KS_FILTER");
@@ -266,25 +280,10 @@ int main(int argc, char* argv[]) {
                 dup->filters.push_back("DEPTH_FILTER");
             }
 
-            if (dup->median_left_flanking_cov > stats.get_max_depth(contig_name) || dup->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
-                dup->median_left_flanking_cov < stats.get_min_depth(contig_name) || dup->median_right_flanking_cov < stats.get_min_depth(contig_name)) {
-                dup->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
-            }
-            if (dup->full_junction_aln != NULL && dup->left_anchor_aln->best_score+dup->right_anchor_aln->best_score-dup->full_junction_aln->best_score < config.min_score_diff) {
-				dup->filters.push_back("WEAK_SPLIT_ALIGNMENT");
-			}
-            if ((dup->lc_consensus == NULL || dup->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-				(dup->rc_consensus == NULL || dup->rc_consensus->max_mapq < config.high_confidence_mapq)) {
-				dup->filters.push_back("LOW_MAPQ_CONSENSUSES");
-			}
+            apply_ALL_filters(dup);
             if (dup->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs_lf < 3) {
                 dup->filters.push_back("NOT_ENOUGH_OW_PAIRS");
             }
-            if (dup->source == "1SR_RC" || dup->source == "1HSR_RC") {
-				if (dup->rc_consensus->right_ext_reads < 3) dup->filters.push_back("FAILED_TO_EXTEND");
-            } else if (dup->source == "1SR_LC" || dup->source == "1HSR_LC") {
-            	if (dup->lc_consensus->left_ext_reads < 3) dup->filters.push_back("FAILED_TO_EXTEND");
-			}
 
             if (dup->filters.empty()) {
                 dup->filters.push_back("PASS");
@@ -298,22 +297,42 @@ int main(int argc, char* argv[]) {
         if (!insertions_by_chr.count(contig_name)) continue;
         std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
         for (insertion_t* ins : insertions) {
-            if (ins->median_left_flanking_cov > stats.get_max_depth(contig_name) || ins->median_right_flanking_cov > stats.get_max_depth(contig_name) ||
-                ins->median_left_flanking_cov < stats.get_min_depth(contig_name) || ins->median_right_flanking_cov < stats.get_min_depth(contig_name)) {
+            apply_ALL_filters(ins);
+            if (ins->median_left_cluster_cov > stats.get_max_depth(contig_name) || ins->median_right_cluster_cov > stats.get_max_depth(contig_name)) {
                 ins->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
-            if (ins->full_junction_aln != NULL && ins->left_anchor_aln->best_score+ins->right_anchor_aln->best_score-ins->full_junction_aln->best_score < config.min_score_diff) {
-                ins->filters.push_back("WEAK_SPLIT_ALIGNMENT");
+            if (ins->rc_reads() > stats.get_max_depth(ins->chr) || ins->lc_reads() > stats.get_max_depth(ins->chr)) {
+                ins->filters.push_back("ANOMALOUS_SC_NUMBER");
             }
-            if ((ins->lc_consensus == NULL || ins->lc_consensus->max_mapq < config.high_confidence_mapq) &&
-                (ins->rc_consensus == NULL || ins->rc_consensus->max_mapq < config.high_confidence_mapq) &&
-                 ins->source != "REFERENCE_GUIDED_ASSEMBLY" && ins->source != "DE_NOVO_ASSEMBLY") {
-                ins->filters.push_back("LOW_MAPQ_CONSENSUSES");
+
+            if (ins->left_anchor_aln && double(ins->left_anchor_aln->best_score)/ins->left_anchor_aln->seq_len < 0.5) {
+                ins->filters.push_back("WEAK_ANCHOR");
             }
-            if (ins->source == "1SR_RC" || ins->source == "1HSR_RC") {
-                if (ins->rc_consensus->right_ext_reads < 3) ins->filters.push_back("FAILED_TO_EXTEND");
-            } else if (ins->source == "1SR_LC" || ins->source == "1HSR_LC") {
-                if (ins->lc_consensus->left_ext_reads < 3) ins->filters.push_back("FAILED_TO_EXTEND");
+            if (ins->right_anchor_aln && double(ins->right_anchor_aln->best_score)/ins->right_anchor_aln->seq_len < 0.5) {
+                ins->filters.push_back("WEAK_ANCHOR");
+            }
+
+            if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {
+                auto support = {ins->disc_pairs_rf+ins->rc_reads(), ins->disc_pairs_lf+ins->lc_reads()};
+                if (ins->disc_pairs_rf+ins->rc_reads() < stats.get_median_depth(ins->chr)/5 && ins->disc_pairs_lf+ins->lc_reads() < stats.get_median_depth(ins->chr)/5) {
+		            ins->filters.push_back("LOW_SUPPORT");
+                }
+                if (ins->disc_pairs_rf + ins->disc_pairs_lf == 0) ins->filters.push_back("NO_DISC_SUPPORT");
+                
+                int r_positive = ins->disc_pairs_rf + ins->rc_reads();
+                int r_negative = ins->conc_pairs;
+                int l_positive = ins->disc_pairs_lf + ins->lc_reads();
+                int l_negative = ins->conc_pairs;
+                // return {double(r_positive)/(r_positive+r_negative), double(l_positive)/(l_positive+l_negative)};
+            }
+
+            int d = ins->ins_seq.find("-");
+            std::string ins_seq_fh = ins->ins_seq.substr(0, d);
+            std::string ins_seq_sh = ins->ins_seq.substr(d+1);
+            ins->prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
+            ins->suffix_base_freqs = ins_seq_sh.empty() ? ins->prefix_base_freqs : get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
+            if (is_homopolymer(ins_seq_fh) || is_homopolymer(ins_seq_sh)) {
+                ins->filters.push_back("HOMOPOLYMER_INSSEQ");
             }
 
             if (ins->filters.empty()) {

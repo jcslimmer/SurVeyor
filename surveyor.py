@@ -199,7 +199,7 @@ exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workd
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
 exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
 
-dc_remapper_cmd = SURVEYOR_PATH + "/bin/insurveyor_dc_remapper %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
+dc_remapper_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
 exec(dc_remapper_cmd)
 
 # add_filtering_info_cmd = SURVEYOR_PATH + "/bin/insurveyor_add_filtering_info %s %s %s" % (cmd_args.bam_file, insurveyor_workdir, cmd_args.reference)

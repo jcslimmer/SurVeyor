@@ -469,18 +469,18 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     bam_destroy1(read);
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, stats_t& stats) {
 
-	if (deletions.empty()) return;
+	if (svs.empty()) return;
 
-	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
-		return (d1->start+d1->end)/2 < (d2->start+d2->end)/2;
+	std::sort(svs.begin(), svs.end(), [](const sv_t* sv1, const sv_t* sv2) {
+		return (sv1->start+sv1->end)/2 < (sv2->start+sv2->end)/2;
 	});
 
 	std::vector<hts_pos_t> midpoints;
 	std::vector<char*> mid_regions;
-	for (deletion_t* deletion : deletions) {
-		hts_pos_t midpoint = (deletion->start+deletion->end)/2;
+	for (sv_t* sv : svs) {
+		hts_pos_t midpoint = (sv->start+sv->end)/2;
 		midpoints.push_back(midpoint);
 
 		std::stringstream ss;
@@ -494,23 +494,33 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, mid_regions.data(), mid_regions.size());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		while (curr_pos < deletions.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
+		while (curr_pos < svs.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
 
 		if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
 		if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0 || read->core.isize > stats.max_is) continue;
 
 		hts_pos_t start = read->core.pos + read->core.l_qseq/2;
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
-		for (int i = curr_pos; i < deletions.size() && midpoints[i] <= end; i++) {
-			if (start <= midpoints[i] && midpoints[i] <= end) deletions[i]->conc_pairs++;
+		for (int i = curr_pos; i < svs.size() && midpoints[i] <= end; i++) {
+			if (start <= midpoints[i] && midpoints[i] <= end) svs[i]->conc_pairs++;
 		}
 	}
-
-	calculate_cluster_region_disc(contig_name, deletions, bam_file);
 
 	for (char* region : mid_regions) {
 		delete[] region;
 	}
+}
+
+void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats) {
+	if (deletions.empty()) return;
+	std::vector<sv_t*> svs(deletions.begin(), deletions.end());
+	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+	calculate_cluster_region_disc(contig_name, deletions, bam_file);
+}
+void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats) {
+	if (insertions.empty()) return;
+	std::vector<sv_t*> svs(insertions.begin(), insertions.end());
+	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
 }
 
 
