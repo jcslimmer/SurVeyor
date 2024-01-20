@@ -222,6 +222,12 @@ int main(int argc, char* argv[]) {
         throw std::runtime_error("Failed to write the VCF header to " + out_pass_vcf_fname + ".");
     }
 
+    std::vector<uint32_t> min_disc_pairs_by_size;
+    std::ifstream mdpbs_fin(workdir + "/min_disc_pairs_by_size.txt");
+	int i, min_disc_pairs;
+	while (mdpbs_fin >> i >> min_disc_pairs) min_disc_pairs_by_size.push_back(min_disc_pairs);
+	mdpbs_fin.close();
+
     std::unordered_map<std::string, std::vector<sv_t*>> sv_entries;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!deletions_by_chr.count(contig_name)) continue;
@@ -282,7 +288,7 @@ int main(int argc, char* argv[]) {
 
             apply_ALL_filters(dup);
             if (dup->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs_lf < 3) {
-                dup->filters.push_back("NOT_ENOUGH_OW_PAIRS");
+                dup->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
             }
 
             if (dup->filters.empty()) {
@@ -314,16 +320,22 @@ int main(int argc, char* argv[]) {
 
             if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {
                 auto support = {ins->disc_pairs_rf+ins->rc_reads(), ins->disc_pairs_lf+ins->lc_reads()};
-                if (ins->disc_pairs_rf+ins->rc_reads() < stats.get_median_depth(ins->chr)/5 && ins->disc_pairs_lf+ins->lc_reads() < stats.get_median_depth(ins->chr)/5) {
-		            ins->filters.push_back("LOW_SUPPORT");
-                }
                 if (ins->disc_pairs_rf + ins->disc_pairs_lf == 0) ins->filters.push_back("NO_DISC_SUPPORT");
                 
                 int r_positive = ins->disc_pairs_rf + ins->rc_reads();
                 int r_negative = ins->conc_pairs;
                 int l_positive = ins->disc_pairs_lf + ins->lc_reads();
                 int l_negative = ins->conc_pairs;
-                // return {double(r_positive)/(r_positive+r_negative), double(l_positive)/(l_positive+l_negative)};
+                if (r_positive < stats.get_median_depth(ins->chr)/5 && l_positive < stats.get_median_depth(ins->chr)/5) {
+		            ins->filters.push_back("LOW_SUPPORT");
+                }
+                if (double(r_positive)/(r_positive+r_negative) < 0.25 || double(l_positive)/(l_positive+l_negative) < 0.25) {
+                    ins->filters.push_back("LOW_SCORE");
+                }
+
+                int svlen = ins->ins_seq.length();
+                if (ins->incomplete_assembly() || svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
+	            if (ins->disc_pairs_rf + ins->disc_pairs_lf < min_disc_pairs_by_size[svlen]) ins->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
             }
 
             int d = ins->ins_seq.find("-");

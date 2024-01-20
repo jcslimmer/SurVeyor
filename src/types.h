@@ -249,6 +249,7 @@ struct insertion_t : sv_t {
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
 
     bool imprecise() { return imprecise_bp; }
+    bool incomplete_assembly() { return ins_seq.find("-") != std::string::npos; }
 };
 
 

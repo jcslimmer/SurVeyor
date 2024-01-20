@@ -331,8 +331,8 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 
 void remap(int id, int contig_id) {
 
-    std::string r_dc_fname = workdir + "/workspace/R/" + std::to_string(contig_id) + ".noremap.bam";
-    std::string l_dc_fname = workdir + "/workspace/L/" + std::to_string(contig_id) + ".noremap.bam";
+    std::string r_dc_fname = workdir + "/workspace/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam";
+    std::string l_dc_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
 
     std::unordered_map<std::string, std::string> mateseqs;
@@ -423,11 +423,11 @@ void remap(int id, int contig_id) {
         c2->deallocate_reads();
     }
 
-    std::string r_dc_remapped_fname = workdir + "/workspace/R/" + std::to_string(contig_id) + ".remap.bam";
+    std::string r_dc_remapped_fname = workdir + "/workspace/fwd-stable/" + std::to_string(contig_id) + ".remap.bam";
     write_and_index_file(r_reads_to_write, r_dc_remapped_fname, r_dc_file->header);
     for (bam1_t* r : r_reads_to_write) bam_destroy1(r);
 
-    std::string l_dc_remapped_fname = workdir + "/workspace/L/" + std::to_string(contig_id) + ".remap.bam";
+    std::string l_dc_remapped_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".remap.bam";
     write_and_index_file(l_reads_to_write, l_dc_remapped_fname, l_dc_file->header);
     for (bam1_t* r : l_reads_to_write) bam_destroy1(r);
 

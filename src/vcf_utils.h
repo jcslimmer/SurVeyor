@@ -63,7 +63,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* anom_del_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEL_DEPTH,Description=\"Depth of the deleted region is anomalous.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anom_del_depth_flt_tag, &len));
 
-	const char* not_enough_ow_pairs_flt_tag = "##FILTER=<ID=NOT_ENOUGH_OW_PAIRS,Description=\"Not enough outward oriented pairs supporting a large duplication.\">";
+	const char* not_enough_ow_pairs_flt_tag = "##FILTER=<ID=NOT_ENOUGH_DISC_PAIRS,Description=\"Not enough discordant pairs supporting the event.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, not_enough_ow_pairs_flt_tag, &len));
 
 	const char* weak_split_aln_flt_tag = "##FILTER=<ID=WEAK_SPLIT_ALIGNMENT,Description=\"Split alignment not significantly better than full junction alignment.\">";
@@ -422,10 +422,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		int disc_pairs_surr[] = {dup->l_cluster_region_disc_pairs, dup->r_cluster_region_disc_pairs};
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
 	} else if (sv->svtype() == "INS") {
-		if (sv->ins_seq.find("-") != std::string::npos) {
+		insertion_t* ins = (insertion_t*) sv;
+		if (ins->incomplete_assembly()) {
 			bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 		}
-		insertion_t* ins = (insertion_t*) sv;
 		int prefix_cov_start = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->prefix_cov_start;
 		int prefix_cov_end = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->prefix_cov_end;
 		int suffix_cov_start = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->suffix_cov_start;

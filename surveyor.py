@@ -74,11 +74,8 @@ with open(cmd_args.workdir + "/config.txt", "w") as config_file:
     config_file.write("log %d\n" % cmd_args.log)
     config_file.write("version %s\n" % VERSION)
 
-    # SurVIndel2 specific
     config_file.write("min_size_for_depth_filtering %s\n" % cmd_args.min_size_for_depth_filtering)
     config_file.write("min_diff_hsr %s\n" % cmd_args.min_diff_hsr)
-
-    # INSurVeyor specific
     config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
     config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
 
@@ -142,11 +139,6 @@ with open(cmd_args.workdir + "/stats.txt", "w") as stats_file:
     stats_file.write("avg_is . %d\n" % mean_is)
     stats_file.write("max_is . %d\n" % max_is)
 
-# survindel2_workdir = cmd_args.workdir + "/survindel2"
-# mkdir(survindel2_workdir)
-insurveyor_workdir = cmd_args.workdir + "/insurveyor"
-mkdir(insurveyor_workdir)
-
 def exec(cmd):
     start_time = timeit.default_timer()
     print("Executing:", cmd)
@@ -155,7 +147,7 @@ def exec(cmd):
         exit(1)
     elapsed = timeit.default_timer() - start_time
     print(cmd, "was run in %.2f seconds" % elapsed)
-    
+
 
 SURVEYOR_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -182,36 +174,13 @@ exec(dp_clusterer)
 add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/survindel2.out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(add_filtering_info_cmd)
 
-def cp(src, dst):
-    os.system("cp %s %s" % (src, dst))
-
-cp(cmd_args.workdir + "/config.txt", insurveyor_workdir)
-
-cp(cmd_args.workdir + "/stats.txt", insurveyor_workdir)
-cp(cmd_args.workdir + "/contig_map", insurveyor_workdir)
-cp(cmd_args.workdir + "/full_cmd.txt", insurveyor_workdir)
-cp(cmd_args.workdir + "/min_disc_pairs_by_size.txt", insurveyor_workdir)
-mkdir(insurveyor_workdir + "/workspace")
-
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/sr_consensuses", insurveyor_workdir + "/workspace/sr_consensuses"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/clipped", insurveyor_workdir + "/workspace/clipped"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/mateseqs", insurveyor_workdir + "/workspace/mateseqs"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/fwd-stable", insurveyor_workdir + "/workspace/R"))
-exec("cp -r %s %s" % (cmd_args.workdir + "/workspace/rev-stable", insurveyor_workdir + "/workspace/L"))
-
-dc_remapper_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (insurveyor_workdir, cmd_args.reference, sample_name)
+dc_remapper_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
 exec(dc_remapper_cmd)
 
-# add_filtering_info_cmd = SURVEYOR_PATH + "/bin/insurveyor_add_filtering_info %s %s %s" % (cmd_args.bam_file, insurveyor_workdir, cmd_args.reference)
-# exec(add_filtering_info_cmd)
-
-add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/assembled_ins.vcf.gz %s %s %s" % (cmd_args.bam_file, insurveyor_workdir, cmd_args.workdir, cmd_args.reference, sample_name)
+add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/assembled_ins.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(add_filtering_info_cmd)
 
-# filter_cmd = SURVEYOR_PATH + "/bin/insurveyor_filter %s %s 0.25" % (insurveyor_workdir, cmd_args.reference)
-# exec(filter_cmd)
-
-concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (cmd_args.workdir, insurveyor_workdir, cmd_args.workdir)
+concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
 exec(concat_cmd)
 
 # normalise_cmd = SURVEYOR_PATH + "/bin/survindel2_normalise %s/sr.annotated.vcf.gz %s/sr.annotated.norm.vcf.gz %s" % (survindel2_workdir, survindel2_workdir, cmd_args.reference)
