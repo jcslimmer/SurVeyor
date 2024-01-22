@@ -155,7 +155,7 @@ int main(int argc, char* argv[]) {
 	global_crossing_isize_dist.resize(100000);
 	crossing_isizes_dist_fin.close();
 
-    std::ifstream crossing_isizes_count_geq_i_fin(workdir + "/crossing_isizes_count_geq_i.txt");
+    std::ifstream crossing_isizes_count_geq_i_fin(workdir + "/median_disc_pairs_by_size.txt");
 	int median;
 	while (crossing_isizes_count_geq_i_fin >> isize >> median) {
 		median_crossing_count_geqi_by_isize.push_back(median);

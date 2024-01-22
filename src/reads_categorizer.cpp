@@ -33,6 +33,11 @@ std::vector<std::pair<uint64_t, uint32_t> > partial_sums;
 std::vector<uint32_t> isize_counts;
 std::vector<std::vector<uint32_t> > isizes_count_geq_i;
 
+std::ofstream open_mateseqs_fout(int contig_id) {
+    std::string fname = std::to_string(contig_id) + ".txt";
+    return std::ofstream(workspace + "/mateseqs/" + fname, std::ios_base::app);
+}
+
 void categorize(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
     std::sort(rnd_positions.begin(), rnd_positions.end());
 
@@ -61,7 +66,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     uint64_t contig_qual_counts[256];
 	std::fill(contig_qual_counts, contig_qual_counts+256, uint64_t(0));
     std::vector<uint32_t> local_isize_counts(stats.max_is+1);
-    std::vector<std::vector<uint32_t> > local_isize_dist_by_pos(rnd_positions.size());
+    std::vector<std::vector<uint32_t> > isize_dist_by_rndpos(rnd_positions.size());
     uint64_t sum_is = 0;
     uint32_t n_is = 0;
 
@@ -90,6 +95,13 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                 }
                 mtx_contig[read->core.mtid].lock();
                 mate_seqs[read->core.mtid].push_back(qname + " " + read_seq + " " + qual_ascii + " " + std::to_string(read->core.qual));
+                if (mate_seqs[read->core.mtid].size() > 1000) {
+                    std::ofstream mate_seqs_fout = open_mateseqs_fout(read->core.mtid);
+                    for (std::string& mate_seq : mate_seqs[read->core.mtid]) {
+                        mate_seqs_fout << mate_seq << std::endl;
+                    }
+                    mate_seqs[read->core.mtid].clear();
+                }
                 mtx_contig[read->core.mtid].unlock();
             }
         }
@@ -133,7 +145,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 				 if (pair_startpos <= rnd_positions[i] && rnd_positions[i] <= pair_endpos) {
 					rnd_positions_dist_between_end_and_rnd[i].push_back(pair_endpos-rnd_positions[i]);
                     local_isize_counts[read->core.isize]++;
-                    local_isize_dist_by_pos[curr_pos].push_back(read->core.isize);
+                    isize_dist_by_rndpos[curr_pos].push_back(read->core.isize);
                     sum_is += read->core.isize;
                     n_is++;
 				}
@@ -183,13 +195,14 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 
     for (int i = 0; i < rnd_positions.size(); i++) {
 		std::vector<uint32_t> local_isizes_count_geq_i(stats.max_is+1); // position i contains the count of isizes that are geq than i
-		for (uint32_t isize : local_isize_dist_by_pos[i]) local_isizes_count_geq_i[isize]++;
+		for (uint32_t isize : isize_dist_by_rndpos[i]) local_isizes_count_geq_i[isize]++;
 		for (int j = stats.max_is-1; j >= 0; j--) {
 			local_isizes_count_geq_i[j] += local_isizes_count_geq_i[j+1];
 		}
 		if (local_isizes_count_geq_i[0] == 0) continue;
 		for (int j = 0; j <= stats.max_is; j++) {
-			isizes_count_geq_i[j].push_back(local_isizes_count_geq_i[j]);
+            if (isizes_count_geq_i[j].size() < local_isizes_count_geq_i[j]+1) isizes_count_geq_i[j].resize(local_isizes_count_geq_i[j]+1);
+            isizes_count_geq_i[j][local_isizes_count_geq_i[j]]++;
 		}
     }
 
@@ -254,8 +267,7 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < contig_map.size(); i++) {
     	if (mate_seqs[i].empty()) continue;
-		std::string fname = std::to_string(i) + ".txt";
-		std::ofstream mate_seqs_fout(workspace + "/mateseqs/" + fname);
+		std::ofstream mate_seqs_fout = open_mateseqs_fout(i);
 		for (std::string& mate_seq : mate_seqs[i]) {
 			mate_seqs_fout << mate_seq << std::endl;
 		}
@@ -273,31 +285,6 @@ int main(int argc, char* argv[]) {
     	}
     	_1_perc_count -= qual_counts[i];
     }
-
-    // TODO: double check the logic
-    // for each insertion size, compute the estimate the minimum number of discordant pairs
-    // in theory, it would be the number of discordant pairs *per breakpoint*, so we would need to require twice as many from the insertion
-    // in practice, we do not because insertions often show a reduced number of pairs, perhaps due to overrepresentation of low complexity
-    // subsequences in inserted sequences
-    std::vector<std::vector<uint32_t>> pairs_crossing_dists(stats.max_is+1);
-	for (int i = 0; i < dist_between_end_and_rnd.size(); i++) {
-		std::vector<uint32_t> dist(stats.max_is+1);
-		for (uint32_t val : dist_between_end_and_rnd[i]) {
-			if (val <= stats.max_is) dist[val]++;
-		}
-		pairs_crossing_dists[0].push_back(dist[0]);
-		for (int j = 1; j <= stats.max_is; j++) {
-			dist[j] += dist[j-1];
-			pairs_crossing_dists[j].push_back(dist[j]);
-		}
-	}
-
-    std::ofstream mdpbs_fout(workdir + "/min_disc_pairs_by_size.txt");
-	for (int i = 0; i <= stats.max_is; i++) {
-		std::sort(pairs_crossing_dists[i].begin(), pairs_crossing_dists[i].end());
-		mdpbs_fout << i << " " << pairs_crossing_dists[i][pairs_crossing_dists[i].size()/200] << std::endl;
-	}
-	mdpbs_fout.close();
 
     uint64_t sum_is = 0;
     uint32_t n_is = 0;
@@ -329,14 +316,33 @@ int main(int argc, char* argv[]) {
     }
     crossing_isizes_dist_fout.close();
 
-    std::ofstream crossing_isizes_count_geq_i_fout(workdir + "/crossing_isizes_count_geq_i.txt");
-    int mid = isizes_count_geq_i[0].size()/2;
+    std::ofstream min_dpbs_fout(workdir + "/min_disc_pairs_by_size.txt");
+    std::ofstream med_dpbs_fout(workdir + "/median_disc_pairs_by_size.txt");
 	for (int i = 0; i <= stats.max_is; i++) {
-		crossing_isizes_count_geq_i_fout << i << " ";
-		std::sort(isizes_count_geq_i[i].begin(), isizes_count_geq_i[i].end());
-		crossing_isizes_count_geq_i_fout << isizes_count_geq_i[i][mid] << std::endl;
+        int64_t sum = std::accumulate(isizes_count_geq_i[i].begin(), isizes_count_geq_i[i].end(), int64_t(0));
+        
+        int64_t curr_sum = 0;
+		med_dpbs_fout << i << " ";
+        for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
+            curr_sum += isizes_count_geq_i[i][j];
+            if (curr_sum >= sum/2) {
+                med_dpbs_fout << j << std::endl;
+                break;
+            }
+        }
+
+        curr_sum = 0;
+        min_dpbs_fout << i << " ";
+        for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
+            curr_sum += isizes_count_geq_i[i][j];
+            if (curr_sum >= sum/200) {
+                min_dpbs_fout << j << std::endl;
+                break;
+            }
+        }
 	}
-	crossing_isizes_dist_fout.close();
+    med_dpbs_fout.close();
+    min_dpbs_fout.close();
 
 	stats_out << "min_disc_pairs . " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
 	stats_out.close();
