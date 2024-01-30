@@ -136,7 +136,7 @@ std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped) {
     return std::string(consensus);
 }
 
-std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_redux_t*>& clipped, bool left_clipped) {
+std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_redux_t*> clipped, bool left_clipped) {
 
     std::vector<consensus_t*> consensuses;
 
@@ -318,6 +318,7 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
     std::ofstream clip_fout(workspace + "/sr_consensuses/" + std::to_string(contig_id) + ".txt");
     for (consensus_t* consensus : full_consensuses) {
         clip_fout << consensus->to_string() << std::endl;
+        delete consensus;
     }
     clip_fout.close();
 }
@@ -336,7 +337,7 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     std::deque<bam1_t*> lc_cluster, rc_cluster;
     std::vector<consensus_t*> rc_consensuses, lc_consensuses;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-        
+
         if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
 
         std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
@@ -401,6 +402,7 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     std::ofstream clip_fout(workspace + "/hsr_consensuses/" + std::to_string(contig_id) + ".txt");
     for (consensus_t* consensus : all_consensuses) {
         clip_fout << consensus->to_string() << std::endl;
+        delete consensus;
     }
     clip_fout.close();
 }

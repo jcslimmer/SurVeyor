@@ -219,15 +219,13 @@ int64_t get_AS_tag(bam1_t* read) {
     return bam_aux2i(aux_get);
 }
 
-char* get_sequence_cstr(bam1_t* r, bool fastq_seq = false) {
-	char* seq = new char[r->core.l_qseq+1];
-	const uint8_t* bam_seq = bam_get_seq(r);
-	for (int i = 0; i < r->core.l_qseq; i++) {
-		seq[i] = get_base(bam_seq, i);
-	}
-	seq[r->core.l_qseq] = '\0';
-	if (fastq_seq && bam_is_rev(r)) rc(seq);
-	return seq;
+void copy_sequence(bam1_t* r, char* seq, bool fastq_seq = false) { // assumes seq is long enough
+    const uint8_t* bam_seq = bam_get_seq(r);
+    for (int i = 0; i < r->core.l_qseq; i++) {
+        seq[i] = get_base(bam_seq, i);
+    }
+    seq[r->core.l_qseq] = '\0';
+    if (fastq_seq && bam_is_rev(r)) rc(seq);
 }
 
 samFile* open_writer(std::string filename, bam_hdr_t* header) {

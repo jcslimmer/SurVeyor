@@ -5,8 +5,11 @@
 #include <unordered_map>
 #include <queue>
 #include <stack>
+
+#include "../libs/IntervalTree.h"
 #include "utils.h"
-#include "../src/sw_utils.h"
+#include "sw_utils.h"
+#include "sam_utils.h"
 
 struct edge_t {
 	int next, score, overlap;
@@ -20,29 +23,30 @@ struct ext_read_t {
 	hts_pos_t start, end;
 	uint8_t mapq;
 	bool rev, same_chr;
+	int sequence_len = 0;
 	char* sequence = NULL;
-	// int64_t* packed_seq = NULL;
 
-	ext_read_t(bam1_t* read) : qname(bam_get_qname(read)), start(read->core.pos), end(bam_endpos(read)), mapq(read->core.qual),
-			rev(bam_is_rev(read)), same_chr(is_samechr(read)), sequence(get_sequence_cstr(read)) {
-		// std::string seq = get_sequence(read);
-		// packed_seq = new int64_t[seq.length()/32 + 1];
-		// memset(packed_seq, 0, sizeof(int64_t)*(seq.length()/32 + 1));
-		// // store seq as 2-bit packed int64_t
-		// for (int i = 0; i < seq.length(); i++) {
-		// 	int64_t nv = 0;
-		// 	if (seq[i] == 'A' || seq[i] == 'a') nv = 0;
-		// 	else if (seq[i] == 'C' || seq[i] == 'c') nv = 1;
-		// 	else if (seq[i] == 'G' || seq[i] == 'g') nv = 2;
-		// 	else if (seq[i] == 'T' || seq[i] == 't') nv = 3;
-		// 	else nv = 0;
-		// 	packed_seq[i/32] = (packed_seq[i/32] << 2) | nv;
-		// }
+	ext_read_t(bam1_t* read) {
+		init(read);
+	}
+
+	void init(bam1_t* read) {
+		qname = bam_get_qname(read);
+		start = read->core.pos;
+		end = bam_endpos(read);
+		mapq = read->core.qual;
+		rev = bam_is_rev(read);
+		same_chr = is_samechr(read);
+		if (sequence_len < read->core.l_qseq) {
+			if (sequence != NULL) delete[] sequence;
+			sequence = new char[read->core.l_qseq+1];
+		}
+		copy_sequence(read, sequence);
+		sequence_len = read->core.l_qseq;
 	}
 
 	~ext_read_t() {
 		if (sequence != NULL) delete[] sequence;
-		// if (packed_seq != NULL) delete[] packed_seq;
 	}
 };
 
@@ -312,34 +316,46 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
 
-	std::vector<char*> regions;
-	for (hts_pair_pos_t target_ival : target_ivals) {
+	std::sort(target_ivals.begin(), target_ivals.end(), [](hts_pair_pos_t& a, hts_pair_pos_t& b) {return a.beg < b.beg;});
+
+	std::vector<hts_pair_pos_t> merged_target_ivals;
+	merged_target_ivals.push_back(target_ivals[0]);
+	for (int i = 1; i < target_ivals.size(); i++) {
+		if (target_ivals[i].beg-merged_target_ivals.back().end < stats.read_len) {
+			merged_target_ivals.back().end = std::max(merged_target_ivals.back().end, target_ivals[i].end);
+		} else {
+			merged_target_ivals.push_back(target_ivals[i]);
+		}
+	}
+
+	std::vector<ext_read_t*> reads;
+	bam1_t* read = bam_init1();
+	for (hts_pair_pos_t target_ival : merged_target_ivals) {
 		hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_ival.beg-stats.max_is+stats.read_len);
 		hts_pos_t rev_mates_end = std::min(target_ival.end+stats.max_is-stats.read_len, contig_len);
 
 		std::stringstream ss;
 		ss << contig_name << ":" << fwd_mates_start << "-" << rev_mates_end;
 
-		char* region = new char[ss.str().length()+1];
-		strcpy(region, ss.str().c_str());
-		regions.push_back(region);
+		std::vector<ext_read_t*> region_reads;
+		region_reads.reserve(target_ival.end-target_ival.beg+1);
+		hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
+		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+			if (is_unmapped(read) || !is_primary(read)) continue;
+
+			region_reads.push_back(new ext_read_t(read));
+			if (region_reads.size() > target_ival.end-target_ival.beg) { // too many reads
+				// std::cerr << "WARNING: too many reads in region " << ss.str() << " : "  << region_reads.size() << std::endl;
+				for (ext_read_t* r : region_reads) delete r;
+				region_reads.clear();
+				break;
+			}
+		}
+		reads.insert(reads.end(), region_reads.begin(), region_reads.end());
+		hts_itr_destroy(iter);
 	}
-
-	std::vector<ext_read_t*> reads;
-
-	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
-
-	bam1_t* read = bam_init1();
-	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		if (is_unmapped(read) || !is_primary(read)) continue;
-
-		reads.push_back(new ext_read_t(read));
-	}
-
+	
 	bam_destroy1(read);
-	hts_itr_destroy(iter);
-
-	for (char* region : regions) delete[] region;
 
 	return reads;
 }

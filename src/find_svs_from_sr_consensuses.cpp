@@ -1,3 +1,4 @@
+#include <atomic>
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 #include <htslib/tbx.h>
@@ -45,6 +46,10 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
 	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), *mateseqs_w_mapq, stats, bam_file);
+	if (candidate_reads_for_extension.empty()) {
+		close_samFile(bam_file);
+		return;
+	}
 
 	std::vector<Interval<ext_read_t*>> it_ivals;
 	for (ext_read_t* ext_read : candidate_reads_for_extension) {
@@ -348,7 +353,7 @@ int main(int argc, char* argv[]) {
 	std::cout << "Extending consensuses." << std::endl;
 	auto start_time = std::chrono::high_resolution_clock::now();
 
-	int block_size = 1000;
+	int block_size = 100;
 	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
 	ctpl::thread_pool extend_consensuses_thread_pool(config.threads);
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
