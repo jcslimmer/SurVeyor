@@ -13,8 +13,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(CMAKE_OSX_ARCHITECTURES "x86_64")
 
-include_directories(htslib-1.18)
-include_directories(htslib-1.18/include)
+include_directories(htslib-1.19.1)
+include_directories(htslib-1.19.1/include)
 
 add_executable(normalise utils/normalise.cpp)
 
@@ -28,7 +28,7 @@ add_executable(add_filtering_info src/add_filtering_info.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
-find_library(HTS_LIB hts PATHS htslib-1.18/lib NO_DEFAULT_PATH)
+find_library(HTS_LIB hts PATHS htslib-1.19.1/lib NO_DEFAULT_PATH)
 
 target_link_libraries(reads_categorizer "${HTS_LIB}")
 target_link_libraries(clip_consensus_builder "${HTS_LIB}")
