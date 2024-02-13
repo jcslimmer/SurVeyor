@@ -162,8 +162,7 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
     return success;
 }
 
-std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_id, std::unordered_map<std::string, std::string>& mateseqs,
-		std::unordered_map<std::string, std::string>& matequals, std::vector<consensus_t*>& clip_consensuses) {
+std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_id, std::vector<consensus_t*>& clip_consensuses) {
 
 	std::string contig_name = contig_map.get_name(contig_id);
     hts_itr_t* iter = sam_itr_querys(dc_file->idx, dc_file->header, contig_name.c_str());
@@ -172,10 +171,6 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
     std::vector<bam1_t*> reads;
     std::vector<cluster_t*> clusters;
     while (sam_itr_next(dc_file->file, iter, read) >= 0) {
-        std::string mate_seq = get_mate_seq(read, mateseqs);
-
-        if (mate_seq.empty() || mate_seq.find("N") != std::string::npos) continue;
-
         cluster_t* cluster = new cluster_t(read, 0, config.high_confidence_mapq);
         cluster->id = clusters.size();
         cluster->ra_start = cluster->la_start;
@@ -335,16 +330,6 @@ void remap(int id, int contig_id) {
     std::string l_dc_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
 
-    std::unordered_map<std::string, std::string> mateseqs;
-    std::unordered_map<std::string, std::string> matequals;
-    std::ifstream mateseqs_fin(workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt");
-    std::string qname, seq, qual; int mapq;
-    while (mateseqs_fin >> qname >> seq >> qual >> mapq) {
-        mateseqs[qname] = seq;
-        matequals[qname] = qual;
-    }
-    mateseqs_fin.close();
-
     open_samFile_t* r_dc_file = open_samFile(r_dc_fname.c_str(), true);
     open_samFile_t* l_dc_file = open_samFile(l_dc_fname.c_str(), true);
 
@@ -369,8 +354,8 @@ void remap(int id, int contig_id) {
         }
     }
 
-	std::vector<insertion_cluster_t*> r_clusters = cluster_reads(r_dc_file, contig_id, mateseqs, matequals, rc_consensuses);
-	std::vector<insertion_cluster_t*> l_clusters = cluster_reads(l_dc_file, contig_id, mateseqs, matequals, lc_consensuses);
+	std::vector<insertion_cluster_t*> r_clusters = cluster_reads(r_dc_file, contig_id, rc_consensuses);
+	std::vector<insertion_cluster_t*> l_clusters = cluster_reads(l_dc_file, contig_id, lc_consensuses);
 
 	std::string clipped_fname = workdir + "/workspace/clipped/" + std::to_string(contig_id) + ".bam";
 	add_semi_mapped_pairs(clipped_fname, contig_id, r_clusters, l_clusters);
@@ -391,6 +376,43 @@ void remap(int id, int contig_id) {
             pq.push(cc_v_distance_t(r_cluster, l_cluster, r_cluster->size()*l_cluster->size()));
         }
     }
+
+
+    std::unordered_set<std::string> retained_read_names;
+    for (insertion_cluster_t* c : r_clusters) {
+        for (bam1_t* r : c->cluster->reads) {
+            std::string qname = bam_get_qname(r);
+            if (is_samechr(r)) {
+                retained_read_names.insert(qname + "_1");
+                retained_read_names.insert(qname + "_2");
+            } else {
+                retained_read_names.insert(qname);
+            }
+        }
+    }
+    for (insertion_cluster_t* c : l_clusters) {
+        for (bam1_t* r : c->cluster->reads) {
+            std::string qname = bam_get_qname(r);
+            if (is_samechr(r)) {
+                retained_read_names.insert(qname + "_1");
+                retained_read_names.insert(qname + "_2");
+            } else {
+                retained_read_names.insert(qname);
+            }
+        }
+    }
+
+    std::unordered_map<std::string, std::string> mateseqs;
+    std::unordered_map<std::string, std::string> matequals;
+    std::ifstream mateseqs_fin(workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt");
+    std::string qname, seq, qual; int mapq;
+    while (mateseqs_fin >> qname >> seq >> qual >> mapq) {
+        if (retained_read_names.count(qname)) {
+            mateseqs[qname] = seq;
+            matequals[qname] = qual;
+        }
+    }
+    mateseqs_fin.close();
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
     StripedSmithWaterman::Aligner permissive_aligner(2, 2, 4, 1, false);

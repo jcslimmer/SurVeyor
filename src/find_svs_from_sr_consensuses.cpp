@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 
@@ -29,6 +30,11 @@ contig_map_t contig_map;
 std::unordered_map<std::string, std::vector<sv_t*> > svs_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
+
+std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
+std::vector<std::atomic_int> active_threads_per_chr;
+std::vector<std::mutex> mutex_per_chr;
+
 std::mutex mtx;
 
 
@@ -39,36 +45,52 @@ struct pair_w_score_t {
     pair_w_score_t(int rc_idx, int lc_idx, int score) : rc_idx(rc_idx), lc_idx(lc_idx), score(score) {}
 };
 
-void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::string contig_name,
-	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq, int start_idx, int end_idx) {
+void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::string contig_name, int start_idx, int end_idx, bool extend_in_clip_direction) {
+
+	int contig_id = contig_map.get_id(contig_name);
+	mutex_per_chr[contig_id].lock();
+	if (active_threads_per_chr[contig_id] == 0) {
+		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
+		std::ifstream fin(fname);
+		std::string qname, read_seq, qual; int mapq;
+		while (fin >> qname >> read_seq >> qual >> mapq) {
+			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
+		}
+	}
+	active_threads_per_chr[contig_id]++;
+	mutex_per_chr[contig_id].unlock();
 
 	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start_idx, consensuses->begin()+end_idx);
 
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
-	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), *mateseqs_w_mapq, stats, bam_file);
-	if (candidate_reads_for_extension.empty()) {
-		close_samFile(bam_file);
-		return;
-	}
-
-	std::vector<Interval<ext_read_t*>> it_ivals;
-	for (ext_read_t* ext_read : candidate_reads_for_extension) {
-		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-		it_ivals.push_back(it_ival);
-	}
-	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
-	for (consensus_t* consensus : consensuses_to_consider) {
-		if (consensus->left_clipped) {
-			extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
-				consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, *mateseqs_w_mapq);
-		} else {
-			extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
-				consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, *mateseqs_w_mapq);
+	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), mateseqs_w_mapq[contig_id], stats, bam_file);
+	if (!candidate_reads_for_extension.empty()) {
+		std::vector<Interval<ext_read_t*>> it_ivals;
+		for (ext_read_t* ext_read : candidate_reads_for_extension) {
+			Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
+			it_ivals.push_back(it_ival);
 		}
+		IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
+		for (consensus_t* consensus : consensuses_to_consider) {
+			if (consensus->left_clipped != extend_in_clip_direction) {
+				extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
+					consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
+			} else {
+				extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
+					consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
+			}
+		}
+		for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 	}
-	for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
 	close_samFile(bam_file);
+
+	mutex_per_chr[contig_id].lock();
+	active_threads_per_chr[contig_id]--;
+	if (active_threads_per_chr[contig_id] == 0) {
+		mateseqs_w_mapq[contig_id].clear();
+	}
+	mutex_per_chr[contig_id].unlock();
 }
 
 void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vector<bool>& used) {
@@ -267,34 +289,16 @@ void find_indels_from_paired_consensuses(int id, int contig_id, std::string cont
 	mtx.unlock();
 }
 
-void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses,
-		int start, int end, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
+void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<consensus_t*>* consensuses, int start, int end) {
 
 	std::vector<sv_t*> local_svs;
 
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 	char* contig_seq = chr_seqs.get_seq(contig_name);
 	hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
-	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
-
-	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start, consensuses->begin()+end);
-	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, contig_len, *mateseqs_w_mapq, stats, bam_file);
-
-	std::vector<Interval<ext_read_t*>> it_ivals;
-	for (ext_read_t* ext_read : candidate_reads_for_extension) {
-		Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-		it_ivals.push_back(it_ival);
-	}
-	IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
-
 	for (int i = start; i < consensuses->size() && i < end; i++) {
 		consensus_t* consensus = consensuses->at(i);
-
-		extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
-			consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
-		extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
-			consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, contig_len, config.high_confidence_mapq, stats, *mateseqs_w_mapq);
 
 		std::vector<sv_t*> svs;
 		if (!consensus->left_clipped) {
@@ -310,8 +314,6 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 
 		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
-	close_samFile(bam_file);
-	for (ext_read_t* read : candidate_reads_for_extension) delete read;
 
 	mtx.lock();
 	svs_by_chr[contig_name].insert(svs_by_chr[contig_name].end(), local_svs.begin(), local_svs.end());
@@ -335,7 +337,7 @@ int main(int argc, char* argv[]) {
     config.parse(workdir + "/config.txt");
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
-    chr_seqs.read_fasta_into_map(reference_fname);
+    chr_seqs.read_lens_into_map(reference_fname);
 
 	ctpl::thread_pool read_consensuses_thread_pool(config.threads);
     std::vector<std::future<void> > futures;
@@ -350,44 +352,41 @@ int main(int argc, char* argv[]) {
     }
 	futures.clear();
 
+	mateseqs_w_mapq.resize(contig_map.size());
+	active_threads_per_chr = std::vector<std::atomic_int>(contig_map.size());
+	mutex_per_chr = std::vector<std::mutex>(contig_map.size());
+
+
 	std::cout << "Extending consensuses." << std::endl;
 	auto start_time = std::chrono::high_resolution_clock::now();
 
 	int block_size = 100;
-	std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq(contig_map.size());
 	ctpl::thread_pool extend_consensuses_thread_pool(config.threads);
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
-		std::ifstream fin(fname);
-		std::string qname, read_seq, qual; int mapq;
-		while (fin >> qname >> read_seq >> qual >> mapq) {
-			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
-		}
-
 		std::future<void> future;
 		std::string contig_name = contig_map.get_name(contig_id);
 		std::vector<consensus_t*>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
 		for (int i = 0; i < rc_sr_consensuses.size(); i += block_size) {
 			int start = i, end = std::min(i+block_size, (int) rc_sr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_sr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_sr_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
 		std::vector<consensus_t*>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
 		for (int i = 0; i < lc_sr_consensuses.size(); i += block_size) {
 			int start = i, end = std::min(i+block_size, (int) lc_sr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_sr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_sr_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
 		std::vector<consensus_t*>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
 		for (int i = 0; i < rc_hsr_consensuses.size(); i += block_size) {
 			int start = i, end = std::min(i+block_size, (int) rc_hsr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_hsr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_hsr_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
 		std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 		for (int i = 0; i < lc_hsr_consensuses.size(); i += block_size) {
 			int start = i, end = std::min(i+block_size, (int) lc_hsr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_hsr_consensuses, contig_name, &mateseqs_w_mapq[contig_id], start, end);
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_hsr_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
 	}
@@ -400,16 +399,26 @@ int main(int argc, char* argv[]) {
 	auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Consensuses extended in " << elapsed_time << " seconds" << std::endl;
 
+	for (int i = 0; i < contig_map.size(); i++) {
+		if (active_threads_per_chr[i] > 0) {
+			std::cerr << "Error: active_threads_per_chr[" << i << "] = " << active_threads_per_chr[i] << std::endl;
+			exit(1);
+		}
+	}
+
+
 	std::cout << "Finding indels." << std::endl;
 	start_time = std::chrono::high_resolution_clock::now();
 
-    ctpl::thread_pool thread_pool1(config.threads);
+	chr_seqs.read_fasta_into_map(reference_fname);
+
+    ctpl::thread_pool finding_indels_thread_pool(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = thread_pool1.push(find_indels_from_paired_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
+        std::future<void> future = finding_indels_thread_pool.push(find_indels_from_paired_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
         futures.push_back(std::move(future));
     }
-    thread_pool1.stop(true);
+    finding_indels_thread_pool.stop(true);
     for (size_t i = 0; i < futures.size(); i++) {
         futures[i].get();
     }
@@ -418,10 +427,38 @@ int main(int argc, char* argv[]) {
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Indels found in " << elapsed_time << " seconds" << std::endl;
 
+
+	std::cout << "Extending unpaired consensuses." << std::endl;
+	start_time = std::chrono::high_resolution_clock::now();
+
+	chr_seqs.read_lens_into_map(reference_fname);
+
+	ctpl::thread_pool extend_unpaired_consensuses_thread_pool(config.threads);
+	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+		std::string contig_name = contig_map.get_name(contig_id);
+		std::vector<consensus_t*>& unpaired_consensuses = unpaired_consensuses_by_chr[contig_name];
+		for (int i = 0; i <= unpaired_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) unpaired_consensuses.size());
+			std::future<void> future = extend_unpaired_consensuses_thread_pool.push(extend_consensuses, &unpaired_consensuses, contig_name, start, end, true);
+			futures.push_back(std::move(future));
+		}
+	}
+	extend_unpaired_consensuses_thread_pool.stop(true);
+	for (size_t i = 0; i < futures.size(); i++) {
+		futures[i].get();
+	}
+	futures.clear();
+
+	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
+	std::cout << "Unpaired consensuses extended in " << elapsed_time << " seconds" << std::endl;
+
+
 	std::cout << "Finding indels from unpaired consensuses." << std::endl;
 	start_time = std::chrono::high_resolution_clock::now();
 
-    ctpl::thread_pool thread_pool2(config.threads);
+	chr_seqs.read_fasta_into_map(reference_fname);
+
+    ctpl::thread_pool finding_indels_from_up_consenensus_thread_pool(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
     	std::vector<consensus_t*>& consensuses = unpaired_consensuses_by_chr[contig_name];
@@ -429,12 +466,12 @@ int main(int argc, char* argv[]) {
     	for (int i = 0; i <= consensuses.size()/block_size; i++) {
     		int start = i * block_size;
     		int end = std::min(start+block_size, (int) consensuses.size());
-			std::future<void> future = thread_pool2.push(find_indels_from_unpaired_consensuses,
-					contig_name, &consensuses, i*block_size, end, &mateseqs_w_mapq[contig_id]);
+			std::future<void> future = finding_indels_from_up_consenensus_thread_pool.push(find_indels_from_unpaired_consensuses,
+					contig_name, &consensuses, i*block_size, end);
 			futures.push_back(std::move(future));
 		}
     }
-    thread_pool2.stop(true);
+    finding_indels_from_up_consenensus_thread_pool.stop(true);
 	for (size_t i = 0; i < futures.size(); i++) {
 		futures[i].get();
 	}
@@ -442,6 +479,7 @@ int main(int argc, char* argv[]) {
 
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Indels found from unpaired consensuses in " << elapsed_time << " seconds" << std::endl;
+
 
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);

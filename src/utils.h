@@ -151,13 +151,29 @@ struct chr_seqs_map_t {
     std::vector<std::string> ordered_contigs;
 
     void read_fasta_into_map(std::string& reference_fname) {
+        ordered_contigs.clear();
         FILE* fasta = fopen(reference_fname.c_str(), "r");
         kseq_t* seq = kseq_init(fileno(fasta));
         while (kseq_read(seq) >= 0) {
             std::string seq_name = seq->name.s;
             char* chr_seq = new char[seq->seq.l + 1];
             strcpy(chr_seq, seq->seq.s);
+            if (seqs.count(seq_name)) delete seqs[seq_name];
             seqs[seq_name] = new chr_seq_t(chr_seq, seq->seq.l);
+            ordered_contigs.push_back(seq_name);
+        }
+        kseq_destroy(seq);
+        fclose(fasta);
+    }
+
+    void read_lens_into_map(std::string& reference_fname) {
+        ordered_contigs.clear();
+        FILE* fasta = fopen(reference_fname.c_str(), "r");
+        kseq_t* seq = kseq_init(fileno(fasta));
+        while (kseq_read(seq) >= 0) {
+            std::string seq_name = seq->name.s;
+            if (seqs.count(seq_name)) delete seqs[seq_name];
+            seqs[seq_name] = new chr_seq_t(NULL, seq->seq.l);
             ordered_contigs.push_back(seq_name);
         }
         kseq_destroy(seq);
