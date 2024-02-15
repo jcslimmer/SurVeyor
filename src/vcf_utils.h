@@ -235,6 +235,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* sbc_tag = "##INFO=<ID=SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,sbc_tag, &len));
 
+	const char* ia_tag = "##INFO=<ID=INCOMPLETE_ASSEMBLY,Number=0,Type=Flag,Description=\"The inserted sequence is too long, and it could not be fully assembled using short reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ia_tag, &len));
+
 	// add ALT
 	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));
