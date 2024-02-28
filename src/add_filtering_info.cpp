@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cmath>
+#include <ostream>
 #include <sstream>
 #include <unordered_map>
 

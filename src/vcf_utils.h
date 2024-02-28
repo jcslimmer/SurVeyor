@@ -1,6 +1,7 @@
 #ifndef VCF_UTILS_H
 #define VCF_UTILS_H
 
+#include <iostream>
 #include <chrono>
 #include <ctime>
 #include <htslib/vcf.h>
@@ -638,6 +639,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &data2, &len);
 	if (data2) full_junction_cigar = data2;
 
+	data = NULL;
+	len = 0;
+	bool imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
+
 	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, left_split_size, left_split_score, left_split_score2, left_split_cigar);
 	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
 	sv_t::anchor_aln_t* full_junction_aln = full_junction_score > 0 ? new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar) : NULL;
@@ -650,6 +655,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "INS") {
 		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+		((insertion_t*) sv)->imprecise_bp = imprecise;
 	} else {
 		throw std::runtime_error("Unsupported SV type: " + svtype);
 	}

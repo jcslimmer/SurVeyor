@@ -75,6 +75,7 @@ bool is_compatible_ins_dup(sv_t& sv1, sv_t& sv2) {
 bool check_ins_ins_seq(sv_t& sv1, sv_t& sv2) {
 	if (ignore_seq) return true;
 	if (sv1.ins_seq.length() > UINT16_MAX || sv2.ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
+	if (sv1.incomplete_ass || sv2.incomplete_ass) return true; // do not compare incomplete assemblies
 
 	int max_len_diff = (sv1.precise && sv2.precise) ? max_prec_len_diff : max_imprec_len_diff;
 	if (abs((int) (sv1.ins_seq.length()-sv2.ins_seq.length())) > max_len_diff) return false;
