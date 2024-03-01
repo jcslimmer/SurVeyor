@@ -180,11 +180,17 @@ exec(dc_remapper_cmd)
 add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/assembled_ins.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(add_filtering_info_cmd)
 
-concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.vcf.gz %s/assembled_ins.annotated.vcf.gz -Oz -o %s/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/survindel2.out.annotated.vcf.gz %s/assembled_ins.annotated.vcf.gz %s/out.vcf" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
 exec(concat_cmd)
 
-concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz %s/out.pass.vcf" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
 exec(concat_cmd)
+
+# concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.vcf.gz %s/assembled_ins.annotated.vcf.gz -Oz -o %s/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+# exec(concat_cmd)
+
+# concat_cmd = "bcftools concat -a %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz -Oz -o %s/out.pass.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+# exec(concat_cmd)
 
 # normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/out.pass.vcf.gz %s/out.pass.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
 # exec(normalise_cmd)
