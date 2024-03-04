@@ -387,6 +387,10 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
         for (bam_redux_t* r : cluster_v) delete r;
     }
     for (bam1_t* r : lc_cluster) bam_destroy1(r);
+    
+    close_samFile(bam_file);
+    bam_destroy1(read);
+    hts_itr_destroy(iter);
 
     if (lc_consensuses.empty() && rc_consensuses.empty()) return;
 
