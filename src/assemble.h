@@ -11,10 +11,7 @@
 #include "types.h"
 #include "dc_remapper.h"
 
-extern std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer;
 std::mutex failed_assembly_mtx;
-
-extern const int TOO_MANY_READS;
 
 struct edge_t {
 	int next, score, overlap;
@@ -332,6 +329,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, insertion_c
 		}
 	}
 
+	const int TOO_MANY_READS = 1000;
 	if (unstable_read_seqs.size() + left_stable_read_seqs.size() + right_stable_read_seqs.size() >= TOO_MANY_READS) return {"TOO_MANY_READS"};
 
 	std::vector<std::string> assembled_sequences = assemble_reads(left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs,
@@ -343,6 +341,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, insertion_c
 sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
 		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
+		std::ofstream& assembly_failed_no_seq, std::ofstream& assembly_failed_cycle_writer, std::ofstream& assembly_failed_too_many_reads_writer,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
 		std::vector<bam1_t*>& assembled_reads, config_t& config, stats_t& stats) {
 
@@ -468,6 +467,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			chosen_ins->disc_pairs_lf++;
+			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->disc_pairs_lf_high_mapq++;
 			chosen_ins->disc_pairs_lf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;
@@ -484,6 +484,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			chosen_ins->disc_pairs_rf++;
+			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->disc_pairs_rf_high_mapq++;
 			chosen_ins->disc_pairs_rf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;

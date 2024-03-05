@@ -375,17 +375,15 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		}
 	}
 
-	int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
-	bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
 	if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+		int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
+		int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
 		int disc_pairs_maxmapq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", disc_pairs_maxmapq, 2);
 		float avg_nm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
 		bcf_update_info_float(hdr, bcf_entry, "DISC_AVG_NM", avg_nm, 2);
-	}
-	if (sv->source == "DP") {
-		int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
 	}
 
 	int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};

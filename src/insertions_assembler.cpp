@@ -92,7 +92,7 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
 
     std::string contig_name = contig_map.get_name(contig_id);
     if (regions.empty()) {
-		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
+		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
@@ -135,7 +135,7 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
 	for (remap_info_t& remap_info : lo_remap_infos) lc_accepted_reads += remap_info.accepted;
 	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
-		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals,
+		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
