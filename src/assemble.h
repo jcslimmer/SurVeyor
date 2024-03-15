@@ -477,7 +477,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			assembled_reads.push_back(d);
 		}
 	}
-	chosen_ins->disc_pairs_lf_avg_nm /= chosen_ins->disc_pairs_lf;
+	chosen_ins->disc_pairs_lf_avg_nm /= std::max(1, chosen_ins->disc_pairs_lf);
 	for (bam1_t* read : l_cluster->cluster->reads) {
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		std::string mate_qual = get_mate_qual(read, matequals);
@@ -495,7 +495,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			assembled_reads.push_back(d);
 		}
 	}
-	chosen_ins->disc_pairs_rf_avg_nm /= chosen_ins->disc_pairs_rf++;
+	chosen_ins->disc_pairs_rf_avg_nm /= std::max(1, chosen_ins->disc_pairs_rf);
 	if (l_cluster->clip_consensus) {
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(l_cluster->clip_consensus->sequence.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);

@@ -137,9 +137,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
-
-	const char* algo_tag = "##INFO=<ID=ALGORITHM,Number=1,Type=String,Description=\"Algorithm used to report the call.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, algo_tag, &len));
 	
 	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
@@ -354,7 +351,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
-	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &sv->mismatch_rate, 1);
+	float mismatch_rate = sv->mismatch_rate;
+	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
 
 	if (sv->rc_consensus) {
 		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
@@ -505,17 +503,10 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int* data = NULL;
+	float* f_data = NULL;
 	int len = 0;
-	bcf_get_info_int32(hdr, b, "MAX_MAPQ", &data, &len);
-	int max_rc_mapq = 0, max_lc_mapq = 0;
-	if (len > 0) {
-		max_rc_mapq = data[0];
-		max_lc_mapq = data[1];
-	}
 
 	int rc_fwd_reads = 0, rc_rev_reads = 0, lc_fwd_reads = 0, lc_rev_reads = 0;
-	data = NULL;
-	len = 0;
 	bcf_get_info_int32(hdr, b, "FWD_SPLIT_READS", &data, &len);
 	if (len > 0) {
 		rc_fwd_reads = data[0];
@@ -530,6 +521,14 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		lc_rev_reads = data[1];
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MAX_MAPQ", &data, &len);
+	int max_rc_mapq = 0, max_lc_mapq = 0;
+	if (len > 0) {
+		max_rc_mapq = data[0];
+		max_lc_mapq = data[1];
+	}
 
 	consensus_t* rc_consensus = NULL;
 	if (rc_fwd_reads + rc_rev_reads > 0) {
@@ -584,12 +583,12 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (len > 0) lc_consensus->remap_boundary = data[0];
 	}
 
-	char* data2 = NULL;
+	char* s_data = NULL;
 	len = 0;
-	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &data2, &len);
+	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
 	std::string left_split_mapping_range = "", right_split_mapping_range = "";
-	if (data2) {
-		std::string mapping_range = data2;
+	if (s_data) {
+		std::string mapping_range = s_data;
 		size_t comma_pos = mapping_range.find(",");
 		left_split_mapping_range = mapping_range.substr(0, comma_pos);
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
@@ -615,12 +614,12 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SIZE", &data, &len);
 	int left_split_size = data[0], right_split_size = data[1];
 
-	data2 = NULL;
+	s_data = NULL;
 	len = 0;
-	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_CIGAR", (void**) &data2, &len);
+	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_CIGAR", (void**) &s_data, &len);
 	std::string left_split_cigar = "", right_split_cigar = "";
-	if (data2) {
-		std::string cigar = data2;
+	if (s_data) {
+		std::string cigar = s_data;
 		size_t comma_pos = cigar.find(",");
 		left_split_cigar = cigar.substr(0, comma_pos);
 		right_split_cigar = cigar.substr(comma_pos+1);
@@ -632,10 +631,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) full_junction_score = data[0];
 
 	std::string full_junction_cigar = "";
-	data2 = NULL;
+	s_data = NULL;
 	len = 0;
-	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &data2, &len);
-	if (data2) full_junction_cigar = data2;
+	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &s_data, &len);
+	if (s_data) full_junction_cigar = s_data;
 
 	data = NULL;
 	len = 0;
@@ -674,6 +673,20 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
+	bcf_get_info_int32(hdr, b, "OVERLAP", &data, &len);
+	if (len > 0) {
+		sv->overlap = data[0];
+	}
+
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "MISMATCH_RATE", &f_data, &len);
+	if (len > 0) {
+		sv->mismatch_rate = f_data[0];
+	}
+
+	data = NULL;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "DISC_PAIRS", &data, &len);
 	if (len > 0) {
 		sv->disc_pairs_lf = data[0];
@@ -696,12 +709,36 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv->disc_pairs_rf_high_mapq = data[1];
 	}
 
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "DISC_AVG_NM", &f_data, &len);
+	if (len > 0) {
+		sv->disc_pairs_lf_avg_nm = f_data[0];
+		sv->disc_pairs_rf_avg_nm = f_data[1];
+	}
+
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_AVG_NM", &data, &len);
+	bcf_get_info_int32(hdr, b, "DISC_PAIRS_SURROUNDING", &data, &len);
 	if (len > 0) {
-		sv->disc_pairs_lf_avg_nm = data[0];
-		sv->disc_pairs_rf_avg_nm = data[1];
+		sv->l_cluster_region_disc_pairs = data[0];
+		sv->r_cluster_region_disc_pairs = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_PREFIX_COV", &data, &len);
+	if (len > 0) {
+		((insertion_t*) sv)->prefix_cov_start = data[0];
+		((insertion_t*) sv)->prefix_cov_end = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_SUFFIX_COV", &data, &len);
+	if (len > 0) {
+		((insertion_t*) sv)->suffix_cov_start = data[0];
+		((insertion_t*) sv)->suffix_cov_end = data[1];
 	}
 
 	sv->id = b->d.id;

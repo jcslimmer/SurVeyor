@@ -390,7 +390,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	 std::vector<sv_t*> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
                 remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len);
 
-	if (insertions.empty() || insertions[0]->svtype() != "INS") return NULL;
+	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->svlen() < config.min_sv_size) return NULL;
 
 	insertion_t* insertion = (insertion_t*) insertions[0];
 
