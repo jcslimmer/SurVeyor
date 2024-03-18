@@ -452,6 +452,23 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
     return svtype;
 }
 
+int get_sv_len(bcf_hdr_t* hdr, bcf1_t* sv) {
+	int* data = NULL;
+	int size = 0;
+	bcf_get_info_int32(hdr, sv, "SVLEN", &data, &size);
+	if (size > 0) {
+		int len = data[0];
+		free(data);
+		return len;
+	}
+
+	if (sv->d.allele[1][0] != '<') {
+		return strlen(sv->d.allele[1])-strlen(sv->d.allele[0]);
+	}
+
+	return bcf_int32_missing;
+}
+
 int get_sv_end(bcf_hdr_t* hdr, bcf1_t* sv) {
     int* data = NULL;
     int size = 0;
@@ -462,12 +479,12 @@ int get_sv_end(bcf_hdr_t* hdr, bcf1_t* sv) {
         return end-1; // return 0-based
     }
 
-    bcf_get_info_int32(hdr, sv, "SVLEN", &data, &size);
-    if (size > 0) {
-        int svlen = data[0];
-        delete[] data;
-        return sv->pos + abs(svlen);
-    }
+	if (get_sv_type(hdr, sv) == "INS") return sv->pos;
+
+	int svlen = get_sv_len(hdr, sv);
+	if (svlen != bcf_int32_missing) {
+		return sv->pos + abs(svlen);
+	}
 
     throw std::runtime_error("SV " + std::string(sv->d.id) + "has no END or SVLEN annotation.");
 }
