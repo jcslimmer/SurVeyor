@@ -493,7 +493,7 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
     char* data = NULL;
     int len = 0;
     if (bcf_get_info_string(hdr, sv, info.c_str(), &data, &len) < 0) {
-        throw std::runtime_error("Failed to fetch " + info + " for sv " + std::string(sv->d.id));
+		return "";
     }
     std::string svtype = data;
     delete[] data;
@@ -513,6 +513,13 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
 	if (data) return data;
+
+	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
+	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
+	std::string right_ins_seq = get_sv_info_str(hdr, sv, "RIGHT_SVINSSEQ");
+	if (!left_ins_seq.empty() && !right_ins_seq.empty()) {
+		return left_ins_seq + "-" + right_ins_seq;
+	}
 
 	return "";
 }
