@@ -11,11 +11,17 @@ chr_seqs_map_t chr_seqs;
 int max_prec_dist, max_imprec_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
+std::unordered_set<std::string> dup_ids;
 
 StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 StripedSmithWaterman::Filter filter;
 
 bool ignore_seq = false;
+
+std::string get_type(general_sv_t& sv) {
+	if (dup_ids.count(sv.id)) return "DUP";
+	else return sv.type;
+}
 
 int distance(general_sv_t& sv1, general_sv_t& sv2) {
     if (sv1.chr != sv2.chr) return INT32_MAX;
@@ -170,6 +176,7 @@ int main(int argc, char* argv[]) {
 		("i,force-ids", "Generate new IDs for the variants, required when variants do not have IDs or have duplicated IDs.",
 				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
+		("dup-ids", "ID of SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("h,help", "Print usage");
 
 	options.parse_positional({"benchmark_file", "called_file"});
@@ -199,6 +206,14 @@ int main(int argc, char* argv[]) {
     	min_prec_frac_overlap = min_imprec_frac_overlap;
     	max_prec_len_diff = max_imprec_len_diff;
     }
+
+	if (parsed_args.count("dup-ids")) {
+		std::string line;
+		std::ifstream dup_f(parsed_args["dup-ids"].as<std::string>());
+		while (getline(dup_f, line)) {
+			dup_ids.insert(line);
+		}
+	}
 
 	if (!parsed_args.count("reference") && !ignore_seq) {
 		std::cerr << "If no reference is provided, the --ignore-seq flag must be provided." << std::endl;
@@ -313,18 +328,18 @@ int main(int argc, char* argv[]) {
 	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn;
 	for (general_sv_t& bsv : benchmark_svs) {
 		if (b_tps.count(bsv.id)) {
-			n_benchmark_tp[bsv.type]++;
+			n_benchmark_tp[get_type(bsv)]++;
 		} else {
-			n_benchmark_fn[bsv.type]++;
+			n_benchmark_fn[get_type(bsv)]++;
 		}
 	}
 
 	std::unordered_map<std::string, int> n_called_tp, n_called_fp;
 	for (general_sv_t& csv : called_svs) {
 		if (c_tps.count(csv.id)) {
-			n_called_tp[csv.type]++;
+			n_called_tp[get_type(csv)]++;
 		} else {
-			n_called_fp[csv.type]++;
+			n_called_fp[get_type(csv)]++;
 		}
 	}
 
