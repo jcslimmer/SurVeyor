@@ -7,6 +7,7 @@
 
 #include "htslib/faidx.h"
 
+#include "htslib/sam.h"
 #include "sam_utils.h"
 #include "utils.h"
 #include "../libs/cptl_stl.h"
@@ -145,7 +146,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 				 if (pair_startpos <= rnd_positions[i] && rnd_positions[i] <= pair_endpos) {
 					rnd_positions_dist_between_end_and_rnd[i].push_back(pair_endpos-rnd_positions[i]);
                     local_isize_counts[read->core.isize]++;
-                    isize_dist_by_rndpos[curr_pos].push_back(read->core.isize);
+                    isize_dist_by_rndpos[i].push_back(read->core.isize);
                     sum_is += read->core.isize;
                     n_is++;
 				}
@@ -194,7 +195,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 	}
 
     for (int i = 0; i < rnd_positions.size(); i++) {
-		std::vector<uint32_t> local_isizes_count_geq_i(stats.max_is+1); // position i contains the count of isizes that are geq than i
+		std::vector<uint32_t> local_isizes_count_geq_i(stats.max_is+1); // position i contains the count of isizes that are >= than i
 		for (uint32_t isize : isize_dist_by_rndpos[i]) local_isizes_count_geq_i[isize]++;
 		for (int j = stats.max_is-1; j >= 0; j--) {
 			local_isizes_count_geq_i[j] += local_isizes_count_geq_i[j+1];
@@ -320,7 +321,7 @@ int main(int argc, char* argv[]) {
     std::ofstream med_dpbs_fout(workdir + "/median_disc_pairs_by_size.txt");
 	for (int i = 0; i <= stats.max_is; i++) {
         int64_t sum = std::accumulate(isizes_count_geq_i[i].begin(), isizes_count_geq_i[i].end(), int64_t(0));
-        
+
         int64_t curr_sum = 0;
 		med_dpbs_fout << i << " ";
         for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
@@ -335,7 +336,7 @@ int main(int argc, char* argv[]) {
         min_dpbs_fout << i << " ";
         for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
             curr_sum += isizes_count_geq_i[i][j];
-            if (curr_sum >= sum/200) {
+            if (curr_sum >= sum/100) {
                 min_dpbs_fout << j << std::endl;
                 break;
             }
