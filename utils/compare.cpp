@@ -63,18 +63,32 @@ bool is_compatible_dup_dup(general_sv_t& sv1, general_sv_t& sv2) {
 bool check_ins_dup_seq(general_sv_t& ins_sv, general_sv_t& dup_sv) {
 	if (ignore_seq) return true;
 
+	int max_len_diff = (ins_sv.precise && dup_sv.precise) ? max_prec_len_diff : max_imprec_len_diff;
+	if (dup_sv.len() > ins_sv.ins_seq.length()+max_len_diff) return false;
+
 	char* dup_seq = new char[dup_sv.end-dup_sv.start+1];
 	strncpy(dup_seq, chr_seqs.get_seq(dup_sv.chr)+dup_sv.start, dup_sv.end-dup_sv.start);
 	dup_seq[dup_sv.end-dup_sv.start] = '\0';
 	std::string ext_dup_seq = dup_seq;
-	while (ext_dup_seq.length() <= ins_sv.ins_seq.length()) {
+	while (ext_dup_seq.length() <= ins_sv.ins_seq.length() && ext_dup_seq.length() < UINT16_MAX) {
 		ext_dup_seq += dup_sv.ins_seq + dup_seq;
 	}
 	delete[] dup_seq;
 
-	if (ext_dup_seq.length() > UINT16_MAX || ins_sv.ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
-
+	// ssw score is a uint16_t, so we cannot compare strings longer than that
 	StripedSmithWaterman::Alignment alignment;
+	if (ins_sv.ins_seq.length() > UINT16_MAX || ext_dup_seq.length() > UINT16_MAX) {
+		std::string ins_seq_prefix = ins_sv.ins_seq.substr(0, UINT16_MAX-10);
+		std::string ins_seq_suffix = ins_sv.ins_seq.substr(std::max(0, (int) ins_sv.ins_seq.length()-(UINT16_MAX-10)));
+		std::string ext_dup_seq_prefix = ext_dup_seq.substr(0, UINT16_MAX-10);
+		std::string ext_dup_seq_suffix = ext_dup_seq.substr(std::max(0, (int) ext_dup_seq.length()-(UINT16_MAX-10)));
+		aligner.Align(ins_seq_prefix.data(), ext_dup_seq_prefix.data(), ext_dup_seq_prefix.length(), filter, &alignment, 0);
+		if (alignment.query_end-alignment.query_begin < ins_seq_prefix.length()*0.8) return false;
+		aligner.Align(ins_seq_suffix.data(), ext_dup_seq_suffix.data(), ext_dup_seq_suffix.length(), filter, &alignment, 0);
+		if (alignment.query_end-alignment.query_begin < ins_seq_suffix.length()*0.8) return false;
+		return true;
+	}
+
 	aligner.Align(ins_sv.ins_seq.data(), ext_dup_seq.data(), ext_dup_seq.length(), filter, &alignment, 0);
 	return alignment.query_end-alignment.query_begin >= ins_sv.ins_seq.length()*0.8;
 }
