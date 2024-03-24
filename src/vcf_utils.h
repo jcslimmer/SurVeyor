@@ -64,8 +64,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* anom_del_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEL_DEPTH,Description=\"Depth of the deleted region is anomalous.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anom_del_depth_flt_tag, &len));
 
-	const char* not_enough_ow_pairs_flt_tag = "##FILTER=<ID=NOT_ENOUGH_DISC_PAIRS,Description=\"Not enough discordant pairs supporting the event.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, not_enough_ow_pairs_flt_tag, &len));
+	const char* not_enough_disc_pairs_flt_tag = "##FILTER=<ID=NOT_ENOUGH_DISC_PAIRS,Description=\"Not enough discordant pairs supporting the event.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, not_enough_disc_pairs_flt_tag, &len));
 
 	const char* weak_split_aln_flt_tag = "##FILTER=<ID=WEAK_SPLIT_ALIGNMENT,Description=\"Split alignment not significantly better than full junction alignment.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_split_aln_flt_tag, &len));
@@ -88,9 +88,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* low_support_flt_tag = "##FILTER=<ID=LOW_SUPPORT,Description=\"Insertion has low support.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_support_flt_tag, &len));
-
-	const char* no_disc_support_flt_tag = "##FILTER=<ID=NO_DISC_SUPPORT,Description=\"Insertion has no support from discordant pairs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, no_disc_support_flt_tag, &len));
 
 	const char* weak_anchor_flt_tag = "##FILTER=<ID=WEAK_ANCHOR,Description=\"Left or right split junction alignment score is too low.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_anchor_flt_tag, &len));

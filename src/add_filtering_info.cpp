@@ -25,7 +25,6 @@ chr_seqs_map_t chr_seqs;
 contig_map_t contig_map;
 
 std::vector<double> global_crossing_isize_dist;
-std::vector<uint32_t> median_crossing_count_geqi_by_isize;
 
 std::mutex bam_pool_mtx;
 std::queue<open_samFile_t*> bam_pool;
@@ -72,8 +71,8 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     std::vector<double> v1;
     std::vector<uint32_t> v2;
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
-    calculate_confidence_interval_size(contig_name, v1, v2, sr_deletions, bam_file, stats, config.min_sv_size);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, median_crossing_count_geqi_by_isize, small_dp_deletions, bam_file, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, v1, sr_deletions, bam_file, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dp_deletions, bam_file, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_dp_deletions, bam_file, stats);
     release_bam_reader(bam_file);
 }
@@ -155,13 +154,6 @@ int main(int argc, char* argv[]) {
 	std::random_shuffle(global_crossing_isize_dist.begin(), global_crossing_isize_dist.end());
 	global_crossing_isize_dist.resize(100000);
 	crossing_isizes_dist_fin.close();
-
-    std::ifstream crossing_isizes_count_geq_i_fin(workdir + "/median_disc_pairs_by_size.txt");
-	int median;
-	while (crossing_isizes_count_geq_i_fin >> isize >> median) {
-		median_crossing_count_geqi_by_isize.push_back(median);
-	}
-	crossing_isizes_count_geq_i_fin.close();
 
 	htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
 	if (in_vcf_file == NULL) {
@@ -315,7 +307,6 @@ int main(int argc, char* argv[]) {
 
             if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {
                 auto support = {ins->disc_pairs_rf+ins->rc_reads(), ins->disc_pairs_lf+ins->lc_reads()};
-                if (ins->disc_pairs_rf + ins->disc_pairs_lf == 0) ins->filters.push_back("NO_DISC_SUPPORT");
                 
                 int r_positive = ins->disc_pairs_rf + ins->rc_reads();
                 int r_negative = ins->conc_pairs;

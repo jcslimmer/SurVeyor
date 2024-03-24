@@ -251,6 +251,16 @@ void find_1_perc(std::vector<uint32_t>& v, uint32_t& min, uint32_t& max) {
     }
 }
 
+uint32_t find_median(std::vector<uint32_t>& v) {
+    uint64_t sum = std::accumulate(v.begin(), v.end(), uint64_t(0));
+    uint64_t curr_sum = 0;
+    for (int i = 0; i < v.size(); i++) {
+        curr_sum += v[i];
+        if (curr_sum >= sum/2) return i;
+    }
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
 
     std::string bam_fname = argv[1];
@@ -351,26 +361,15 @@ int main(int argc, char* argv[]) {
     }
     crossing_isizes_dist_fout.close();
 
-    std::ofstream med_dpbs_fout(workdir + "/median_disc_pairs_by_size.txt");
 	for (int i = 0; i <= stats.max_is; i++) {
         uint32_t min_disc_pairs_by_insertion_size = 0, max_disc_pairs_by_insertion_size = 0;
         find_1_perc(dist_between_end_and_rnd[i], min_disc_pairs_by_insertion_size, max_disc_pairs_by_insertion_size);
         stats_out << "min_disc_pairs_by_insertion_size " << i << " " << min_disc_pairs_by_insertion_size << std::endl;
         stats_out << "max_disc_pairs_by_insertion_size " << i << " " << max_disc_pairs_by_insertion_size << std::endl;
 
-        int64_t sum = std::accumulate(isizes_count_geq_i[i].begin(), isizes_count_geq_i[i].end(), int64_t(0));
-
-        int64_t curr_sum = 0;
-		med_dpbs_fout << i << " ";
-        for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
-            curr_sum += isizes_count_geq_i[i][j];
-            if (curr_sum >= sum/2) {
-                med_dpbs_fout << j << std::endl;
-                break;
-            }
-        }
+        uint32_t median_disc_pairs_by_del_size = find_median(isizes_count_geq_i[i]);
+		stats_out << "median_disc_pairs_by_del_size " << i << " " << median_disc_pairs_by_del_size << std::endl;
 	}
-    med_dpbs_fout.close();
 
 	stats_out << "min_disc_pairs . " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
 	stats_out.close();

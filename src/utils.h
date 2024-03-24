@@ -60,6 +60,7 @@ struct stats_t {
     int read_len;
     std::unordered_map<std::string, int> min_depths, median_depths, max_depths;
     std::unordered_map<int, int> min_disc_pairs_by_insertion_size, max_disc_pairs_by_insertion_size;
+    std::unordered_map<int, int> median_disc_pairs_by_del_size;
     int min_avg_base_qual;
     int pop_avg_crossing_is = 0;
     bool per_contig_stats = false;
@@ -78,6 +79,7 @@ struct stats_t {
             if (stat_name == "max_depth") max_depths[stat_subname] = std::stoi(value);
             if (stat_name == "min_disc_pairs_by_insertion_size") min_disc_pairs_by_insertion_size[std::stoi(stat_subname)] = std::stoi(value);
             if (stat_name == "max_disc_pairs_by_insertion_size") max_disc_pairs_by_insertion_size[std::stoi(stat_subname)] = std::stoi(value);
+            if (stat_name == "median_disc_pairs_by_del_size") median_disc_pairs_by_del_size[std::stoi(stat_subname)] = std::stoi(value);
             if (stat_name == "min_avg_base_qual") min_avg_base_qual = std::stoi(value);
             if (stat_name == "pop_avg_crossing_is" && stat_subname == ".") pop_avg_crossing_is = std::stoi(value);
         }
@@ -110,6 +112,12 @@ struct stats_t {
         if (max_disc_pairs_by_insertion_size.count(is))
             return max_disc_pairs_by_insertion_size[is];
         else return max_disc_pairs_by_insertion_size[max_is];
+    }
+
+    int get_median_disc_pairs_by_del_size(int ds) {
+        if (min_disc_pairs_by_insertion_size.count(ds))
+            return min_disc_pairs_by_insertion_size[ds];
+        else return min_disc_pairs_by_insertion_size[min_is];
     }
 };
 
