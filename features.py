@@ -19,12 +19,16 @@ class Features:
         else:
             return float(v)/norm_factor
 
-    def record_to_features(record, min_depth, median_depth, max_depth, max_is, read_len):
+    def record_to_features(record, stats):
+        min_depth = get_stat(stats, 'min_depth', record.chrom)
+        median_depth = get_stat(stats, 'median_depth', record.chrom)
+        max_depth = get_stat(stats, 'max_depth', record.chrom)
+        max_is = stats['max_is']['.']
+        read_len = stats['read_len']['.']
+
         info = record.info
         svtype_str = record.info['SVTYPE']
-        svtype = Features.svtype_to_int[svtype_str]
         source_str = record.info['SOURCE']
-        source = Features.source_to_int[source_str]
         svinsseq = ""
         if 'SVINSSEQ' in info:
             svinsseq = info['SVINSSEQ']
@@ -35,7 +39,7 @@ class Features:
         svinslen = Features.get_value(info, 'SVINSLEN', 0)
         if svinslen == 0 and svinsseq:
             svinslen = len(svinsseq)
-        
+
         if svtype_str == "INS":
             prefix_mh_len_ratio = Features.get_value(info, 'PREFIX_MH_LEN', 0, max(1, svinslen))
             suffix_mh_len_ratio = Features.get_value(info, 'SUFFIX_MH_LEN', 0, max(1, svinslen))
@@ -91,7 +95,7 @@ class Features:
             remap_ub = float(info['REMAP_UB'])
             lb_diff = max(0, remap_lb-record.pos)
             ub_diff = max(0, record.stop-remap_ub)
-        
+
         disc_pairs = Features.get_value(info, 'DISC_PAIRS', [0, 0], median_depth)
         disc_pairs_highmapq = Features.get_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0], median_depth)
         disc_pairs_highmapq_ratio = [d/max(1, disc_pairs[i]) for i, d in enumerate(disc_pairs_highmapq)]
@@ -129,10 +133,10 @@ class Features:
         feature_values = [svlen, svinslen]
         if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
             feature_values += [ins_seq_cov_prefix_start, ins_seq_cov_prefix_end, ins_seq_cov_suffix_start, ins_seq_cov_suffix_end]
-        feature_values += split_reads_ratio + fwd_split_reads_ratio + rev_split_reads_ratio #+ [sum(fwd_split_reads)/max(1, sum(split_reads)), sum(rev_split_reads)/max(1, sum(split_reads)), overlap, mismatch_rate]
+        feature_values += split_reads_ratio + fwd_split_reads_ratio + rev_split_reads_ratio + [sum(fwd_split_reads)/max(1, sum(split_reads)), sum(rev_split_reads)/max(1, sum(split_reads)), overlap, mismatch_rate]
         feature_values += rcc_ext_1sr_reads + lcc_ext_1sr_reads + rcc_hq_ext_1sr_reads + lcc_hq_ext_1sr_reads
         feature_values += [full_to_split_junction_score_ratio, full_to_split_junction_score_diff] + split2_to_split1_junction_score_ratio
-        feature_values += split2_to_split1_junction_score_diff_ratio + split_to_size_ratio + split_junction_size_ratio #+ [max(split_junction_size_ratio), min(split_junction_size_ratio)]
+        feature_values += split2_to_split1_junction_score_diff_ratio + split_to_size_ratio + split_junction_size_ratio + [max(split_junction_size_ratio), min(split_junction_size_ratio)]
         feature_values += max_mapq + [lb_diff, ub_diff]
         feature_values += disc_pairs + disc_pairs_highmapq + disc_pairs_highmapq_ratio + disc_pairs_maxmapq + [conc_pairs] 
         feature_values += disc_pair_surrounding + disc_avg_nm
@@ -150,6 +154,11 @@ def read_false_ids(file_path, tolerate_no_fps = False):
         false_ids = set([line.strip() for line in file])
     return false_ids
 
+def get_stat(stats, stat_name, chrom):
+    if chrom in stats[stat_name]:
+        return stats[stat_name][chrom]
+    return stats[stat_name]['.']
+
 # Function to parse the VCF file and extract relevant features using pysam
 def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_fps = False):
     false_ids = read_false_ids(fp_fname, tolerate_no_fps=tolerate_no_fps)
@@ -164,17 +173,12 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_fps = False)
     for line in stats_reader:
         sl = line.strip().split()
         stats[sl[0]][sl[1]] = int(sl[2])
-    min_depth = stats['min_depth']['.']
-    median_depth = stats['median_depth']['.']
-    max_depth = stats['max_depth']['.']
-    max_is = stats['max_is']['.']
-    read_len = stats['read_len']['.']
 
     for record in vcf_reader.fetch():
         if svtype != 'ALL' and record.info['SVTYPE'] != svtype:
             continue
         source = record.info['SVTYPE'] + "_" + record.info['SOURCE']
-        feature_values = Features.record_to_features(record, min_depth, median_depth, max_depth, max_is, read_len)
+        feature_values = Features.record_to_features(record, stats)
         data_by_source[source].append(feature_values)
         labels_by_source[source].append(0 if record.id in false_ids else 1)
         variant_ids_by_source[source].append(record.id)
