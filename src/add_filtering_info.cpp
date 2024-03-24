@@ -223,12 +223,6 @@ int main(int argc, char* argv[]) {
         throw std::runtime_error("Failed to write the VCF header to " + out_pass_vcf_fname + ".");
     }
 
-    std::vector<uint32_t> min_disc_pairs_by_size;
-    std::ifstream mdpbs_fin(workdir + "/min_disc_pairs_by_size.txt");
-	int i, min_disc_pairs;
-	while (mdpbs_fin >> i >> min_disc_pairs) min_disc_pairs_by_size.push_back(min_disc_pairs);
-	mdpbs_fin.close();
-
     std::unordered_map<std::string, std::vector<sv_t*>> sv_entries;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!deletions_by_chr.count(contig_name)) continue;
@@ -334,9 +328,10 @@ int main(int argc, char* argv[]) {
                     ins->filters.push_back("LOW_SCORE");
                 }
 
-                int svlen = ins->ins_seq.length();
-                if (ins->incomplete_assembly() || svlen >= min_disc_pairs_by_size.size()) svlen = min_disc_pairs_by_size.size()-1;
-	            if (ins->disc_pairs_rf + ins->disc_pairs_lf < min_disc_pairs_by_size[svlen]) ins->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
+                int svinslen = ins->ins_seq.length();
+	            if (ins->disc_pairs_rf + ins->disc_pairs_lf < stats.get_min_disc_pairs_by_insertion_size(svinslen)) {
+                    ins->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
+                }
             }
 
             int d = ins->ins_seq.find("-");

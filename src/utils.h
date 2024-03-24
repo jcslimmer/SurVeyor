@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <numeric>
@@ -58,6 +59,7 @@ struct stats_t {
     int min_is, max_is;
     int read_len;
     std::unordered_map<std::string, int> min_depths, median_depths, max_depths;
+    std::unordered_map<int, int> min_disc_pairs_by_insertion_size, max_disc_pairs_by_insertion_size;
     int min_avg_base_qual;
     int pop_avg_crossing_is = 0;
     bool per_contig_stats = false;
@@ -65,17 +67,19 @@ struct stats_t {
     void parse(std::string stats_file, bool per_contig_stats) {
         std::unordered_map<std::string, std::unordered_map<std::string, std::string>> stats_params;
         std::ifstream fin(stats_file);
-        std::string name, contig_name, value;
-        while (fin >> name >> contig_name >> value) {
-            stats_params[name][contig_name] = value;
-            if (name == "min_is" && contig_name == ".") min_is = std::stoi(value);
-            if (name == "max_is" && contig_name == ".") max_is = std::stoi(value);
-            if (name == "read_len" && contig_name == ".") read_len = std::stoi(value);
-            if (name == "min_depth") min_depths[contig_name] = std::stoi(value);
-            if (name == "median_depth") median_depths[contig_name] = std::stoi(value);
-            if (name == "max_depth") max_depths[contig_name] = std::stoi(value);
-            if (name == "min_avg_base_qual") min_avg_base_qual = std::stoi(value);
-            if (name == "pop_avg_crossing_is" && contig_name == ".") pop_avg_crossing_is = std::stoi(value);
+        std::string stat_name, stat_subname, value;
+        while (fin >> stat_name >> stat_subname >> value) {
+            stats_params[stat_name][stat_subname] = value;
+            if (stat_name == "min_is" && stat_subname == ".") min_is = std::stoi(value);
+            if (stat_name == "max_is" && stat_subname == ".") max_is = std::stoi(value);
+            if (stat_name == "read_len" && stat_subname == ".") read_len = std::stoi(value);
+            if (stat_name == "min_depth") min_depths[stat_subname] = std::stoi(value);
+            if (stat_name == "median_depth") median_depths[stat_subname] = std::stoi(value);
+            if (stat_name == "max_depth") max_depths[stat_subname] = std::stoi(value);
+            if (stat_name == "min_disc_pairs_by_insertion_size") min_disc_pairs_by_insertion_size[std::stoi(stat_subname)] = std::stoi(value);
+            if (stat_name == "max_disc_pairs_by_insertion_size") max_disc_pairs_by_insertion_size[std::stoi(stat_subname)] = std::stoi(value);
+            if (stat_name == "min_avg_base_qual") min_avg_base_qual = std::stoi(value);
+            if (stat_name == "pop_avg_crossing_is" && stat_subname == ".") pop_avg_crossing_is = std::stoi(value);
         }
         fin.close();
         this->per_contig_stats = per_contig_stats;
@@ -86,17 +90,26 @@ struct stats_t {
             return min_depths[contig_name];
         else return min_depths["."];
     }
-
     int get_median_depth(std::string contig_name) {
         if (per_contig_stats && median_depths.count(contig_name))
             return median_depths[contig_name];
         else return median_depths["."];
     }
-
     int get_max_depth(std::string contig_name) {
         if (per_contig_stats && max_depths.count(contig_name))
             return max_depths[contig_name];
         else return max_depths["."];
+    }
+
+    int get_min_disc_pairs_by_insertion_size(int is) {
+        if (min_disc_pairs_by_insertion_size.count(is))
+            return min_disc_pairs_by_insertion_size[is];
+        else return min_disc_pairs_by_insertion_size[min_is];
+    }
+    int get_max_disc_pairs_by_insertion_size(int is) {
+        if (max_disc_pairs_by_insertion_size.count(is))
+            return max_disc_pairs_by_insertion_size[is];
+        else return max_disc_pairs_by_insertion_size[max_is];
     }
 };
 

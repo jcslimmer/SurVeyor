@@ -28,7 +28,9 @@ std::vector<std::vector<std::string> > mate_seqs;
 std::unordered_map<std::string, int> min_depth_by_contig, max_depth_by_contig, median_depth_by_contig;
 std::vector<uint32_t> depths;
 uint64_t qual_counts[256];
-std::vector<std::vector<uint32_t> > dist_between_end_and_rnd;
+
+// dist_between_end_and_rnd[i]: Distribution of read pairs count with one read < x and the other between x and x+i, for many random x.
+std::vector<std::vector<uint32_t> > dist_between_end_and_rnd; 
 std::vector<std::pair<uint64_t, uint32_t> > partial_sums;
 
 std::vector<uint32_t> isize_counts;
@@ -144,7 +146,9 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 			&& !is_left_clipped(read, config.min_clip_len) && !is_right_clipped(read, config.min_clip_len)) {
 			for (int i = curr_pos; i < rnd_positions.size() && rnd_positions[i] < pair_endpos; i++) {
 				 if (pair_startpos <= rnd_positions[i] && rnd_positions[i] <= pair_endpos) {
-					rnd_positions_dist_between_end_and_rnd[i].push_back(pair_endpos-rnd_positions[i]);
+                    hts_pos_t dist = std::min(pair_endpos-rnd_positions[i], (hts_pos_t) stats.max_is);
+                    if (dist >= rnd_positions_dist_between_end_and_rnd[i].size()) rnd_positions_dist_between_end_and_rnd[i].resize(dist+1);
+					rnd_positions_dist_between_end_and_rnd[i][dist]++;
                     local_isize_counts[read->core.isize]++;
                     isize_dist_by_rndpos[i].push_back(read->core.isize);
                     sum_is += read->core.isize;
@@ -189,10 +193,6 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 
     partial_sums.push_back({sum_is, n_is});
 	for (int i = 0; i < 256; i++) qual_counts[i] += contig_qual_counts[i];
-	for (auto& v : rnd_positions_dist_between_end_and_rnd) {
-		if (v.empty()) continue;
-		dist_between_end_and_rnd.push_back(v);
-	}
 
     for (int i = 0; i < rnd_positions.size(); i++) {
 		std::vector<uint32_t> local_isizes_count_geq_i(stats.max_is+1); // position i contains the count of isizes that are >= than i
@@ -205,6 +205,16 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
             if (isizes_count_geq_i[j].size() < local_isizes_count_geq_i[j]+1) isizes_count_geq_i[j].resize(local_isizes_count_geq_i[j]+1);
             isizes_count_geq_i[j][local_isizes_count_geq_i[j]]++;
 		}
+
+        rnd_positions_dist_between_end_and_rnd[i].resize(stats.max_is+1);
+        dist_between_end_and_rnd[0].resize(1);
+        dist_between_end_and_rnd[0][0]++;
+        for (int j = 1; j <= stats.max_is; j++) {
+            rnd_positions_dist_between_end_and_rnd[i][j] += rnd_positions_dist_between_end_and_rnd[i][j-1];
+            if (dist_between_end_and_rnd[j].size() <= rnd_positions_dist_between_end_and_rnd[i][j]) dist_between_end_and_rnd[j].resize(rnd_positions_dist_between_end_and_rnd[i][j]+1);
+            dist_between_end_and_rnd[j][rnd_positions_dist_between_end_and_rnd[i][j]]++;
+        }
+        rnd_positions_dist_between_end_and_rnd[i].clear();
     }
 
     for (int i = 0; i <= stats.max_is; i++) {
@@ -216,6 +226,29 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 	hts_itr_destroy(iter);
 
     close_samFile(bam_file);
+}
+
+void find_1_perc(std::vector<uint32_t>& v, uint32_t& min, uint32_t& max) {
+    uint64_t sum = std::accumulate(v.begin(), v.end(), uint64_t(0));
+    uint64_t _1_perc_count = sum/100;
+    min = 0;
+    max = v.size()-1;
+    uint64_t curr_sum = 0;
+    for (int i = 0; i < v.size(); i++) {
+        curr_sum += v[i];
+        if (curr_sum >= _1_perc_count) {
+            min = i;
+            break;
+        }
+    }
+    curr_sum = 0;
+    for (int i = v.size()-1; i >= 0; i--) {
+        curr_sum += v[i];
+        if (curr_sum >= _1_perc_count) {
+            max = i;
+            break;
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -240,6 +273,7 @@ int main(int argc, char* argv[]) {
 
     isize_counts.resize(stats.max_is+1);
     isizes_count_geq_i.resize(stats.max_is+1);
+    dist_between_end_and_rnd.resize(stats.max_is+1);
 
     // read random positions
 	std::string contig_name;
@@ -317,9 +351,13 @@ int main(int argc, char* argv[]) {
     }
     crossing_isizes_dist_fout.close();
 
-    std::ofstream min_dpbs_fout(workdir + "/min_disc_pairs_by_size.txt");
     std::ofstream med_dpbs_fout(workdir + "/median_disc_pairs_by_size.txt");
 	for (int i = 0; i <= stats.max_is; i++) {
+        uint32_t min_disc_pairs_by_insertion_size = 0, max_disc_pairs_by_insertion_size = 0;
+        find_1_perc(dist_between_end_and_rnd[i], min_disc_pairs_by_insertion_size, max_disc_pairs_by_insertion_size);
+        stats_out << "min_disc_pairs_by_insertion_size " << i << " " << min_disc_pairs_by_insertion_size << std::endl;
+        stats_out << "max_disc_pairs_by_insertion_size " << i << " " << max_disc_pairs_by_insertion_size << std::endl;
+
         int64_t sum = std::accumulate(isizes_count_geq_i[i].begin(), isizes_count_geq_i[i].end(), int64_t(0));
 
         int64_t curr_sum = 0;
@@ -331,19 +369,8 @@ int main(int argc, char* argv[]) {
                 break;
             }
         }
-
-        curr_sum = 0;
-        min_dpbs_fout << i << " ";
-        for (int j = 0; j < isizes_count_geq_i[i].size(); j++) {
-            curr_sum += isizes_count_geq_i[i][j];
-            if (curr_sum >= sum/100) {
-                min_dpbs_fout << j << std::endl;
-                break;
-            }
-        }
 	}
     med_dpbs_fout.close();
-    min_dpbs_fout.close();
 
 	stats_out << "min_disc_pairs . " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
 	stats_out.close();
