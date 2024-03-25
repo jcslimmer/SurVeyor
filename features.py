@@ -96,7 +96,20 @@ class Features:
             lb_diff = max(0, remap_lb-record.pos)
             ub_diff = max(0, record.stop-remap_ub)
 
-        disc_pairs = Features.get_value(info, 'DISC_PAIRS', [0, 0], median_depth)
+        disc_pairs = Features.get_value(info, 'DISC_PAIRS', [0, 0])
+        disc_pairs_scaled = [0, 0]
+        if svtype_str == "DEL":
+            min_is_to_become_disc = int(max(0, max_is-svlen))
+            min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
+            max_disc_pairs = stats['max_pairs_crossing_gap'][str(min_is_to_become_disc)]
+            disc_pairs_scaled = [(d-min_disc_pairs)/(max_disc_pairs-min_disc_pairs) for d in disc_pairs]
+        elif svtype_str == "INS" and source_str in ("DE_NOVO_ASSEMBLY", "REFERENCE_GUIDED_ASSEMBLY"):
+            min_inslen = int(min(max_is, svinslen))
+            min_disc_pairs = stats['min_disc_pairs_by_insertion_size'][str(min_inslen)]
+            max_disc_pairs = stats['max_disc_pairs_by_insertion_size'][str(min_inslen)]
+            disc_pairs_scaled = [(d-min_disc_pairs)/(max_disc_pairs-min_disc_pairs) for d in disc_pairs]
+        else:
+            disc_pairs_scaled = [d/median_depth for d in disc_pairs]
         disc_pairs_highmapq = Features.get_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0], median_depth)
         disc_pairs_highmapq_ratio = [d/max(1, disc_pairs[i]) for i, d in enumerate(disc_pairs_highmapq)]
         disc_pairs_maxmapq = Features.get_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
@@ -104,6 +117,7 @@ class Features:
         disc_avg_nm = Features.get_value(info, 'DISC_AVG_NM', [0, 0], read_len)
         disc_pair_surrounding = Features.get_value(info, 'DISC_PAIRS_SURROUNDING', [0, 0], median_depth) 
 
+        disc_pairs = [d/median_depth for d in disc_pairs]
         ptn_ratio = [d/max(1, d+conc_pairs) for d in disc_pairs]
         ks_pval = max(0, Features.get_value(info, 'KS_PVAL', 0.0))
         max_size_diff = 0
@@ -138,7 +152,7 @@ class Features:
         feature_values += [full_to_split_junction_score_ratio, full_to_split_junction_score_diff] + split2_to_split1_junction_score_ratio
         feature_values += split2_to_split1_junction_score_diff_ratio + split_to_size_ratio + split_junction_size_ratio + [max(split_junction_size_ratio), min(split_junction_size_ratio)]
         feature_values += max_mapq + [lb_diff, ub_diff]
-        feature_values += disc_pairs + disc_pairs_highmapq + disc_pairs_highmapq_ratio + disc_pairs_maxmapq + [conc_pairs] 
+        feature_values += disc_pairs_scaled + disc_pairs_highmapq_ratio + disc_pairs_maxmapq + [conc_pairs] 
         feature_values += disc_pair_surrounding + disc_avg_nm
         feature_values += ptn_ratio + [ks_pval, max_size_diff]
         feature_values += median_depths_norm + median_depths_ratio + median_depths_above_max + median_depths_below_min + cluster_depths_above_max

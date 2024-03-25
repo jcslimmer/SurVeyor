@@ -367,10 +367,12 @@ int main(int argc, char* argv[]) {
         stats_out << "min_disc_pairs_by_insertion_size " << i << " " << min_disc_pairs_by_insertion_size << std::endl;
         stats_out << "max_disc_pairs_by_insertion_size " << i << " " << max_disc_pairs_by_insertion_size << std::endl;
 
-        uint32_t median_disc_pairs_by_del_size = find_median(isizes_count_geq_i[i]);
-		stats_out << "median_disc_pairs_by_del_size " << i << " " << median_disc_pairs_by_del_size << std::endl;
+        uint32_t min_pairs_crossing_gap = 0, max_pairs_crossing_gap = 0;
+        find_1_perc(isizes_count_geq_i[i], min_pairs_crossing_gap, max_pairs_crossing_gap);
+        uint32_t median_pairs_crossing_gap = find_median(isizes_count_geq_i[i]);
+        stats_out << "min_pairs_crossing_gap " << i << " " << min_pairs_crossing_gap << std::endl;
+		stats_out << "median_pairs_crossing_gap " << i << " " << median_pairs_crossing_gap << std::endl;
+        stats_out << "max_pairs_crossing_gap " << i << " " << max_pairs_crossing_gap << std::endl;
 	}
-
-	stats_out << "min_disc_pairs . " << isizes_count_geq_i[0][isizes_count_geq_i[0].size()/100] << std::endl;
 	stats_out.close();
 }
