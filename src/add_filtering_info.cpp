@@ -328,8 +328,6 @@ int main(int argc, char* argv[]) {
             int d = ins->ins_seq.find("-");
             std::string ins_seq_fh = ins->ins_seq.substr(0, d);
             std::string ins_seq_sh = ins->ins_seq.substr(d+1);
-            ins->prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
-            ins->suffix_base_freqs = ins_seq_sh.empty() ? ins->prefix_base_freqs : get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
             if (is_homopolymer(ins_seq_fh) || is_homopolymer(ins_seq_sh)) {
                 ins->filters.push_back("HOMOPOLYMER_INSSEQ");
             }

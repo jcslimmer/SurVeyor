@@ -243,7 +243,6 @@ struct insertion_t : sv_t {
 
     bool imprecise_bp = false;
     int prefix_cov_start = NOT_COMPUTED, prefix_cov_end = NOT_COMPUTED, suffix_cov_start = NOT_COMPUTED, suffix_cov_end = NOT_COMPUTED; // start and end of the prefix and suffix of the inserted sequence actually supported by reads. Only applicable to long transpositions, for which the central part is inferred
-    base_frequencies_t prefix_base_freqs, suffix_base_freqs;
 
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }

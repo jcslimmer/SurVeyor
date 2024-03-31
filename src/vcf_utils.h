@@ -224,10 +224,22 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* isc_tag = "##INFO=<ID=INS_SUFFIX_COV,Number=2,Type=Integer,Description=\"Portion of the suffix of the inserted sequence that was actually supported by reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,isc_tag, &len));
 
-	const char* pbc_tag = "##INFO=<ID=PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
+	const char* labc_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the left anchor region of the SV.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,labc_tag, &len));
+	
+	const char* rabc_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the right anchor region of the SV.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,rabc_tag, &len));
+
+	const char* svrefpbc_tag = "##INFO=<ID=SV_REF_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,svrefpbc_tag, &len));
+
+	const char* svrefsbc_tag = "##INFO=<ID=SV_REF_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the last 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,svrefsbc_tag, &len));
+
+	const char* pbc_tag = "##INFO=<ID=INS_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,pbc_tag, &len));
 
-	const char* sbc_tag = "##INFO=<ID=SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
+	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,sbc_tag, &len));
 
 	const char* ia_tag = "##INFO=<ID=INCOMPLETE_ASSEMBLY,Number=0,Type=Flag,Description=\"The inserted sequence is too long, and it could not be fully assembled using short reads.\">";
@@ -384,6 +396,22 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
 
+	base_frequencies_t left_anchor_base_freqs = get_base_frequencies(chr_seq+sv->left_anchor_aln->start, sv->left_anchor_aln->end-sv->left_anchor_aln->start);
+	int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
+	bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
+
+	base_frequencies_t right_anchor_base_freqs = get_base_frequencies(chr_seq+sv->right_anchor_aln->start, sv->right_anchor_aln->end-sv->right_anchor_aln->start);
+	int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
+	bcf_update_info_int32(hdr, bcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
+
+	base_frequencies_t prefix_ref_base_freqs = get_base_frequencies(chr_seq+sv->start, std::min(sv->end-sv->start, hts_pos_t(5000)));
+	int svrefpbc[] = {prefix_ref_base_freqs.a, prefix_ref_base_freqs.c, prefix_ref_base_freqs.g, prefix_ref_base_freqs.t};
+	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_PREFIX_BASE_COUNT", svrefpbc, 4);
+
+	base_frequencies_t suffix_ref_base_freqs = get_base_frequencies(chr_seq+sv->end-std::min(sv->end-sv->start, hts_pos_t(5000)), std::min(sv->end-sv->start, hts_pos_t(5000)));
+	int svrefsbc[] = {suffix_ref_base_freqs.a, suffix_ref_base_freqs.c, suffix_ref_base_freqs.g, suffix_ref_base_freqs.t};
+	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_SUFFIX_BASE_COUNT", svrefsbc, 4);
+
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise());
 
 	// add GT info
@@ -425,16 +453,22 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		}
 		int prefix_cov_start = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->prefix_cov_start;
 		int prefix_cov_end = ins->prefix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->prefix_cov_end;
-		int suffix_cov_start = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->suffix_cov_start;
-		int suffix_cov_end = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->suffix_cov_end;
 		int ipc[] = {prefix_cov_start, prefix_cov_end};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_COV", ipc, 2);
+		int suffix_cov_start = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? 0 : ins->suffix_cov_start;
+		int suffix_cov_end = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->suffix_cov_end;
 		int isc[] = {suffix_cov_start, suffix_cov_end};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_COV", isc, 2);
-		int pbc[] = {ins->prefix_base_freqs.a, ins->prefix_base_freqs.c, ins->prefix_base_freqs.g, ins->prefix_base_freqs.t};
-		bcf_update_info_int32(hdr, bcf_entry, "PREFIX_BASE_COUNT", pbc, 4);
-		int sbc[] = {ins->suffix_base_freqs.a, ins->suffix_base_freqs.c, ins->suffix_base_freqs.g, ins->suffix_base_freqs.t};
-		bcf_update_info_int32(hdr, bcf_entry, "SUFFIX_BASE_COUNT", sbc, 4);
+
+		int d = ins->ins_seq.find("-");
+		std::string ins_seq_fh = ins->ins_seq.substr(0, d);
+		std::string ins_seq_sh = ins->ins_seq.substr(d+1);
+		base_frequencies_t prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
+		base_frequencies_t suffix_base_freqs = ins_seq_sh.empty() ? prefix_base_freqs : get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
+		int pbc[] = {prefix_base_freqs.a, prefix_base_freqs.c, prefix_base_freqs.g, prefix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
+		int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 	}
 }
 
