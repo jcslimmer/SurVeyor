@@ -32,7 +32,7 @@ std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
-std::vector<std::atomic_int> active_threads_per_chr;
+std::vector<int> active_threads_per_chr;
 std::vector<std::mutex> mutex_per_chr;
 
 std::mutex mtx;
@@ -63,6 +63,9 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 	std::vector<consensus_t*> consensuses_to_consider(consensuses->begin()+start_idx, consensuses->begin()+end_idx);
 
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
+	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+		throw "Failed to read reference " + reference_fname;
+	}
 	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), mateseqs_w_mapq[contig_id], stats, bam_file);
 	if (!candidate_reads_for_extension.empty()) {
 		std::vector<Interval<ext_read_t*>> it_ivals;
@@ -353,7 +356,7 @@ int main(int argc, char* argv[]) {
 	futures.clear();
 
 	mateseqs_w_mapq.resize(contig_map.size());
-	active_threads_per_chr = std::vector<std::atomic_int>(contig_map.size());
+	active_threads_per_chr = std::vector<int>(contig_map.size());
 	mutex_per_chr = std::vector<std::mutex>(contig_map.size());
 
 
