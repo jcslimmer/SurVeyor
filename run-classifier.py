@@ -13,7 +13,7 @@ cmd_parser.add_argument('svtype', help='SV type to filter.', choices=['DEL', 'DU
 cmd_parser.add_argument('model_dir', help='Directory containing the trained model.')
 cmd_args = cmd_parser.parse_args()
 
-test_data, test_labels, test_variant_ids = features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, tolerate_no_fps = True)
+test_data, test_labels, test_variant_ids = features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, tolerate_no_gts = True)
 
 def write_vcf(vcf_reader, vcf_header, pred_variant_ids, fname):
     pred_variant_ids = set(pred_variant_ids)

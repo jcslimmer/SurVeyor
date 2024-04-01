@@ -5,6 +5,10 @@ from collections import defaultdict
 import joblib
 import features
 
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
 cmd_parser.add_argument('svtype', help='SV type to filter.', choices=['DEL', 'DUP', 'INS', 'ALL'])
@@ -16,7 +20,7 @@ training_prefixes = cmd_args.training_prefixes.split(",")
 training_data, training_labels, variant_ids = None, None, None
 for training_prefix in training_prefixes:
     vcf_training_data, vcf_training_labels, vcf_variant_ids = features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats",
-                                                                        training_prefix + ".fps", cmd_args.svtype, tolerate_no_fps = False)
+                                                                        training_prefix + ".gts", cmd_args.svtype, tolerate_no_gts = False)
     if training_data is None:
         training_data = vcf_training_data
         training_labels = vcf_training_labels

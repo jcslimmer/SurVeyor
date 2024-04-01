@@ -19,12 +19,16 @@ struct general_sv_t {
     std::string id, chr;
     hts_pos_t start, end;
     std::string type, ins_seq;
+    int* gt = NULL, ngt;
     bool precise;
 
     general_sv_t(bcf_hdr_t* hdr, bcf1_t* vcf_sv) {
     	bcf_unpack(vcf_sv, BCF_UN_INFO);
         set_vars(vcf_sv->d.id, bcf_seqname(hdr, vcf_sv), vcf_sv->pos, get_sv_end(hdr, vcf_sv), get_sv_type(hdr, vcf_sv), get_ins_seq(hdr, vcf_sv));
-    	precise = !(bcf_get_info_flag(hdr, vcf_sv, "IMPRECISE", NULL, 0) == 1);
+        int n = 0;
+        ngt = bcf_get_genotypes(hdr, vcf_sv, &gt, &n);
+        std::sort(gt, gt + ngt);
+        precise = !(bcf_get_info_flag(hdr, vcf_sv, "IMPRECISE", NULL, 0) == 1);
     }
     general_sv_t(std::string id, std::string chr, hts_pos_t start, hts_pos_t end, std::string type, std::string ins_seq) {
         set_vars(id, chr, start, end, type, ins_seq);
@@ -48,6 +52,16 @@ struct general_sv_t {
         else if (type == "DUP") return end - start + ins_seq.length();
         else if (type == "INS") return ins_seq.length() - (end - start);
         return 0;
+    }
+
+    std::string print_gt() {
+        std::stringstream ss;
+        for (int i = 0; i < ngt; i++) {
+            if (i > 0) ss << "/";
+            ss << (bcf_gt_is_missing(gt[i]) ? "." : std::to_string(bcf_gt_allele(gt[i])));
+        }
+        return ss.str();
+    
     }
 };
 bool operator < (const general_sv_t& sv1, const general_sv_t& sv2) {

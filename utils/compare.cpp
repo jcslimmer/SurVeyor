@@ -6,6 +6,7 @@
 #include "../libs/IntervalTree.h"
 #include "../libs/ssw_cpp.h"
 #include "common.h"
+#include "htslib/vcf.h"
 
 chr_seqs_map_t chr_seqs;
 int max_prec_dist, max_imprec_dist;
@@ -17,6 +18,14 @@ StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 StripedSmithWaterman::Filter filter;
 
 bool ignore_seq = false;
+
+bool compatible_gts(general_sv_t& sv1, general_sv_t& sv2) {
+	if (sv1.ngt != sv2.ngt) return false;
+	for (int i = 0; i < sv1.ngt; i++) {
+		if (sv1.gt[i] != sv2.gt[i] && !bcf_gt_is_missing(sv1.gt[i]) && !bcf_gt_is_missing(sv2.gt[i])) return false;
+	}
+	return true;
+}
 
 std::string get_type(general_sv_t& sv) {
 	if (dup_ids.count(sv.id)) return "DUP";
@@ -191,6 +200,8 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("dup-ids", "ID of SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
+		("compare-gt", "Compare genotypes (not implemented yet).", cxxopts::value<bool>()->default_value("false"))
+		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("h,help", "Print usage");
 
 	options.parse_positional({"benchmark_file", "called_file"});
@@ -232,6 +243,12 @@ int main(int argc, char* argv[]) {
 	if (!parsed_args.count("reference") && !ignore_seq) {
 		std::cerr << "If no reference is provided, the --ignore-seq flag must be provided." << std::endl;
 		exit(0);
+	}
+
+	std::ofstream called_to_benchmark_gts_fout;
+	if (parsed_args.count("called-to-benchmark-gts")) {
+		std::string called_to_benchmark_gts_fname = parsed_args["called-to-benchmark-gts"].as<std::string>();
+		called_to_benchmark_gts_fout.open(called_to_benchmark_gts_fname);
 	}
 
 	auto is_unsupported_func = [](general_sv_t& sv) {return sv.type != "DEL" && sv.type != "INS" && sv.type != "DUP";};
@@ -309,6 +326,7 @@ int main(int argc, char* argv[]) {
 		for (general_sv_t& csv : *called_svs_chr_type) {
 			if (is_compatible(bsv, csv)) {
 				if (!report) std::cout << bsv.id << " " << csv.id << std::endl;
+				if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv.id << " " << bsv.print_gt() << std::endl;
 				b_tps.insert(bsv.id);
                 c_tps.insert(csv.id);
 				matched = true;
@@ -327,6 +345,7 @@ int main(int argc, char* argv[]) {
 
 				if (same_tr && (bsv.type == "DEL" || (bsv.type != "DEL" && check_ins_seq(bsv, csv)))) {
 					if (!report) std::cout << bsv.id << " " << csv.id << " REP" << std::endl;
+					if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv.id << " " << bsv.print_gt() << std::endl;
 					b_tps.insert(bsv.id);
 					c_tps.insert(csv.id);
 					matched = true;
@@ -335,7 +354,9 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		if (!report && !matched) std::cout << bsv.id << " NONE" << std::endl;
+		if (!report && !matched) {
+			std::cout << bsv.id << " NONE" << std::endl;
+		}
 	}
 
 	// count tp and fn benchmark calls, by sv type
