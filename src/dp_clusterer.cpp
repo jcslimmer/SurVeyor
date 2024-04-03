@@ -160,19 +160,26 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 
 	for (int i = 0; i < deletions.size(); i++) {
 		deletion_t* del = deletions[i];
-		std::vector<Interval<sv_t*> > iv = del_tree.findContained(del->left_anchor_aln->start, del->right_anchor_aln->end);
+		std::vector<Interval<sv_t*> > ivs = del_tree.findContained(del->left_anchor_aln->start, del->right_anchor_aln->end);
 
-		if (iv.size() == 1) {
-			sv_t* corr_sr_del = iv[0].value;
-			if (corr_sr_del->start-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-corr_sr_del->end <= stats.max_is) {
-				corr_sr_del->disc_pairs_lf = del->disc_pairs_lf;
-				corr_sr_del->disc_pairs_rf = del->disc_pairs_rf;
-				corr_sr_del->disc_pairs_lf_maxmapq = del->disc_pairs_lf_maxmapq;
-				corr_sr_del->disc_pairs_rf_maxmapq = del->disc_pairs_rf_maxmapq;
-				corr_sr_del->disc_pairs_lf_high_mapq = del->disc_pairs_lf_high_mapq;
-				corr_sr_del->disc_pairs_rf_high_mapq = del->disc_pairs_rf_high_mapq;
-				deletions[i] = NULL;
+		std::vector<sv_t*> compatible_dels;
+		for (Interval<sv_t*> iv : ivs) {
+			sv_t* corr_sr_del = iv.value;
+			if (corr_sr_del->start-del->left_anchor_aln->start <= stats.max_is && del->right_anchor_aln->end-corr_sr_del->end <= stats.max_is &&
+				corr_sr_del->start >= del->start-stats.read_len/2 && corr_sr_del->end <= del->end+stats.read_len/2) {
+				compatible_dels.push_back(corr_sr_del);
 			}
+		}
+
+		if (compatible_dels.size() == 1) {
+			sv_t* corr_sr_del = compatible_dels[0];
+			corr_sr_del->disc_pairs_lf = del->disc_pairs_lf;
+			corr_sr_del->disc_pairs_rf = del->disc_pairs_rf;
+			corr_sr_del->disc_pairs_lf_maxmapq = del->disc_pairs_lf_maxmapq;
+			corr_sr_del->disc_pairs_rf_maxmapq = del->disc_pairs_rf_maxmapq;
+			corr_sr_del->disc_pairs_lf_high_mapq = del->disc_pairs_lf_high_mapq;
+			corr_sr_del->disc_pairs_rf_high_mapq = del->disc_pairs_rf_high_mapq;
+			deletions[i] = NULL;
 		}
 	}
 	deletions.erase(std::remove(deletions.begin(), deletions.end(), (deletion_t*) NULL), deletions.end());
@@ -224,7 +231,7 @@ int main(int argc, char* argv[]) {
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sr_vcf_file, hdr, bcf_entry) == 0) {
 		sv_t* sv = bcf_to_sv(hdr, bcf_entry);
-		if (sv->rc_consensus && sv->lc_consensus && sv->svtype() == "DEL") { // only use 2SR/2HSR
+		if (sv->svtype() == "DEL" && sv->filters.empty()) { // only use 2SR/2HSR
 			sr_entries_by_chr[sv->chr].push_back(sv);
 		} else {
 			sr_nonpass_entries_by_chr[sv->chr].push_back(sv);
