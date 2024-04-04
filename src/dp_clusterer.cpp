@@ -179,6 +179,8 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 			corr_sr_del->disc_pairs_rf_maxmapq = del->disc_pairs_rf_maxmapq;
 			corr_sr_del->disc_pairs_lf_high_mapq = del->disc_pairs_lf_high_mapq;
 			corr_sr_del->disc_pairs_rf_high_mapq = del->disc_pairs_rf_high_mapq;
+			corr_sr_del->disc_pairs_lf_avg_nm = del->disc_pairs_lf_avg_nm;
+			corr_sr_del->disc_pairs_rf_avg_nm = del->disc_pairs_rf_avg_nm;
 			deletions[i] = NULL;
 		}
 	}
