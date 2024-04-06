@@ -70,7 +70,7 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     }
     std::vector<double> v1;
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
-    calculate_confidence_interval_size(contig_name, v1, sr_deletions, bam_file, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, sr_deletions, bam_file, stats, config.min_sv_size);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dp_deletions, bam_file, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_dp_deletions, bam_file, stats);
     release_bam_reader(bam_file);
