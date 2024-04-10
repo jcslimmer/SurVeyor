@@ -1,6 +1,7 @@
 #ifndef VCF_UTILS_H
 #define VCF_UTILS_H
 
+#include <cstddef>
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -120,14 +121,14 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
-	const char* sr_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_tag, &len));
+	const char* sr_info_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_info_tag, &len));
 
-	const char* fwd_sr_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fwd_sr_tag, &len));
+	const char* fwd_sr_info_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fwd_sr_info_tag, &len));
 
-	const char* rev_sr_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_tag, &len));
+	const char* rev_sr_info_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_info_tag, &len));
 
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
@@ -255,7 +256,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ins_alt_tag = "##ALT=<ID=INS,Description=\"Insertion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ins_alt_tag, &len));
 
-	// add FORMAT tags
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
 
@@ -422,7 +422,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
-	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise());
+	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
 
 	// add GT info
 	int gt[1];
@@ -440,7 +440,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
 		}
-		if (del->imprecise() && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
+		if (del->imprecise && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
 		}
 		if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
@@ -638,6 +638,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (len > 0) lc_consensus->remap_boundary = data[0];
 	}
 
+	int left_split_mapping_start = b->pos - 150, left_split_mapping_end = b->pos;
+	int right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
+
 	char* s_data = NULL;
 	len = 0;
 	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
@@ -647,27 +650,37 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		size_t comma_pos = mapping_range.find(",");
 		left_split_mapping_range = mapping_range.substr(0, comma_pos);
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
+	
+		left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
+		left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
+		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
+		right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
 	}
 
-	int left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
-	int left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
-	int right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
-	int right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
 
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SCORE", &data, &len);
-	int left_split_score = data[0], right_split_score = data[1];
+	int left_split_score = 0, right_split_score = 0;
+	if (len > 0) {
+		left_split_score = data[0], right_split_score = data[1];
+	}
 
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SCORE2", &data, &len);
-	int left_split_score2 = data[0], right_split_score2 = data[1];
+	int left_split_score2 = 0, right_split_score2 = 0;
+	if (len > 0) {
+		left_split_score2 = data[0], right_split_score2 = data[1];
+	}
 
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SIZE", &data, &len);
-	int left_split_size = data[0], right_split_size = data[1];
+	int left_split_size = 0, right_split_size = 0;
+	if (len > 0) {
+		left_split_size = data[0], right_split_size = data[1];
+	}
 
 	s_data = NULL;
 	len = 0;
@@ -693,7 +706,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bool imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
+	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
 
 	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, left_split_size, left_split_score, left_split_score2, left_split_cigar);
 	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
@@ -707,10 +720,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "INS") {
 		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
-		((insertion_t*) sv)->imprecise_bp = imprecise;
 	} else {
 		throw std::runtime_error("Unsupported SV type: " + svtype);
 	}
+	sv->imprecise = (imprecise == 1);
 
 	data = NULL;
 	len = 0;
@@ -802,6 +815,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	for (int i = 0; i < b->d.n_flt; i++) {
 		sv->filters.push_back(bcf_hdr_int2id(hdr, BCF_DT_ID, b->d.flt[i]));
 	}
+
+	int n = 0;
+	sv->ngt = bcf_get_genotypes(hdr, b, &(sv->gt), &n);
+	std::sort(sv->gt, sv->gt+sv->ngt);
 
 	return sv;
 }

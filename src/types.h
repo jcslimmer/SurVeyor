@@ -5,7 +5,8 @@
 #include <vector>
 #include <string>
 #include <sstream>
-#include <htslib/sam.h>
+#include "htslib/sam.h"
+#include "htslib/vcf.h"
 
 struct consensus_t {
     bool left_clipped;
@@ -158,6 +159,9 @@ struct sv_t {
     int overlap = 0;
     double mismatch_rate = 0.0;
     std::string source;
+    bool imprecise = false;
+    int* gt = NULL, ngt;
+    bcf1_t* vcf_entry = NULL;
 
     std::vector<std::string> filters;
 
@@ -207,7 +211,16 @@ struct sv_t {
         return std::to_string(full_junction_aln->start+1) + "-" + std::to_string(full_junction_aln->end+1);
     }
 
-    virtual bool imprecise() { return false; }
+    bool incomplete_assembly() { return ins_seq.find("-") != std::string::npos; }
+
+    std::string print_gt() {
+        std::stringstream ss;
+        for (int i = 0; i < ngt; i++) {
+            if (i > 0) ss << "/";
+            ss << (bcf_gt_is_missing(gt[i]) ? "." : std::to_string(bcf_gt_allele(gt[i])));
+        }
+        return ss.str();
+    }
 
     virtual ~sv_t() {}
 };
@@ -225,8 +238,6 @@ struct deletion_t : sv_t {
 
     std::string svtype() { return "DEL"; }
     hts_pos_t svlen() { return start - end + ins_seq.length(); }
-
-    bool imprecise() { return lc_consensus == NULL && rc_consensus == NULL && remapped == false; }
 };
 
 struct duplication_t : sv_t {
@@ -241,14 +252,10 @@ struct insertion_t : sv_t {
 
     static const int NOT_COMPUTED = INT32_MAX;
 
-    bool imprecise_bp = false;
     int prefix_cov_start = NOT_COMPUTED, prefix_cov_end = NOT_COMPUTED, suffix_cov_start = NOT_COMPUTED, suffix_cov_end = NOT_COMPUTED; // start and end of the prefix and suffix of the inserted sequence actually supported by reads. Only applicable to long transpositions, for which the central part is inferred
 
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
-
-    bool imprecise() { return imprecise_bp; }
-    bool incomplete_assembly() { return ins_seq.find("-") != std::string::npos; }
 };
 
 
