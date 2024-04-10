@@ -486,7 +486,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 		insertion->disc_pairs_rf_avg_nm += get_nm(read);
 	}
 	insertion->disc_pairs_rf_avg_nm /= std::max(1, (int) refined_l_cluster->cluster->reads.size());
-	insertion->imprecise_bp = !left_bp_precise || !right_bp_precise;
+	insertion->imprecise = !left_bp_precise || !right_bp_precise;
 	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
 
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {

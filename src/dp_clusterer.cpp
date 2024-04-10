@@ -117,6 +117,7 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
 			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
 			del = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
+			del->imprecise = true;
 		}
 
 		if (del && -del->svlen() >= config.min_sv_size) {

@@ -375,7 +375,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
             if (!global_crossing_isize_dist.empty()) {
 				double p_val = ks_test(global_crossing_isize_dist, local_dists[i]);
 				del->ks_pval = p_val;
-				if (!del->imprecise()) continue;
+				if (!del->imprecise) continue;
 
 				int est_size = avg_is - stats.pop_avg_crossing_is;
 

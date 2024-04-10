@@ -58,21 +58,17 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
     mtx.unlock();
     // TODO: we are only computing the ks-test p-value for large deletions and DP deletions for efficienty reasons. Investigate why it takes so long calculating it for all deletions.
-    std::vector<deletion_t*> large_dp_deletions, small_dp_deletions, sr_deletions;
+    std::vector<deletion_t*> large_deletions, small_deletions;
     for (deletion_t* del : deletions) {
-        if (-del->svlen() >= stats.max_is && del->source == "DP") {
-            large_dp_deletions.push_back(del);
-        } else if (del->source == "DP") {
-            small_dp_deletions.push_back(del);
+        if (-del->svlen() >= stats.max_is) {
+            large_deletions.push_back(del);
         } else {
-            sr_deletions.push_back(del);
+            small_deletions.push_back(del);
         }
     }
-    std::vector<double> v1;
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, sr_deletions, bam_file, stats, config.min_sv_size);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dp_deletions, bam_file, stats, config.min_sv_size);
-    calculate_ptn_ratio(contig_name, large_dp_deletions, bam_file, stats);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
+    calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
     release_bam_reader(bam_file);
 }
 

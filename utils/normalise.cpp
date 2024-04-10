@@ -110,7 +110,7 @@ bool normalise_ins(bcf1_t* vcf_record) {
 			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", NULL);
 		} else {
 			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", ins_seq.c_str());
-			if (bcf_get_info_flag(hdr, vcf_record, "INCOMPLETE_ASSEMBLY", NULL, NULL)) {
+			if (bcf_get_info_flag(hdr, vcf_record, "INCOMPLETE_ASSEMBLY", NULL, NULL) == 1) {
 				int len = ins_seq.length();
 				bcf_update_info_int32(hdr, vcf_record, "SVLEN", &len, 1);
 			}
