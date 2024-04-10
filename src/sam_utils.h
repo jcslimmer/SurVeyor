@@ -4,8 +4,11 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <queue>
+#include <mutex>
 
 #include "htslib/sam.h"
+#include "htslib/faidx.h"
 #include "utils.h"
 
 bool is_unmapped(bam1_t* r) {
@@ -386,5 +389,34 @@ struct bam_redux_t {
         return ss.str();
     }
 };
+
+struct bam_pool_t {
+    std::mutex mtx;
+    std::queue<open_samFile_t*> pool;
+    std::string bam_fname, reference_fname;
+
+    bam_pool_t(std::string bam_fname, std::string reference_fname) : bam_fname(bam_fname), reference_fname(reference_fname) {}
+
+    open_samFile_t* get_bam_reader() {
+        open_samFile_t* o;
+        mtx.lock();
+        if (!pool.empty()) {
+            o = pool.front();
+            pool.pop();
+        } else {
+            o = open_samFile(bam_fname.c_str());
+            hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
+        }
+        mtx.unlock();
+        return o;
+    }
+
+    void release_bam_reader(open_samFile_t* reader) {
+        mtx.lock();
+        pool.push(reader);
+        mtx.unlock();
+    }
+};
+
 
 #endif

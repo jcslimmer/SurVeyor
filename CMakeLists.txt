@@ -26,7 +26,7 @@ add_executable(dp_clusterer libs/ssw.c libs/ssw_cpp.cpp src/dp_clusterer.cpp)
 add_executable(insertions_assembler libs/ssw.c libs/ssw_cpp.cpp src/insertions_assembler.cpp)
 add_executable(add_filtering_info src/add_filtering_info.cpp)
 add_executable(concat_vcf src/concat_vcf.cpp)
-# add_executable(genotype src/genotype.cpp)
+add_executable(genotype libs/ssw.c libs/ssw_cpp.cpp src/genotype.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 
@@ -40,7 +40,7 @@ target_link_libraries(dp_clusterer "${HTS_LIB}")
 target_link_libraries(insertions_assembler "${HTS_LIB}")
 target_link_libraries(add_filtering_info "${HTS_LIB}")
 target_link_libraries(concat_vcf "${HTS_LIB}")
-# target_link_libraries(genotype "${HTS_LIB}")
+target_link_libraries(genotype "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")
 target_link_libraries(normalise "${HTS_LIB}")

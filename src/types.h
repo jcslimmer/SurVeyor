@@ -160,6 +160,11 @@ struct sv_t {
     double mismatch_rate = 0.0;
     std::string source;
     bool imprecise = false;
+
+    struct regenotyping_info_t {
+        int alt_better_reads = 0, ref_better_reads = 0, alt_ref_equal_reads = 0;
+    } regenotyping_info;
+
     int* gt = NULL, ngt;
     bcf1_t* vcf_entry = NULL;
 

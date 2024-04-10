@@ -26,33 +26,35 @@ contig_map_t contig_map;
 
 std::vector<double> global_crossing_isize_dist;
 
-std::mutex bam_pool_mtx;
-std::queue<open_samFile_t*> bam_pool;
-open_samFile_t* get_bam_reader(std::string bam_fname) {
-    open_samFile_t* o;
-    bam_pool_mtx.lock();
-    if (!bam_pool.empty()) {
-        o = bam_pool.front();
-        bam_pool.pop();
-    } else {
-        o = open_samFile(bam_fname.c_str());
-        hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
-    }
-    bam_pool_mtx.unlock();
-    return o;
-}
-void release_bam_reader(open_samFile_t* reader) {
-    bam_pool_mtx.lock();
-    bam_pool.push(reader);
-    bam_pool_mtx.unlock();
-}
+// std::mutex bam_pool_mtx;
+// std::queue<open_samFile_t*> bam_pool;
+// open_samFile_t* get_bam_reader(std::string bam_fname) {
+//     open_samFile_t* o;
+//     bam_pool_mtx.lock();
+//     if (!bam_pool.empty()) {
+//         o = bam_pool.front();
+//         bam_pool.pop();
+//     } else {
+//         o = open_samFile(bam_fname.c_str());
+//         hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
+//     }
+//     bam_pool_mtx.unlock();
+//     return o;
+// }
+// void release_bam_reader(open_samFile_t* reader) {
+//     bam_pool_mtx.lock();
+//     bam_pool.push(reader);
+//     bam_pool_mtx.unlock();
+// }
+
+bam_pool_t* bam_pool;
 
 std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
 std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
 std::unordered_map<std::string, std::vector<insertion_t*> > insertions_by_chr;
 
 void size_and_depth_filtering_del(int id, std::string contig_name) {
-    open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
 
     mtx.lock();
     std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
@@ -69,11 +71,11 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
-    release_bam_reader(bam_file);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 void size_and_depth_filtering_dup(int id, std::string contig_name) {
-    open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
 
     mtx.lock();
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
@@ -81,11 +83,11 @@ void size_and_depth_filtering_dup(int id, std::string contig_name) {
     depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
     calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
 
-    release_bam_reader(bam_file);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 void size_and_depth_filtering_ins(int id, std::string contig_name) {
-    open_samFile_t* bam_file = get_bam_reader(complete_bam_fname);
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
 
     mtx.lock();
     std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
@@ -99,7 +101,7 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
     }
     calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, stats);
 
-    release_bam_reader(bam_file);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 void apply_ALL_filters(sv_t* sv) {
@@ -140,6 +142,7 @@ int main(int argc, char* argv[]) {
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     chr_seqs.read_fasta_into_map(reference_fname);
+    bam_pool = new bam_pool_t(complete_bam_fname, reference_fname);
 
     std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
 	int isize, count;
