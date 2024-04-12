@@ -4,16 +4,16 @@ import numpy as np
 
 class Features:
 
-    source_to_int = { "2SR" : 0, "2HSR" : 1, "HSR-SR" : 2, "SR-HSR" : 3, "1SR_LC" : 4, "1SR_RC" : 5,
-                 "1HSR_LC" : 6, "1HSR_RC" : 7, "DP" : 8, "DE_NOVO_ASSEMBLY" : 9, "REFERENCE_GUIDED_ASSEMBLY" : 10 }
-
     svtype_to_int = { "DEL" : 0, "DUP" : 1, "INS" : 2 }
 
     shared_features_names = ['START_STOP_DIST', 'SVLEN', 'SVINSLEN',
                              'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
                              'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
                              'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
-                             'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO']
+                             'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
+                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 
+                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 
+                             'MAX_INS_PREFIX_BASE_COUNT_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
 
     features_names = ['INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END',
                       'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
@@ -22,36 +22,69 @@ class Features:
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'LB_DIFF', 'UB_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                      'CONC_PAIRS', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
+                      'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
                       'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
-                      'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2', 
-                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 
-                      'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
+                      'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2', 'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO']
 
-    def get_feature_names(svtype, source):
-        if svtype == "DEL":
-            if source == "DP":
-                return Features.shared_features_names + ['OVERLAP', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
+    def get_model_name(record, max_is):
+        svtype_str = record.info['SVTYPE']
+        source_str = record.info['SOURCE']
+        if svtype_str == "DEL":
+            split_reads = Features.get_value(record.info, 'SPLIT_READS', [0, 0])
+            if split_reads[0] > 0 and split_reads[1] > 0:
+                return "DEL_2SR"
+            elif split_reads[0] > 0 or split_reads[1] > 0:
+                return "DEL_1SR"
+            elif abs(record.info['SVLEN']) >= max_is:
+                return "DEL_DP_LARGE"
+            else:
+                return "DEL_DP"
+        return svtype_str + "_" + source_str
+
+    def get_feature_names(model_name):
+        if model_name == "DEL_DP_LARGE":
+            return Features.shared_features_names + \
+                    ['OVERLAP', 'MISMATCH_RATE', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                     'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                     'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                     'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                    'CONC_PAIRS', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
+                    'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
                     'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
                     'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
-            elif source == "1SR_RC":
-                return Features.shared_features_names + ['INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END',
-                      'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
-                      'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
-                      'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
+        elif model_name == "DEL_DP":
+            return Features.shared_features_names + \
+                    ['OVERLAP', 'MISMATCH_RATE', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
+                     'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
+                     'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
+                     'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
+                     'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
+                     'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
+                     'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2', 
+                     'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO']
+        elif model_name == "DEL_2SR":
+            return Features.shared_features_names + \
+                    ['SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
+                      'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
+                      'RCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'LB_DIFF', 'UB_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                      'CONC_PAIRS', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
+                      'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
                       'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
                       'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2', 
-                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 
-                      'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
-        return Features.shared_features_names + Features.features_names
+                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO']
+        elif model_name == "DEL_1SR":
+            return Features.shared_features_names + \
+                    ['SPLIT_READS_RATIO', 'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'EXT_1SR_READS1', 'EXT_1SR_READS2',
+                     'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
+                     'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
+                     'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
+                     'MAX_MAPQ', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
+                     'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'MAX_SIZE_DIFF', 'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2',
+                     'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
+                     'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
+        else:
+            return Features.shared_features_names + Features.features_names
 
     def get_value(info, key, default, norm_factor = 1.0):
         if key in info:
@@ -69,7 +102,8 @@ class Features:
         max_depth = get_stat(stats, 'max_depth', record.chrom)
         max_is = stats['max_is']['.']
         read_len = stats['read_len']['.']
-
+        
+        model_name = Features.get_model_name(record, max_is)
         features = dict()
 
         info = record.info
@@ -103,6 +137,7 @@ class Features:
 
         split_reads = Features.get_value(info, 'SPLIT_READS', [0, 0])
         features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = split_reads[0]/median_depth, split_reads[1]/median_depth
+        features['SPLIT_READS_RATIO'] = sum(split_reads)/median_depth
         fwd_split_reads = Features.get_value(info, 'FWD_SPLIT_READS', [0, 0])
         features['FWD_SPLIT_READS_RATIO1'], features['FWD_SPLIT_READS_RATIO2'] = fwd_split_reads[0]/max(1, split_reads[0]), fwd_split_reads[1]/max(1, split_reads[1])
         rev_split_reads = Features.get_value(info, 'REV_SPLIT_READS', [0, 0])
@@ -110,11 +145,15 @@ class Features:
         features['FWD_SPLIT_READS_RATIO'], features['REV_SPLIT_READS_RATIO'] = sum(fwd_split_reads)/max(1, sum(split_reads)), sum(rev_split_reads)/max(1, sum(split_reads))
         features['OVERLAP'] = Features.get_value(info, 'OVERLAP', 0, read_len)
         features['MISMATCH_RATE'] = Features.get_value(info, 'MISMATCH_RATE', 0)
-
+        
         features['RCC_EXT_1SR_READS1'], features['RCC_EXT_1SR_READS2'] = Features.get_value(info, 'RCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
         features['LCC_EXT_1SR_READS1'], features['LCC_EXT_1SR_READS2'] = Features.get_value(info, 'LCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
+        features['EXT_1SR_READS1'] = features['RCC_EXT_1SR_READS1'] + features['LCC_EXT_1SR_READS1']
+        features['EXT_1SR_READS2'] = features['RCC_EXT_1SR_READS2'] + features['LCC_EXT_1SR_READS2']
         features['RCC_HQ_EXT_1SR_READS1'], features['RCC_HQ_EXT_1SR_READS2'] = Features.get_value(info, 'RCC_HQ_EXT_1SR_READS', [0, 0], median_depth*max_is)
         features['LCC_HQ_EXT_1SR_READS1'], features['LCC_HQ_EXT_1SR_READS2'] = Features.get_value(info, 'LCC_HQ_EXT_1SR_READS', [0, 0], median_depth*max_is)
+        features['HQ_EXT_1SR_READS1'] = features['RCC_HQ_EXT_1SR_READS1'] + features['LCC_HQ_EXT_1SR_READS1']
+        features['HQ_EXT_1SR_READS2'] = features['RCC_HQ_EXT_1SR_READS2'] + features['LCC_HQ_EXT_1SR_READS2']
 
         full_junction_score = Features.get_value(info, 'FULL_JUNCTION_SCORE', 0)
         split_junction_score1 = [float(x) for x in info['SPLIT_JUNCTION_SCORE']]
@@ -139,12 +178,11 @@ class Features:
         features['MIN_SPLIT_JUNCTION_SIZE_RATIO'] = min(features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'])
 
         features['MAX_MAPQ1'], features['MAX_MAPQ2'] = Features.get_value(info, 'MAX_MAPQ', [0, 0])
-        features['LB_DIFF'], features['UB_DIFF'] = 0, 0
-        if 'REMAP_LB' in info and 'REMAP_UB' in info:
-            remap_lb = float(info['REMAP_LB'])
-            remap_ub = float(info['REMAP_UB'])
-            features['LB_DIFF'] = max(0, remap_lb-record.pos)
-            features['UB_DIFF'] = max(0, record.stop-remap_ub)
+        features['MAX_MAPQ'] = max(features['MAX_MAPQ1'], features['MAX_MAPQ2'])
+        remap_lb = Features.get_value(info, 'REMAP_LB', record.pos)
+        remap_ub = Features.get_value(info, 'REMAP_UB', record.stop)
+        features['LB_DIFF'], features['UB_DIFF'] = max(0, remap_lb-record.pos), max(0, record.stop-remap_ub)
+        features['B_DIFF'] = features['LB_DIFF'] + features['UB_DIFF']
 
         disc_pairs = Features.get_value(info, 'DISC_PAIRS', [0, 0])
         if svtype_str == "DEL":
@@ -163,8 +201,13 @@ class Features:
         disc_pairs_highmapq = Features.get_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0], median_depth)
         features['DISC_PAIRS_HIGHMAPQ_RATIO1'], features['DISC_PAIRS_HIGHMAPQ_RATIO2'] = [d/max(1, disc_pairs[i]) for i, d in enumerate(disc_pairs_highmapq)]
         features['DISC_PAIRS_MAXMAPQ1'], features['DISC_PAIRS_MAXMAPQ2'] = Features.get_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
+
         conc_pairs = Features.get_value(info, 'CONC_PAIRS', 0, median_depth)
-        features['CONC_PAIRS'] = conc_pairs
+        min_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"]
+        max_pairs_crossing_point = stats['max_pairs_crossing_gap']["0"]
+        conc_pairs_scaled = (conc_pairs-min_pairs_crossing_point)/(max_pairs_crossing_point-min_pairs_crossing_point)
+        features['CONC_PAIRS_SCALED'] = conc_pairs_scaled
+
         features['DISC_PAIRS_SURROUNDING1'], features['DISC_PAIRS_SURROUNDING2'] = Features.get_value(info, 'DISC_PAIRS_SURROUNDING', [0, 0], median_depth) 
         features['DISC_AVG_NM1'], features['DISC_AVG_NM2'] = Features.get_value(info, 'DISC_AVG_NM', [0, 0], read_len)
 
@@ -220,7 +263,7 @@ class Features:
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
         feature_values = []
-        for feature_name in Features.get_feature_names(svtype_str, source_str):
+        for feature_name in Features.get_feature_names(model_name):
             feature_values.append(features[feature_name])
         return feature_values
 
@@ -245,7 +288,7 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats_reader = open(stats_fname, 'r')
     data_by_source = defaultdict(list)
-    labels_by_source = defaultdict(list)
+    gts_by_source = defaultdict(list)
     variant_ids_by_source = defaultdict(list)
 
     # read the stats file and extract the relevant values
@@ -257,12 +300,14 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
     for record in vcf_reader.fetch():
         if svtype != 'ALL' and record.info['SVTYPE'] != svtype:
             continue
-        source = record.info['SVTYPE'] + "_" + record.info['SOURCE']
+
+        model_name = Features.get_model_name(record, stats['max_is']['.'])
         feature_values = Features.record_to_features(record, stats)
-        data_by_source[source].append(feature_values)
-        labels_by_source[source].append(1 if record.id in gts.keys() else 0)
-        variant_ids_by_source[source].append(record.id)
-    for source in data_by_source:
-        data_by_source[source] = np.array(data_by_source[source])
-        labels_by_source[source] = np.array(labels_by_source[source])
-    return data_by_source, labels_by_source, variant_ids_by_source
+        data_by_source[model_name].append(feature_values)
+        gts_by_source[model_name].append(gts[record.id])
+        variant_ids_by_source[model_name].append(record.id)
+    for model_name in data_by_source:
+        data_by_source[model_name] = np.array(data_by_source[model_name])
+        gts_by_source[model_name] = np.array(gts_by_source[model_name])
+        variant_ids_by_source[model_name] = np.array(variant_ids_by_source[model_name])
+    return data_by_source, gts_by_source, variant_ids_by_source

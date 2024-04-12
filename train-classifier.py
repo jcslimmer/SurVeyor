@@ -1,38 +1,55 @@
 import argparse
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from collections import defaultdict
 import joblib
-import features
-
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
+import features_gt as features
+import os
 
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
 cmd_parser.add_argument('svtype', help='SV type to filter.', choices=['DEL', 'DUP', 'INS', 'ALL'])
 cmd_parser.add_argument('outdir')
 cmd_parser.add_argument('--n-trees', type=int, default=5000, help='Number of trees in the random forest.')
+cmd_parser.add_argument('--model_name', default='ALL', help='Restrict to this model.')
+cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use for training.')
 cmd_args = cmd_parser.parse_args()
 
+output_dir = os.path.join(cmd_args.outdir, "yes_or_no")
+os.makedirs(output_dir, exist_ok=True)
+
+output_dir = os.path.join(cmd_args.outdir, "gts")
+os.makedirs(output_dir, exist_ok=True)
+
 training_prefixes = cmd_args.training_prefixes.split(",")
-training_data, training_labels, variant_ids = None, None, None
+training_data, training_gts, variant_ids = None, None, None
 for training_prefix in training_prefixes:
-    vcf_training_data, vcf_training_labels, vcf_variant_ids = features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats",
+    vcf_training_data, vcf_training_gts, vcf_variant_ids = features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats",
                                                                         training_prefix + ".gts", cmd_args.svtype, tolerate_no_gts = False)
     if training_data is None:
         training_data = vcf_training_data
-        training_labels = vcf_training_labels
+        training_gts = vcf_training_gts
     else:
         for source in vcf_training_data:
             training_data[source] = np.concatenate((training_data[source], vcf_training_data[source]))
-            training_labels[source] = np.concatenate((training_labels[source], vcf_training_labels[source]))
+            training_gts[source] = np.concatenate((training_gts[source], vcf_training_gts[source]))
 
-for sources in training_data:
-    classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=-1)
-    classifier.fit(training_data[sources], training_labels[sources])
+for model_name in training_data:
+    if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
+        continue
 
-    #save model to outdir
-    model_fname = cmd_args.outdir + "/" + sources + ".model"
+    classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
+
+    # train yes or no classifier
+    training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
+    classifier.fit(training_data[model_name], training_labels)
+
+    model_fname = cmd_args.outdir + "/yes_or_no/" + model_name + ".model"
+    joblib.dump(classifier, open(model_fname, 'wb'))
+
+    # train GT classifier    
+    positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
+    positive_training_labels = np.array([2 if x == "1/1" else 1 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
+    classifier.fit(positive_training_data, positive_training_labels)
+    
+    model_fname = cmd_args.outdir + "/gts/" + model_name + ".model"
     joblib.dump(classifier, open(model_fname, 'wb'))
