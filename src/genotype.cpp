@@ -79,6 +79,10 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "NC");
+    const char* nc_tag = "##INFO=<ID=NC,Number=1,Type=Integer,Description=\"AR, RR and ER not computed.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq) {
@@ -131,6 +135,11 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     int er = sv->regenotyping_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
+
+    if (sv->regenotyping_info.too_deep) {
+        int nc = 1;
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "NC", &nc, 1);
+    }
 }
 
 void genotype_del(deletion_t* del) {
@@ -202,13 +211,18 @@ void genotype_del(deletion_t* del) {
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
         // align to REF (two breakpoints)
-        aligner.Align(seq.c_str(), ref_bp1_seq, ref_bp1_len, filter, &ref1_aln, 0);
-        aligner.Align(seq.c_str(), ref_bp2_seq, ref_bp2_len, filter, &ref2_aln, 0);
+        uint16_t ref_aln_score = 0;
+        if (is_perfectly_aligned(read)) {
+            ref_aln_score = read->core.l_qseq;
+        } else {
+            aligner.Align(seq.c_str(), ref_bp1_seq, ref_bp1_len, filter, &ref1_aln, 0);
+            aligner.Align(seq.c_str(), ref_bp2_seq, ref_bp2_len, filter, &ref2_aln, 0);
+            ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
+        }
 
-        StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
-        if (alt_aln.sw_score > ref_aln.sw_score) {
+        if (alt_aln.sw_score > ref_aln_score) {
             alt_better++;
-        } else if (alt_aln.sw_score < ref_aln.sw_score) {
+        } else if (alt_aln.sw_score < ref_aln_score) {
             ref_better++;
         } else {
             same++;
@@ -390,14 +404,25 @@ void genotype_large_dup(duplication_t* dup) {
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
         // align to REF (two breakpoints)
-        aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
-        aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+        uint16_t ref_aln_score = 0;
+        if (is_perfectly_aligned(read)) {
+            ref_aln_score = read->core.l_qseq;
+        } else {
+            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+            ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
+        }
 
-        StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
-        if (alt_aln.sw_score > ref_aln.sw_score) {
+        if (alt_aln.sw_score > ref_aln_score) {
             alt_better++;
         } else {
             same++;
+        }
+
+        if (same > 4 * stats.get_max_depth(dup->chr)) {
+            alt_better = same = 0;
+            dup->regenotyping_info.too_deep = true;
+            break;
         }
     }
 
@@ -507,6 +532,12 @@ void genotype_ins(insertion_t* ins) {
             ref_better++;
         } else {
             same++;
+        }
+
+        if (alt_better + ref_better + same > 4 * stats.get_max_depth(ins->chr)) {
+            alt_better = ref_better = same = 0;
+            ins->regenotyping_info.too_deep = true;
+            break;
         }
     }
 
@@ -662,6 +693,4 @@ int main(int argc, char* argv[]) {
     bcf_hdr_destroy(in_vcf_header);
     bcf_close(in_vcf_file);
     bcf_close(out_vcf_file);
-
-    // tbx_index_build(out_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 }

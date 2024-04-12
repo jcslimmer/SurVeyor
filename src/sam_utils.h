@@ -148,9 +148,36 @@ int64_t get_mq(bam1_t* r) {
 int64_t get_nm(bam1_t* r) {
     uint8_t* nm = bam_aux_get(r, "NM");
     if (nm == NULL) {
-        return 0;
+        throw "Read " + std::string(bam_get_qname(r)) + " does not have the NM tag.";
     }
     return bam_aux2i(nm);
+}
+
+std::string get_md(bam1_t* r) {
+    uint8_t* md = bam_aux_get(r, "MD");
+    if (md == NULL) {
+        return "";
+    }
+    return bam_aux2Z(md);
+}
+
+bool has_no_indels(bam1_t* read) {
+    uint32_t *cigar = bam_get_cigar(read);
+    return read->core.n_cigar == 1 && bam_cigar_op(cigar[0]) == BAM_CMATCH && bam_cigar_oplen(cigar[0]) == read->core.l_qseq;
+}
+
+bool is_perfectly_aligned(bam1_t* read) {
+    // All M
+    if (has_no_indels(read)) {
+        uint8_t* nm = bam_aux_get(read, "NM");
+        if (nm) {
+            return bam_aux2i(nm) == 0; // Whether it is perfectly aligned based on NM
+        } 
+
+        std::string md = get_md(read);
+        return md == std::to_string(read->core.l_qseq); // Perfectly aligned based on MD
+    }
+    return false; // Not perfectly aligned or cannot confirm alignment without NM or MD
 }
 
 void rc(std::string& read) {
