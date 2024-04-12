@@ -80,8 +80,8 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "NC");
-    const char* nc_tag = "##INFO=<ID=NC,Number=1,Type=Integer,Description=\"AR, RR and ER not computed.\">";
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
+    const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
 }
 
@@ -137,8 +137,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
 
     if (sv->regenotyping_info.too_deep) {
-        int nc = 1;
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "NC", &nc, 1);
+        int td = 1;
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);
     }
 }
 
@@ -625,7 +625,7 @@ int main(int argc, char* argv[]) {
     // genotype chrs in descending order of svs
     ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
-    const int BLOCK_SIZE = 100;
+    const int BLOCK_SIZE = 20;
     for (auto& p : dels_by_chr) {
     	std::string contig_name = p.first;
         std::vector<deletion_t*>& dels = p.second;
