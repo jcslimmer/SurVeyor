@@ -60,6 +60,13 @@ bool is_right_clipped(bam1_t* r, int min_clip_len) {
     return get_right_clip_size(r) >= min_clip_len;
 }
 
+hts_pos_t get_unclipped_start(bam1_t* r) {
+    return r->core.pos - get_left_clip_size(r);
+}
+hts_pos_t get_unclipped_end(bam1_t* r) {
+    return bam_endpos(r) + get_right_clip_size(r);
+}
+
 bool is_mate_left_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");

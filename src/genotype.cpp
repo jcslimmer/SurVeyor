@@ -193,6 +193,8 @@ void genotype_del(deletion_t* del) {
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
+        if (get_unclipped_end(read) < del_start || del_end < get_unclipped_start(read)) continue;
+        if (del_start < get_unclipped_start(read) && get_unclipped_end(read) < del_end) continue;
 
         std::string seq = get_sequence(read);
         
@@ -210,6 +212,12 @@ void genotype_del(deletion_t* del) {
             ref_better++;
         } else {
             same++;
+        }
+
+        if (alt_better + ref_better + same > 4 * stats.get_max_depth(del->chr)) {
+            alt_better = ref_better = same = 0;
+            del->regenotyping_info.too_deep = true;
+            break;
         }
     }
 
@@ -289,6 +297,8 @@ void genotype_small_dup(duplication_t* dup) {
     StripedSmithWaterman::Alignment alt_best_aln, alt_aln, ref_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		if (is_unmapped(read) || !is_primary(read)) continue;
+        if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
+        if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
         std::string seq = get_sequence(read);
         aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
@@ -371,6 +381,8 @@ void genotype_large_dup(duplication_t* dup) {
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
+        if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
+        if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
         std::string seq = get_sequence(read);
         
@@ -474,6 +486,8 @@ void genotype_ins(insertion_t* ins) {
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
+        if (get_unclipped_end(read) < ins_start || ins_end < get_unclipped_start(read)) continue;
+        if (ins_start < get_unclipped_start(read) && get_unclipped_end(read) < ins_end) continue;
 
         std::string seq = get_sequence(read);
         
@@ -580,21 +594,37 @@ int main(int argc, char* argv[]) {
     // genotype chrs in descending order of svs
     ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
+    const int BLOCK_SIZE = 100;
     for (auto& p : dels_by_chr) {
     	std::string contig_name = p.first;
         std::vector<deletion_t*>& dels = p.second;
-        std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
-        		chr_seqs.get_len(contig_name), dels_by_chr[contig_name], in_vcf_header, out_vcf_header, stats, config);
-        futures.push_back(std::move(future));
+        for (int i = 0; i < dels.size(); i += BLOCK_SIZE) {
+            std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
+            std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
+                    chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config);
+            futures.push_back(std::move(future));
+        }
     }
     for (auto& p : dups_by_chr) {
     	std::string contig_name = p.first;
         std::vector<duplication_t*>& dups = p.second;
-        std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
-        		chr_seqs.get_len(contig_name), dups_by_chr[contig_name], in_vcf_header, out_vcf_header, stats, config);
-        futures.push_back(std::move(future));
+        for (int i = 0; i < dups.size(); i += BLOCK_SIZE) {
+            std::vector<duplication_t*> block_dups(dups.begin() + i, dups.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dups.size())));
+            std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
+                    chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
+            futures.push_back(std::move(future));
+        }
     }
-
+    for (auto& p : inss_by_chr) {
+    	std::string contig_name = p.first;
+        std::vector<insertion_t*>& inss = p.second;
+        for (int i = 0; i < inss.size(); i += BLOCK_SIZE) {
+            std::vector<insertion_t*> block_inss(inss.begin() + i, inss.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(inss.size())));
+            std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
+                    chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config);
+            futures.push_back(std::move(future));
+        }
+    }
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
         try {
@@ -634,5 +664,4 @@ int main(int argc, char* argv[]) {
     bcf_close(out_vcf_file);
 
     // tbx_index_build(out_vcf_fname.c_str(), 0, &tbx_conf_vcf);
-
 }
