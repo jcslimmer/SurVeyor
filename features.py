@@ -26,22 +26,22 @@ class Features:
                       'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 'MEDIAN_DEPTHS_ABOVE_MAX1', 'MEDIAN_DEPTHS_ABOVE_MAX2', 'MEDIAN_DEPTHS_ABOVE_MAX3', 'MEDIAN_DEPTHS_ABOVE_MAX4',
                       'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2', 'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO']
 
-    def get_model_name(record, max_is):
+    def get_denovo_model_name(record, max_is):
         svtype_str = record.info['SVTYPE']
         source_str = record.info['SOURCE']
         if svtype_str == "DEL":
             split_reads = Features.get_value(record.info, 'SPLIT_READS', [0, 0])
             if split_reads[0] > 0 and split_reads[1] > 0:
-                return "DEL_2SR"
+                source_str = "2SR"
             elif split_reads[0] > 0 or split_reads[1] > 0:
-                return "DEL_1SR"
-            elif abs(record.info['SVLEN']) >= max_is:
-                return "DEL_DP_LARGE"
+                source_str = "1SR"
             else:
-                return "DEL_DP"
+                source_str = "DP"
+            if abs(record.info['SVLEN']) >= max_is:
+                source_str += "_LARGE"
         return svtype_str + "_" + source_str
 
-    def get_feature_names(model_name):
+    def get_denovo_feature_names(model_name):
         if model_name == "DEL_DP_LARGE":
             return Features.shared_features_names + \
                     ['OVERLAP', 'MISMATCH_RATE', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
@@ -85,6 +85,9 @@ class Features:
                      'MEDIAN_DEPTHS_BELOW_MIN1', 'MEDIAN_DEPTHS_BELOW_MIN2', 'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
         else:
             return Features.shared_features_names + Features.features_names
+    
+    def get_regt_feature_names(model_name):
+        return Features.shared_features_names
 
     def get_value(info, key, default, norm_factor = 1.0):
         if key in info:
@@ -103,7 +106,7 @@ class Features:
         max_is = stats['max_is']['.']
         read_len = stats['read_len']['.']
         
-        model_name = Features.get_model_name(record, max_is)
+        model_name = Features.get_denovo_model_name(record, max_is)
         features = dict()
 
         info = record.info
@@ -262,10 +265,12 @@ class Features:
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
-        feature_values = []
-        for feature_name in Features.get_feature_names(model_name):
-            feature_values.append(features[feature_name])
-        return feature_values
+        denovo_feature_values, regt_feature_values = [], []
+        for feature_name in Features.get_denovo_feature_names(model_name):
+            denovo_feature_values.append(features[feature_name])
+        for feature_name in Features.get_regt_feature_names(model_name):
+            regt_feature_values.append(features[feature_name])
+        return denovo_feature_values, regt_feature_values
 
 def read_gts(file_path, tolerate_no_gts = False):
     if not os.path.exists(file_path) and tolerate_no_gts:
@@ -301,9 +306,9 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
         if svtype != 'ALL' and record.info['SVTYPE'] != svtype:
             continue
 
-        model_name = Features.get_model_name(record, stats['max_is']['.'])
-        feature_values = Features.record_to_features(record, stats)
-        data_by_source[model_name].append(feature_values)
+        model_name = Features.get_denovo_model_name(record, stats['max_is']['.'])
+        denovo_feature_values, regt_feature_values = Features.record_to_features(record, stats)
+        data_by_source[model_name].append(denovo_feature_values)
         gts_by_source[model_name].append(gts[record.id])
         variant_ids_by_source[model_name].append(record.id)
     for model_name in data_by_source:

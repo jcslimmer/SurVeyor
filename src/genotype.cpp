@@ -90,7 +90,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_translate(out_hdr, in_hdr, sv->vcf_entry);
 
     // update INFO fields
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "END", &sv->end, 1);
+    int sv_end = sv->end+1;
+    bcf_update_info_int32(out_hdr, sv->vcf_entry, "END", &sv_end, 1);
 
     int svlen = sv->svlen();
     bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVLEN", &svlen, 1);
