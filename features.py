@@ -37,7 +37,7 @@ class Features:
                 source_str = "1SR"
             else:
                 source_str = "DP"
-            if abs(record.info['SVLEN']) >= max_is:
+            if abs(Features.get_svlen(record)) >= max_is:
                 source_str += "_LARGE"
         return svtype_str + "_" + source_str
 
@@ -87,7 +87,8 @@ class Features:
             return Features.shared_features_names + Features.features_names
     
     def get_regt_feature_names(model_name):
-        return Features.shared_features_names
+        return Features.shared_features_names + \
+                [] #['FMT_AR', 'FMT_RR', 'FMT_ER']
 
     def get_value(info, key, default, norm_factor = 1.0):
         if key in info:
@@ -98,6 +99,21 @@ class Features:
             return [float(x)/norm_factor for x in v]
         else:
             return float(v)/norm_factor        
+        
+    def get_svlen(record):
+        if 'SVLEN' not in record.info:
+            svinsseq = ""
+            if 'SVINSSEQ' in record.info:
+                svinsseq = record.info['SVINSSEQ']
+            return len(svinsseq) - (record.stop - record.pos)
+        svlen = record.info['SVLEN']
+        if isinstance(svlen, list) or isinstance(svlen, tuple):
+            return svlen[0]
+        else:
+            return svlen
+        
+    def normalise(value, min, max):
+        return (value - min) / (max - min)
 
     def record_to_features(record, stats):
         min_depth = get_stat(stats, 'min_depth', record.chrom)
@@ -117,10 +133,7 @@ class Features:
         svinsseq = ""
         if 'SVINSSEQ' in info:
             svinsseq = info['SVINSSEQ']
-        if 'SVLEN' in info:
-            svlen = abs(float(info['SVLEN']))
-        else:
-            svlen = len(svinsseq) - (record.stop - record.pos)
+        svlen = abs(Features.get_svlen(record))
         features['SVLEN'] = svlen
         
         svinslen = Features.get_value(info, 'SVINSLEN', 0)
@@ -139,7 +152,7 @@ class Features:
             features['INS_SEQ_COV_SUFFIX_START'], features['INS_SEQ_COV_SUFFIX_END'] = Features.get_value(info, 'INS_SUFFIX_COV', [0, 0], len(svinsseq)-1)
 
         split_reads = Features.get_value(info, 'SPLIT_READS', [0, 0])
-        features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = split_reads[0]/median_depth, split_reads[1]/median_depth
+        features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = Features.normalise(split_reads[0], min_depth, max_depth), Features.normalise(split_reads[1], min_depth, max_depth)
         features['SPLIT_READS_RATIO'] = sum(split_reads)/median_depth
         fwd_split_reads = Features.get_value(info, 'FWD_SPLIT_READS', [0, 0])
         features['FWD_SPLIT_READS_RATIO1'], features['FWD_SPLIT_READS_RATIO2'] = fwd_split_reads[0]/max(1, split_reads[0]), fwd_split_reads[1]/max(1, split_reads[1])
@@ -192,12 +205,12 @@ class Features:
             min_is_to_become_disc = int(max(0, max_is-svlen))
             min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
             max_disc_pairs = stats['max_pairs_crossing_gap'][str(min_is_to_become_disc)]
-            disc_pairs_scaled = [(d-min_disc_pairs)/(max_disc_pairs-min_disc_pairs) for d in disc_pairs]
+            disc_pairs_scaled = [Features.normalise(d, min_disc_pairs, max_disc_pairs) for d in disc_pairs]
         elif svtype_str == "INS" and source_str in ("DE_NOVO_ASSEMBLY", "REFERENCE_GUIDED_ASSEMBLY"):
             min_inslen = int(min(max_is, svinslen))
             min_disc_pairs = stats['min_disc_pairs_by_insertion_size'][str(min_inslen)]
             max_disc_pairs = stats['max_disc_pairs_by_insertion_size'][str(min_inslen)]
-            disc_pairs_scaled = [(d-min_disc_pairs)/(max_disc_pairs-min_disc_pairs) for d in disc_pairs]
+            disc_pairs_scaled = [Features.normalise(d, min_disc_pairs, max_disc_pairs) for d in disc_pairs]
         else:
             disc_pairs_scaled = [d/median_depth for d in disc_pairs]
         features['DISC_PAIRS_SCALED1'], features['DISC_PAIRS_SCALED2'] = disc_pairs_scaled
@@ -208,8 +221,7 @@ class Features:
         conc_pairs = Features.get_value(info, 'CONC_PAIRS', 0, median_depth)
         min_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"]
         max_pairs_crossing_point = stats['max_pairs_crossing_gap']["0"]
-        conc_pairs_scaled = (conc_pairs-min_pairs_crossing_point)/(max_pairs_crossing_point-min_pairs_crossing_point)
-        features['CONC_PAIRS_SCALED'] = conc_pairs_scaled
+        features['CONC_PAIRS_SCALED'] = Features.normalise(conc_pairs, min_pairs_crossing_point, max_pairs_crossing_point)
 
         features['DISC_PAIRS_SURROUNDING1'], features['DISC_PAIRS_SURROUNDING2'] = Features.get_value(info, 'DISC_PAIRS_SURROUNDING', [0, 0], median_depth) 
         features['DISC_AVG_NM1'], features['DISC_AVG_NM2'] = Features.get_value(info, 'DISC_AVG_NM', [0, 0], read_len)
@@ -265,6 +277,13 @@ class Features:
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
+        ar = Features.get_value(record.samples[0], 'AR', 0)
+        rr = Features.get_value(record.samples[0], 'RR', 0)
+        er = Features.get_value(record.samples[0], 'ER', 0)
+        features['FMT_AR'] = Features.normalise(ar, min_depth, max_depth)
+        features['FMT_RR'] = Features.normalise(rr, min_depth, max_depth)
+        features['FMT_ER'] = Features.normalise(er, min_depth, max_depth)
+
         denovo_feature_values, regt_feature_values = [], []
         for feature_name in Features.get_denovo_feature_names(model_name):
             denovo_feature_values.append(features[feature_name])
@@ -292,7 +311,8 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
     gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats_reader = open(stats_fname, 'r')
-    data_by_source = defaultdict(list)
+    denovo_features_by_source = defaultdict(list)
+    regt_features_by_source = defaultdict(list)
     gts_by_source = defaultdict(list)
     variant_ids_by_source = defaultdict(list)
 
@@ -308,11 +328,13 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
 
         model_name = Features.get_denovo_model_name(record, stats['max_is']['.'])
         denovo_feature_values, regt_feature_values = Features.record_to_features(record, stats)
-        data_by_source[model_name].append(denovo_feature_values)
+        denovo_features_by_source[model_name].append(denovo_feature_values)
+        regt_features_by_source[model_name].append(regt_feature_values)
         gts_by_source[model_name].append(gts[record.id])
         variant_ids_by_source[model_name].append(record.id)
-    for model_name in data_by_source:
-        data_by_source[model_name] = np.array(data_by_source[model_name])
+    for model_name in denovo_features_by_source:
+        denovo_features_by_source[model_name] = np.array(denovo_features_by_source[model_name])
+        regt_features_by_source[model_name] = np.array(regt_features_by_source[model_name])
         gts_by_source[model_name] = np.array(gts_by_source[model_name])
         variant_ids_by_source[model_name] = np.array(variant_ids_by_source[model_name])
-    return data_by_source, gts_by_source, variant_ids_by_source
+    return denovo_features_by_source, regt_features_by_source, gts_by_source, variant_ids_by_source
