@@ -21,8 +21,14 @@ std::vector<sv_t*> read_sv_list(const char* filename) {
 		bcf_hdr_t* hdr = bcf_hdr_read(file);
 		bcf1_t* line = bcf_init();
 		while (bcf_read(file, hdr, line) == 0) {
-            sv_t* sv = bcf_to_sv(hdr, line);
-			svs.push_back(sv);
+            try {
+                sv_t* sv = bcf_to_sv(hdr, line);
+                if (sv != NULL) {
+                    svs.push_back(sv);
+                }
+            } catch (const std::exception& e) {
+                std::cerr << e.what() << std::endl;
+            }
 		}
 		bcf_destroy(line);
 		bcf_hdr_destroy(hdr);

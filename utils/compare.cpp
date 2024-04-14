@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <set>
@@ -20,11 +21,10 @@ StripedSmithWaterman::Filter filter;
 bool ignore_seq = false;
 
 bool compatible_gts(sv_t* sv1, sv_t* sv2) {
-	if (sv1->ngt != sv2->ngt) return false;
-	for (int i = 0; i < sv1->ngt; i++) {
-		if (sv1->gt[i] != sv2->gt[i] && !bcf_gt_is_missing(sv1->gt[i]) && !bcf_gt_is_missing(sv2->gt[i])) return false;
-	}
-	return true;
+	int min_sv1_ac = sv1->allele_count(1), min_sv2_ac = sv2->allele_count(1);
+	int max_sv1_ac = min_sv1_ac + sv1->missing_alleles(), max_sv2_ac = min_sv2_ac + sv2->missing_alleles();
+	bool ac_iv_overlap = !(max_sv1_ac < min_sv2_ac || max_sv2_ac < min_sv1_ac);
+	return ac_iv_overlap;
 }
 
 std::string get_type(sv_t* sv) {
@@ -200,7 +200,7 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("dup-ids", "ID of SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
-		("compare-gt", "Compare genotypes (not implemented yet).", cxxopts::value<bool>()->default_value("false"))
+		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("h,help", "Print usage");
 
@@ -251,6 +251,12 @@ int main(int argc, char* argv[]) {
 		called_to_benchmark_gts_fout.open(called_to_benchmark_gts_fname);
 	}
 
+	std::ofstream wrong_gts_fout;
+	if (parsed_args.count("wrong-gts")) {
+		std::string wrong_gts_fname = parsed_args["wrong-gts"].as<std::string>();
+		wrong_gts_fout.open(wrong_gts_fname);
+	}
+
 	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP";};
 	// erase and count elements from benchmark_svs that are not supported
 	int n_unsupported = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_unsupported_func);
@@ -258,13 +264,25 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Warning: only SVTYPE=DEL, DUP or INS are supported. " << n_unsupported << " unsupported variants in benchmark file." << std::endl;
 	}
 	benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), is_unsupported_func), benchmark_svs.end());
-	
+
 	// erase and count elements from called_svs that are not supported
 	n_unsupported = std::count_if(called_svs.begin(), called_svs.end(), is_unsupported_func);
 	if (n_unsupported > 0) {
 		std::cerr << "Warning: only SVTYPE=DEL, DUP or INS are supported. " << n_unsupported << " unsupported variants in called file." << std::endl;
 	}
 	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_unsupported_func), called_svs.end());
+
+	int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+	if (n_ac_0 > 0) {
+		std::cerr << "Warning: excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
+	}
+	benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
+
+	n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+	if (n_ac_0 > 0) {
+		std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
+	}
+	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), called_svs.end());
 
 	if (parsed_args["force-ids"].as<bool>()) {
 		for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
@@ -300,7 +318,7 @@ int main(int argc, char* argv[]) {
 		else if (sv->svtype() == "INS" || sv->svtype() == "DUP") called_inss_by_chr[sv->chr].push_back(sv);
 	}
 
-	std::set<std::string> b_tps, c_tps;
+	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps;
 
 	for (sv_t* bsv : benchmark_svs) {
 		bool matched = false;
@@ -329,6 +347,12 @@ int main(int argc, char* argv[]) {
 				if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv->id << " " << bsv->print_gt() << std::endl;
 				b_tps.insert(bsv->id);
                 c_tps.insert(csv->id);
+				if (compatible_gts(bsv, csv)) {
+					b_gt_tps.insert(bsv->id);
+					c_gt_tps.insert(csv->id);
+				} else if (wrong_gts_fout.is_open()) {
+					wrong_gts_fout << bsv->id << " " << csv->id << std::endl;
+				}
 				matched = true;
                 continue;
 			}
@@ -348,6 +372,12 @@ int main(int argc, char* argv[]) {
 					if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv->id << " " << bsv->print_gt() << std::endl;
 					b_tps.insert(bsv->id);
 					c_tps.insert(csv->id);
+					if (compatible_gts(bsv, csv)) {
+						b_gt_tps.insert(bsv->id);
+						c_gt_tps.insert(csv->id);
+					} else if (wrong_gts_fout.is_open()) {
+						wrong_gts_fout << bsv->id << " " << csv->id << std::endl;
+					}
 					matched = true;
 					continue;
 				}
@@ -360,21 +390,31 @@ int main(int argc, char* argv[]) {
 	}
 
 	// count tp and fn benchmark calls, by sv type
-	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn;
+	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn, n_benchmark_gt_tp, n_benchmark_gt_fn;
 	for (sv_t* bsv : benchmark_svs) {
 		if (b_tps.count(bsv->id)) {
 			n_benchmark_tp[get_type(bsv)]++;
 		} else {
 			n_benchmark_fn[get_type(bsv)]++;
 		}
+		if (b_gt_tps.count(bsv->id)) {
+			n_benchmark_gt_tp[get_type(bsv)]++;
+		} else {
+			n_benchmark_gt_fn[get_type(bsv)]++;
+		}
 	}
 
-	std::unordered_map<std::string, int> n_called_tp, n_called_fp;
+	std::unordered_map<std::string, int> n_called_tp, n_called_fp, n_called_gt_tp, n_called_gt_fp;
 	for (sv_t* csv : called_svs) {
 		if (c_tps.count(csv->id)) {
 			n_called_tp[get_type(csv)]++;
 		} else {
 			n_called_fp[get_type(csv)]++;
+		}
+		if (c_gt_tps.count(csv->id)) {
+			n_called_gt_tp[get_type(csv)]++;
+		} else {
+			n_called_gt_fp[get_type(csv)]++;
 		}
 	}
 
@@ -382,10 +422,16 @@ int main(int argc, char* argv[]) {
 		std::cout.precision(2);
 		for (std::string svtype : {"DEL", "DUP", "INS"}) {
 			int tp = n_benchmark_tp[svtype], fn = n_benchmark_fn[svtype];
-			std::cout << svtype << " SENSITIVITY: " << tp << "/" << (tp+fn) << " = " << tp/std::max(1.0, double(tp+fn)) << std::endl;
+			std::cout << svtype << " SENSITIVITY: " << tp << "/" << (tp+fn) << " = " << tp/std::max(1.0, double(tp+fn)) << " ";
+
+			tp = n_benchmark_gt_tp[svtype]; fn = n_benchmark_gt_fn[svtype];
+			std::cout << "(considering GT: " << tp << "/" << (tp+fn) << " = " << tp/std::max(1.0, double(tp+fn)) << ")" << std::endl;
 			
 			tp = n_called_tp[svtype]; int fp = n_called_fp[svtype];
-			std::cout << svtype << " PRECISION: " << tp << "/" << (tp+fp) << " = " << tp/std::max(1.0, double(tp+fp)) << std::endl;
+			std::cout << svtype << " PRECISION: " << tp << "/" << (tp+fp) << " = " << tp/std::max(1.0, double(tp+fp)) << " ";
+
+			tp = n_called_gt_tp[svtype]; fp = n_called_gt_fp[svtype];
+			std::cout << "(considering GT: " << tp << "/" << (tp+fp) << " = " << tp/std::max(1.0, double(tp+fp)) << ")" << std::endl;
 		}
 	}
 

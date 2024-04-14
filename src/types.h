@@ -228,6 +228,22 @@ struct sv_t {
         return ss.str();
     }
 
+    int allele_count(int allele) {
+        int ac = 0;
+        for (int i = 0; i < ngt; i++) {
+            if (!bcf_gt_is_missing(gt[i])) ac += (bcf_gt_allele(gt[i]) == allele);
+        }
+        return ac;
+    }
+
+    int missing_alleles() {
+        int ac = 0;
+        for (int i = 0; i < ngt; i++) {
+            ac += bcf_gt_is_missing(gt[i]);
+        }
+        return ac;
+    }
+
     virtual ~sv_t() {}
 };
 

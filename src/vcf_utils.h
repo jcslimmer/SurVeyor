@@ -721,7 +721,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	} else if (svtype == "INS") {
 		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else {
-		throw std::runtime_error("Unsupported SV type: " + svtype);
+		return NULL;
 	}
 	sv->imprecise = (imprecise == 1);
 
