@@ -21,20 +21,29 @@ def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
         record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
         record.filter.clear()
         record.filter.add('PASS')
-        record.samples[0]['GT'] = (svid_to_gt[record.id]//2, 1 if svid_to_gt[record.id] >= 1 else 0)
+        if record.id in svid_to_gt:
+            record.samples[0]['GT'] = (svid_to_gt[record.id]//2, 1 if svid_to_gt[record.id] >= 1 else 0)
+        else:
+            record.samples[0]['GT'] = (None, None)
         vcf_writer.write(record)
     vcf_writer.close()
 
-test_denovo_data, test_regt_data, test_labels, test_variant_ids = features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, tolerate_no_gts = True)
+test_denovo_data, test_regt_data, test_denovo_labels, test_regt_labels, test_denovo_variant_ids, test_regt_variant_ids = \
+    features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, tolerate_no_gts = True)
 
 if cmd_args.regenotyping:
     test_data = test_regt_data
+    test_variant_ids = test_regt_variant_ids
 else:
     test_data = test_denovo_data
+    test_variant_ids = test_denovo_variant_ids
 
 svid_to_gt = dict()
 for model_name in test_data:
-    model_file = os.path.join(cmd_args.model_dir, "denovo", "yes_or_no", model_name + '.model')
+    if cmd_args.regenotyping:
+        model_file = os.path.join(cmd_args.model_dir, "regt", "yes_or_no", model_name + '.model')
+    else:
+        model_file = os.path.join(cmd_args.model_dir, "denovo", "yes_or_no", model_name + '.model')
     classifier = joblib.load(model_file)
     predictions = classifier.predict(test_data[model_name])
     for i in range(len(predictions)):
@@ -43,7 +52,10 @@ for model_name in test_data:
     positive_data = test_data[model_name][predictions == 1]
     positive_variant_ids = test_variant_ids[model_name][predictions == 1]
 
-    model_file = os.path.join(cmd_args.model_dir, "denovo", "gts", model_name + '.model')
+    if cmd_args.regenotyping:
+        model_file = os.path.join(cmd_args.model_dir, "regt", "gts", model_name + '.model')
+    else:
+        model_file = os.path.join(cmd_args.model_dir, "denovo", "gts", model_name + '.model')
     classifier = joblib.load(model_file)
     predictions = classifier.predict(positive_data)
     for i in range(len(predictions)):
