@@ -9,6 +9,7 @@
 
 #include "../libs/ks-test.h"
 #include "../libs/IntervalTree.h"
+#include "htslib/hts.h"
 #include "types.h"
 #include "utils.h"
 #include "sam_utils.h"
@@ -75,8 +76,11 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
     	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->median_indel_right_cov), true);
     	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->median_right_flanking_cov), true);
     	if (sv->svtype() == "DEL") {
-			regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->start, &(sv->median_left_cluster_cov), false);
-	    	regions_of_interest.emplace_back(sv->end, sv->right_anchor_aln->end, &(sv->median_right_cluster_cov), false);
+			hts_pos_t l_cluster_start = std::min(sv->left_anchor_aln->start, sv->start-stats.read_len);
+			l_cluster_start = std::max(hts_pos_t(0), l_cluster_start);
+			regions_of_interest.emplace_back(l_cluster_start, sv->start, &(sv->median_left_cluster_cov), false);
+			hts_pos_t r_cluster_end = std::max(sv->right_anchor_aln->end, sv->end+stats.read_len);
+	    	regions_of_interest.emplace_back(sv->end, r_cluster_end, &(sv->median_right_cluster_cov), false);
     	}
     }
     std::sort(regions_of_interest.begin(), regions_of_interest.end(), [](region_w_median_t& r1, region_w_median_t& r2) {return r1.start < r2.start;});

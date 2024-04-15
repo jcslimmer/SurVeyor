@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <htslib/vcf.h>
+#include "htslib/hts.h"
 #include "types.h"
 #include "utils.h"
 
@@ -638,7 +639,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (len > 0) lc_consensus->remap_boundary = data[0];
 	}
 
-	int left_split_mapping_start = b->pos - 150, left_split_mapping_end = b->pos;
+	int left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
 	int right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
 
 	char* s_data = NULL;
@@ -656,7 +657,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
 		right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
 	}
-
 
 	data = NULL;
 	len = 0;
