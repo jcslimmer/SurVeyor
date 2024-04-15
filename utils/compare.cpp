@@ -194,13 +194,14 @@ int main(int argc, char* argv[]) {
 		("S,max_len_diff_imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 				cxxopts::value<int>()->default_value("500"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
-		("f,print-fps", "Print false positive IDs to stderr", cxxopts::value<bool>()->default_value("false"))
+		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
 		("I,ignore-seq", "Only compare insertions by position.", cxxopts::value<bool>()->default_value("false"))
 		("i,force-ids", "Generate new IDs for the variants, required when variants do not have IDs or have duplicated IDs.",
 				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("dup-ids", "ID of SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
+		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("h,help", "Print usage");
 
@@ -224,7 +225,7 @@ int main(int argc, char* argv[]) {
 	min_imprec_frac_overlap = parsed_args["min_overlap_imprecise"].as<double>();
 	max_prec_len_diff = parsed_args["max_len_diff_precise"].as<int>();
 	max_imprec_len_diff = parsed_args["max_len_diff_imprecise"].as<int>();
-    bool report = parsed_args["report"].as<bool>(), print_fp = parsed_args["print-fps"].as<bool>();
+    bool report = parsed_args["report"].as<bool>();
 	ignore_seq = parsed_args["ignore-seq"].as<bool>();
     if (parsed_args["all-imprecise"].as<bool>()) {
     	max_prec_dist = max_imprec_dist;
@@ -243,6 +244,22 @@ int main(int argc, char* argv[]) {
 	if (!parsed_args.count("reference") && !ignore_seq) {
 		std::cerr << "If no reference is provided, the --ignore-seq flag must be provided." << std::endl;
 		exit(0);
+	}
+
+	htsFile* fps_fout = NULL;
+	bcf_hdr_t* fps_hdr = NULL;
+	if (parsed_args.count("fps")) {
+		std::string fps_fname = parsed_args["fps"].as<std::string>();
+		fps_fout = hts_open(fps_fname.c_str(), "wz");
+		// read header from called file
+		htsFile* called_file = bcf_open(called_fname.c_str(), "r");
+		fps_hdr = bcf_hdr_read(called_file);
+		fps_hdr = bcf_hdr_dup(fps_hdr);
+		if (bcf_hdr_write(fps_fout, fps_hdr) != 0) {
+			std::cerr << "Error writing header to file " << fps_fname << std::endl;
+			exit(1);
+		}
+		bcf_close(called_file);
 	}
 
 	std::ofstream called_to_benchmark_gts_fout;
@@ -278,11 +295,15 @@ int main(int argc, char* argv[]) {
 	}
 	benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
 
-	n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
-	if (n_ac_0 > 0) {
-		std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
+	if (parsed_args["keep-all-called"].as<bool>()) {
+		std::cerr << "Warning: keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
+	} else {
+		n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+		if (n_ac_0 > 0) {
+			std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
+		}
+		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), called_svs.end());
 	}
-	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), called_svs.end());
 
 	if (parsed_args["force-ids"].as<bool>()) {
 		for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
@@ -435,10 +456,13 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	if (print_fp) {
+	if (fps_fout != NULL) {
 		for (sv_t* csv : called_svs) {
 			if (!c_tps.count(csv->id)) {
-				std::cerr << csv->id << std::endl;
+				if (bcf_write(fps_fout, fps_hdr, csv->vcf_entry) != 0) {
+					std::cerr << "Error writing variant to file." << std::endl;
+					exit(1);
+				}
 			}
 		}
 	}

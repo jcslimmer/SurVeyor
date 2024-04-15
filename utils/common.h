@@ -23,6 +23,7 @@ std::vector<sv_t*> read_sv_list(const char* filename) {
 		while (bcf_read(file, hdr, line) == 0) {
             try {
                 sv_t* sv = bcf_to_sv(hdr, line);
+                sv->vcf_entry = bcf_dup(line);
                 if (sv != NULL) {
                     svs.push_back(sv);
                 }
