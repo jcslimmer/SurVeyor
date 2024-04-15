@@ -823,4 +823,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	return sv;
 }
 
+int find_sample_index(bcf_hdr_t* hdr, std::string sample_name) {
+    for (int i = 0; i < bcf_hdr_nsamples(hdr); i++) {
+        if (sample_name == hdr->samples[i]) {
+            return i;
+        }
+    }
+    return -1;  // Sample not found
+}
+
 #endif /* VCF_UTILS_H */

@@ -68,7 +68,7 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
             small_deletions.push_back(del);
         }
     }
-    depth_filter_del(contig_name, deletions, bam_file, config.min_size_for_depth_filtering, stats);
+    depth_filter_del(contig_name, deletions, bam_file, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
     bam_pool->release_bam_reader(bam_file);
@@ -80,7 +80,7 @@ void size_and_depth_filtering_dup(int id, std::string contig_name) {
     mtx.lock();
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
     mtx.unlock();
-    depth_filter_dup(contig_name, duplications, bam_file, config.min_size_for_depth_filtering, stats);
+    depth_filter_dup(contig_name, duplications, bam_file, stats);
     calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
 
     bam_pool->release_bam_reader(bam_file);
@@ -92,7 +92,7 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
     mtx.lock();
     std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
     mtx.unlock();
-    depth_filter_ins(contig_name, insertions, bam_file, config.min_size_for_depth_filtering, stats);
+    depth_filter_ins(contig_name, insertions, bam_file, stats);
     std::vector<insertion_t*> assembled_insertions;
     for (insertion_t* ins : insertions) {
         if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {

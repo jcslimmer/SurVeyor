@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
 #include "vcf_utils.h"
+#include "stat_tests.h"
 
 chr_seqs_map_t chr_seqs;
 config_t config;
@@ -83,11 +85,29 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
     const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLF");
+    const char* mdlf_tag = "##FORMAT=<ID=MDLF,Number=1,Type=Integer,Description=\"Median depth of coverage in the left flanking region of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlf_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSP");
+    const char* mdsp_tag = "##FORMAT=<ID=MDSP,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV prefix region of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsp_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSF");
+    const char* mdsf_tag = "##FORMAT=<ID=MDSF,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV suffix region of the SV (for short SVs, it will be the same as MDSP).\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsf_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRF");
+    const char* mdrf_tag = "##FORMAT=<ID=MDRF,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_tag, &len));
 }
 
-void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq) {
+void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
     
     bcf_translate(out_hdr, in_hdr, sv->vcf_entry);
+
+    bcf_subset(out_hdr, sv->vcf_entry, 1, &sample_idx);
 
     // update INFO fields
     int sv_end = sv->end+1;
@@ -141,6 +161,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         int td = 1;
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);
     }
+
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDLF", &sv->median_left_flanking_cov, 1);
+    if (sv->start != sv->end) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSP", &sv->median_indel_left_cov, 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSF", &sv->median_indel_right_cov, 1);
+    }
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRF", &sv->median_right_flanking_cov, 1);
 }
 
 void genotype_del(deletion_t* del) {
@@ -207,7 +234,7 @@ void genotype_del(deletion_t* del) {
         if (del_start < get_unclipped_start(read) && get_unclipped_end(read) < del_end) continue;
 
         std::string seq = get_sequence(read);
-        
+
         // align to ALT
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
@@ -258,6 +285,10 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     for (deletion_t* del : dels) {
         genotype_del(del);
     }
+    
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    depth_filter_del(contig_name, dels, bam_file, stats);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 void genotype_small_dup(duplication_t* dup) {
@@ -451,6 +482,10 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 			genotype_large_dup(dup);
 		}
     }
+    
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    depth_filter_dup(contig_name, dups, bam_file, stats);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 void genotype_ins(insertion_t* ins) {
@@ -563,6 +598,10 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     for (insertion_t* ins : inss) { 
         genotype_ins(ins);
     }
+    
+    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    depth_filter_ins(contig_name, inss, bam_file, stats);
+    bam_pool->release_bam_reader(bam_file);
 }
 
 int main(int argc, char* argv[]) {
@@ -616,8 +655,19 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    int* imap = new int[1];
     htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
-    bcf_hdr_t* out_vcf_header = bcf_hdr_dup(in_vcf_header);
+    bcf_hdr_t* out_vcf_header;
+    int sample_idx = find_sample_index(in_vcf_header, sample_name);
+    if (sample_idx >= 0) {
+        char** samples = new char*[1];
+        samples[0] = strdup(sample_name.c_str());
+        out_vcf_header = bcf_hdr_subset(in_vcf_header, 1, samples, imap);
+    } else {
+        out_vcf_header = bcf_hdr_subset(in_vcf_header, 0, NULL, NULL);
+        bcf_hdr_add_sample(out_vcf_header, sample_name.c_str());
+        imap[0] = -1;
+    }
     add_tags(out_vcf_header);
     if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
     	throw std::runtime_error("Failed to read the VCF header.");
@@ -681,7 +731,7 @@ int main(int argc, char* argv[]) {
 		for (auto& sv : contig_svs) {
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            update_record(in_vcf_header, out_vcf_header, sv, chr_seqs.get_seq(contig_name));
+            update_record(in_vcf_header, out_vcf_header, sv, chr_seqs.get_seq(contig_name), imap[0]);
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
 				throw std::runtime_error("Failed to write VCF record to " + out_vcf_fname);
 			}
