@@ -200,6 +200,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_tag, &len));
 
+	const char* min_size_tag = "##INFO=<ID=MIN_SIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, min_size_tag, &len));
+
 	const char* max_size_tag = "##INFO=<ID=MAX_SIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
 			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_tag, &len));
@@ -437,6 +440,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		deletion_t* del = (deletion_t*) sv;
 		if (!del->original_range.empty()) {
 			bcf_update_info_string(hdr, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
+		}
+		if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+			bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE", &(del->min_conf_size), 1);
 		}
 		if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
