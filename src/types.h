@@ -162,7 +162,9 @@ struct sv_t {
     bool imprecise = false;
 
     struct regenotyping_info_t {
-        int alt_better_reads = 0, ref_better_reads = 0, alt_ref_equal_reads = 0;
+        int alt_bp1_better_reads = 0, alt_bp2_better_reads = 0;
+        int ref_bp1_better_reads = 0, ref_bp2_better_reads = 0;
+        int alt_ref_equal_reads = 0;
         bool too_deep = false;
     } regenotyping_info;
 

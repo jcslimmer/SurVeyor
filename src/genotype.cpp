@@ -70,13 +70,21 @@ void add_tags(bcf_hdr_t* hdr) {
 	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,sbc_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR");
-    const char* ar_tag = "##FORMAT=<ID=AR,Number=1,Type=Integer,Description=\"Number of reads supporting the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
+    const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR");
-    const char* rr_tag = "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"Number of reads supporting the reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
+    const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
+    const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR2");
+    const char* rr2_tag = "##FORMAT=<ID=RR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr2_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
@@ -148,11 +156,11 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
     // update FORMAT fields
-    int ar = sv->regenotyping_info.alt_better_reads;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR", &ar, 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1", &(sv->regenotyping_info.alt_bp1_better_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
 
-    int rr = sv->regenotyping_info.ref_better_reads;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR", &rr, 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR1", &(sv->regenotyping_info.ref_bp1_better_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR2", &(sv->regenotyping_info.ref_bp2_better_reads), 1);
 
     int er = sv->regenotyping_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
@@ -224,7 +232,7 @@ void genotype_del(deletion_t* del) {
 
     bam1_t* read = bam_init1();
 
-    int ref_better = 0, alt_better = 0, same = 0;
+    int ref_bp1_better = 0, ref_bp2_better = 0, alt_better = 0, same = 0;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -240,31 +248,47 @@ void genotype_del(deletion_t* del) {
 
         // align to REF (two breakpoints)
         uint16_t ref_aln_score = 0;
+        bool increase_ref_bp1_better = false, increase_ref_bp2_better = false;
         if (is_perfectly_aligned(read)) {
             ref_aln_score = read->core.l_qseq;
+            if (read->core.pos < del_start && bam_endpos(read) > del_start) {
+                increase_ref_bp1_better = true;
+            }
+            if (read->core.pos < del_end && bam_endpos(read) > del_end) {
+                increase_ref_bp2_better = true;
+            }
         } else {
             aligner.Align(seq.c_str(), ref_bp1_seq, ref_bp1_len, filter, &ref1_aln, 0);
             aligner.Align(seq.c_str(), ref_bp2_seq, ref_bp2_len, filter, &ref2_aln, 0);
             ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
+            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+                increase_ref_bp1_better = true;
+            }
+            if (ref2_aln.sw_score >= ref1_aln.sw_score) {
+                increase_ref_bp2_better = true;
+            }
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
             alt_better++;
         } else if (alt_aln.sw_score < ref_aln_score) {
-            ref_better++;
+            ref_bp1_better += increase_ref_bp1_better;
+            ref_bp2_better += increase_ref_bp2_better;
         } else {
             same++;
         }
 
-        if (alt_better + ref_better + same > 4 * stats.get_max_depth(del->chr)) {
-            alt_better = ref_better = same = 0;
+        if (alt_better + ref_bp1_better + ref_bp2_better + same > 4 * stats.get_max_depth(del->chr)) {
+            alt_better = ref_bp1_better = ref_bp2_better = same = 0;
             del->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    del->regenotyping_info.alt_better_reads = alt_better;
-    del->regenotyping_info.ref_better_reads = ref_better;
+    del->regenotyping_info.alt_bp1_better_reads = alt_better;
+    del->regenotyping_info.alt_bp2_better_reads = alt_better;
+    del->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
+    del->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
     del->regenotyping_info.alt_ref_equal_reads = same;
 
     bam_pool->release_bam_reader(bam_file);
@@ -365,8 +389,10 @@ void genotype_small_dup(duplication_t* dup) {
         }
     }
 
-    dup->regenotyping_info.alt_better_reads = alt_better;
-    dup->regenotyping_info.ref_better_reads = ref_better;
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better;
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better;
+    dup->regenotyping_info.ref_bp1_better_reads = ref_better;
+    dup->regenotyping_info.ref_bp2_better_reads = ref_better;
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
     bam_pool->release_bam_reader(bam_file);
@@ -421,7 +447,7 @@ void genotype_large_dup(duplication_t* dup) {
 
     bam1_t* read = bam_init1();
 
-    int alt_better = 0, same = 0;
+    int alt_better = 0, ref_bp1_better = 0, ref_bp2_better = 0;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -437,30 +463,45 @@ void genotype_large_dup(duplication_t* dup) {
 
         // align to REF (two breakpoints)
         uint16_t ref_aln_score = 0;
+        bool increase_ref_bp1_better = false, increase_ref_bp2_better = false;
         if (is_perfectly_aligned(read)) {
             ref_aln_score = read->core.l_qseq;
+            if (read->core.pos < dup_start && bam_endpos(read) > dup_start) {
+                increase_ref_bp1_better = true;
+            }
+            if (read->core.pos < dup_end && bam_endpos(read) > dup_end) {
+                increase_ref_bp2_better = true;
+            }
         } else {
             aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
             aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
             ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
+            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+                increase_ref_bp1_better = true;
+            }
+            if (ref2_aln.sw_score >= ref1_aln.sw_score) {
+                increase_ref_bp2_better = true;
+            }
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
             alt_better++;
         } else {
-            same++;
+            ref_bp1_better += increase_ref_bp1_better;
+            ref_bp2_better += increase_ref_bp2_better;
         }
 
-        if (same > 4 * stats.get_max_depth(dup->chr)) {
-            alt_better = same = 0;
+        if (ref_bp1_better + ref_bp2_better > 4 * stats.get_max_depth(dup->chr)) {
+            alt_better = ref_bp1_better = ref_bp2_better = 0;
             dup->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    dup->regenotyping_info.alt_better_reads = alt_better;
-    dup->regenotyping_info.ref_better_reads = 0;
-    dup->regenotyping_info.alt_ref_equal_reads = same;
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better;
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better;
+    dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
+    dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
 
     bam_pool->release_bam_reader(bam_file);
     delete[] alt_seq;
@@ -541,7 +582,7 @@ void genotype_ins(insertion_t* ins) {
 
     bam1_t* read = bam_init1();
 
-    int ref_better = 0, alt_better = 0, same = 0;
+    int ref_bp1_better = 0, ref_bp2_better = 0, alt_bp1_better = 0, alt_bp2_better = 0, same = 0;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
@@ -563,22 +604,34 @@ void genotype_ins(insertion_t* ins) {
         StripedSmithWaterman::Alignment& alt_aln = alt1_aln.sw_score >= alt2_aln.sw_score ? alt1_aln : alt2_aln;
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
-            alt_better++;
+            if (alt1_aln.sw_score >= alt2_aln.sw_score) {
+                alt_bp1_better++;
+            } 
+            if (alt1_aln.sw_score <= alt2_aln.sw_score) {
+                alt_bp2_better++;
+            }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
-            ref_better++;
+            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+                ref_bp1_better++;
+            } 
+            if (ref1_aln.sw_score <= ref2_aln.sw_score) {
+                ref_bp2_better++;
+            }
         } else {
             same++;
         }
 
-        if (alt_better + ref_better + same > 4 * stats.get_max_depth(ins->chr)) {
-            alt_better = ref_better = same = 0;
+        if (alt_bp1_better + alt_bp2_better + ref_bp1_better + ref_bp2_better + same > 4 * stats.get_max_depth(ins->chr)) {
+            alt_bp1_better = alt_bp2_better = ref_bp1_better = ref_bp2_better = same = 0;
             ins->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    ins->regenotyping_info.alt_better_reads = alt_better;
-    ins->regenotyping_info.ref_better_reads = ref_better;
+    ins->regenotyping_info.alt_bp1_better_reads = alt_bp1_better;
+    ins->regenotyping_info.alt_bp2_better_reads = alt_bp2_better;
+    ins->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
+    ins->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
     ins->regenotyping_info.alt_ref_equal_reads = same;
 
     bam_pool->release_bam_reader(bam_file);
