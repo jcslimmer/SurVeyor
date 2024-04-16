@@ -197,7 +197,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=1,Type=Integer,Description=\"Concordant pairs supporting the absence of a SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
-	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test. \">";
+	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_tag, &len));
 
 	const char* max_size_tag = "##INFO=<ID=MAX_SIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
@@ -652,10 +652,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		left_split_mapping_range = mapping_range.substr(0, comma_pos);
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
 	
-		left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
+		left_split_mapping_start = std::min(left_split_mapping_start, std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1);
 		left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
 		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
-		right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
+		right_split_mapping_end = std::max(std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1, left_split_mapping_end);
 	}
 
 	data = NULL;

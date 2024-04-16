@@ -29,6 +29,8 @@ std::mutex mtx;
 std::string bam_fname, reference_fname;
 bam_pool_t* bam_pool;
 
+std::vector<double> global_crossing_isize_dist;
+
 StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
 void add_tags(bcf_hdr_t* hdr) {
@@ -109,6 +111,20 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRF");
     const char* mdrf_tag = "##FORMAT=<ID=MDRF,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
+    const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
+            "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsize_tag, &len));
+    
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZE");
+    const char* maxsize_tag = "##FORMAT=<ID=MAXSIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
+			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsize_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
+    const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -176,6 +192,20 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSF", &sv->median_indel_right_cov, 1);
     }
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRF", &sv->median_right_flanking_cov, 1);
+
+    if (sv->svtype() == "DEL") {
+        deletion_t* del = (deletion_t*) sv;
+        if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(del->min_conf_size), 1);
+        }
+        if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(del->max_conf_size), 1);
+        }
+        if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
+            float ks_pvalue = del->ks_pval;
+            bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pvalue, 1);
+        }
+    }
 }
 
 void genotype_del(deletion_t* del) {
@@ -305,13 +335,21 @@ void genotype_del(deletion_t* del) {
 
 void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<deletion_t*> dels,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
-                    
+
+    std::vector<deletion_t*> small_deletions, large_deletions;                
     for (deletion_t* del : dels) {
         genotype_del(del);
+        if (-del->svlen() >= stats.max_is) {
+            large_deletions.push_back(del);
+        } else {
+            small_deletions.push_back(del);
+        }
     }
     
     open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_del(contig_name, dels, bam_file, stats);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
+    // calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
     bam_pool->release_bam_reader(bam_file);
 }
 
@@ -676,6 +714,16 @@ int main(int argc, char* argv[]) {
 
     chr_seqs.read_fasta_into_map(reference_fname);
     bam_pool = new bam_pool_t(bam_fname, reference_fname);
+
+    // read crossing isize distribution
+    std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
+	int isize, count;
+	while (crossing_isizes_dist_fin >> isize >> count) {
+		for (int i = 0; i < count; i++) global_crossing_isize_dist.push_back(isize);
+	}
+	std::random_shuffle(global_crossing_isize_dist.begin(), global_crossing_isize_dist.end());
+	global_crossing_isize_dist.resize(100000);
+	crossing_isizes_dist_fin.close();
 
     std::string full_cmd_fname = workdir + "/full_cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);

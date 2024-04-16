@@ -26,27 +26,6 @@ contig_map_t contig_map;
 
 std::vector<double> global_crossing_isize_dist;
 
-// std::mutex bam_pool_mtx;
-// std::queue<open_samFile_t*> bam_pool;
-// open_samFile_t* get_bam_reader(std::string bam_fname) {
-//     open_samFile_t* o;
-//     bam_pool_mtx.lock();
-//     if (!bam_pool.empty()) {
-//         o = bam_pool.front();
-//         bam_pool.pop();
-//     } else {
-//         o = open_samFile(bam_fname.c_str());
-//         hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
-//     }
-//     bam_pool_mtx.unlock();
-//     return o;
-// }
-// void release_bam_reader(open_samFile_t* reader) {
-//     bam_pool_mtx.lock();
-//     bam_pool.push(reader);
-//     bam_pool_mtx.unlock();
-// }
-
 bam_pool_t* bam_pool;
 
 std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
