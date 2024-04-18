@@ -112,6 +112,14 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* mdrf_tag = "##FORMAT=<ID=MDRF,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLC");
+    const char* mdlc_tag = "##FORMAT=<ID=MDLC,Number=1,Type=Integer,Description=\"Median depth of coverage in the left cluster region of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRC");
+    const char* mdrc_tag = "##FORMAT=<ID=MDRC,Number=1,Type=Integer,Description=\"Median depth of coverage in the right cluster region of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrc_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
     const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
             "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
@@ -192,6 +200,10 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSF", &sv->median_indel_right_cov, 1);
     }
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRF", &sv->median_right_flanking_cov, 1);
+    if (sv->svtype() == "DEL") {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDLC", &sv->median_left_cluster_cov, 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRC", &sv->median_right_cluster_cov, 1);
+    }
 
     if (sv->svtype() == "DEL") {
         deletion_t* del = (deletion_t*) sv;
@@ -349,7 +361,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_del(contig_name, dels, bam_file, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
-    // calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
+    calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
     bam_pool->release_bam_reader(bam_file);
 }
 
