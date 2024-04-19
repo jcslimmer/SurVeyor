@@ -220,6 +220,10 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, median_depths_tag, &len));
 
+	const char* median_depths_highmq_tag = "##INFO=<ID=MEDIAN_DEPTHS_HIGHMQ,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
+			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, median_depths_highmq_tag, &len));
+
 	const char* cluster_depths_tag = "##INFO=<ID=CLUSTER_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the left and right cluster regions.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cluster_depths_tag, &len));
 
@@ -400,30 +404,31 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
 	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
 
-	base_frequencies_t left_anchor_base_freqs = get_base_frequencies(chr_seq+sv->left_anchor_aln->start, sv->left_anchor_aln->end-sv->left_anchor_aln->start);
+	int median_depths_highmq[] = {sv->median_left_flanking_cov_highmq, sv->median_indel_left_cov_highmq, sv->median_indel_right_cov_highmq, sv->median_right_flanking_cov_highmq};
+	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS_HIGHMQ", median_depths_highmq, 4);
+
+	base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 	int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
 
-	base_frequencies_t right_anchor_base_freqs = get_base_frequencies(chr_seq+sv->right_anchor_aln->start, sv->right_anchor_aln->end-sv->right_anchor_aln->start);
+	base_frequencies_t right_anchor_base_freqs = sv->get_right_anchor_base_freqs(chr_seq);
 	int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
 
-	base_frequencies_t prefix_ref_base_freqs = get_base_frequencies(chr_seq+sv->start, std::min(sv->end-sv->start, hts_pos_t(5000)));
+	base_frequencies_t prefix_ref_base_freqs = sv->get_prefix_ref_base_freqs(chr_seq);
 	int svrefpbc[] = {prefix_ref_base_freqs.a, prefix_ref_base_freqs.c, prefix_ref_base_freqs.g, prefix_ref_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_PREFIX_BASE_COUNT", svrefpbc, 4);
-
-	base_frequencies_t suffix_ref_base_freqs = get_base_frequencies(chr_seq+sv->end-std::min(sv->end-sv->start, hts_pos_t(5000)), std::min(sv->end-sv->start, hts_pos_t(5000)));
+	
+	base_frequencies_t suffix_ref_base_freqs = sv->get_suffix_ref_base_freqs(chr_seq);
 	int svrefsbc[] = {suffix_ref_base_freqs.a, suffix_ref_base_freqs.c, suffix_ref_base_freqs.g, suffix_ref_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_SUFFIX_BASE_COUNT", svrefsbc, 4);
 
-	int d = sv->ins_seq.find("-");
-	std::string ins_seq_fh = sv->ins_seq.substr(0, d);
-	std::string ins_seq_sh = sv->ins_seq.substr(d+1);
-	base_frequencies_t prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
-	base_frequencies_t suffix_base_freqs = ins_seq_sh.empty() ? prefix_base_freqs : get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
-	int pbc[] = {prefix_base_freqs.a, prefix_base_freqs.c, prefix_base_freqs.g, prefix_base_freqs.t};
+	base_frequencies_t ins_prefix_base_freqs = sv->get_ins_prefix_base_freqs();
+	int pbc[] = {sv->ins_prefix_base_freqs.a, sv->ins_prefix_base_freqs.c, sv->ins_prefix_base_freqs.g, sv->ins_prefix_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
-	int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
+	
+	base_frequencies_t ins_suffix_base_freqs = sv->get_ins_suffix_base_freqs();
+	int sbc[] = {sv->ins_suffix_base_freqs.a, sv->ins_suffix_base_freqs.c, sv->ins_suffix_base_freqs.g, sv->ins_suffix_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
@@ -645,8 +650,8 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (len > 0) lc_consensus->remap_boundary = data[0];
 	}
 
-	int left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
-	int right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
+	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
+	hts_pos_t right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
 
 	char* s_data = NULL;
 	len = 0;
@@ -658,10 +663,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		left_split_mapping_range = mapping_range.substr(0, comma_pos);
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
 	
-		left_split_mapping_start = std::min(left_split_mapping_start, std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1);
+		left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
 		left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
 		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
-		right_split_mapping_end = std::max(std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1, left_split_mapping_end);
+		right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
 	}
 
 	data = NULL;
@@ -797,6 +802,66 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->l_cluster_region_disc_pairs = data[0];
 		sv->r_cluster_region_disc_pairs = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "LEFT_ANCHOR_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->left_anchor_base_freqs.a = data[0];
+		sv->left_anchor_base_freqs.c = data[1];
+		sv->left_anchor_base_freqs.g = data[2];
+		sv->left_anchor_base_freqs.t = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "RIGHT_ANCHOR_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->right_anchor_base_freqs.a = data[0];
+		sv->right_anchor_base_freqs.c = data[1];
+		sv->right_anchor_base_freqs.g = data[2];
+		sv->right_anchor_base_freqs.t = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SV_REF_PREFIX_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->prefix_ref_base_freqs.a = data[0];
+		sv->prefix_ref_base_freqs.c = data[1];
+		sv->prefix_ref_base_freqs.g = data[2];
+		sv->prefix_ref_base_freqs.t = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SV_REF_SUFFIX_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->suffix_ref_base_freqs.a = data[0];
+		sv->suffix_ref_base_freqs.c = data[1];
+		sv->suffix_ref_base_freqs.g = data[2];
+		sv->suffix_ref_base_freqs.t = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_PREFIX_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->ins_prefix_base_freqs.a = data[0];
+		sv->ins_prefix_base_freqs.c = data[1];
+		sv->ins_prefix_base_freqs.g = data[2];
+		sv->ins_prefix_base_freqs.t = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_SUFFIX_BASE_COUNT", &data, &len);
+	if (len > 0) {
+		sv->ins_suffix_base_freqs.a = data[0];
+		sv->ins_suffix_base_freqs.c = data[1];
+		sv->ins_suffix_base_freqs.g = data[2];
+		sv->ins_suffix_base_freqs.t = data[3];
 	}
 
 	data = NULL;

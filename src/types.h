@@ -1,6 +1,7 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include "htslib/hts.h"
 #include "utils.h"
 #include <vector>
 #include <string>
@@ -154,12 +155,19 @@ struct sv_t {
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
     int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
+    int median_left_flanking_cov_highmq = 0, median_indel_left_cov_highmq = 0;
+    int median_indel_right_cov_highmq = 0, median_right_flanking_cov_highmq = 0;
+    int median_left_cluster_cov_highmq = 0, median_right_cluster_cov_highmq = 0;
     int l_cluster_region_disc_pairs = 0, r_cluster_region_disc_pairs = 0;
 
     int overlap = 0;
     double mismatch_rate = 0.0;
     std::string source;
     bool imprecise = false;
+
+    base_frequencies_t left_anchor_base_freqs, right_anchor_base_freqs;
+    base_frequencies_t prefix_ref_base_freqs, suffix_ref_base_freqs;
+    base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
 
     struct regenotyping_info_t {
         int alt_bp1_better_reads = 0, alt_bp2_better_reads = 0;
@@ -244,6 +252,63 @@ struct sv_t {
             ac += bcf_gt_is_missing(gt[i]);
         }
         return ac;
+    }
+
+    base_frequencies_t get_left_anchor_base_freqs(char* chr_seq) {
+        if (left_anchor_base_freqs.empty()) {
+            left_anchor_base_freqs = get_base_frequencies(chr_seq+left_anchor_aln->start, left_anchor_aln->end-left_anchor_aln->start);
+        }
+        return left_anchor_base_freqs;
+    }
+    base_frequencies_t get_right_anchor_base_freqs(char* chr_seq) {
+        if (right_anchor_base_freqs.empty()) {
+            right_anchor_base_freqs = get_base_frequencies(chr_seq+right_anchor_aln->start, right_anchor_aln->end-right_anchor_aln->start);
+        }
+        return right_anchor_base_freqs;
+    }
+
+    base_frequencies_t get_prefix_ref_base_freqs(char* chr_seq) {
+        if (prefix_ref_base_freqs.empty()) {
+            prefix_ref_base_freqs = get_base_frequencies(chr_seq+start, std::min(end-start, hts_pos_t(5000)));
+        }
+        return prefix_ref_base_freqs;
+    }
+    base_frequencies_t get_suffix_ref_base_freqs(char* chr_seq) {
+        if (suffix_ref_base_freqs.empty()) {
+            suffix_ref_base_freqs = get_base_frequencies(chr_seq+std::max(start, end-5000), std::min(end-start, hts_pos_t(5000)));
+        }
+        return suffix_ref_base_freqs;
+    }
+
+    base_frequencies_t get_ins_prefix_base_freqs() {
+        if (ins_prefix_base_freqs.empty()) {
+            int d = ins_seq.find("-");
+            std::string ins_seq_fh = ins_seq.substr(0, d);
+            ins_prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
+        }
+        return ins_prefix_base_freqs;
+    }
+
+    base_frequencies_t get_ins_suffix_base_freqs() {
+        if (ins_suffix_base_freqs.empty()) {
+            int d = ins_seq.find("-");
+            if (d == std::string::npos) {
+                ins_suffix_base_freqs = get_ins_prefix_base_freqs();
+            } else {
+                std::string ins_seq_sh = ins_seq.substr(d+1);
+                ins_suffix_base_freqs = get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
+            }
+        }
+        return ins_suffix_base_freqs;
+    }
+
+    void precompute_base_frequencies(char* chr_seq) {
+        get_left_anchor_base_freqs(chr_seq);
+        get_right_anchor_base_freqs(chr_seq);
+        get_prefix_ref_base_freqs(chr_seq);
+        get_suffix_ref_base_freqs(chr_seq);
+        get_ins_prefix_base_freqs();
+        get_ins_suffix_base_freqs();
     }
 
     virtual ~sv_t() {}

@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <queue>
 #include <numeric>
 #include <unistd.h>
 
@@ -236,16 +237,20 @@ struct base_frequencies_t {
     double max_freq() {
         return max()/double(std::max(1, tot()));
     }
+
+    bool empty() {
+        return a + c + g + t == 0;
+    }
 };
 
 base_frequencies_t get_base_frequencies(const char* seq, int len) {
     int a = 0, c = 0, g = 0, t = 0;
     for (int i = 0; i < len; i++) {
-        char b = std::toupper(seq[i]);
-        if (b == 'A') a++;
-        else if (b == 'C') c++;
-        else if (b == 'G') g++;
-        else if (b == 'T') t++;
+        char b = seq[i];
+        if (b == 'A' || b == 'a') a++;
+        else if (b == 'C' || b == 'c') c++;
+        else if (b == 'G' || b == 'g') g++;
+        else if (b == 'T' || b == 't') t++;
     }
     return base_frequencies_t(a, c, g, t);
 }

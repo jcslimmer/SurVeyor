@@ -154,6 +154,29 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(in_vcf_file, hdr, vcf_record) == 0) {
 		bcf1_t* vcf_record_norm = bcf_dup(vcf_record);
 		normalise(vcf_record_norm);
+
+		char* s_data = NULL;
+		int len = 0;
+		bcf_get_info_string(hdr, vcf_record_norm, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
+		if (s_data != NULL) {
+			std::string mapping_range = s_data;
+			size_t comma_pos = mapping_range.find(",");
+			std::string left_split_mapping_range = mapping_range.substr(0, comma_pos);
+			std::string right_split_mapping_range = mapping_range.substr(comma_pos+1);
+		
+			hts_pos_t left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
+			hts_pos_t left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
+
+			if (left_split_mapping_start > vcf_record_norm->pos) {
+				left_split_mapping_start = vcf_record_norm->pos;
+				if (left_split_mapping_start > left_split_mapping_end) {
+					left_split_mapping_end = left_split_mapping_start;
+				}
+				std::string new_split_mapping_range = std::to_string(left_split_mapping_start+1) + "-" + std::to_string(left_split_mapping_end+1) + "," + right_split_mapping_range;
+				bcf_update_info_string(hdr, vcf_record_norm, "SPLIT_JUNCTION_MAPPING_RANGE", new_split_mapping_range.c_str());
+			}
+		}
+
 		normalised_vcf_records.push_back(vcf_record_norm);
 	}
 

@@ -360,7 +360,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     
     open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_del(contig_name, dels, bam_file, stats);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, stats, config.min_sv_size, true);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
     bam_pool->release_bam_reader(bam_file);
 }

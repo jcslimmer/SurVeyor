@@ -42,10 +42,10 @@ struct region_depth_t {
 struct region_w_median_t {
 	hts_pos_t start, end;
 	int* median_target;
-	bool highmq_reads_only;
+	int* median_target_highmq_only;
 
-	region_w_median_t(hts_pos_t start, hts_pos_t end, int* median_target, bool highmq_reads_only) :
-		start(start), end(end), median_target(median_target), highmq_reads_only(highmq_reads_only) {}
+	region_w_median_t(hts_pos_t start, hts_pos_t end, int* median_target, int* median_target_highmq_only) :
+		start(start), end(end), median_target(median_target), median_target_highmq_only(median_target_highmq_only) {}
 };
 void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, stats_t& stats) {
 
@@ -71,16 +71,16 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 
     std::vector<region_w_median_t> regions_of_interest;
     for (sv_t* sv : svs) {
-    	regions_of_interest.emplace_back(std::max(hts_pos_t(0), sv->start - FLANKING_SIZE), sv->start, &(sv->median_left_flanking_cov), true);
-    	regions_of_interest.emplace_back(sv->start, std::min(sv->start + INDEL_TESTED_REGION_SIZE, sv->end), &(sv->median_indel_left_cov), true);
-    	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->median_indel_right_cov), true);
-    	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->median_right_flanking_cov), true);
+    	regions_of_interest.emplace_back(std::max(hts_pos_t(0), sv->start - FLANKING_SIZE), sv->start, &(sv->median_left_flanking_cov), &(sv->median_left_flanking_cov_highmq));
+    	regions_of_interest.emplace_back(sv->start, std::min(sv->start + INDEL_TESTED_REGION_SIZE, sv->end), &(sv->median_indel_left_cov), &(sv->median_indel_left_cov_highmq));
+    	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->median_indel_right_cov), &(sv->median_indel_right_cov_highmq));
+    	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->median_right_flanking_cov), &(sv->median_right_flanking_cov_highmq));
     	if (sv->svtype() == "DEL") {
 			hts_pos_t l_cluster_start = std::min(sv->left_anchor_aln->start, sv->start-stats.read_len);
 			l_cluster_start = std::max(hts_pos_t(0), l_cluster_start);
-			regions_of_interest.emplace_back(l_cluster_start, sv->start, &(sv->median_left_cluster_cov), false);
+			regions_of_interest.emplace_back(l_cluster_start, sv->start, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
 			hts_pos_t r_cluster_end = std::max(sv->right_anchor_aln->end, sv->end+stats.read_len);
-	    	regions_of_interest.emplace_back(sv->end, r_cluster_end, &(sv->median_right_cluster_cov), false);
+	    	regions_of_interest.emplace_back(sv->end, r_cluster_end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
     	}
     }
     std::sort(regions_of_interest.begin(), regions_of_interest.end(), [](region_w_median_t& r1, region_w_median_t& r2) {return r1.start < r2.start;});
@@ -133,12 +133,16 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 		while (curr_pos < merged_regions_of_interest.size() && region.start > merged_regions_of_interest[curr_pos].end) curr_pos++;
 
 		auto& merged_region = merged_regions_of_interest[curr_pos];
-		auto& merged_region_depths = region.highmq_reads_only ? merged_region.highmq_depths : merged_region.depths;
-		std::vector<uint32_t> depths(merged_region_depths.begin() + (region.start - merged_region.start),
-		                             merged_region_depths.begin() + (region.end - merged_region.start));
+		std::vector<uint32_t> depths(merged_region.depths.begin() + (region.start - merged_region.start),
+		                             merged_region.depths.begin() + (region.end - merged_region.start));
 		if (depths.empty()) continue;
 		std::sort(depths.begin(), depths.end());
 		*region.median_target = depths[depths.size()/2];
+
+		std::vector<uint32_t> highmq_depths(merged_region.highmq_depths.begin() + (region.start - merged_region.start),
+		                                    merged_region.highmq_depths.begin() + (region.end - merged_region.start));
+		std::sort(highmq_depths.begin(), highmq_depths.end());
+		*region.median_target_highmq_only = highmq_depths[highmq_depths.size()/2];
 	}
 
     for (char* region : regions) {
@@ -311,7 +315,8 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 }
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
-										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats, int min_sv_size) {
+										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats, int min_sv_size,
+										bool disallow_changes = false) {
 
 	if (deletions.empty()) return;
 
@@ -377,7 +382,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
             if (!global_crossing_isize_dist.empty()) {
 				double p_val = ks_test(global_crossing_isize_dist, local_dists[i]);
 				del->ks_pval = p_val;
-				if (!del->imprecise) continue;
+				if (!del->imprecise || disallow_changes) continue;
 
 				int est_size = avg_is - stats.pop_avg_crossing_is;
 
