@@ -47,7 +47,7 @@ struct region_w_median_t {
 	region_w_median_t(hts_pos_t start, hts_pos_t end, int* median_target, int* median_target_highmq_only) :
 		start(start), end(end), median_target(median_target), median_target_highmq_only(median_target_highmq_only) {}
 };
-void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, stats_t& stats) {
+void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 
 	if (svs.empty()) return;
 	std::sort(svs.begin(), svs.end(), [](const sv_t* s1, const sv_t* s2) {
@@ -117,7 +117,7 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 			}
 		}
 
-        if (read->core.qual < 20) continue;
+        if (read->core.qual < config.high_confidence_mapq) continue;
 
         if (overlap(curr_region.start, curr_region.end, rs, re)) {
         	int ov_start = std::max(0, int(rs-curr_region.start));
@@ -152,20 +152,20 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
     bam_destroy1(read);
 }
 
-void depth_filter_del(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats) {
+void depth_filter_del(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 	if (deletions.empty()) return;
 	std::vector<sv_t*> testable_dels(deletions.begin(), deletions.end());
-    depth_filter_indel(contig_name, testable_dels, bam_file, stats);
+    depth_filter_indel(contig_name, testable_dels, bam_file, config, stats);
 }
-void depth_filter_dup(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, stats_t& stats) {
+void depth_filter_dup(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 	if (duplications.empty()) return;
 	std::vector<sv_t*> testable_dups(duplications.begin(), duplications.end());
-    depth_filter_indel(contig_name, testable_dups, bam_file, stats);
+    depth_filter_indel(contig_name, testable_dups, bam_file, config, stats);
 }
-void depth_filter_ins(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats) {
+void depth_filter_ins(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 	if (insertions.empty()) return;
 	std::vector<sv_t*> testable_ins(insertions.begin(), insertions.end());
-	depth_filter_indel(contig_name, testable_ins, bam_file, stats);
+	depth_filter_indel(contig_name, testable_ins, bam_file, config, stats);
 }
 
 int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum) {
@@ -315,7 +315,8 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 }
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
-										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats, int min_sv_size,
+										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, 
+										config_t& config, stats_t& stats, int min_sv_size,
 										bool disallow_changes = false) {
 
 	if (deletions.empty()) return;
@@ -325,8 +326,9 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	});
 
     std::vector<hts_pos_t> midpoints, sizes;
-    std::vector<uint64_t> sums(deletions.size()), sq_sums(deletions.size());
-    std::vector<uint32_t> ns(deletions.size());
+    std::vector<uint64_t> sums(deletions.size()), sums_highmq(deletions.size());
+	std::vector<uint64_t> sq_sums(deletions.size()), sq_sums_highmq(deletions.size());
+    std::vector<uint32_t> ns(deletions.size()), ns_highmq(deletions.size());
     std::vector<char*> regions;
     std::vector<std::pair<hts_pos_t, hts_pos_t> > regions_coos;
     for (deletion_t* deletion : deletions) {
@@ -349,10 +351,10 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	int curr_pos = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
     bam1_t* read = bam_init1();
-    std::vector<std::vector<double> > local_dists(deletions.size());
+    std::vector<std::vector<double> > local_dists(deletions.size()), local_dists_highmq(deletions.size());
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 
-    	if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read) || read->core.qual < 20) continue;
+    	if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
         if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0) continue;
 
         while (curr_pos < deletions.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
@@ -365,23 +367,42 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
                 sq_sums[i] += read->core.isize*read->core.isize;
                 ns[i]++;
                 local_dists[i].push_back(read->core.isize);
+				if (read->core.qual >= config.high_confidence_mapq) {
+					sums_highmq[i] += read->core.isize;
+                	sq_sums_highmq[i] += read->core.isize*read->core.isize;
+					ns_highmq[i]++;
+					local_dists_highmq[i].push_back(read->core.isize);
+				}
             }
         }
     }
 
     for (int i = 0; i < deletions.size(); i++) {
 		deletion_t* del = deletions[i];
-        uint32_t n = ns[i];
-        uint64_t sum = sums[i], sq_sum = sq_sums[i];
+        uint32_t n = ns[i], n_highmq = ns_highmq[i];
+        uint64_t sum = sums[i], sum_highmq = sums_highmq[i];
+		uint64_t sq_sum = sq_sums[i], sq_sum_highmq = sq_sums_highmq[i];
         if (n >= 4) {
             int avg_is = sum/n;
             int var_is = (sq_sum - sum*sum/n)/(n-1);
             int confidence_ival = 2.576 * sqrt(var_is/n);
 			del->min_conf_size = avg_is - stats.pop_avg_crossing_is - confidence_ival;
             del->max_conf_size = avg_is - stats.pop_avg_crossing_is + confidence_ival;
+
+			if (n_highmq >= 4) {
+				int avg_is_highmq = sum_highmq/n_highmq;
+				int var_is_highmq = (sq_sum_highmq - sum_highmq*sum_highmq/n_highmq)/(n_highmq-1);
+				int confidence_ival_highmq = 2.576 * sqrt(var_is_highmq/n_highmq);
+				del->min_conf_size_highmq = avg_is_highmq - stats.pop_avg_crossing_is - confidence_ival_highmq;
+				del->max_conf_size_highmq = avg_is_highmq - stats.pop_avg_crossing_is + confidence_ival_highmq;
+			}
+
             if (!global_crossing_isize_dist.empty()) {
-				double p_val = ks_test(global_crossing_isize_dist, local_dists[i]);
-				del->ks_pval = p_val;
+				del->ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
+				if (n_highmq >= 4) {
+					del->ks_pval_highmq = ks_test(global_crossing_isize_dist, local_dists_highmq[i]);
+				}
+            
 				if (!del->imprecise || disallow_changes) continue;
 
 				int est_size = avg_is - stats.pop_avg_crossing_is;

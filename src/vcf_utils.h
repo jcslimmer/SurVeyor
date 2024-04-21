@@ -200,12 +200,22 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_tag, &len));
 
+	const char* ks_pval_highmq_tag = "##INFO=<ID=KS_PVAL_HIGHMQ,Number=1,Type=Float,Description=\"p-value of the KS test, considering only high MAPQ reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_highmq_tag, &len));
+
 	const char* min_size_tag = "##INFO=<ID=MIN_SIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, min_size_tag, &len));
+
+	const char* min_size_highmq_tag = "##INFO=<ID=MIN_SIZE_HIGHMQ,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, min_size_highmq_tag, &len));
 
 	const char* max_size_tag = "##INFO=<ID=MAX_SIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
 			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_tag, &len));
+
+	const char* max_size_highmq_tag = "##INFO=<ID=MAX_SIZE_HIGHMQ,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
+			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_highmq_tag, &len));
 
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
@@ -424,11 +434,11 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_SUFFIX_BASE_COUNT", svrefsbc, 4);
 
 	base_frequencies_t ins_prefix_base_freqs = sv->get_ins_prefix_base_freqs();
-	int pbc[] = {sv->ins_prefix_base_freqs.a, sv->ins_prefix_base_freqs.c, sv->ins_prefix_base_freqs.g, sv->ins_prefix_base_freqs.t};
+	int pbc[] = {ins_prefix_base_freqs.a, ins_prefix_base_freqs.c, ins_prefix_base_freqs.g, ins_prefix_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
 	
 	base_frequencies_t ins_suffix_base_freqs = sv->get_ins_suffix_base_freqs();
-	int sbc[] = {sv->ins_suffix_base_freqs.a, sv->ins_suffix_base_freqs.c, sv->ins_suffix_base_freqs.g, sv->ins_suffix_base_freqs.t};
+	int sbc[] = {ins_suffix_base_freqs.a, ins_suffix_base_freqs.c, ins_suffix_base_freqs.g, ins_suffix_base_freqs.t};
 	bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
@@ -448,9 +458,15 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		}
 		if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE", &(del->min_conf_size), 1);
+			if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+				bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE_HIGHMQ", &(del->min_conf_size_highmq), 1);
+			}
 		}
 		if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
+			if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+				bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE_HIGHMQ", &(del->max_conf_size_highmq), 1);
+			}
 		}
 		if (del->imprecise && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
 			bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
@@ -458,6 +474,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
 			float ks_pval = del->ks_pval;
 			bcf_update_info_float(hdr, bcf_entry, "KS_PVAL", &ks_pval, 1);
+			if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
+				float ks_pval_highmq = del->ks_pval_highmq;
+				bcf_update_info_float(hdr, bcf_entry, "KS_PVAL_HIGHMQ", &ks_pval_highmq, 1);
+			}
 		}
 		int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);

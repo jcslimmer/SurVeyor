@@ -320,8 +320,9 @@ struct deletion_t : sv_t {
 
     bool remapped = false;
     std::string original_range;
-    int min_conf_size = SIZE_NOT_COMPUTED, max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;;
-    double ks_pval = KS_PVAL_NOT_COMPUTED;
+    int min_conf_size = SIZE_NOT_COMPUTED, max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;
+    int min_conf_size_highmq = SIZE_NOT_COMPUTED, max_conf_size_highmq = SIZE_NOT_COMPUTED;
+    double ks_pval = KS_PVAL_NOT_COMPUTED, ks_pval_highmq = KS_PVAL_NOT_COMPUTED;
 
     using sv_t::sv_t;
 
