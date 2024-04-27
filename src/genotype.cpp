@@ -124,15 +124,29 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
             "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsize_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZEHQ");
+    const char* minsizehq_tag = "##FORMAT=<ID=MINSIZEHQ,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution for high-quality reads."
+            "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsizehq_tag, &len));
     
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZE");
     const char* maxsize_tag = "##FORMAT=<ID=MAXSIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
 			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsize_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZEHQ");
+    const char* maxsizehq_tag = "##FORMAT=<ID=MAXSIZEHQ,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution for high-quality reads."
+        	"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsizehq_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVALHQ");
+    const char* kspvalhq_tag = "##FORMAT=<ID=KSPVALHQ,Number=1,Type=Float,Description=\"p-value of the KS test for high-quality reads.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspvalhq_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -210,12 +224,22 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(del->min_conf_size), 1);
         }
+        if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZEHQ", &(del->min_conf_size_highmq), 1);
+        }
         if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(del->max_conf_size), 1);
+        }
+        if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZEHQ", &(del->max_conf_size_highmq), 1);
         }
         if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
             float ks_pvalue = del->ks_pval;
             bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pvalue, 1);
+        }
+        if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
+            float ks_pvalue_highmq = del->ks_pval_highmq;
+            bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVALHQ", &ks_pvalue_highmq, 1);
         }
     }
 }
@@ -357,7 +381,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
             small_deletions.push_back(del);
         }
     }
-    
+
     open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size, true);
