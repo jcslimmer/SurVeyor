@@ -49,7 +49,7 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     }
     depth_filter_del(contig_name, deletions, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size);
-    calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
+    calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats);
 }
 
 void size_and_depth_filtering_dup(int id, std::string contig_name) {

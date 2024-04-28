@@ -165,6 +165,38 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVALHQ");
     const char* kspvalhq_tag = "##FORMAT=<ID=KSPVALHQ,Number=1,Type=Float,Description=\"p-value of the KS test for high-quality reads.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspvalhq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1");
+    const char* dp1_tag = "##FORMAT=<ID=DP1,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2");
+    const char* dp2_tag = "##FORMAT=<ID=DP2,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1HQ");
+    const char* dp1hq_tag = "##FORMAT=<ID=DP1HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2HQ");
+    const char* dp2hq_tag = "##FORMAT=<ID=DP2HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2hq_tag, &len));
+    
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1MQ");
+    const char* dp1mq_tag = "##FORMAT=<ID=DP1MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2MQ");
+    const char* dp2mq_tag = "##FORMAT=<ID=DP2MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPLANM");
+    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Integer,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dplanm_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
+    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Integer,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -267,6 +299,18 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
             float ks_pvalue_highmq = del->ks_pval_highmq;
             bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVALHQ", &ks_pvalue_highmq, 1);
         }
+    }
+
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1HQ", &(sv->disc_pairs_lf_high_mapq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1MQ", &(sv->disc_pairs_lf_maxmapq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPLANM", &(sv->disc_pairs_lf_avg_nm), 1);
+
+    if (sv->svtype() == "INS") {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPRANM", &(sv->disc_pairs_rf_avg_nm), 1);
     }
 }
 
@@ -409,7 +453,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size, true);
-    calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
+    calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats, true);
 }
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {

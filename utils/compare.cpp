@@ -465,5 +465,7 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		}
+		bcf_close(fps_fout);
+		bcf_hdr_destroy(fps_hdr);
 	}
 }

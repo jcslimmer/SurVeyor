@@ -538,11 +538,57 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 	}
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (deletions.empty()) return;
 	std::vector<sv_t*> svs(deletions.begin(), deletions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
 	calculate_cluster_region_disc(contig_name, deletions, bam_file);
+
+	if (find_disc_pairs) {
+		std::vector<char*> regions;
+		for (deletion_t* del : deletions) {
+			std::stringstream ss;
+			ss << contig_name << ":" << std::max(hts_pos_t(1), del->start-stats.max_is) << "-" << del->start;
+			char* region = new char[ss.str().length()+1];
+			strcpy(region, ss.str().c_str());
+			regions.push_back(region);
+		}
+
+		std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+			return d1->start < d2->start;
+		});
+
+		int curr_pos = 0;
+		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+		bam1_t* read = bam_init1();
+		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+			while (curr_pos < deletions.size() && deletions[curr_pos]->start < read->core.pos) curr_pos++;
+
+			if (read->core.isize > stats.max_is) {
+				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.pos + read->core.isize - read->core.l_qseq/2;
+				for (int i = curr_pos; i < deletions.size() && deletions[i]->start <= pair_end; i++) {
+					if (pair_start <= deletions[i]->start && deletions[i]->end <= pair_end) {
+						deletions[i]->disc_pairs_lf++;
+						deletions[i]->disc_pairs_rf++;
+						if (read->core.qual >= config.high_confidence_mapq) {
+							deletions[i]->disc_pairs_lf_high_mapq++;
+							deletions[i]->disc_pairs_rf_high_mapq++;
+						}
+						if (read->core.qual > deletions[i]->disc_pairs_lf_maxmapq) {
+							deletions[i]->disc_pairs_lf_maxmapq = read->core.qual;
+							deletions[i]->disc_pairs_rf_maxmapq = read->core.qual;
+						}
+						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
+						// TODO: is it worth it to spend the extra time to calculate the rf avg NM?
+					}
+				}
+			}
+
+			for (deletion_t* del : deletions) {
+				del->disc_pairs_lf_avg_nm /= del->disc_pairs_lf;
+			}
+		}
+	}
 }
 void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats) {
 	if (insertions.empty()) return;

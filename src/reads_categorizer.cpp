@@ -338,8 +338,6 @@ int main(int argc, char* argv[]) {
         n_is += p.second;
     }
 
-    std::sort(depths.begin(), depths.end());
-
     std::ofstream stats_out(workdir + "/stats.txt", std::ios_base::app);
 	std::sort(depths.begin(), depths.end());
 	stats_out << "min_depth . " << depths[depths.size()/100] << std::endl;
