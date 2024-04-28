@@ -27,7 +27,9 @@ stats_t stats;
 std::mutex mtx;
 
 std::string bam_fname, reference_fname;
-bam_pool_t* bam_pool;
+bam_pool_t* del_bam_pool, *dup_bam_pool, *ins_bam_pool;
+
+std::vector<hts_pos_t> global_isize_dist;
 
 std::vector<double> global_crossing_isize_dist;
 
@@ -111,6 +113,22 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRF");
     const char* mdrf_tag = "##FORMAT=<ID=MDRF,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLFHQ");
+    const char* mdlfhq_tag = "##FORMAT=<ID=MDLFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the left flanking region of the SV for high-quality reads.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlfhq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSPHQ");
+    const char* mdsp_hq_tag = "##FORMAT=<ID=MDSPHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV prefix region of the SV for high-quality reads.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsp_hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSFHQ");
+    const char* mdsf_hq_tag = "##FORMAT=<ID=MDSFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV suffix region of the SV for high-quality reads (for short SVs, it will be the same as MDSPHQ).\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsf_hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRFHQ");
+    const char* mdrf_hq_tag = "##FORMAT=<ID=MDRFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV for high-quality reads.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_hq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLC");
     const char* mdlc_tag = "##FORMAT=<ID=MDLC,Number=1,Type=Integer,Description=\"Median depth of coverage in the left cluster region of the SV.\">";
@@ -214,6 +232,14 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSF", &sv->median_indel_right_cov, 1);
     }
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRF", &sv->median_right_flanking_cov, 1);
+    
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDLFHQ", &sv->median_left_flanking_cov_highmq, 1);
+    if (sv->start != sv->end) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSPHQ", &sv->median_indel_left_cov_highmq, 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDSFHQ", &sv->median_indel_right_cov_highmq, 1);
+    }
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRFHQ", &sv->median_right_flanking_cov_highmq, 1);
+    
     if (sv->svtype() == "DEL") {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDLC", &sv->median_left_cluster_cov, 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRC", &sv->median_right_cluster_cov, 1);
@@ -244,7 +270,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     }
 }
 
-void genotype_del(deletion_t* del) {
+void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
     int del_start = del->start, del_end = del->end;
 
     hts_pos_t extend = stats.read_len + 20;
@@ -293,7 +319,6 @@ void genotype_del(deletion_t* del) {
     regions[0] = strdup(l_region.str().c_str());
     regions[1] = strdup(r_region.str().c_str());
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
 
     bam1_t* read = bam_init1();
@@ -357,7 +382,6 @@ void genotype_del(deletion_t* del) {
     del->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
     del->regenotyping_info.alt_ref_equal_reads = same;
 
-    bam_pool->release_bam_reader(bam_file);
     delete[] alt_seq;
     delete[] ref_bp1_seq;
     delete[] ref_bp2_seq;
@@ -371,10 +395,11 @@ void genotype_del(deletion_t* del) {
 
 void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<deletion_t*> dels,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
+    open_samFile_t* bam_file = del_bam_pool->get_bam_reader(id);
 
     std::vector<deletion_t*> small_deletions, large_deletions;                
     for (deletion_t* del : dels) {
-        genotype_del(del);
+        genotype_del(del, bam_file);
         if (-del->svlen() >= stats.max_is) {
             large_deletions.push_back(del);
         } else {
@@ -382,14 +407,12 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
         }
     }
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size, true);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
-    bam_pool->release_bam_reader(bam_file);
 }
 
-void genotype_small_dup(duplication_t* dup) {
+void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
     std::stringstream log_ss;
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
@@ -430,7 +453,6 @@ void genotype_small_dup(duplication_t* dup) {
     std::stringstream region;
     region << dup->chr << ":" << ref_start << "-" << ref_end;
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
 	hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, region.str().c_str());
 	
     bam1_t* read = bam_init1();
@@ -469,7 +491,6 @@ void genotype_small_dup(duplication_t* dup) {
     dup->regenotyping_info.ref_bp2_better_reads = ref_better;
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
-    bam_pool->release_bam_reader(bam_file);
     delete[] ref_seq;
     for (char* alt_seq : alt_seqs) {
         delete[] alt_seq;
@@ -479,7 +500,7 @@ void genotype_small_dup(duplication_t* dup) {
     hts_itr_destroy(iter);
 }
 
-void genotype_large_dup(duplication_t* dup) {
+void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file) {
     
     hts_pos_t dup_start = dup->start, dup_end = dup->end;
 
@@ -516,7 +537,6 @@ void genotype_large_dup(duplication_t* dup) {
     regions[0] = strdup(l_region.str().c_str());
     regions[1] = strdup(r_region.str().c_str());
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
 
     bam1_t* read = bam_init1();
@@ -577,7 +597,6 @@ void genotype_large_dup(duplication_t* dup) {
     dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
     dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
 
-    bam_pool->release_bam_reader(bam_file);
     delete[] alt_seq;
 
     free(regions[0]);
@@ -590,20 +609,19 @@ void genotype_large_dup(duplication_t* dup) {
 void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<duplication_t*> dups,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
                     
+    open_samFile_t* bam_file = dup_bam_pool->get_bam_reader(id);
     for (duplication_t* dup : dups) {
         if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
-			genotype_small_dup(dup);
+			genotype_small_dup(dup, bam_file);
 		} else {
-			genotype_large_dup(dup);
+			genotype_large_dup(dup, bam_file);
 		}
     }
     
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
-    bam_pool->release_bam_reader(bam_file);
 }
 
-void genotype_ins(insertion_t* ins) {
+void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {
     hts_pos_t ins_start = ins->start, ins_end = ins->end;
 
 	hts_pos_t extend = stats.read_len + 20;
@@ -651,7 +669,6 @@ void genotype_ins(insertion_t* ins) {
     regions[0] = strdup(l_region.str().c_str());
     regions[1] = strdup(r_region.str().c_str());
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
 
     bam1_t* read = bam_init1();
@@ -708,7 +725,6 @@ void genotype_ins(insertion_t* ins) {
     ins->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
     ins->regenotyping_info.alt_ref_equal_reads = same;
 
-    bam_pool->release_bam_reader(bam_file);
     delete[] alt_bp1_seq;
     delete[] alt_bp2_seq;
 
@@ -722,13 +738,12 @@ void genotype_ins(insertion_t* ins) {
 void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<insertion_t*> inss,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
                     
+    open_samFile_t* bam_file = ins_bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
-        genotype_ins(ins);
+        genotype_ins(ins, bam_file);
     }
 
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
-    bam_pool->release_bam_reader(bam_file);
 }
 
 int main(int argc, char* argv[]) {
@@ -749,7 +764,9 @@ int main(int argc, char* argv[]) {
 	}
 
     chr_seqs.read_fasta_into_map(reference_fname);
-    bam_pool = new bam_pool_t(bam_fname, reference_fname);
+    del_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
+    dup_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
+    ins_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
 
     // read crossing isize distribution
     std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");

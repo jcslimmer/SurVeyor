@@ -26,14 +26,14 @@ contig_map_t contig_map;
 
 std::vector<double> global_crossing_isize_dist;
 
-bam_pool_t* bam_pool;
+bam_pool_t* del_bam_pool, *dup_bam_pool, *ins_bam_pool;
 
 std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
 std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
 std::unordered_map<std::string, std::vector<insertion_t*> > insertions_by_chr;
 
 void size_and_depth_filtering_del(int id, std::string contig_name) {
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    open_samFile_t* bam_file = del_bam_pool->get_bam_reader(id);
 
     mtx.lock();
     std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
@@ -50,11 +50,10 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     depth_filter_del(contig_name, deletions, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, stats);
-    bam_pool->release_bam_reader(bam_file);
 }
 
 void size_and_depth_filtering_dup(int id, std::string contig_name) {
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    open_samFile_t* bam_file = dup_bam_pool->get_bam_reader(id);
 
     mtx.lock();
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
@@ -62,11 +61,10 @@ void size_and_depth_filtering_dup(int id, std::string contig_name) {
     depth_filter_dup(contig_name, duplications, bam_file, config, stats);
     calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
 
-    bam_pool->release_bam_reader(bam_file);
 }
 
 void size_and_depth_filtering_ins(int id, std::string contig_name) {
-    open_samFile_t* bam_file = bam_pool->get_bam_reader();
+    open_samFile_t* bam_file = ins_bam_pool->get_bam_reader(id);
 
     mtx.lock();
     std::vector<insertion_t*>& insertions = insertions_by_chr[contig_name];
@@ -79,8 +77,6 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
         }
     }
     calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, stats);
-
-    bam_pool->release_bam_reader(bam_file);
 }
 
 void apply_ALL_filters(sv_t* sv) {
@@ -121,7 +117,9 @@ int main(int argc, char* argv[]) {
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     chr_seqs.read_fasta_into_map(reference_fname);
-    bam_pool = new bam_pool_t(complete_bam_fname, reference_fname);
+    del_bam_pool = new bam_pool_t(config.threads, complete_bam_fname, reference_fname);
+    dup_bam_pool = new bam_pool_t(config.threads, complete_bam_fname, reference_fname);
+    ins_bam_pool = new bam_pool_t(config.threads, complete_bam_fname, reference_fname);
 
     std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
 	int isize, count;

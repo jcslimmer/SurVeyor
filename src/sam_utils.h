@@ -426,29 +426,25 @@ struct bam_redux_t {
 
 struct bam_pool_t {
     std::mutex mtx;
-    std::queue<open_samFile_t*> pool;
+    std::vector<open_samFile_t*> pool;
     std::string bam_fname, reference_fname;
 
-    bam_pool_t(std::string bam_fname, std::string reference_fname) : bam_fname(bam_fname), reference_fname(reference_fname) {}
-
-    open_samFile_t* get_bam_reader() {
-        open_samFile_t* o;
-        mtx.lock();
-        if (!pool.empty()) {
-            o = pool.front();
-            pool.pop();
-        } else {
-            o = open_samFile(bam_fname.c_str());
+    bam_pool_t(int size, std::string bam_fname, std::string reference_fname) : bam_fname(bam_fname), reference_fname(reference_fname) {
+        for (int i = 0; i < size; i++) {
+            open_samFile_t* o = open_samFile(bam_fname.c_str());
             hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
+            pool.push_back(o);
         }
-        mtx.unlock();
-        return o;
     }
 
-    void release_bam_reader(open_samFile_t* reader) {
-        mtx.lock();
-        pool.push(reader);
-        mtx.unlock();
+    open_samFile_t* get_bam_reader(int i) {
+        return pool[i];
+    }
+
+    ~bam_pool_t() {
+        for (open_samFile_t* o : pool) {
+            close_samFile(o);
+        }
     }
 };
 
