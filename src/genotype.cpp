@@ -197,6 +197,14 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
     const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Float,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSL");
+    const char* dpsl_tag = "##FORMAT=<ID=DPSL,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the left breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsl_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSR");
+    const char* dpsr_tag = "##FORMAT=<ID=DPSR,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsr_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -314,6 +322,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         float dpranm = sv->disc_pairs_rf_avg_nm;
         bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
     }
+    
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
 }
 
 void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
