@@ -191,11 +191,11 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "DPLANM");
-    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Integer,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
+    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Float,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dplanm_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
-    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Integer,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
+    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Float,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
 }
 
@@ -304,13 +304,15 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1HQ", &(sv->disc_pairs_lf_high_mapq), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1MQ", &(sv->disc_pairs_lf_maxmapq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPLANM", &(sv->disc_pairs_lf_avg_nm), 1);
+    float dplanm = sv->disc_pairs_lf_avg_nm;
+    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPLANM", &dplanm, 1);
 
     if (sv->svtype() == "INS") {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPRANM", &(sv->disc_pairs_rf_avg_nm), 1);
+        float dpranm = sv->disc_pairs_rf_avg_nm;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
     }
 }
 

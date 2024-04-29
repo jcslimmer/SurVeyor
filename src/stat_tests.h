@@ -584,9 +584,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 				}
 			}
 
-			for (deletion_t* del : deletions) {
-				del->disc_pairs_lf_avg_nm /= del->disc_pairs_lf;
-			}
+		}
+		for (deletion_t* del : deletions) {
+			if (del->disc_pairs_lf > 0) del->disc_pairs_lf_avg_nm /= del->disc_pairs_lf;
 		}
 	}
 }
