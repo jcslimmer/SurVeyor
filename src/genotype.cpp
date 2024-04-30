@@ -205,6 +205,10 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSR");
     const char* dpsr_tag = "##FORMAT=<ID=DPSR,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsr_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
+    const char* cp_tag = "##FORMAT=<ID=CP,Number=1,Type=Integer,Description=\"Number of concordant pairs disproving the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -325,10 +329,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
-
-    if (sv->svtype() == "DUP" && sv->l_cluster_region_disc_pairs > 0) {
-        std::cerr << "CIAO" << std::endl;
-        exit(0);
+    if (sv->svtype() != "DUP") {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", &(sv->conc_pairs), 1);
     }
 }
 
@@ -829,6 +831,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     }
 
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
+    calculate_ptn_ratio(contig_name, inss, bam_file, stats);
 }
 
 int main(int argc, char* argv[]) {
