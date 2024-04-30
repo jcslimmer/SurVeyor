@@ -325,6 +325,34 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
+
+    if (sv->svtype() == "DUP" && sv->l_cluster_region_disc_pairs > 0) {
+        std::cerr << "CIAO" << std::endl;
+        exit(0);
+    }
+}
+
+void reset_stats(sv_t* sv) {
+    sv->median_left_flanking_cov = 0;
+    sv->median_indel_left_cov = 0;
+    sv->median_indel_right_cov = 0;
+    sv->median_right_flanking_cov = 0;
+    sv->median_left_flanking_cov_highmq = 0;
+    sv->median_indel_left_cov_highmq = 0;
+    sv->median_indel_right_cov_highmq = 0;
+    sv->median_right_flanking_cov_highmq = 0;
+    sv->median_left_cluster_cov = 0;
+    sv->median_right_cluster_cov = 0;
+    sv->disc_pairs_lf = 0;
+    sv->disc_pairs_rf = 0;
+    sv->disc_pairs_lf_high_mapq = 0;
+    sv->disc_pairs_rf_high_mapq = 0;
+    sv->disc_pairs_lf_maxmapq = 0;
+    sv->disc_pairs_rf_maxmapq = 0;
+    sv->disc_pairs_lf_avg_nm = 0;
+    sv->disc_pairs_rf_avg_nm = 0;
+    sv->l_cluster_region_disc_pairs = 0;
+    sv->r_cluster_region_disc_pairs = 0;
 }
 
 void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
@@ -857,6 +885,7 @@ int main(int argc, char* argv[]) {
     while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
         sv_t* sv = bcf_to_sv(in_vcf_header, vcf_record);
         sv->vcf_entry = bcf_dup(vcf_record);
+        reset_stats(sv);
         if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back((deletion_t*) sv);
         } else if (sv->svtype() == "DUP") {
