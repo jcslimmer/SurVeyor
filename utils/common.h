@@ -49,7 +49,7 @@ struct repeat_t {
     }
 
     bool contains(sv_t* sv) {
-        return sv->chr == chr && start <= sv->start && end >= sv->end;
+        return sv->chr == chr && start-10 <= sv->start && sv->end <= end+10;
     }
     bool intersects(sv_t* sv) {
         return sv->chr == chr && sv->start <= end && sv->end >= start;
