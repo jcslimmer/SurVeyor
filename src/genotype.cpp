@@ -12,9 +12,11 @@
 #include "htslib/faidx.h"
 #include "htslib/tbx.h"
 
+#include "sw_utils.h"
 #include "types.h"
 #include "utils.h"
 #include "sam_utils.h"
+#include "reference_guided_assembly.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
@@ -34,6 +36,7 @@ std::vector<hts_pos_t> global_isize_dist;
 std::vector<double> global_crossing_isize_dist;
 
 StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+StripedSmithWaterman::Aligner harsh_aligner(1, 4, 100, 1, false);
 
 void add_tags(bcf_hdr_t* hdr) {
     int len = 0;
@@ -78,17 +81,33 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1");
+    const char* arc1_tag = "##FORMAT=<ID=ARC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
     const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2");
+    const char* arc2_tag = "##FORMAT=<ID=ARC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
     const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC1");
+    const char* rrc1_tag = "##FORMAT=<ID=RRC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc1_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "RR2");
     const char* rr2_tag = "##FORMAT=<ID=RR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 reference allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC2");
+    const char* rrc2_tag = "##FORMAT=<ID=RRC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc2_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
@@ -258,9 +277,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     // update FORMAT fields
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1", &(sv->regenotyping_info.alt_bp1_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads), 1);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR1", &(sv->regenotyping_info.ref_bp1_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR2", &(sv->regenotyping_info.ref_bp2_better_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RRC1", &(sv->regenotyping_info.ref_bp1_better_consistent_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RRC2", &(sv->regenotyping_info.ref_bp2_better_consistent_reads), 1);
 
     int er = sv->regenotyping_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
@@ -357,6 +380,29 @@ void reset_stats(sv_t* sv) {
     sv->r_cluster_region_disc_pairs = 0;
 }
 
+std::vector<std::string> find_consistent_seqs_subset(std::string ref_seq, std::vector<std::string>& seqs) {
+    StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Alignment aln;
+    std::vector<std::string> consistent_seqs;
+    if (!seqs.empty()) {
+        std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
+        std::vector<std::string> v1, v2;
+        std::vector<std::string> consensuses = generate_reference_guided_consensus(ref_seq, v1, seqs, v2, aligner, harsh_aligner, consensus_contigs_alns, config, stats);
+
+        if (consensuses.empty()) {
+            return consistent_seqs;
+        }
+
+        for (std::string& seq : seqs) {
+            aligner.Align(seq.c_str(), consensuses[0].c_str(), consensuses[0].length(), filter, &aln, 0);
+            if (!is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+                consistent_seqs.push_back(seq);
+            }
+        }
+    }
+    return consistent_seqs;
+}
+
 void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
     int del_start = del->start, del_end = del->end;
 
@@ -410,7 +456,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
 
     bam1_t* read = bam_init1();
 
-    int ref_bp1_better = 0, ref_bp2_better = 0, alt_better = 0, same = 0;
+    int same = 0;
+
+    std::vector<std::string> alt_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -448,25 +496,40 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file) {
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better++;
+            alt_better_seqs.push_back(seq);
         } else if (alt_aln.sw_score < ref_aln_score) {
-            ref_bp1_better += increase_ref_bp1_better;
-            ref_bp2_better += increase_ref_bp2_better;
+            if (increase_ref_bp1_better) {
+                ref_bp1_better_seqs.push_back(seq);
+            }
+            if (increase_ref_bp2_better) {
+                ref_bp2_better_seqs.push_back(seq);
+            }
         } else {
             same++;
         }
 
-        if (alt_better + ref_bp1_better + ref_bp2_better + same > 4 * stats.get_max_depth(del->chr)) {
-            alt_better = ref_bp1_better = ref_bp2_better = same = 0;
+        if (alt_better_seqs.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + same > 4 * stats.get_max_depth(del->chr)) {
+            alt_better_seqs.clear();
+            ref_bp1_better_seqs.clear();
+            ref_bp2_better_seqs.clear();
+            same = 0;
             del->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    del->regenotyping_info.alt_bp1_better_reads = alt_better;
-    del->regenotyping_info.alt_bp2_better_reads = alt_better;
-    del->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
-    del->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
+    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seq, alt_better_seqs);
+    std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs);
+    std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs);
+    
+    del->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();
+    del->regenotyping_info.alt_bp2_better_reads = alt_better_seqs.size();
+    del->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
+    del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
+    del->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
+    del->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_seqs.size();
+    del->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
+    del->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_seqs_consistent.size();
     del->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;

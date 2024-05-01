@@ -10,34 +10,22 @@
 #include "assemble.h"
 #include "remapping.h"
 
-std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
-		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
+std::vector<std::string> generate_reference_guided_consensus(std::string reference, 
+		std::vector<std::string>& seqs_lf, std::vector<std::string>& seqs_is, std::vector<std::string>& seqs_rf,
+		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
 		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
 
-	StripedSmithWaterman::Filter filter;
-	StripedSmithWaterman::Alignment aln;
-
 	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > accepted_alns, _rejected_alns_lf, _rejected_alns_is, _rejected_alns_rf;
-	for (bam1_t* read : r_cluster->cluster->reads) {
-		std::string read_seq = get_sequence(read);
-		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_lf, aligner, config);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
-		rc(mate_seq);
-		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
+	for (std::string& seq : seqs_lf) {
+		add_alignment(reference, seq, accepted_alns, _rejected_alns_lf, aligner, config);
 	}
-	for (bam1_t* read : l_cluster->cluster->reads) {
-		std::string read_seq = get_sequence(read);
-		add_alignment(reference, read_seq, accepted_alns, _rejected_alns_rf, aligner, config);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
-		add_alignment(reference, mate_seq, accepted_alns, _rejected_alns_is, aligner, config);
+	for (std::string& seq : seqs_is) {
+		add_alignment(reference, seq, accepted_alns, _rejected_alns_is, aligner, config);
 	}
-	if (r_cluster->clip_consensus) {
-		add_alignment(reference, r_cluster->clip_consensus->sequence, accepted_alns, _rejected_alns_lf, aligner, config);
+	for (std::string& seq : seqs_rf) {
+		add_alignment(reference, seq, accepted_alns, _rejected_alns_rf, aligner, config);
 	}
-	if (l_cluster->clip_consensus) {
-		add_alignment(reference, l_cluster->clip_consensus->sequence, accepted_alns, _rejected_alns_rf, aligner, config);
-	}
-
+	
 	int n = accepted_alns.size();
 	std::vector<int> out_edges(n);
 	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
@@ -91,6 +79,8 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	}
 
 	// retain assembled sequences that align without clipping and do not overlap a higher rated sequence
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
 	std::vector<std::string> retained_assembled_sequences;
 	for (std::string& assembled_sequence : assembled_sequences) {
 		aligner.Align(assembled_sequence.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
@@ -110,8 +100,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	}
 
 	if (retained_assembled_sequences.empty()) return {};
-
-	int l_bp_in_seq = r_cluster->end-r_cluster->start, r_bp_in_seq = reference.length()-(l_cluster->end-l_cluster->start);
 
 	// try scaffolding using rejected reads
 	std::vector<seq_w_pp_t> rejected_alns_lf, rejected_alns_is, rejected_alns_rf;
@@ -201,6 +189,35 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 
 	if (!scaffolding_failed) scaffolded_seqs_alns.swap(consensus_contigs_alns);
 	return scaffolding_failed ? retained_assembled_sequences : scaffolded_sequences;
+
+}
+
+std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
+		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
+
+	std::vector<std::string> seqs_lf, seqs_is, seqs_rf;
+	for (bam1_t* read : r_cluster->cluster->reads) {
+		std::string read_seq = get_sequence(read);
+		seqs_lf.push_back(read_seq);
+		std::string mate_seq = get_mate_seq(read, mateseqs);
+		rc(mate_seq);
+		seqs_is.push_back(mate_seq);
+	}
+	for (bam1_t* read : l_cluster->cluster->reads) {
+		std::string read_seq = get_sequence(read);
+		seqs_rf.push_back(read_seq);
+		std::string mate_seq = get_mate_seq(read, mateseqs);
+		seqs_is.push_back(mate_seq);
+	}
+	if (r_cluster->clip_consensus) {
+		seqs_lf.push_back(r_cluster->clip_consensus->sequence);
+	}
+	if (l_cluster->clip_consensus) {
+		seqs_rf.push_back(l_cluster->clip_consensus->sequence);
+	}
+
+	return generate_reference_guided_consensus(reference, seqs_lf, seqs_is, seqs_rf, aligner, harsh_aligner, consensus_contigs_alns, config, stats);
 }
 
 std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t& contigs, contig_map_t& contig_map, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, 
