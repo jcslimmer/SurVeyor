@@ -4,9 +4,9 @@ from sklearn.ensemble import RandomForestClassifier
 import joblib
 import features
 import os
-import threading
-from threading import Lock
-from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+os.environ['OMP_NUM_THREADS'] = '96'  # Set within the script to ensure it takes effect
 
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
@@ -37,10 +37,8 @@ def process_vcf(training_prefix):
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", cmd_args.svtype, tolerate_no_gts = False)
     return vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts
 
-training_prefixes = cmd_args.training_prefixes.split(",")
-for training_prefix in training_prefixes:
-    vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts = process_vcf(training_prefix)
-
+def merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts):
+    global denovo_training_data, regt_training_data, denovo_training_gts, regt_training_gts
     if denovo_training_data is None:
         denovo_training_data = vcf_denovo_training_data
         regt_training_data = vcf_regt_training_data
@@ -53,6 +51,14 @@ for training_prefix in training_prefixes:
         for source in vcf_regt_training_data:
             regt_training_data[source] = np.concatenate((regt_training_data[source], vcf_regt_training_data[source]))
             regt_training_gts[source] = np.concatenate((regt_training_gts[source], vcf_regt_training_gts[source]))
+
+training_prefixes = cmd_args.training_prefixes.split(",")
+with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
+    future_to_prefix = {executor.submit(process_vcf, prefix): prefix for prefix in training_prefixes}
+    for future in as_completed(future_to_prefix):
+        vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts = future.result()
+        merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts)
+
 
 classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
 
@@ -67,6 +73,14 @@ for model_name in training_data:
 
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
     classifier.fit(training_data[model_name], training_labels)
+
+    # print feature importance to file
+    features_names = features.Features.get_regt_feature_names(model_name)
+    importances = classifier.feature_importances_
+    indices = np.argsort(importances)[::-1]
+    with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
+        for i in range(len(features_names)):
+            f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
 
     model_fname = os.path.join(yes_or_no_outdir, model_name + ".model")
     joblib.dump(classifier, open(model_fname, 'wb'))
