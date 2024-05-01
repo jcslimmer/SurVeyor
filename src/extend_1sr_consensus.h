@@ -10,13 +10,7 @@
 #include "utils.h"
 #include "sw_utils.h"
 #include "sam_utils.h"
-
-struct edge_t {
-	int next, score, overlap;
-
-	edge_t() : next(0), score(0), overlap(0) {}
-	edge_t(int next, int score, int overlap) : next(next), score(score), overlap(overlap) {}
-};
+#include "types.h"
 
 struct ext_read_t {
 	std::string qname;
@@ -47,6 +41,27 @@ struct ext_read_t {
 
 	~ext_read_t() {
 		if (sequence != NULL) delete[] sequence;
+	}
+};
+
+struct ext_read_allocator_t {
+	std::queue<ext_read_t*> reads;
+
+	ext_read_allocator_t() {}
+
+	ext_read_t* get(bam1_t* read) {
+		if (reads.empty()) {
+			return new ext_read_t(read);
+		} else {
+			ext_read_t* r = reads.front();
+			reads.pop();
+			r->init(read);
+			return r;
+		}
+	}
+
+	void release(ext_read_t* read) {
+		reads.push(read);
 	}
 };
 
@@ -236,26 +251,6 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> start
 	}
 }
 
-std::vector<int> find_rev_topological_order(int n, std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj_rev) {
-
-	std::queue<int> sinks;
-	for (int i = 0; i < n; i++) {
-		if (!out_edges[i]) sinks.push(i);
-	}
-
-	std::vector<int> rev_topological_order;
-	while (!sinks.empty()) {
-		int s = sinks.front();
-		sinks.pop();
-		rev_topological_order.push_back(s);
-		for (edge_t& e : l_adj_rev[s]) {
-			out_edges[e.next]--;
-			if (out_edges[e.next] == 0) sinks.push(e.next);
-		}
-	}
-	return rev_topological_order;
-}
-
 void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, std::vector<std::string>& read_seqs, std::vector<int>& read_mapqs,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq,
 		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len, int high_confidence_mapq, stats_t& stats, int max_reads = INT32_MAX) {
@@ -316,6 +311,8 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
 		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
 
+	ext_read_allocator_t ext_read_allocator;
+
 	std::sort(target_ivals.begin(), target_ivals.end(), [](hts_pair_pos_t& a, hts_pair_pos_t& b) {return a.beg < b.beg;});
 
 	std::vector<hts_pair_pos_t> merged_target_ivals;
@@ -343,10 +340,9 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 			if (is_unmapped(read) || !is_primary(read)) continue;
 
-			region_reads.push_back(new ext_read_t(read));
+			region_reads.push_back(ext_read_allocator.get(read));
 			if (region_reads.size() > target_ival.end-target_ival.beg) { // too many reads
-				// std::cerr << "WARNING: too many reads in region " << ss.str() << " : "  << region_reads.size() << std::endl;
-				for (ext_read_t* r : region_reads) delete r;
+				for (ext_read_t* r : region_reads) ext_read_allocator.release(r);
 				region_reads.clear();
 				break;
 			}
@@ -354,7 +350,7 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 		reads.insert(reads.end(), region_reads.begin(), region_reads.end());
 		hts_itr_destroy(iter);
 	}
-	
+
 	bam_destroy1(read);
 
 	return reads;
@@ -401,12 +397,14 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 	if (consensus->extended_to_right) return;
 
+
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
 	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(high_confidence_mapq);
 
 	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
+
 
 	if (read_seqs.size() > 5000) return;
 

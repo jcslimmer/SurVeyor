@@ -175,6 +175,7 @@ struct sv_t {
         int ref_bp1_better_reads = 0, ref_bp2_better_reads = 0;
         int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
+        int alt_ext_reads = 0, hq_alt_ext_reads = 0;
         bool too_deep = false;
     } regenotyping_info;
 
@@ -349,6 +350,5 @@ struct insertion_t : sv_t {
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
 };
-
 
 #endif /* TYPES_H */
