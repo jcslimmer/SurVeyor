@@ -87,12 +87,13 @@ class Features:
             return Features.shared_features_names + Features.shared_denovo_features_names + Features.denovo_features_names
 
     regt_shared_features_names = \
-            ['AR1', 'ARC1', 'AR2', 'ARC2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
+            ['IP', 'AR1', 'ARC1', 'AR2', 'ARC2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
              'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
-             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP']
+             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP', 
+             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
     
     regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
 
@@ -312,6 +313,8 @@ class Features:
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
+        features['IP'] = True if "IMPRECISE" in record.info else False
+
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         arc1 = Features.get_number_value(record.samples[0], 'ARC1', 0)
         ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
@@ -383,9 +386,9 @@ class Features:
         features['FMT_KSPVAL_HQ'] = max(0, Features.get_number_value(record.samples[0], 'KSPVALHQ', 1.0))
         features['FMT_SIZE_NORM'] = 2
         features['FMT_SIZE_NORM_HQ'] = 2
-        if 'MAX_SIZE' in record.samples[0]:
-            min_size = float(record.samples[0]['MIN_SIZE'])
-            max_size = float(record.samples[0]['MAX_SIZE'])
+        if 'MAXSIZE' in record.samples[0]:
+            min_size = float(record.samples[0]['MINSIZE'])
+            max_size = float(record.samples[0]['MAXSIZE'])
             features['FMT_SIZE_NORM'] = Features.normalise(svlen/2, min_size, max_size)
         if 'MAXSIZEHQ' in record.samples[0]:
             min_size = float(record.samples[0]['MINSIZEHQ'])
@@ -424,6 +427,17 @@ class Features:
         features['CP'] = Features.normalise(cp, min_pairs_crossing_point, max_pairs_crossing_point)
         if svtype_str == "DEL":
             features['PTNR'] = dp1/max(1, cp)
+
+        features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
+        features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
+        exl = Features.get_number_value(record.samples[0], 'EXL', 0, max_is)
+        features['EXL'] = exl
+        exas = Features.get_number_value(record.samples[0], 'EXAS', 0)
+        features['EXAS'] = exas/max(1, exl)
+        exrs = Features.get_number_value(record.samples[0], 'EXRS', 0)
+        features['EXRS'] = exrs/max(1, exl)
+        features['EXAS_EXRS_RATIO'] = exas/max(1, exrs)
+        features['EXAS_EXRS_DIFF'] = exas-exrs
 
         denovo_feature_values, regt_feature_values = [], []
         for feature_name in Features.get_denovo_feature_names(denovo_model_name):
