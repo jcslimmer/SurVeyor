@@ -242,6 +242,18 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXRHQ");
     const char* axrhq_tag = "##FORMAT=<ID=AXRHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads used to extend the alternative allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axrhq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXL");
+    const char* exl_tag = "##FORMAT=<ID=EXL,Number=1,Type=Integer,Description=\"Length of the extended alternative allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exl_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXAS");
+    const char* exas_tag = "##FORMAT=<ID=EXAS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the original alternative allele (the reference with the SV applied).\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS");
+    const char* exrs_tag = "##FORMAT=<ID=EXRS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the reference.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
@@ -372,6 +384,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", &(sv->regenotyping_info.alt_ext_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXRHQ", &(sv->regenotyping_info.hq_alt_ext_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->regenotyping_info.ext_alt_consensus_length), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->regenotyping_info.ext_alt_consensus_to_alt_score), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->regenotyping_info.ext_alt_consensus_to_ref_score), 1);
 }
 
 void reset_stats(sv_t* sv) {
@@ -550,6 +565,36 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, del->end, del->end+stats.max_is, del->chr, chr_seqs.get_len(del->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
         hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
+        alt_consensus_seq = alt_consensus->sequence;
+        delete alt_consensus;
+
+        hts_pos_t lh_start = del->start-alt_consensus_seq.length();
+        if (lh_start < 0) lh_start = 0;
+        hts_pos_t lh_len = del->start-lh_start;
+        hts_pos_t rh_end = del->end+alt_consensus_seq.length();
+        if (rh_end > contig_len) rh_end = contig_len;
+        hts_pos_t rh_len = rh_end-del->end;
+    
+        delete[] alt_seq;
+        alt_seq = new char[2*alt_consensus_seq.length() + 1];
+        strncpy(alt_seq, contig_seq+lh_start, lh_len);
+        strncpy(alt_seq+lh_len, contig_seq+del_end, rh_len);
+        alt_seq[lh_len+rh_len] = 0;
+
+        // align to ref+SV
+        aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+rh_len, filter, &alt_aln, 0);
+
+        // align to ref
+        hts_pos_t lbp_start = lh_start, lbp_end = del->start + alt_consensus_seq.length();
+        hts_pos_t rbp_start = del->end - alt_consensus_seq.length(), rbp_end = rh_end;
+        if (lbp_end > contig_len) lbp_end = contig_len;
+        if (rbp_start < 0) rbp_start = 0;
+        aligner.Align(alt_consensus_seq.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
+    
+        del->regenotyping_info.ext_alt_consensus_length = alt_consensus->sequence.length();
+        del->regenotyping_info.ext_alt_consensus_to_alt_score = alt_aln.sw_score;
+        del->regenotyping_info.ext_alt_consensus_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
     }
 
     del->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();

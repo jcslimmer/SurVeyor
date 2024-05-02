@@ -176,6 +176,8 @@ struct sv_t {
         int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
         int alt_ext_reads = 0, hq_alt_ext_reads = 0;
+        int ext_alt_consensus_length = 0;
+        int ext_alt_consensus_to_alt_score = 0, ext_alt_consensus_to_ref_score = 0;
         bool too_deep = false;
     } regenotyping_info;
 
