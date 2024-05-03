@@ -720,10 +720,12 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
 	
     bam1_t* read = bam_init1();
 
-    int ref_better = 0, alt_better = 0, same = 0;
+    std::vector<std::string> ref_better_seqs;
+    std::vector<std::vector<std::string>> alt_better_seqs(alt_seqs.size());
+    int same = 0;
 
     StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment alt_best_aln, alt_aln, ref_aln;
+    StripedSmithWaterman::Alignment alt_aln, ref_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
@@ -732,26 +734,40 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
         std::string seq = get_sequence(read);
         aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
 
+        uint16_t best_aln_score = 0;
+        std::vector<uint16_t> alt_aln_scores(alt_seqs.size());
         for (int i = 0; i < alt_seqs.size(); i++) {
             aligner.Align(seq.c_str(), alt_seqs[i], strlen(alt_seqs[i]), filter, &alt_aln, 0);
-            if (alt_aln.sw_score > alt_best_aln.sw_score) {
-                alt_best_aln = alt_aln;
+            alt_aln_scores[i] = alt_aln.sw_score;
+            if (alt_aln.sw_score > best_aln_score) {
+                best_aln_score = alt_aln.sw_score;
             }
         }
 
-        if (alt_best_aln.sw_score > ref_aln.sw_score) {
-            alt_better++;
-        } else if (alt_best_aln.sw_score < ref_aln.sw_score) {
-            ref_better++;
+        if (best_aln_score > ref_aln.sw_score) {
+            for (int i = 0; i < alt_seqs.size(); i++) {
+                if (alt_aln_scores[i] == best_aln_score) {
+                    alt_better_seqs[i].push_back(seq);
+                }
+            }
+        } else if (best_aln_score < ref_aln.sw_score) {
+            ref_better_seqs.push_back(seq);
         } else {
             same++;
         }
     }
 
-    dup->regenotyping_info.alt_bp1_better_reads = alt_better;
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better;
-    dup->regenotyping_info.ref_bp1_better_reads = ref_better;
-    dup->regenotyping_info.ref_bp2_better_reads = ref_better;
+    int alt_with_most_reads = 0;
+    for (int i = 1; i < alt_better_seqs.size(); i++) {
+        if (alt_better_seqs[i].size() > alt_better_seqs[alt_with_most_reads].size()) {
+            alt_with_most_reads = i;
+        }
+    }
+
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better_seqs[alt_with_most_reads].size();
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better_seqs[alt_with_most_reads].size();
+    dup->regenotyping_info.ref_bp1_better_reads = ref_better_seqs.size();
+    dup->regenotyping_info.ref_bp2_better_reads = ref_better_seqs.size();
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] ref_seq;
