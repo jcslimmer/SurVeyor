@@ -31,7 +31,7 @@ stats_t stats;
 std::mutex mtx;
 
 std::string bam_fname, reference_fname, workdir;
-bam_pool_t* del_bam_pool, *dup_bam_pool, *ins_bam_pool;
+bam_pool_t* bam_pool;
 
 std::vector<hts_pos_t> global_isize_dist;
 
@@ -436,6 +436,41 @@ std::vector<std::string> find_consistent_seqs_subset(std::string ref_seq, std::v
     return consistent_seqs;
 }
 
+void read_mates(int contig_id) {
+    mutex_per_chr[contig_id].lock();
+    if (active_threads_per_chr[contig_id] == 0) {
+		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
+		std::ifstream fin(fname);
+		std::string qname, read_seq, qual; int mapq;
+		while (fin >> qname >> read_seq >> qual >> mapq) {
+			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
+		}
+	}
+	active_threads_per_chr[contig_id]++;
+	mutex_per_chr[contig_id].unlock();
+}
+
+void release_mates(int contig_id) {
+    mutex_per_chr[contig_id].lock();
+	active_threads_per_chr[contig_id]--;
+	if (active_threads_per_chr[contig_id] == 0) {
+		mateseqs_w_mapq[contig_id].clear();
+	}
+	mutex_per_chr[contig_id].unlock();
+}
+
+IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string contig_name, hts_pos_t contig_len, std::vector<hts_pair_pos_t> target_ivals, open_samFile_t* bam_file,
+                                                                  std::vector<ext_read_t*>& candidate_reads_for_extension) {
+    int contig_id = contig_map.get_id(contig_name);
+    candidate_reads_for_extension = get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq[contig_id], stats, bam_file);
+    std::vector<Interval<ext_read_t*>> it_ivals;
+    for (ext_read_t* ext_read : candidate_reads_for_extension) {
+        Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
+        it_ivals.push_back(it_ival);
+    }
+    return IntervalTree<ext_read_t*>(it_ivals);
+}
+
 void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
     int del_start = del->start, del_end = del->end;
@@ -557,14 +592,13 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq);
     std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq);
 
-    int alt_ext_reads = 0, hq_alt_ext_reads = 0;
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, del->start-stats.max_is, del->start, del->chr, chr_seqs.get_len(del->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
         extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, del->end, del->end+stats.max_is, del->chr, chr_seqs.get_len(del->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
-        alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
-        hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
+        del->regenotyping_info.alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
+        del->regenotyping_info.hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
         alt_consensus_seq = alt_consensus->sequence;
         delete alt_consensus;
 
@@ -606,8 +640,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     del->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
     del->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_seqs_consistent.size();
     del->regenotyping_info.alt_ref_equal_reads = same;
-    del->regenotyping_info.alt_ext_reads = alt_ext_reads;
-    del->regenotyping_info.hq_alt_ext_reads = hq_alt_ext_reads;
 
     delete[] alt_seq;
     delete[] ref_bp1_seq;
@@ -624,32 +656,17 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
 
     int contig_id = contig_map.get_id(contig_name);
-    mutex_per_chr[contig_id].lock();
-    if (active_threads_per_chr[contig_id] == 0) {
-		std::string fname = workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt";
-		std::ifstream fin(fname);
-		std::string qname, read_seq, qual; int mapq;
-		while (fin >> qname >> read_seq >> qual >> mapq) {
-			mateseqs_w_mapq[contig_id][qname] = {read_seq, mapq};
-		}
-	}
-	active_threads_per_chr[contig_id]++;
-	mutex_per_chr[contig_id].unlock();
+    read_mates(contig_id);
 
-    open_samFile_t* bam_file = del_bam_pool->get_bam_reader(id);
+    open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
 
     std::vector<hts_pair_pos_t> target_ivals;
     for (deletion_t* del : dels) {
         target_ivals.push_back({del->start-stats.max_is, del->start+stats.max_is});
         target_ivals.push_back({del->end-stats.max_is, del->end+stats.max_is});
     }
-    std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq[contig_id], stats, bam_file);
-    std::vector<Interval<ext_read_t*>> it_ivals;
-    for (ext_read_t* ext_read : candidate_reads_for_extension) {
-        Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-        it_ivals.push_back(it_ival);
-    }
-    IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
+    std::vector<ext_read_t*> candidate_reads_for_extension;
+    IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
 
     std::vector<deletion_t*> small_deletions, large_deletions;                
     for (deletion_t* del : dels) {
@@ -663,19 +680,15 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
 
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
-    mutex_per_chr[contig_id].lock();
-	active_threads_per_chr[contig_id]--;
-	if (active_threads_per_chr[contig_id] == 0) {
-		mateseqs_w_mapq[contig_id].clear();
-	}
-	mutex_per_chr[contig_id].unlock();
+    release_mates(contig_id);
 
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size, true);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats, true);
 }
 
-void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
+void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
+                std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
     std::stringstream log_ss;
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
@@ -702,10 +715,10 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
 		strncpy(alt_seq, chr_seqs.get_seq(dup->chr)+ref_start, dup_end-ref_start);
 		pos += dup_end - ref_start;
 		for (int i = 0; i < copies; i++) {
-			strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_start, dup_end-dup_start);
-			pos += dup_end-dup_start;
             strncpy(alt_seq+pos, dup->ins_seq.c_str(), dup->ins_seq.length());
             pos += dup->ins_seq.length();
+			strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_start, dup_end-dup_start);
+			pos += dup_end-dup_start;
 		}
 		strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_end, ref_end-dup_end);
 		pos += ref_end - dup_end;
@@ -764,10 +777,65 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file) {
         }
     }
 
+    if (alt_better_seqs[alt_with_most_reads].size() > 20*stats.get_max_depth(dup->chr) || ref_better_seqs.size() > 20*stats.get_max_depth(dup->chr)) {
+        alt_better_seqs[alt_with_most_reads].clear();
+        ref_better_seqs.clear();
+        same = 0;
+        dup->regenotyping_info.too_deep = true;
+    }
+
+    std::string alt_consensus_seq, ref_consensus_seq;
+    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_seqs[alt_with_most_reads], alt_consensus_seq);
+    std::vector<std::string> ref_better_seqs_consistent = find_consistent_seqs_subset(ref_seq, ref_better_seqs, ref_consensus_seq);
+
+    if (!alt_consensus_seq.empty()) {
+       // all we care about is the consensus sequence
+        consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
+        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->start-stats.max_is, dup->start, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
+        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, dup->end, dup->end+stats.max_is, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        dup->regenotyping_info.alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
+        dup->regenotyping_info.hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
+        alt_consensus_seq = alt_consensus->sequence;
+        delete alt_consensus;
+
+        hts_pos_t ref_start = dup->start-alt_consensus_seq.length();
+        if (ref_start < 0) ref_start = 0;
+        hts_pos_t ref_end = dup->start+alt_consensus_seq.length();
+        if (ref_end > contig_len) ref_end = contig_len;
+        aligner.Align(alt_consensus_seq.c_str(), chr_seqs.get_seq(dup->chr)+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
+        dup->regenotyping_info.ext_alt_consensus_to_ref_score = ref_aln.sw_score;
+
+        int n_extra_copies = alt_with_most_reads+1;
+        int alt_len = ref_end - ref_start + n_extra_copies*svlen;
+		char* alt_seq = new char[alt_len+1];
+		int pos = 0;
+		strncpy(alt_seq, chr_seqs.get_seq(dup->chr)+ref_start, dup_end-ref_start);
+		pos += dup_end - ref_start;
+		for (int i = 0; i < n_extra_copies; i++) {
+            strncpy(alt_seq+pos, dup->ins_seq.c_str(), dup->ins_seq.length());
+            pos += dup->ins_seq.length();
+			strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_start, dup_end-dup_start);
+			pos += dup_end-dup_start;
+		}
+		strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_end, ref_end-dup_end);
+		pos += ref_end - dup_end;
+		alt_seq[pos] = 0;
+        aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
+        dup->regenotyping_info.ext_alt_consensus_to_alt_score = alt_aln.sw_score;
+
+        delete[] alt_seq;
+
+        dup->regenotyping_info.ext_alt_consensus_length = alt_consensus_seq.length();
+    }
+
     dup->regenotyping_info.alt_bp1_better_reads = alt_better_seqs[alt_with_most_reads].size();
     dup->regenotyping_info.alt_bp2_better_reads = alt_better_seqs[alt_with_most_reads].size();
+    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
+    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
     dup->regenotyping_info.ref_bp1_better_reads = ref_better_seqs.size();
     dup->regenotyping_info.ref_bp2_better_reads = ref_better_seqs.size();
+    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_better_seqs_consistent.size();
+    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_better_seqs_consistent.size();
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] ref_seq;
@@ -887,15 +955,40 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file) {
 
 void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<duplication_t*> dups,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
+
+    // std::cerr << "Genotyping duplications on " << contig_name << std::endl;
+    
+    int contig_id = contig_map.get_id(contig_name);
+    read_mates(contig_id);
+
+    open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
+
+    std::vector<hts_pair_pos_t> target_ivals;
+    for (duplication_t* dup : dups) {
+        target_ivals.push_back({dup->start-stats.max_is, dup->start+stats.max_is});
+        target_ivals.push_back({dup->end-stats.max_is, dup->end+stats.max_is});
+    }
+    std::vector<ext_read_t*> candidate_reads_for_extension;
+    IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
+    // = get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq[contig_id], stats, bam_file);
+    // std::vector<Interval<ext_read_t*>> it_ivals;
+    // for (ext_read_t* ext_read : candidate_reads_for_extension) {
+    //     Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
+    //     it_ivals.push_back(it_ival);
+    // }
+    // IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
                     
-    open_samFile_t* bam_file = dup_bam_pool->get_bam_reader(id);
     for (duplication_t* dup : dups) {
         if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
-			genotype_small_dup(dup, bam_file);
+			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
 		} else {
 			genotype_large_dup(dup, bam_file);
 		}
     }
+
+    for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
+
+    release_mates(contig_id);
     
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
 }
@@ -1016,11 +1109,16 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {
 
 void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<insertion_t*> inss,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
+
+    int contig_id = contig_map.get_id(contig_name);
+    read_mates(contig_id);
                     
-    open_samFile_t* bam_file = ins_bam_pool->get_bam_reader(id);
+    open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
         genotype_ins(ins, bam_file);
     }
+
+    release_mates(contig_id);
 
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
     calculate_ptn_ratio(contig_name, inss, bam_file, stats);
@@ -1045,9 +1143,7 @@ int main(int argc, char* argv[]) {
 	}
 
     chr_seqs.read_fasta_into_map(reference_fname);
-    del_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
-    dup_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
-    ins_bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
+    bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
 
     // read crossing isize distribution
     std::ifstream crossing_isizes_dist_fin(workdir + "/crossing_isizes.txt");
@@ -1117,29 +1213,26 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
-    for (auto& p : dels_by_chr) {
+
+    for (auto& p : chr_seqs.seqs) {
     	std::string contig_name = p.first;
-        std::vector<deletion_t*>& dels = p.second;
+        std::vector<deletion_t*>& dels = dels_by_chr[contig_name];
         for (int i = 0; i < dels.size(); i += BLOCK_SIZE) {
             std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config);
             futures.push_back(std::move(future));
         }
-    }
-    for (auto& p : dups_by_chr) {
-    	std::string contig_name = p.first;
-        std::vector<duplication_t*>& dups = p.second;
+
+        std::vector<duplication_t*>& dups = dups_by_chr[contig_name];
         for (int i = 0; i < dups.size(); i += BLOCK_SIZE) {
             std::vector<duplication_t*> block_dups(dups.begin() + i, dups.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dups.size())));
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
             futures.push_back(std::move(future));
         }
-    }
-    for (auto& p : inss_by_chr) {
-    	std::string contig_name = p.first;
-        std::vector<insertion_t*>& inss = p.second;
+
+        std::vector<insertion_t*>& inss = inss_by_chr[contig_name];
         for (int i = 0; i < inss.size(); i += BLOCK_SIZE) {
             std::vector<insertion_t*> block_inss(inss.begin() + i, inss.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(inss.size())));
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
