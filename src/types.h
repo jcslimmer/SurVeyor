@@ -165,6 +165,13 @@ struct sv_t {
     std::string source;
     bool imprecise = false;
 
+    static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
+    static const int SIZE_NOT_COMPUTED = INT32_MAX;
+    
+    double ks_pval = KS_PVAL_NOT_COMPUTED, ks_pval_highmq = KS_PVAL_NOT_COMPUTED;
+    int min_conf_size = SIZE_NOT_COMPUTED, max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;
+    int min_conf_size_highmq = SIZE_NOT_COMPUTED, max_conf_size_highmq = SIZE_NOT_COMPUTED;
+
     base_frequencies_t left_anchor_base_freqs, right_anchor_base_freqs;
     base_frequencies_t prefix_ref_base_freqs, suffix_ref_base_freqs;
     base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
@@ -320,14 +327,9 @@ struct sv_t {
 };
 
 struct deletion_t : sv_t {
-    static const int SIZE_NOT_COMPUTED = INT32_MAX;
-    static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
 
     bool remapped = false;
     std::string original_range;
-    int min_conf_size = SIZE_NOT_COMPUTED, max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;
-    int min_conf_size_highmq = SIZE_NOT_COMPUTED, max_conf_size_highmq = SIZE_NOT_COMPUTED;
-    double ks_pval = KS_PVAL_NOT_COMPUTED, ks_pval_highmq = KS_PVAL_NOT_COMPUTED;
 
     using sv_t::sv_t;
 

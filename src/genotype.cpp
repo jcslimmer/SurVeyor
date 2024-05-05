@@ -338,28 +338,25 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDRC", &sv->median_right_cluster_cov, 1);
     }
 
-    if (sv->svtype() == "DEL") {
-        deletion_t* del = (deletion_t*) sv;
-        if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(del->min_conf_size), 1);
-        }
-        if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZEHQ", &(del->min_conf_size_highmq), 1);
-        }
-        if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(del->max_conf_size), 1);
-        }
-        if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-            bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZEHQ", &(del->max_conf_size_highmq), 1);
-        }
-        if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
-            float ks_pvalue = del->ks_pval;
-            bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pvalue, 1);
-        }
-        if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
-            float ks_pvalue_highmq = del->ks_pval_highmq;
-            bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVALHQ", &ks_pvalue_highmq, 1);
-        }
+    if (sv->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(sv->min_conf_size), 1);
+    }
+    if (sv->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZEHQ", &(sv->min_conf_size_highmq), 1);
+    }
+    if (sv->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(sv->max_conf_size), 1);
+    }
+    if (sv->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZEHQ", &(sv->max_conf_size_highmq), 1);
+    }
+    if (sv->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
+        float ks_pvalue = sv->ks_pval;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pvalue, 1);
+    }
+    if (sv->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
+        float ks_pvalue_highmq = sv->ks_pval_highmq;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVALHQ", &ks_pvalue_highmq, 1);
     }
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
@@ -668,13 +665,15 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     std::vector<ext_read_t*> candidate_reads_for_extension;
     IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
 
-    std::vector<deletion_t*> small_deletions, large_deletions;                
+    std::vector<deletion_t*> small_deletions, large_deletions;       
+    std::vector<sv_t*> small_svs;         
     for (deletion_t* del : dels) {
         genotype_del(del, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
         if (-del->svlen() >= stats.max_is) {
             large_deletions.push_back(del);
         } else {
             small_deletions.push_back(del);
+            small_svs.push_back(del);
         }
     }
 
@@ -683,8 +682,9 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     release_mates(contig_id);
 
     depth_filter_del(contig_name, dels, bam_file, config, stats);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size, true);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats, true);
+    calculate_cluster_region_disc(contig_name, dels, bam_file);
 }
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
@@ -970,17 +970,12 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
     }
     std::vector<ext_read_t*> candidate_reads_for_extension;
     IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
-    // = get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq[contig_id], stats, bam_file);
-    // std::vector<Interval<ext_read_t*>> it_ivals;
-    // for (ext_read_t* ext_read : candidate_reads_for_extension) {
-    //     Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
-    //     it_ivals.push_back(it_ival);
-    // }
-    // IntervalTree<ext_read_t*> candidate_reads_for_extension_itree(it_ivals);
                     
+    std::vector<sv_t*> small_dups;
     for (duplication_t* dup : dups) {
         if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
 			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
+            small_dups.push_back(dup);
 		} else {
 			genotype_large_dup(dup, bam_file);
 		}
@@ -989,8 +984,9 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     release_mates(contig_id);
-    
+
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
 }
 
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {

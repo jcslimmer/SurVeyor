@@ -187,6 +187,8 @@ int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum)
 
 void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion_t*> deletions, open_samFile_t* bam_file) {
 
+	if (deletions.empty()) return;
+
 	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
 		return d1->start < d2->start;
 	});
@@ -315,28 +317,28 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 }
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
-										std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, 
+										std::vector<sv_t*>& svs, open_samFile_t* bam_file, 
 										config_t& config, stats_t& stats, int min_sv_size,
 										bool disallow_changes = false) {
 
-	if (deletions.empty()) return;
+	if (svs.empty()) return;
 
-	std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
+	std::sort(svs.begin(), svs.end(), [](const sv_t* d1, const sv_t* d2) {
 		return (d1->start+d1->end)/2 < (d2->start+d2->end)/2;
 	});
 
     std::vector<hts_pos_t> midpoints, sizes;
-    std::vector<uint64_t> sums(deletions.size()), sums_highmq(deletions.size());
-	std::vector<uint64_t> sq_sums(deletions.size()), sq_sums_highmq(deletions.size());
-    std::vector<uint32_t> ns(deletions.size()), ns_highmq(deletions.size());
+    std::vector<uint64_t> sums(svs.size()), sums_highmq(svs.size());
+	std::vector<uint64_t> sq_sums(svs.size()), sq_sums_highmq(svs.size());
+    std::vector<uint32_t> ns(svs.size()), ns_highmq(svs.size());
     std::vector<char*> regions;
     std::vector<std::pair<hts_pos_t, hts_pos_t> > regions_coos;
-    for (deletion_t* deletion : deletions) {
-        hts_pos_t midpoint = (deletion->start+deletion->end)/2, size = deletion->end-deletion->start;
+    for (sv_t* sv : svs) {
+        hts_pos_t midpoint = (sv->start+sv->end)/2, size = sv->end-sv->start;
         midpoints.push_back(midpoint);
         sizes.push_back(size);
 
-        regions_coos.push_back({std::max(hts_pos_t(1), deletion->start-stats.max_is), deletion->start});
+        regions_coos.push_back({std::max(hts_pos_t(1), sv->start-stats.max_is), sv->start});
         regions_coos.push_back({std::max(hts_pos_t(1), midpoint-stats.max_is), midpoint});
     }
 	std::sort(regions_coos.begin(), regions_coos.end());
@@ -351,13 +353,13 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	int curr_pos = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
     bam1_t* read = bam_init1();
-    std::vector<std::vector<double> > local_dists(deletions.size()), local_dists_highmq(deletions.size());
+    std::vector<std::vector<double> > local_dists(svs.size()), local_dists_highmq(svs.size());
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 
     	if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
         if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0) continue;
 
-        while (curr_pos < deletions.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
+        while (curr_pos < svs.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
 
         hts_pos_t start = read->core.pos + read->core.l_qseq/2;
         hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
@@ -377,8 +379,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
         }
     }
 
-    for (int i = 0; i < deletions.size(); i++) {
-		deletion_t* del = deletions[i];
+    for (int i = 0; i < svs.size(); i++) {
+		sv_t* sv = svs[i];
         uint32_t n = ns[i], n_highmq = ns_highmq[i];
         uint64_t sum = sums[i], sum_highmq = sums_highmq[i];
 		uint64_t sq_sum = sq_sums[i], sq_sum_highmq = sq_sums_highmq[i];
@@ -386,30 +388,30 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
             int avg_is = sum/n;
             int var_is = (sq_sum - sum*sum/n)/(n-1);
             int confidence_ival = 2.576 * sqrt(var_is/n);
-			del->min_conf_size = avg_is - stats.pop_avg_crossing_is - confidence_ival;
-            del->max_conf_size = avg_is - stats.pop_avg_crossing_is + confidence_ival;
+			sv->min_conf_size = abs(avg_is - stats.pop_avg_crossing_is) - confidence_ival;
+            sv->max_conf_size = abs(avg_is - stats.pop_avg_crossing_is) + confidence_ival;
 
 			if (n_highmq >= 4) {
 				int avg_is_highmq = sum_highmq/n_highmq;
 				int var_is_highmq = (sq_sum_highmq - sum_highmq*sum_highmq/n_highmq)/(n_highmq-1);
 				int confidence_ival_highmq = 2.576 * sqrt(var_is_highmq/n_highmq);
-				del->min_conf_size_highmq = avg_is_highmq - stats.pop_avg_crossing_is - confidence_ival_highmq;
-				del->max_conf_size_highmq = avg_is_highmq - stats.pop_avg_crossing_is + confidence_ival_highmq;
+				sv->min_conf_size_highmq = abs(avg_is_highmq - stats.pop_avg_crossing_is) - confidence_ival_highmq;
+				sv->max_conf_size_highmq = abs(avg_is_highmq - stats.pop_avg_crossing_is) + confidence_ival_highmq;
 			}
 
             if (!global_crossing_isize_dist.empty()) {
-				del->ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
+				sv->ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
 				if (n_highmq >= 4) {
-					del->ks_pval_highmq = ks_test(global_crossing_isize_dist, local_dists_highmq[i]);
+					sv->ks_pval_highmq = ks_test(global_crossing_isize_dist, local_dists_highmq[i]);
 				}
             
-				if (!del->imprecise || disallow_changes) continue;
+				if (sv->svtype() != "DEL" || !sv->imprecise || disallow_changes) continue;
 
 				int est_size = avg_is - stats.pop_avg_crossing_is;
 
 				// compute depth base by base in the imprecise deleted regions
 				// TODO: there are some faster data structures out there for this - e.g., Fenwick tree
-				hts_pos_t range_start = std::max(hts_pos_t(1), del->start-stats.read_len), range_end = del->end + stats.read_len;
+				hts_pos_t range_start = std::max(hts_pos_t(1), sv->start-stats.read_len), range_end = sv->end + stats.read_len;
 				if (est_size > range_end-range_start || est_size < min_sv_size) continue; // estimated size is grossly off - ignore
 
 				std::vector<int> depth_by_base(range_end-range_start+1);
@@ -454,8 +456,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
 				int homalt_idx = std::max(0, stats.max_is - est_size);
 				int het_idx = std::max(0, stats.max_is - 2*est_size);
-				int dev_if_homalt = abs((int) (del->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
-				int dev_if_het = abs((int) (del->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
+				int dev_if_homalt = abs((int) (sv->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
+				int dev_if_het = abs((int) (sv->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
 				if (dev_if_het <= dev_if_homalt) {
 					het_evidence++;
 				} else { // deletion is homalt
@@ -463,7 +465,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				}
 
 				// depth supports hom alt or het
-				if (del->median_left_flanking_cov*0.25 < del_cov || del->median_right_flanking_cov*0.25 < del_cov) {
+				if (sv->median_left_flanking_cov*0.25 < del_cov || sv->median_right_flanking_cov*0.25 < del_cov) {
 					het_evidence++;
 				} else {
 					homalt_evidence++;
@@ -478,16 +480,14 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				}
 
 				int new_start = range_start + best_start, new_end = new_start + est_size;
-				if (new_start >= del->start-stats.read_len/2 && new_end <= del->end+stats.read_len/2) {
-					del->original_range = std::to_string(del->start) + "-" + std::to_string(del->end);
-					del->start = new_start; del->end = new_end;
-					del->start = new_start; del->end = new_end;
+				if (new_start >= sv->start-stats.read_len/2 && new_end <= sv->end+stats.read_len/2) {
+					((deletion_t*) sv)->original_range = std::to_string(sv->start) + "-" + std::to_string(sv->end);
+					sv->start = new_start; sv->end = new_end;
+					sv->start = new_start; sv->end = new_end;
 				}
             }
         }
     }
-
-    calculate_cluster_region_disc(contig_name, deletions, bam_file);
 
     for (char* region : regions) {
         delete[] region;
@@ -542,7 +542,6 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 	if (deletions.empty()) return;
 	std::vector<sv_t*> svs(deletions.begin(), deletions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
-	calculate_cluster_region_disc(contig_name, deletions, bam_file);
 
 	if (find_disc_pairs) {
 		std::vector<char*> regions;

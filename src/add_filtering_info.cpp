@@ -40,16 +40,20 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     mtx.unlock();
     // TODO: we are only computing the ks-test p-value for large deletions and DP deletions for efficienty reasons. Investigate why it takes so long calculating it for all deletions.
     std::vector<deletion_t*> large_deletions, small_deletions;
+    std::vector<sv_t*> small_svs;
     for (deletion_t* del : deletions) {
         if (-del->svlen() >= stats.max_is) {
             large_deletions.push_back(del);
         } else {
             small_deletions.push_back(del);
+            small_svs.push_back(del);
         }
     }
+
     depth_filter_del(contig_name, deletions, bam_file, config, stats);
-    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_deletions, bam_file, config, stats, config.min_sv_size);
+    calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats);
+    calculate_cluster_region_disc(contig_name, deletions, bam_file);
 }
 
 void size_and_depth_filtering_dup(int id, std::string contig_name) {
