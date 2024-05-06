@@ -888,7 +888,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file) {
 
     bam1_t* read = bam_init1();
 
-    int alt_better = 0, ref_bp1_better = 0, ref_bp2_better = 0;
+    std::vector<std::string> alt_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -926,23 +926,46 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file) {
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better++;
+            alt_better_seqs.push_back(seq);
         } else {
-            ref_bp1_better += increase_ref_bp1_better;
-            ref_bp2_better += increase_ref_bp2_better;
+            if (increase_ref_bp1_better) {
+                ref_bp1_better_seqs.push_back(seq);
+            }
+            if (increase_ref_bp2_better) {
+                ref_bp2_better_seqs.push_back(seq);
+            }
         }
 
-        if (ref_bp1_better + ref_bp2_better > 4 * stats.get_max_depth(dup->chr)) {
-            alt_better = ref_bp1_better = ref_bp2_better = 0;
+        if (ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() > 4 * stats.get_max_depth(dup->chr)) {
+            alt_better_seqs.clear();
+            ref_bp1_better_seqs.clear();
+            ref_bp2_better_seqs.clear();
             dup->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    dup->regenotyping_info.alt_bp1_better_reads = alt_better;
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better;
-    dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
-    dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
+    char* ref_bp1_seq = new char[ref_bp1_len+1];
+    strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
+    ref_bp1_seq[ref_bp1_len] = 0;
+
+    char* ref_bp2_seq = new char[ref_bp2_len+1];
+    strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
+    ref_bp2_seq[ref_bp2_len] = 0;
+
+    std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
+    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq);
+    std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq);
+    std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq);
+
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better_seqs.size();
+    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
+    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
+    dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
+    dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_seqs.size();
+    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
+    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_seqs_consistent.size();
 
     delete[] alt_seq;
 
