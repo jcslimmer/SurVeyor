@@ -101,7 +101,7 @@ class Features:
 
     def get_regt_feature_names(model_name):
         extra_feature_names = []
-        if model_name == "DEL":
+        if model_name == "DEL" or model_name == "DUP":
             extra_feature_names = Features.regt_stat_test_features_names
         elif model_name == "DEL_LARGE":
             extra_feature_names = Features.regt_dp_features_names
@@ -447,6 +447,16 @@ class Features:
 
         return denovo_feature_values, regt_feature_values
 
+def select_gt(gt1, gt2):
+    if gt1 == "./." and gt2 != "./.":
+        return gt2
+    if gt1 != "./." and gt2 == "./.":
+        return gt1
+    elif gt1 == gt2:
+        return gt1
+    else:
+        return "./."
+
 def read_gts(file_path, tolerate_no_gts = False):
     if not os.path.exists(file_path) and tolerate_no_gts:
         return defaultdict(lambda: "0/0")
@@ -454,10 +464,10 @@ def read_gts(file_path, tolerate_no_gts = False):
         gts = defaultdict(lambda: "0/0")
         for line in file:
             id, gt = line.strip().split()
-            if id in gts and gts[id] != gt:
-                gts[id] = "./."
-            else:
+            if id not in gts:
                 gts[id] = gt
+            else:
+                gts[id] = select_gt(gts[id], gt)
     return gts
 
 def get_stat(stats, stat_name, chrom):
