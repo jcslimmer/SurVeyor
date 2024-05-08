@@ -75,7 +75,10 @@ for model_name in training_data:
     classifier.fit(training_data[model_name], training_labels)
 
     # print feature importance to file
-    features_names = features.Features.get_regt_feature_names(model_name)
+    if cmd_args.regenotyping:
+        features_names = features.Features.get_regt_feature_names(model_name)
+    else:
+        features_names = features.Features.get_denovo_feature_names(model_name)
     importances = classifier.feature_importances_
     indices = np.argsort(importances)[::-1]
     with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
