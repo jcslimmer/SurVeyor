@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <set>
+#include <cmath>
 
 #include "../libs/cxxopts.h"
 #include "../libs/IntervalTree.h"
@@ -39,11 +40,15 @@ int distance(sv_t* sv1, sv_t* sv2) {
 	}
     return std::max(abs(sv1->start-sv2->start), abs(sv1->end-sv2->end));
 }
+
+double overlap_bps(sv_t* sv1, sv_t* sv2) {
+	return std::max(hts_pos_t(0), std::min(sv1->end, sv2->end)-std::max(sv1->start, sv2->start));
+}
+
 double overlap(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "INS" && sv2->svtype() == "INS") return 1.0;
 	if (sv1->end == sv1->start || sv2->end == sv2->start) return 1.0;
-    int overlap_bp = std::max(hts_pos_t(0), std::min(sv1->end, sv2->end)-std::max(sv1->start, sv2->start));
-    return overlap_bp/double(std::min(sv1->end-sv1->start, sv2->end-sv2->start));
+    return overlap_bps(sv1, sv2)/double(std::min(sv1->end-sv1->start, sv2->end-sv2->start));
 }
 
 int len_diff(sv_t* sv1, sv_t* sv2) {
@@ -69,7 +74,7 @@ bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2) {
 	return is_compatible_del_del(sv1, sv2);
 }
 
-bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv) {
+bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
 
 	int max_len_diff = (ins_sv->imprecise || dup_sv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
@@ -85,7 +90,6 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv) {
 	delete[] dup_seq;
 
 	// ssw score is a uint16_t, so we cannot compare strings longer than that
-	StripedSmithWaterman::Alignment alignment;
 	if (ins_sv->ins_seq.length() > UINT16_MAX || ext_dup_seq.length() > UINT16_MAX) {
 		std::string ins_seq_prefix = ins_sv->ins_seq.substr(0, UINT16_MAX-10);
 		std::string ins_seq_suffix = ins_sv->ins_seq.substr(std::max(0, (int) ins_sv->ins_seq.length()-(UINT16_MAX-10)));
@@ -102,14 +106,15 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv) {
 	return alignment.query_end-alignment.query_begin >= ins_sv->ins_seq.length()*0.8;
 }
 bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2) {
+	StripedSmithWaterman::Alignment alignment;
 	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_dup_seq(sv1, sv2);
+		return distance(sv1, sv2) <= max_imprec_dist && check_ins_dup_seq(sv1, sv2, alignment);
 	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_dup_seq(sv1, sv2);
+		return distance(sv1, sv2) <= max_prec_dist && check_ins_dup_seq(sv1, sv2, alignment);
 	}
 }
 
-bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2) {
+bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
 	if (sv1->ins_seq.length() > UINT16_MAX || sv2->ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
 
@@ -128,29 +133,30 @@ bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2) {
 	std::string rsv_seq = extra_seq + r_sv->ins_seq;
 	delete[] extra_seq;
 
-	StripedSmithWaterman::Alignment alignment;
 	std::string& query = lsv_seq.length() < rsv_seq.length() ? lsv_seq : rsv_seq;
 	std::string& ref = lsv_seq.length() < rsv_seq.length() ? rsv_seq : lsv_seq;
 	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
 	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
 }
 bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2) {
+	StripedSmithWaterman::Alignment alignment;
 	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_ins_seq(sv1, sv2);
+		return distance(sv1, sv2) <= max_imprec_dist && check_ins_ins_seq(sv1, sv2, alignment);
 	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_ins_seq(sv1, sv2);
+		return distance(sv1, sv2) <= max_prec_dist && check_ins_ins_seq(sv1, sv2, alignment);
 	}
 }
 
 bool check_ins_seq(sv_t* sv1, sv_t* sv2) {
+	StripedSmithWaterman::Alignment alignment;
 	if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") {
 		return true;
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "INS") {
-		return check_ins_dup_seq(sv2, sv1);
+		return check_ins_dup_seq(sv2, sv1, alignment);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "DUP") {
-		return check_ins_dup_seq(sv1, sv2);
+		return check_ins_dup_seq(sv1, sv2, alignment);
 	} else {
-		return check_ins_ins_seq(sv1, sv2);
+		return check_ins_ins_seq(sv1, sv2, alignment);
 	}
 }
 
@@ -169,6 +175,45 @@ bool is_compatible(sv_t* sv1, sv_t* sv2) {
 		return false;
 	}
 }
+
+struct sv_match_t {
+	sv_t* b_sv, * c_sv;
+	int score = 0;
+	bool rep;
+
+	sv_match_t(sv_t* b_sv, sv_t* c_sv, bool rep) : b_sv(b_sv), c_sv(c_sv) {
+		if (b_sv == NULL || c_sv == NULL) {
+			this->score = 0;
+			this->rep = rep;
+			return;
+		}
+
+		StripedSmithWaterman::Alignment alignment;
+		alignment.Clear();
+		int len_diff = 0;
+		if (b_sv->svtype() == "INS" && c_sv->svtype() == "INS") {
+			len_diff = abs(b_sv->svlen()-c_sv->svlen());
+			check_ins_ins_seq(b_sv, c_sv, alignment);
+		} else if (b_sv->svtype() == "INS" && c_sv->svtype() == "DUP") {
+			check_ins_dup_seq(b_sv, c_sv, alignment);
+		} else if (b_sv->svtype() == "DUP" && c_sv->svtype() == "INS") {
+			check_ins_dup_seq(c_sv, b_sv, alignment);
+		} else {
+			len_diff = abs(b_sv->svlen()-c_sv->svlen());
+		}
+
+		int right_clip = 0;
+		if (alignment.cigar.size() > 0) {
+			uint32_t c = alignment.cigar[alignment.cigar.size()-1];
+			if (cigar_int_to_op(c) == 'S') right_clip = cigar_int_to_len(c);
+		}
+
+		int dist_log = log(distance(b_sv, c_sv)+1);
+		int aln_score = alignment.sw_score/std::max(1.0, double(alignment.query_end+right_clip)) * 100;
+		this->score = -len_diff - dist_log + aln_score;
+		this->rep = rep;
+	}
+};
 
 int main(int argc, char* argv[]) {
 
@@ -203,6 +248,7 @@ int main(int argc, char* argv[]) {
 		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
+		("e,exclusive", "SV cannot be used in multiple matches.", cxxopts::value<bool>()->default_value("false"))
 		("h,help", "Print usage");
 
 	options.parse_positional({"benchmark_file", "called_file"});
@@ -226,6 +272,7 @@ int main(int argc, char* argv[]) {
 	max_prec_len_diff = parsed_args["max_len_diff_precise"].as<int>();
 	max_imprec_len_diff = parsed_args["max_len_diff_imprecise"].as<int>();
     bool report = parsed_args["report"].as<bool>();
+	bool exclusive = parsed_args["exclusive"].as<bool>();
 	ignore_seq = parsed_args["ignore-seq"].as<bool>();
     if (parsed_args["all-imprecise"].as<bool>()) {
     	max_prec_dist = max_imprec_dist;
@@ -340,10 +387,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps;
+	std::vector<sv_match_t> matches;
 
 	for (sv_t* bsv : benchmark_svs) {
-		bool matched = false;
-
 		std::vector<sv_t*>* called_svs_chr_type;
 		if (bsv->svtype() == "DEL") {
 			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
@@ -364,17 +410,7 @@ int main(int argc, char* argv[]) {
 
 		for (sv_t* csv : *called_svs_chr_type) {
 			if (is_compatible(bsv, csv)) {
-				if (!report) std::cout << bsv->id << " " << csv->id << std::endl;
-				if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv->id << " " << bsv->print_gt() << std::endl;
-				b_tps.insert(bsv->id);
-                c_tps.insert(csv->id);
-				if (compatible_gts(bsv, csv)) {
-					b_gt_tps.insert(bsv->id);
-					c_gt_tps.insert(csv->id);
-				} else if (wrong_gts_fout.is_open()) {
-					wrong_gts_fout << bsv->id << " " << csv->id << std::endl;
-				}
-				matched = true;
+				matches.push_back(sv_match_t(bsv, csv, false));
                 continue;
 			}
 
@@ -389,24 +425,51 @@ int main(int argc, char* argv[]) {
 				}
 
 				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv)))) {
-					if (!report) std::cout << bsv->id << " " << csv->id << " REP" << std::endl;
-					if (called_to_benchmark_gts_fout.is_open()) called_to_benchmark_gts_fout << csv->id << " " << bsv->print_gt() << std::endl;
-					b_tps.insert(bsv->id);
-					c_tps.insert(csv->id);
-					if (compatible_gts(bsv, csv)) {
-						b_gt_tps.insert(bsv->id);
-						c_gt_tps.insert(csv->id);
-					} else if (wrong_gts_fout.is_open()) {
-						wrong_gts_fout << bsv->id << " " << csv->id << std::endl;
-					}
-					matched = true;
+					matches.push_back(sv_match_t(bsv, csv, true));
 					continue;
 				}
 			}
 		}
+	}
 
-		if (!report && !matched) {
-			std::cout << bsv->id << " NONE" << std::endl;
+	// sort matches by rep (false first) and then score in descending order
+	std::vector<sv_match_t> accepted_matches;
+	std::sort(matches.begin(), matches.end(), [](sv_match_t& a, sv_match_t& b) {
+		if (a.rep && !b.rep) return false;
+		if (!a.rep && b.rep) return true;
+		return a.score > b.score;
+	});
+	for (sv_match_t& match : matches) {
+		if (exclusive && (b_tps.count(match.b_sv->id) || c_tps.count(match.c_sv->id))) continue;
+
+		b_tps.insert(match.b_sv->id);
+		c_tps.insert(match.c_sv->id);
+		accepted_matches.push_back(match);
+		if (compatible_gts(match.b_sv, match.c_sv)) {
+			b_gt_tps.insert(match.b_sv->id);
+			c_gt_tps.insert(match.c_sv->id);
+		} else if (wrong_gts_fout.is_open()) {
+			wrong_gts_fout << match.b_sv->id << " " << match.c_sv->id << std::endl;
+		}
+	}
+
+	for (sv_t* bsv : benchmark_svs) {
+		if (!b_tps.count(bsv->id)) {
+			accepted_matches.push_back(sv_match_t(bsv, NULL, false));
+		}
+	}
+
+	std::sort(accepted_matches.begin(), accepted_matches.end(), [](sv_match_t& a, sv_match_t& b) {
+		return a.b_sv->id < b.b_sv->id;
+	});
+	if (!report) {
+		for (sv_match_t& match : accepted_matches) {
+			std::cout << match.b_sv->id << " " << (match.c_sv == NULL ? "NONE" : match.c_sv->id) << (match.rep ? " REP" : "") << std::endl;
+		}
+	}
+	if (called_to_benchmark_gts_fout.is_open()) {
+		for (sv_match_t& match : accepted_matches) {
+			if (match.c_sv != NULL) called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
 		}
 	}
 
