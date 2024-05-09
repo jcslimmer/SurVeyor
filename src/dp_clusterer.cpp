@@ -228,7 +228,6 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-
 	std::string sr_vcf_fname = workdir + "/sr.dedup.vcf.gz";
 	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
 	bcf_hdr_t* hdr = bcf_hdr_read(sr_vcf_file);
@@ -284,7 +283,7 @@ int main(int argc, char* argv[]) {
 
 	tbx_index_build(dp_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 
-	std::string merged_vcf_fname = workdir + "/survindel2.out.vcf.gz";
+	std::string merged_vcf_fname = workdir + "/sr_dp.vcf.gz";
 	htsFile* merged_vcf_file = bcf_open(merged_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(merged_vcf_file, hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + merged_vcf_fname + ".");

@@ -171,23 +171,18 @@ exec(merge_identical_calls_cmd)
 dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
 exec(dp_clusterer)
 
-add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/survindel2.out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
-exec(add_filtering_info_cmd)
+ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
+exec(ins_assembler_cmd)
 
-dc_remapper_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
-exec(dc_remapper_cmd)
-
-add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/assembled_ins.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
-exec(add_filtering_info_cmd)
-
-concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/survindel2.out.annotated.vcf.gz %s/assembled_ins.annotated.vcf.gz %s/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/sr_dp.vcf.gz %s/assembled_ins.vcf.gz %s/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
 exec(concat_cmd)
 
-concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/survindel2.out.annotated.pass.vcf.gz %s/assembled_ins.annotated.pass.vcf.gz %s/out.pass.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
-exec(concat_cmd)
+add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
+exec(add_filtering_info_cmd)
 
-normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/out.vcf.gz %s/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/out.annotated.vcf.gz %s/out.annotated.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
 exec(normalise_cmd)
 
-normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/out.pass.vcf.gz %s/out.pass.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-exec(normalise_cmd)
+merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/out.annotated.norm.vcf.gz %s/out.annotated.norm.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+exec(merge_identical_calls_cmd)
+

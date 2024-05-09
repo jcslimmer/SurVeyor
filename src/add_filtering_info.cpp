@@ -188,12 +188,6 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-    std::string out_pass_vcf_fname = in_prefix + ".annotated.pass.vcf.gz";
-    htsFile* out_pass_vcf_file = bcf_open(out_pass_vcf_fname.c_str(), "wz");
-    if (bcf_hdr_write(out_pass_vcf_file, out_vcf_header) != 0) {
-        throw std::runtime_error("Failed to write the VCF header to " + out_pass_vcf_fname + ".");
-    }
-
     std::unordered_map<std::string, std::vector<sv_t*>> sv_entries;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
     	if (!deletions_by_chr.count(contig_name)) continue;
@@ -327,20 +321,13 @@ int main(int argc, char* argv[]) {
  			if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
-            if (sv->is_pass()) {
-                if (bcf_write(out_pass_vcf_file, out_vcf_header, bcf_entry) != 0) {
-                    throw std::runtime_error("Failed to write to " + out_pass_vcf_fname + ".");
-                }
-            }
 		}
     }
 
     chr_seqs.clear();
 
     bcf_close(out_vcf_file);
-    bcf_close(out_pass_vcf_file);
     bcf_hdr_destroy(out_vcf_header);
 
     tbx_index_build(out_vcf_fname.c_str(), 0, &tbx_conf_vcf);
-    tbx_index_build(out_pass_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 }

@@ -17,6 +17,20 @@ void merge_1sr_with_1sr(bcf_hdr_t* hdr, sv_t* rc_sv, sv_t* lc_sv, bool store_in_
 	}
 }
 
+int priority(sv_t* sv) {
+	if (sv->source == "DE_NOVO_ASSEMBLY" || sv->source == "REFERENCE_GUIDED_ASSEMBLY") {
+		insertion_t* ins = dynamic_cast<insertion_t*>(sv);
+		if (ins->imprecise || ins->incomplete_assembly()) return 7;
+		else return 1;
+	} else if (sv->source == "2SR") return 2;
+	else if (sv->source == "HSR-SR" || sv->source == "SR-HSR") return 3;
+	else if (sv->source == "2HSR") return 4;
+	else if (sv->source == "1SR_LC" || sv->source == "1SR_RC") return 5;
+	else if (sv->source == "1HSR_LC" || sv->source == "1HSR_RC") return 6;
+	else if (sv->source == "DP") return 7;
+	throw std::runtime_error("Unknown source: " + sv->source);
+}
+
 int main(int argc, char* argv[]) {
 
 	std::string in_vcf_fname = argv[1];
