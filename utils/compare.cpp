@@ -471,6 +471,15 @@ int main(int argc, char* argv[]) {
 		for (sv_match_t& match : accepted_matches) {
 			if (match.c_sv != NULL) called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
 		}
+		std::set<std::string> c_unchoosen_ids;
+		for (sv_match_t& match : matches) {
+			if (match.c_sv != NULL && !c_tps.count(match.c_sv->id)) {
+				c_unchoosen_ids.insert(match.c_sv->id);
+			}
+		}
+		for (std::string id : c_unchoosen_ids) {
+			called_to_benchmark_gts_fout << id << " " << "./." << std::endl;
+		}
 	}
 
 	// count tp and fn benchmark calls, by sv type

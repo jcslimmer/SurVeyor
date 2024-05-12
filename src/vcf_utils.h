@@ -568,7 +568,8 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	bcf_unpack(sv, BCF_UN_INFO);
 	char c = toupper(sv->d.allele[1][0]);
 	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
-		return sv->d.allele[1];
+		// return everything after the padding base
+		return sv->d.allele[1] + 1;
 	}
 
 	// otherwise, look for SVINSSEQ (compliant with Manta)
