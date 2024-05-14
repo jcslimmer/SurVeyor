@@ -3,10 +3,12 @@
 #include <fstream>
 #include <set>
 #include <cmath>
+#include <mutex>
 
 #include "../libs/cxxopts.h"
 #include "../libs/IntervalTree.h"
 #include "../libs/ssw_cpp.h"
+#include "../libs/cptl_stl.h"
 #include "common.h"
 #include "htslib/vcf.h"
 
@@ -18,6 +20,10 @@ std::unordered_set<std::string> dup_ids;
 
 StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 StripedSmithWaterman::Filter filter;
+
+std::vector<sv_t*> benchmark_svs;
+std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr;
+std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
 
 bool ignore_seq = false;
 
@@ -214,6 +220,61 @@ struct sv_match_t {
 		this->rep = rep;
 	}
 };
+std::vector<sv_match_t> matches;
+std::mutex mtx;
+
+void find_match(int id, int start_idx, int end_idx) {
+
+	for (int i = start_idx; i < end_idx; i++) {
+		sv_t* bsv = benchmark_svs[i];
+
+		std::vector<sv_t*>* called_svs_chr_type;
+		if (bsv->svtype() == "DEL") {
+			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
+		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
+			called_svs_chr_type = &called_inss_by_chr[bsv->chr];
+		}
+
+		std::vector<repeat_t> reps_containing_bsv;
+		if (reps_i[bsv->chr] != NULL) {
+			std::vector<Interval<repeat_t>> intervals_temp = reps_i[bsv->chr]->findOverlapping(bsv->start, bsv->end);
+			for (auto &iv : intervals_temp) {
+				repeat_t rep = iv.value;
+				if (rep.contains(bsv)) {
+					reps_containing_bsv.push_back(rep);
+				}
+			}
+		}
+
+		for (sv_t* csv : *called_svs_chr_type) {
+			if (is_compatible(bsv, csv)) {
+				sv_match_t match(bsv, csv, false);
+				mtx.lock();
+				matches.push_back(match);
+				mtx.unlock();
+				continue;
+			}
+
+			int max_len_diff = (bsv->imprecise || csv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
+			if (len_diff(bsv, csv) <= max_len_diff) {
+				bool same_tr = false;
+				for (repeat_t& rep : reps_containing_bsv) {
+					if (rep.intersects(csv)) {
+						same_tr = true;
+						break;
+					}
+				}
+
+				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv)))) {
+					sv_match_t match(bsv, csv, true);
+					mtx.lock();
+					matches.push_back(match);
+					mtx.unlock();
+				}
+			}
+		}
+	}
+}
 
 int main(int argc, char* argv[]) {
 
@@ -249,6 +310,7 @@ int main(int argc, char* argv[]) {
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("e,exclusive", "SV cannot be used in multiple matches.", cxxopts::value<bool>()->default_value("false"))
+		("t,threads", "Number of threads to use.", cxxopts::value<int>()->default_value("1"))
 		("h,help", "Print usage");
 
 	options.parse_positional({"benchmark_file", "called_file"});
@@ -262,7 +324,7 @@ int main(int argc, char* argv[]) {
 	}
 
     std::string benchmark_fname = parsed_args["benchmark_file"].as<std::string>();
-    std::vector<sv_t*> benchmark_svs = read_sv_list(benchmark_fname.c_str());
+    benchmark_svs = read_sv_list(benchmark_fname.c_str());
     std::string called_fname = parsed_args["called_file"].as<std::string>();
 	std::vector<sv_t*> called_svs = read_sv_list(called_fname.c_str());
 	max_prec_dist = parsed_args["max_dist_precise"].as<int>();
@@ -273,6 +335,7 @@ int main(int argc, char* argv[]) {
 	max_imprec_len_diff = parsed_args["max_len_diff_imprecise"].as<int>();
     bool report = parsed_args["report"].as<bool>();
 	bool exclusive = parsed_args["exclusive"].as<bool>();
+	int threads = parsed_args["threads"].as<int>();
 	ignore_seq = parsed_args["ignore-seq"].as<bool>();
     if (parsed_args["all-imprecise"].as<bool>()) {
     	max_prec_dist = max_imprec_dist;
@@ -362,7 +425,6 @@ int main(int argc, char* argv[]) {
 		chr_seqs.read_fasta_into_map(ref_fname);
 	}
 
-	std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
     if (parsed_args.count("tandem-repeats")) {
 		std::string line;
 		std::unordered_map<std::string, std::vector<repeat_t>> reps;
@@ -380,57 +442,30 @@ int main(int argc, char* argv[]) {
 		}
     }
 
-	std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr;
 	for (sv_t* sv : called_svs) {
 		if (sv->svtype() == "DEL") called_dels_by_chr[sv->chr].push_back(sv);
 		else if (sv->svtype() == "INS" || sv->svtype() == "DUP") called_inss_by_chr[sv->chr].push_back(sv);
 	}
 
-	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps;
-	std::vector<sv_match_t> matches;
-
-	for (sv_t* bsv : benchmark_svs) {
-		std::vector<sv_t*>* called_svs_chr_type;
-		if (bsv->svtype() == "DEL") {
-			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
-		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
-			called_svs_chr_type = &called_inss_by_chr[bsv->chr];
-		}
-
-		std::vector<repeat_t> reps_containing_bsv;
-		if (reps_i[bsv->chr] != NULL) {
-			std::vector<Interval<repeat_t>> intervals_temp = reps_i[bsv->chr]->findOverlapping(bsv->start, bsv->end);
-			for (auto &iv : intervals_temp) {
-				repeat_t rep = iv.value;
-				if (rep.contains(bsv)) {
-					reps_containing_bsv.push_back(rep);
-				}
-			}
-		}
-
-		for (sv_t* csv : *called_svs_chr_type) {
-			if (is_compatible(bsv, csv)) {
-				matches.push_back(sv_match_t(bsv, csv, false));
-                continue;
-			}
-
-			int max_len_diff = (bsv->imprecise || csv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-			if (len_diff(bsv, csv) <= max_len_diff) {
-				bool same_tr = false;
-				for (repeat_t& rep : reps_containing_bsv) {
-					if (rep.intersects(csv)) {
-						same_tr = true;
-						break;
-					}
-				}
-
-				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv)))) {
-					matches.push_back(sv_match_t(bsv, csv, true));
-					continue;
-				}
-			}
-		}
+	ctpl::thread_pool thread_pool(threads);
+    std::vector<std::future<void> > futures;
+	int BLOCK_SIZE = 1000;
+	for (int i = 0; i < benchmark_svs.size(); i+=BLOCK_SIZE) {
+		sv_t* bsv = benchmark_svs[i];
+		std::future<void> future = thread_pool.push(find_match, i, std::min(i+BLOCK_SIZE, (int) benchmark_svs.size()));
+		futures.push_back(std::move(future));
 	}
+	thread_pool.stop(true);
+    for (int i = 0; i < futures.size(); i++) {
+        try {
+            futures[i].get();
+        } catch (char const* s) {
+            std::cerr << s << std::endl;
+        }
+    }
+    futures.clear();
+
+	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps;
 
 	// sort matches by rep (false first) and then score in descending order
 	std::vector<sv_match_t> accepted_matches;
