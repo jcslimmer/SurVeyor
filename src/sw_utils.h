@@ -445,13 +445,15 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
         std::pair<int, int> lp_suffix_score = find_aln_suffix_score(left_part_aln.cigar, mh_len, 1, -4, -6, -1);
         std::pair<int, int> rp_prefix_score = find_aln_prefix_score(right_part_aln.cigar, mh_len, 1, -4, -6, -1);
 
-        if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
-            (lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
-            !is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
-            duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
-			sv->precompute_base_frequencies(contig_seq);
-            return std::vector<sv_t*>({sv});
-        }
+		if (middle_part.size() < left_bp - right_bp) {
+			if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
+				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
+				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
+				duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+				sv->precompute_base_frequencies(contig_seq);
+				return std::vector<sv_t*>({sv});
+			}
+		}
 
         // otherwise, it's an insertion
         std::string mh;

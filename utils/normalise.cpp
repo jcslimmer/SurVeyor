@@ -95,7 +95,7 @@ bool normalise_ins(bcf1_t* vcf_record) {
 	ins_seq = ins_seq.substr(0, end_is);
 
 	if (vcf_record->pos == end) {
-		while (toupper(chr_seq[vcf_record->pos]) == toupper(ins_seq[ins_seq.length()-1])) {
+		while (vcf_record->pos > 0 && toupper(chr_seq[vcf_record->pos]) == toupper(ins_seq[ins_seq.length()-1])) {
 			for (int i = ins_seq.length()-1; i >= 1; i--) {
 				ins_seq[i] = ins_seq[i-1];
 			}
