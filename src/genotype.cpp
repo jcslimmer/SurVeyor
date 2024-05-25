@@ -423,12 +423,25 @@ std::vector<std::string> find_consistent_seqs_subset(std::string ref_seq, std::v
         }
 
         consensus_seq = consensuses[0];
+        std::vector<int> start_positions, end_positions;
         for (std::string& seq : seqs) {
             aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
             if (!is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
                 consistent_seqs.push_back(seq);
+                start_positions.push_back(aln.ref_begin);
+                end_positions.push_back(aln.ref_end);
             }
         }
+        std::sort(start_positions.begin(), start_positions.end());
+        std::sort(end_positions.begin(), end_positions.end());
+
+        // if (start_positions.size() > 2) {
+        //     int start = start_positions[2];
+        //     int end = end_positions[start_positions.size()-3];
+        //     consensus_seq = consensus_seq.substr(start, end-start);
+        // } else {
+        //     consensus_seq = "";
+        // }
     }
     return consistent_seqs;
 }
@@ -791,7 +804,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
-        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->start-stats.max_is, dup->start, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
+        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->start-stats.max_is, dup->start, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, dup->end, dup->end+stats.max_is, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         dup->regenotyping_info.alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
         dup->regenotyping_info.hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
@@ -800,7 +813,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         hts_pos_t ref_start = dup->start-alt_consensus_seq.length();
         if (ref_start < 0) ref_start = 0;
-        hts_pos_t ref_end = dup->start+alt_consensus_seq.length();
+        hts_pos_t ref_end = dup->end+alt_consensus_seq.length();
         if (ref_end > contig_len) ref_end = contig_len;
         aligner.Align(alt_consensus_seq.c_str(), chr_seqs.get_seq(dup->chr)+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
         dup->regenotyping_info.ext_alt_consensus_to_ref_score = ref_aln.sw_score;
@@ -962,8 +975,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
-        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->start-stats.max_is, dup->start, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
-        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, dup->end, dup->end+stats.max_is, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->end-stats.max_is, dup->end, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
+        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, dup->start, dup->start+stats.max_is, dup->chr, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         dup->regenotyping_info.alt_ext_reads = alt_consensus->left_ext_reads + alt_consensus->right_ext_reads;
         dup->regenotyping_info.hq_alt_ext_reads = alt_consensus->hq_left_ext_reads + alt_consensus->hq_right_ext_reads;
         alt_consensus_seq = alt_consensus->sequence;
@@ -1032,13 +1045,8 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 
     std::vector<hts_pair_pos_t> target_ivals;
     for (duplication_t* dup : dups) {
-        if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
-            target_ivals.push_back({dup->start-stats.max_is, dup->start+stats.max_is});
-            target_ivals.push_back({dup->end-stats.max_is, dup->end+stats.max_is});
-        } else {
-            target_ivals.push_back({dup->start, dup->start+stats.max_is});
-            target_ivals.push_back({dup->end-stats.max_is, dup->end});
-        }
+        target_ivals.push_back({dup->start-stats.max_is, dup->start+stats.max_is});
+        target_ivals.push_back({dup->end-stats.max_is, dup->end+stats.max_is});
     }
     std::vector<ext_read_t*> candidate_reads_for_extension;
     IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
@@ -1061,7 +1069,8 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
 }
 
-void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {
+void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
+                std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
     hts_pos_t ins_start = ins->start, ins_end = ins->end;
 
 	hts_pos_t extend = stats.read_len + 20;
@@ -1113,7 +1122,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {
 
     bam1_t* read = bam_init1();
 
-    int ref_bp1_better = 0, ref_bp2_better = 0, alt_bp1_better = 0, alt_bp2_better = 0, same = 0;
+    int same = 0;
+    std::vector<std::string> alt_bp1_better_seqs, alt_bp2_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
@@ -1136,37 +1146,138 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file) {
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
-                alt_bp1_better++;
+                alt_bp1_better_seqs.push_back(seq);
             } 
             if (alt1_aln.sw_score <= alt2_aln.sw_score) {
-                alt_bp2_better++;
+                alt_bp2_better_seqs.push_back(seq);
             }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
             if (ref1_aln.sw_score >= ref2_aln.sw_score) {
-                ref_bp1_better++;
+                ref_bp1_better_seqs.push_back(seq);
             } 
             if (ref1_aln.sw_score <= ref2_aln.sw_score) {
-                ref_bp2_better++;
+                ref_bp2_better_seqs.push_back(seq);
             }
         } else {
             same++;
         }
 
-        if (alt_bp1_better + alt_bp2_better + ref_bp1_better + ref_bp2_better + same > 4 * stats.get_max_depth(ins->chr)) {
-            alt_bp1_better = alt_bp2_better = ref_bp1_better = ref_bp2_better = same = 0;
+        if (alt_bp1_better_seqs.size() + alt_bp2_better_seqs.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + same > 4 * stats.get_max_depth(ins->chr)) {
+            alt_bp1_better_seqs.clear();
+            alt_bp2_better_seqs.clear();
+            ref_bp1_better_seqs.clear();
+            ref_bp2_better_seqs.clear();
+            same = 0;
             ins->regenotyping_info.too_deep = true;
             break;
         }
     }
 
-    ins->regenotyping_info.alt_bp1_better_reads = alt_bp1_better;
-    ins->regenotyping_info.alt_bp2_better_reads = alt_bp2_better;
-    ins->regenotyping_info.ref_bp1_better_reads = ref_bp1_better;
-    ins->regenotyping_info.ref_bp2_better_reads = ref_bp2_better;
-    ins->regenotyping_info.alt_ref_equal_reads = same;
-
+    std::string alt_bp1_consensus_seq, alt_bp2_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
+    std::vector<std::string> alt_bp1_better_seqs_consistent = find_consistent_seqs_subset(alt_bp1_seq, alt_bp1_better_seqs, alt_bp1_consensus_seq);
     delete[] alt_bp1_seq;
+    std::vector<std::string> alt_bp2_better_seqs_consistent = find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, alt_bp2_consensus_seq);
     delete[] alt_bp2_seq;
+    
+    char* ref_bp1_seq = new char[ref_bp1_len+1];
+    strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
+    ref_bp1_seq[ref_bp1_len] = 0;
+    std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq);
+    delete[] ref_bp1_seq;
+
+    char* ref_bp2_seq = new char[ref_bp2_len+1];
+    strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
+    ref_bp2_seq[ref_bp2_len] = 0;
+    std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq);
+    delete[] ref_bp2_seq;
+
+    if (!alt_bp1_consensus_seq.empty()) {
+        // all we care about is the consensus sequence
+        consensus_t* alt_bp1_consensus = new consensus_t(false, 0, 0, 0, alt_bp1_consensus_seq, 0, 0, 0, 0, 0, 0);
+        extend_consensus_to_left(alt_bp1_consensus, candidate_reads_for_extension_itree, ins->start-stats.max_is, ins->start, ins->chr, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
+        extend_consensus_to_right(alt_bp1_consensus, candidate_reads_for_extension_itree, ins->start, ins->start+stats.max_is, ins->chr, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        ins->regenotyping_info.alt_ext_reads = alt_bp1_consensus->left_ext_reads + alt_bp1_consensus->right_ext_reads;
+        ins->regenotyping_info.hq_alt_ext_reads = alt_bp1_consensus->hq_left_ext_reads + alt_bp1_consensus->hq_right_ext_reads;
+        alt_bp1_consensus_seq = alt_bp1_consensus->sequence;
+        delete alt_bp1_consensus;
+    }
+    if (!alt_bp2_consensus_seq.empty()) {
+        consensus_t* alt_bp2_consensus = new consensus_t(false, 0, 0, 0, alt_bp2_consensus_seq, 0, 0, 0, 0, 0, 0);
+        extend_consensus_to_left(alt_bp2_consensus, candidate_reads_for_extension_itree, ins->end-stats.max_is, ins->end, ins->chr, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        extend_consensus_to_right(alt_bp2_consensus, candidate_reads_for_extension_itree, ins->end, ins->end+stats.max_is, ins->chr, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        ins->regenotyping_info.alt_ext_reads += alt_bp2_consensus->left_ext_reads + alt_bp2_consensus->right_ext_reads;
+        ins->regenotyping_info.hq_alt_ext_reads += alt_bp2_consensus->hq_left_ext_reads + alt_bp2_consensus->hq_right_ext_reads;
+        alt_bp2_consensus_seq = alt_bp2_consensus->sequence;
+        delete alt_bp2_consensus;
+    }
+    ins->regenotyping_info.ext_alt_consensus_length = alt_bp1_consensus_seq.length() + alt_bp2_consensus_seq.length();
+
+    ref1_aln.Clear();
+    alt1_aln.Clear();
+    if (!alt_bp1_consensus_seq.empty()) {
+        hts_pos_t ref_bp1_start = ins->start-alt_bp1_consensus_seq.length();
+        if (ref_bp1_start < 0) ref_bp1_start = 0;
+        hts_pos_t ref_bp1_end = ins->start+alt_bp1_consensus_seq.length();
+        if (ref_bp1_end > contig_len) ref_bp1_end = contig_len;
+        aligner.Align(alt_bp1_consensus_seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
+
+        alt_bp1_seq = new char[2*alt_bp1_consensus_seq.length()+1];
+        strncpy(alt_bp1_seq, contig_seq+ref_bp1_start, ins->start-ref_bp1_start);
+        int ins_seq_portion_len = std::min(ins->ins_seq.length(), alt_bp1_consensus_seq.length());
+        strncpy(alt_bp1_seq+ins->start-ref_bp1_start, ins->ins_seq.c_str(), ins_seq_portion_len);
+        int extra_len = alt_bp1_consensus_seq.length() - ins->ins_seq.length();
+        if (extra_len > 0) {
+            if (ins->end+extra_len > contig_len) extra_len = contig_len-ins->end;
+            strncpy(alt_bp1_seq+ins->start-ref_bp1_start+ins_seq_portion_len, contig_seq+ins->end, extra_len);
+        } else {
+            extra_len = 0;
+        }
+        int alt_bp1_seq_len = ins->start-ref_bp1_start + ins_seq_portion_len + extra_len;
+        alt_bp1_seq[alt_bp1_seq_len] = 0;
+
+        aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_seq_len, filter, &alt1_aln, 0);
+        delete[] alt_bp1_seq;
+    }
+
+    ref2_aln.Clear();
+    alt2_aln.Clear();
+    if (!alt_bp2_consensus_seq.empty()) {
+        hts_pos_t ref_bp2_start = ins->end-alt_bp2_consensus_seq.length();
+        if (ref_bp2_start < 0) ref_bp2_start = 0;
+        hts_pos_t ref_bp2_end = ins->end+alt_bp2_consensus_seq.length();
+        if (ref_bp2_end > contig_len) ref_bp2_end = contig_len; 
+        aligner.Align(alt_bp2_consensus_seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
+
+        alt_bp2_seq = new char[2*alt_bp2_consensus_seq.length()+1];
+        int extra_len = alt_bp2_consensus_seq.length() - ins->ins_seq.length();
+        if (extra_len > 0) {
+            if (ins->start-extra_len < 0) extra_len = ins->start;
+            strncpy(alt_bp2_seq, contig_seq+ins->start-extra_len, extra_len);
+        } else {
+            extra_len = 0;
+        }
+        int ins_seq_portion_len = std::min(ins->ins_seq.length(), alt_bp2_consensus_seq.length());
+        strncpy(alt_bp2_seq+extra_len, ins->ins_seq.c_str()+(ins->ins_seq.length()-ins_seq_portion_len), ins_seq_portion_len);
+        strncpy(alt_bp2_seq+extra_len+ins_seq_portion_len, contig_seq+ins->end, ref_bp2_end-ins->end);
+        int alt_bp2_seq_len = extra_len + ins_seq_portion_len + ref_bp2_end-ins->end;
+        alt_bp2_seq[alt_bp2_seq_len] = 0;
+
+        aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_seq_len, filter, &alt2_aln, 0);
+        delete[] alt_bp2_seq;
+    }
+
+    ins->regenotyping_info.ext_alt_consensus_to_ref_score = ref1_aln.sw_score + ref2_aln.sw_score;
+    ins->regenotyping_info.ext_alt_consensus_to_alt_score = alt1_aln.sw_score + alt2_aln.sw_score;
+
+    ins->regenotyping_info.alt_bp1_better_reads = alt_bp1_better_seqs.size();
+    ins->regenotyping_info.alt_bp2_better_reads = alt_bp2_better_seqs.size();
+    ins->regenotyping_info.alt_bp1_better_consistent_reads = alt_bp1_better_seqs_consistent.size();
+    ins->regenotyping_info.alt_bp2_better_consistent_reads = alt_bp2_better_seqs_consistent.size();
+    ins->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
+    ins->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_seqs.size();
+    ins->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
+    ins->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_seqs_consistent.size();
+    ins->regenotyping_info.alt_ref_equal_reads = same;
 
     free(regions[0]);
     free(regions[1]);
@@ -1180,11 +1291,21 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
 
     int contig_id = contig_map.get_id(contig_name);
     read_mates(contig_id);
+
+    std::vector<hts_pair_pos_t> target_ivals;
+    for (insertion_t* ins : inss) {
+        target_ivals.push_back({ins->start-stats.max_is, ins->start+stats.max_is});
+        target_ivals.push_back({ins->end-stats.max_is, ins->end+stats.max_is});
+    }
+    std::vector<ext_read_t*> candidate_reads_for_extension;
+    IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_pool->get_bam_reader(id), candidate_reads_for_extension);
                     
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
-        genotype_ins(ins, bam_file);
+        genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
     }
+
+    for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     release_mates(contig_id);
 
@@ -1282,8 +1403,8 @@ int main(int argc, char* argv[]) {
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
 
-    for (auto& p : chr_seqs.seqs) {
-    	std::string contig_name = p.first;
+    for (int i = 0; i < contig_map.size(); i++) {
+    	std::string contig_name = contig_map.get_name(i);
         std::vector<deletion_t*>& dels = dels_by_chr[contig_name];
         for (int i = 0; i < dels.size(); i += BLOCK_SIZE) {
             std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
@@ -1298,6 +1419,7 @@ int main(int argc, char* argv[]) {
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
             futures.push_back(std::move(future));
+            // genotype_dups(0, contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
         }
 
         std::vector<insertion_t*>& inss = inss_by_chr[contig_name];

@@ -397,14 +397,12 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 
 	if (consensus->extended_to_right) return;
 
-
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
 	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(high_confidence_mapq);
 
 	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
-
 
 	if (read_seqs.size() > 5000) return;
 
