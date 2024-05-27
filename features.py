@@ -43,10 +43,13 @@ class Features:
     
     def get_regt_model_name(record, max_is, read_len):
         svtype_str = record.info['SVTYPE']
-        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
-            return "DEL_LARGE"
-        if svtype_str == "DUP" and record.stop-record.start > read_len-30:
-            return "DUP_LARGE"
+        if svtype_str == "DEL":
+            if abs(Features.get_svlen(record)) >= max_is:
+                svtype_str += "_LARGE"
+            if "IMPRECISE" in record.info:
+                svtype_str += "_IMPRECISE"
+        elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
+            svtype_str += "_LARGE"
         return svtype_str
 
     def get_denovo_feature_names(model_name):
@@ -87,7 +90,7 @@ class Features:
             return Features.shared_features_names + Features.shared_denovo_features_names + Features.denovo_features_names
 
     regt_shared_features_names = \
-            ['IP', 'AR1', 'ARC1', 'AR2', 'ARC2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
+            ['IP', 'AR1', 'ARC1', 'AR2', 'ARC2', 'ARCAS1', 'ARCAS2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
@@ -101,9 +104,9 @@ class Features:
 
     def get_regt_feature_names(model_name):
         extra_feature_names = []
-        if model_name == "DEL" or model_name == "DUP":
+        if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
             extra_feature_names = Features.regt_stat_test_features_names
-        elif model_name == "DEL_LARGE":
+        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE"]:
             extra_feature_names = Features.regt_dp_features_names
         return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
 
@@ -328,6 +331,8 @@ class Features:
         features['ARC1'] = Features.normalise(arc1, min_depth, max_depth)
         features['AR2'] = Features.normalise(ar2, min_depth, max_depth)
         features['ARC2'] = Features.normalise(arc2, min_depth, max_depth)
+        features['ARCAS1'] =Features.get_number_value(record.samples[0], 'ARCAS1', 0)
+        features['ARCAS2'] =Features.get_number_value(record.samples[0], 'ARCAS2', 0)
         features['RR1'] = Features.normalise(rr1, min_depth, max_depth)
         features['RRC1'] = Features.normalise(rrc1, min_depth, max_depth)
         features['RR2'] = Features.normalise(rr2, min_depth, max_depth)
