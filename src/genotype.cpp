@@ -1313,6 +1313,107 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     hts_itr_destroy(iter);
 }
 
+void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats,
+                           std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
+    
+    std::vector<char*> regions;
+    for (insertion_t* ins : insertions) {
+        std::stringstream ss;
+        ss << ins->chr << ":" << std::max(hts_pos_t(1), ins->start-stats.max_is) << "-" << ins->start;
+        regions.push_back(strdup(ss.str().c_str()));
+    }
+
+    std::sort(insertions.begin(), insertions.end(), [](insertion_t* a, insertion_t* b) { return a->start < b->start; });
+
+    int curr_pos = 0;
+    hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+    bam1_t* read = bam_init1();
+    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        if (is_unmapped(read) || !is_primary(read)) continue;
+
+        while (curr_pos < insertions.size() && insertions[curr_pos]->start < read->core.pos) curr_pos++;
+
+        if (bam_is_rev(read)) continue;
+
+        std::string qname = bam_get_qname(read);
+        if (mateseqs_w_mapq_chr.count(qname) == 0) continue;
+
+        std::string mate_seq = mateseqs_w_mapq_chr[qname].first;
+        rc(mate_seq);
+
+        StripedSmithWaterman::Filter filter;
+        StripedSmithWaterman::Alignment aln;
+        for (int i = curr_pos; i < insertions.size() && insertions[i]->start-stats.max_is < read->core.pos; i++) {
+            harsh_aligner.Align(mate_seq.c_str(), insertions[i]->ins_seq.c_str(), insertions[i]->ins_seq.length(), filter, &aln, 0);
+
+            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+            int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
+            
+            if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
+                (rc_size < config.min_clip_len || aln.ref_end >= insertions[i]->ins_seq.length()-1)) {
+                insertions[i]->disc_pairs_lf++;
+                if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_lf_high_mapq++;
+                insertions[i]->disc_pairs_lf_maxmapq = std::max(insertions[i]->disc_pairs_lf_maxmapq, mateseqs_w_mapq_chr[qname].second);
+                insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
+            }
+        }
+    }
+    for (insertion_t* ins : insertions) {
+        if (ins->disc_pairs_lf > 0) ins->disc_pairs_lf_avg_nm /= ins->disc_pairs_lf;
+    }
+
+    for (char* region : regions) free(region);
+    hts_itr_destroy(iter);
+
+    regions.clear();
+    for (insertion_t* ins : insertions) {
+        std::stringstream ss;
+        ss << ins->chr << ":" << ins->end << "-" << ins->end+stats.max_is;
+        regions.push_back(strdup(ss.str().c_str()));
+    }
+
+    std::sort(insertions.begin(), insertions.end(), [](insertion_t* a, insertion_t* b) { return a->end < b->end; });
+
+    curr_pos = 0;
+    iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        if (is_unmapped(read) || !is_primary(read)) continue;
+
+        while (curr_pos < insertions.size() && insertions[curr_pos]->end+stats.max_is < read->core.pos) curr_pos++;
+
+        if (!bam_is_rev(read)) continue;
+
+        std::string qname = bam_get_qname(read);
+        if (mateseqs_w_mapq_chr.count(qname) == 0) continue;
+
+        std::string mate_seq = mateseqs_w_mapq_chr[qname].first;
+
+        StripedSmithWaterman::Filter filter;
+        StripedSmithWaterman::Alignment aln;
+        for (int i = curr_pos; i < insertions.size() && insertions[i]->end < read->core.pos; i++) {
+            harsh_aligner.Align(mate_seq.c_str(), insertions[i]->ins_seq.c_str(), insertions[i]->ins_seq.length(), filter, &aln, 0);
+
+            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+            int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
+
+            if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
+                (rc_size < config.min_clip_len || aln.ref_end >= insertions[i]->ins_seq.length()-1)) {
+                insertions[i]->disc_pairs_rf++;
+                if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_rf_high_mapq++;
+                insertions[i]->disc_pairs_rf_maxmapq = std::max(insertions[i]->disc_pairs_rf_maxmapq, mateseqs_w_mapq_chr[qname].second);
+                insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
+            }
+        }
+    }
+    for (insertion_t* ins : insertions) {
+        if (ins->disc_pairs_rf > 0) ins->disc_pairs_rf_avg_nm /= ins->disc_pairs_rf;
+    }
+
+    for (char* region : regions) free(region);
+    hts_itr_destroy(iter);
+    bam_destroy1(read);
+}
+
 void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<insertion_t*> inss,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
 
@@ -1334,10 +1435,11 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
 
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
-    release_mates(contig_id);
-
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
     calculate_ptn_ratio(contig_name, inss, bam_file, stats);
+    find_discordant_pairs(contig_name, inss, bam_file, stats, mateseqs_w_mapq[contig_id]);
+    
+    release_mates(contig_id);
 }
 
 int main(int argc, char* argv[]) {
@@ -1446,7 +1548,6 @@ int main(int argc, char* argv[]) {
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
             futures.push_back(std::move(future));
-            // genotype_dups(0, contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config);
         }
 
         std::vector<insertion_t*>& inss = inss_by_chr[contig_name];
@@ -1463,6 +1564,10 @@ int main(int argc, char* argv[]) {
             futures[i].get();
         } catch (char const* s) {
             std::cerr << s << std::endl;
+        } catch (std::string s) {
+            std::cerr << s << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
         }
     }
     futures.clear();

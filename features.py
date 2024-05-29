@@ -100,13 +100,13 @@ class Features:
     
     regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
 
-    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'PTNR']
+    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR']
 
     def get_regt_feature_names(model_name):
         extra_feature_names = []
         if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
             extra_feature_names = Features.regt_stat_test_features_names
-        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE"]:
+        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS"]:
             extra_feature_names = Features.regt_dp_features_names
         return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
 
@@ -425,13 +425,13 @@ class Features:
         features['DP1MQ'] = Features.get_number_value(record.samples[0], 'DP1MQ', 0)
         features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DP2MQ', 0)
         features['DPLANM'] = Features.get_number_value(record.samples[0], 'DPLANM', 0)
+        features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPRANM', 0)
         features['DPSL'] = Features.get_number_value(record.samples[0], 'DPSL', 0)
         features['DPSR'] = Features.get_number_value(record.samples[0], 'DPSR', 0)
 
         cp = Features.get_number_value(record.samples[0], 'CP', 0)
         features['CP'] = Features.normalise(cp, min_pairs_crossing_point, max_pairs_crossing_point)
-        if svtype_str == "DEL":
-            features['PTNR'] = dp1/max(1, cp)
+        features['PTNR'] = dp1/max(1, cp)
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
