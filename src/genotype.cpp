@@ -1355,6 +1355,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_lf_high_mapq++;
                 insertions[i]->disc_pairs_lf_maxmapq = std::max(insertions[i]->disc_pairs_lf_maxmapq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
+            } else {
+                insertions[i]->l_cluster_region_disc_pairs++;
             }
         }
     }
@@ -1402,6 +1404,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_rf_high_mapq++;
                 insertions[i]->disc_pairs_rf_maxmapq = std::max(insertions[i]->disc_pairs_rf_maxmapq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
+            } else {
+                insertions[i]->r_cluster_region_disc_pairs++;
             }
         }
     }
