@@ -131,6 +131,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* rev_sr_info_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_info_tag, &len));
 
+	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
+
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
 
@@ -169,9 +172,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* splitj_maprange_tag = "##INFO=<ID=SPLIT_JUNCTION_MAPPING_RANGE,Number=1,Type=String,Description=\"Mapping locations of the left-half and right-half of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_maprange_tag, &len));
-
-	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
 
 	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
@@ -671,10 +671,21 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (len > 0) lc_consensus->remap_boundary = data[0];
 	}
 
+	int full_junction_score = 0;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "FULL_JUNCTION_SCORE", &data, &len);
+	if (len > 0) full_junction_score = data[0];
+
+	std::string full_junction_cigar = "";
+	char* s_data = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &s_data, &len);
+	if (s_data) full_junction_cigar = s_data;
+
 	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
 	hts_pos_t right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
 
-	char* s_data = NULL;
+	s_data = NULL;
 	len = 0;
 	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
 	std::string left_split_mapping_range = "", right_split_mapping_range = "";
@@ -724,17 +735,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		left_split_cigar = cigar.substr(0, comma_pos);
 		right_split_cigar = cigar.substr(comma_pos+1);
 	}
-
-	int full_junction_score = 0;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "FULL_JUNCTION_SCORE", &data, &len);
-	if (len > 0) full_junction_score = data[0];
-
-	std::string full_junction_cigar = "";
-	s_data = NULL;
-	len = 0;
-	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &s_data, &len);
-	if (s_data) full_junction_cigar = s_data;
 
 	data = NULL;
 	len = 0;
@@ -823,6 +823,75 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->l_cluster_region_disc_pairs = data[0];
 		sv->r_cluster_region_disc_pairs = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "CONC_PAIRS", &data, &len);
+	if (len > 0) {
+		sv->conc_pairs = data[0];
+	}
+
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "KS_PVAL", &f_data, &len);
+	if (len > 0) {
+		sv->ks_pval = f_data[0];
+	}
+
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "KS_PVAL_HIGHMQ", &f_data, &len);
+	if (len > 0) {
+		sv->ks_pval_highmq = f_data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MIN_SIZE", &data, &len);
+	if (len > 0) {
+		sv->min_conf_size = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MIN_SIZE_HIGHMQ", &data, &len);
+	if (len > 0) {
+		sv->min_conf_size_highmq = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MAX_SIZE", &data, &len);
+	if (len > 0) {
+		sv->max_conf_size = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MAX_SIZE_HIGHMQ", &data, &len);
+	if (len > 0) {
+		sv->max_conf_size_highmq = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MEDIAN_DEPTHS", &data, &len);
+	if (len > 0) {
+		sv->median_left_flanking_cov = data[0];
+		sv->median_indel_left_cov = data[1];
+		sv->median_indel_right_cov = data[2];
+		sv->median_right_flanking_cov = data[3];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MEDIAN_DEPTHS_HIGHMQ", &data, &len);
+	if (len > 0) {
+		sv->median_left_flanking_cov_highmq = data[0];
+		sv->median_indel_left_cov_highmq = data[1];
+		sv->median_indel_right_cov_highmq = data[2];
+		sv->median_right_flanking_cov_highmq = data[3];
 	}
 
 	data = NULL;
