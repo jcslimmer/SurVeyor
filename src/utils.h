@@ -8,11 +8,15 @@
 #include <vector>
 #include <queue>
 #include <numeric>
+#include <cmath>
+#include <random>
 #include <unistd.h>
+#include <algorithm>
 
 #include <htslib/sam.h>
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
+#include "htslib/hts.h"
 #include "htslib/kseq.h"
 KSEQ_INIT(int, read)
 
@@ -151,6 +155,16 @@ struct contig_map_t {
 template<typename T>
 T mean(std::vector<T>& v) {
     return std::accumulate(v.begin(), v.end(), (T)0.0)/v.size();
+}
+
+template<typename T>
+T stddev(std::vector<T>& v) {
+    T m = mean(v);
+    T sum = 0;
+    for (T& e : v) {
+        sum += (e - m)*(e - m);
+    }
+    return std::sqrt(sum/v.size());
 }
 
 template<typename T>
@@ -307,5 +321,78 @@ std::vector<int> find_rev_topological_order(int n, std::vector<int>& out_edges, 
 	}
 	return rev_topological_order;
 }
+
+struct random_pos_generator_t {
+
+    const int NO_SAMPLING_PADDING = 1000;
+
+    chr_seqs_map_t& chr_seqs_map;
+    hts_pos_t reference_len;
+    std::mt19937 rng;
+    std::uniform_int_distribution<hts_pos_t> dist;
+
+    struct region_t {
+        std::string chr;
+        hts_pos_t start, end;
+        region_t(std::string chr, hts_pos_t start, hts_pos_t end) : chr(chr), start(start), end(end) {}
+    };
+    std::vector<region_t> regions;
+
+    random_pos_generator_t(chr_seqs_map_t& chr_seqs_map, int seed, std::string sampling_regions_fname = "") : chr_seqs_map(chr_seqs_map) {
+        rng.seed(seed);
+
+        if (sampling_regions_fname.empty()) {
+            for (std::string& chr : chr_seqs_map.ordered_contigs) {
+                regions.push_back(region_t(chr, NO_SAMPLING_PADDING, chr_seqs_map.get_len(chr)-NO_SAMPLING_PADDING));
+            }
+        } else {
+            std::ifstream fin(sampling_regions_fname);
+            std::string line;
+            while (std::getline(fin, line)) {
+                std::istringstream iss(line);
+
+                // tokenize iss imitating >>, do not assume format
+                std::vector<std::string> tokens;
+                std::string token;
+                while (iss >> token) {
+                    tokens.push_back(token);
+                }
+
+                if (tokens.size() == 1) {
+                    std::string chr = tokens[0];
+                    regions.push_back(region_t(chr, NO_SAMPLING_PADDING, chr_seqs_map.get_len(chr)-NO_SAMPLING_PADDING));
+                } else if (tokens.size() == 3) {
+                    std::string chr = tokens[0];
+                    hts_pos_t start = std::stoll(tokens[1]);
+                    hts_pos_t end = std::stoll(tokens[2]);
+                    regions.push_back(region_t(chr, start, end));
+                } else {
+                    std::string error_msg = "Error: invalid sampling region format in " + sampling_regions_fname + "\n";
+                    throw std::runtime_error(error_msg);
+                }
+            }
+        }
+        regions.erase(std::remove_if(regions.begin(), regions.end(), [](region_t& r) {return r.start >= r.end;}), regions.end());
+
+        for (region_t& r : regions) {
+            reference_len += r.end - r.start;
+        }
+
+        dist = std::uniform_int_distribution<hts_pos_t>(0, reference_len-1);
+    }
+
+    std::pair<std::string, hts_pos_t> get_random_pos() {
+        hts_pos_t random_pos = dist(rng);
+
+        for (region_t& r : regions) {
+            if (random_pos < r.end - r.start) {
+                return {r.chr, r.start + random_pos};
+            } else {
+                random_pos -= r.end - r.start;
+            }
+        }
+        throw std::runtime_error("Error: random_pos_generator_t::get_random_pos() failed\n");
+    }
+};
 
 #endif

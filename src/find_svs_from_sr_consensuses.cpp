@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[3];
     std::string sample_name = argv[4];
 
-    std::string full_cmd_fname = workdir + "/full_cmd.txt";
+    std::string full_cmd_fname = workdir + "/call_cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);
 	std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);
@@ -358,7 +358,6 @@ int main(int argc, char* argv[]) {
 	mateseqs_w_mapq.resize(contig_map.size());
 	active_threads_per_chr = std::vector<int>(contig_map.size());
 	mutex_per_chr = std::vector<std::mutex>(contig_map.size());
-
 
 	std::cout << "Extending consensuses." << std::endl;
 	auto start_time = std::chrono::high_resolution_clock::now();

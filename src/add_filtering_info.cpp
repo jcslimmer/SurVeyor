@@ -111,11 +111,6 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[4];
     std::string sample_name = argv[5];
 
-    std::string full_cmd_fname = workdir + "/full_cmd.txt";
-	std::ifstream full_cmd_fin(full_cmd_fname);
-	std::string full_cmd_str;
-	std::getline(full_cmd_fin, full_cmd_str);
-
     contig_map.load(workdir);
     config.parse(workdir + "/config.txt");
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);

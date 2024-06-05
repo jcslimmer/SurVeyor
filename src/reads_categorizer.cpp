@@ -1,12 +1,16 @@
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <unordered_map>
 #include <fstream>
 #include <algorithm>
 #include <numeric>
+#include <cmath>
+#include <random>
 
 #include "htslib/faidx.h"
 
+#include "htslib/hts.h"
 #include "htslib/sam.h"
 #include "sam_utils.h"
 #include "utils.h"
@@ -20,11 +24,13 @@ std::string reference_fname;
 
 config_t config;
 stats_t stats;
+chr_seqs_map_t chr_seqs;
 
 std::mutex mtx;
 std::mutex* mtx_contig;
 std::vector<std::vector<std::string> > mate_seqs;
 
+std::vector<uint64_t> general_isize_dist;
 std::unordered_map<std::string, int> min_depth_by_contig, max_depth_by_contig, median_depth_by_contig;
 std::vector<uint32_t> depths;
 uint64_t qual_counts[256];
@@ -39,6 +45,50 @@ std::vector<std::vector<uint32_t> > isizes_count_geq_i;
 std::ofstream open_mateseqs_fout(int contig_id) {
     std::string fname = std::to_string(contig_id) + ".txt";
     return std::ofstream(workspace + "/mateseqs/" + fname, std::ios_base::app);
+}
+
+void get_base_stats(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
+
+    std::mt19937 rng(config.seed);
+    std::shuffle(rnd_positions.begin(), rnd_positions.end(), rng);
+
+    open_samFile_t* bam_file = open_samFile(bam_fname);
+    if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+        throw "Failed to read reference " + reference_fname;
+    }
+
+    std::vector<hts_pos_t> local_dist;
+    bam1_t* read = bam_init1();
+    int read_len = 0;
+
+    for (hts_pos_t pos : rnd_positions) {
+        std::stringstream ss;
+        ss << contig_name << ":" << pos << "-" << pos+1000;
+        hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
+
+        int added = 0;
+        while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+            if (!(read->core.flag & BAM_FPROPER_PAIR) || !is_primary(read)) continue;
+            if (read->core.isize < 0 || read->core.isize > 20000) continue;
+
+            added++;
+            local_dist.push_back(read->core.isize);
+            read_len = std::max(read_len, read->core.l_qseq);
+
+            if (added > 100) break;
+        }
+        hts_itr_destroy(iter);
+
+        if (local_dist.size() > 100000) break;
+    }
+
+    mtx.lock();
+    general_isize_dist.insert(general_isize_dist.end(), local_dist.begin(), local_dist.end());
+    stats.read_len = std::max(stats.read_len, read_len);
+    mtx.unlock();
+
+    bam_destroy1(read);
+    close_samFile(bam_file);
 }
 
 void categorize(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
@@ -72,7 +122,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     std::vector<std::vector<uint32_t> > isize_dist_by_rndpos(rnd_positions.size());
     uint64_t sum_is = 0;
     uint32_t n_is = 0;
-
+    
     bam1_t* read = bam_init1();
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (!is_primary(read)) continue;
@@ -269,9 +319,9 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[3];
 
     config.parse(workdir + "/config.txt");
-    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contig_map_t contig_map(workdir);
+    chr_seqs.read_lens_into_map(reference_fname);
 
     open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
 	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
@@ -281,27 +331,73 @@ int main(int argc, char* argv[]) {
     mtx_contig = new std::mutex[contig_map.size()];
     mate_seqs.resize(contig_map.size());
 
+    // generate random positions
+	std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
+	random_pos_generator_t random_pos_generator(chr_seqs, config.seed, config.sampling_regions);
+    int n_rand_pos = random_pos_generator.reference_len/1000;
+	for (int i = 0; i < n_rand_pos; i++) {
+        std::pair<std::string, hts_pos_t> rnd_pos = random_pos_generator.get_random_pos();
+		rnd_pos_map[rnd_pos.first].push_back(rnd_pos.second);
+	}
+
+    ctpl::thread_pool base_stats_thread_pool(config.threads);
+    std::vector<std::future<void> > futures;
+    for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+        std::string contig_name = contig_map.get_name(contig_id);
+        std::future<void> future = base_stats_thread_pool.push(get_base_stats, contig_id, contig_name, bam_fname, reference_fname, rnd_pos_map[contig_name]);
+        futures.push_back(std::move(future));
+    }
+    base_stats_thread_pool.stop(true);
+    for (int i = 0; i < futures.size(); i++) {
+        try {
+            futures[i].get();
+        } catch (char const* s) {
+            std::cerr << s << std::endl;
+        }
+    }
+    futures.clear();
+
+    // Calculate base stats
+
+    int mean_is = mean(general_isize_dist);
+    int stddev_is = stddev(general_isize_dist);
+    general_isize_dist.erase(std::remove_if(general_isize_dist.begin(), general_isize_dist.end(), [mean_is, stddev_is](int x) { return std::abs(x-mean_is) >= 5*stddev_is; }), general_isize_dist.end());
+
+    uint64_t lower_stddev_is = 0, n_vals = 0;
+    for (int x : general_isize_dist) {
+        if (x < mean_is) {
+            lower_stddev_is += (mean_is-x)*(mean_is-x);
+            n_vals++;
+        }
+    }
+    lower_stddev_is = std::sqrt(lower_stddev_is / n_vals);
+
+    uint64_t higher_stddev_is = 0;
+    n_vals = 0;
+    for (int x : general_isize_dist) {
+        if (x > mean_is) {
+            higher_stddev_is += (x-mean_is)*(x-mean_is);
+            n_vals++;
+        }
+    }
+    higher_stddev_is = std::sqrt(higher_stddev_is / n_vals);
+
+    stats.min_is = mean_is - 3*lower_stddev_is;
+    stats.max_is = mean_is + 3.5*higher_stddev_is;
+
     isize_counts.resize(stats.max_is+1);
     isizes_count_geq_i.resize(stats.max_is+1);
     dist_between_end_and_rnd.resize(stats.max_is+1);
 
-    // read random positions
-	std::string contig_name;
-	std::ifstream rnd_pos_fin(workdir + "/random_pos.txt");
-	hts_pos_t pos;
-	std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
-	while (rnd_pos_fin >> contig_name >> pos) {
-		rnd_pos_map[contig_name].push_back(pos);
-	}
+    // Categorize reads
 
-    ctpl::thread_pool thread_pool(config.threads);
-    std::vector<std::future<void> > futures;
+    ctpl::thread_pool categorize_thread_pool(config.threads);
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = thread_pool.push(categorize, contig_id, contig_name, bam_fname, reference_fname, rnd_pos_map[contig_name]);
+        std::future<void> future = categorize_thread_pool.push(categorize, contig_id, contig_name, bam_fname, reference_fname, rnd_pos_map[contig_name]);
         futures.push_back(std::move(future));
     }
-    thread_pool.stop(true);
+    categorize_thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
         try {
             futures[i].get();
@@ -338,7 +434,10 @@ int main(int argc, char* argv[]) {
         n_is += p.second;
     }
 
-    std::ofstream stats_out(workdir + "/stats.txt", std::ios_base::app);
+    std::ofstream stats_out(workdir + "/stats.txt");
+    stats_out << "read_len . " << stats.read_len << std::endl;
+    stats_out << "min_is . " << stats.min_is << std::endl;
+    stats_out << "max_is . " << stats.max_is << std::endl;
 	std::sort(depths.begin(), depths.end());
 	stats_out << "min_depth . " << depths[depths.size()/100] << std::endl;
 	stats_out << "median_depth . " << depths[depths.size()/2] << std::endl;
