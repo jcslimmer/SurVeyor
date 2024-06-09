@@ -384,7 +384,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         float dpranm = sv->disc_pairs_rf_avg_nm;
         bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
     }
-    
+
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
     if (sv->svtype() != "DUP") {
@@ -1060,8 +1060,6 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<duplication_t*> dups,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
 
-    // std::cerr << "Genotyping duplications on " << contig_name << std::endl;
-    
     int contig_id = contig_map.get_id(contig_name);
     read_mates(contig_id);
 
@@ -1091,6 +1089,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
+    calculate_cluster_region_disc(contig_name, dups, bam_file, stats);
 }
 
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
@@ -1477,7 +1476,7 @@ int main(int argc, char* argv[]) {
 	global_crossing_isize_dist.resize(100000);
 	crossing_isizes_dist_fin.close();
 
-    std::string full_cmd_fname = workdir + "/full_cmd.txt";
+    std::string full_cmd_fname = workdir + "/genotype_cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);
     std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);

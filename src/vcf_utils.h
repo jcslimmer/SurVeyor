@@ -158,19 +158,19 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* fullj_cigar_tag = "##INFO=<ID=FULL_JUNCTION_CIGAR,Number=1,Type=String,Description=\"CIGAR of the best alignment of the full junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fullj_cigar_tag, &len));
 
-	const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	const char* splitj_score_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE,Number=2,Type=Integer,Description=\"Score of the best alignment of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score_tag, &len));
 
-	const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
 
-	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the left-half and right-half of the junction sequence to the reference.\">";
+	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
 
-	const char* splitj_cigar_tag = "##INFO=<ID=SPLIT_JUNCTION_CIGAR,Number=2,Type=String,Description=\"CIGAR of the best alignment of the left-half and right-half of the junction sequence to the reference.\">";
+	const char* splitj_cigar_tag = "##INFO=<ID=SPLIT_JUNCTION_CIGAR,Number=2,Type=String,Description=\"CIGAR of the best alignment of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_cigar_tag, &len));
 
-	const char* splitj_maprange_tag = "##INFO=<ID=SPLIT_JUNCTION_MAPPING_RANGE,Number=1,Type=String,Description=\"Mapping locations of the left-half and right-half of the junction sequence to the reference.\">";
+	const char* splitj_maprange_tag = "##INFO=<ID=SPLIT_JUNCTION_MAPPING_RANGE,Number=1,Type=String,Description=\"Original mapping locations of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_maprange_tag, &len));
 
 	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
@@ -682,8 +682,11 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_string(hdr, b, "FULL_JUNCTION_CIGAR", (void**) &s_data, &len);
 	if (s_data) full_junction_cigar = s_data;
 
-	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
-	hts_pos_t right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
+	std::string svtype = get_sv_type(hdr, b);
+	hts_pos_t left_split_mapping_end = (svtype == "DUP" ? get_sv_end(hdr, b) : b->pos);
+	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150);
+	hts_pos_t right_split_mapping_start = (svtype == "DUP" ? b->pos : get_sv_end(hdr, b));	
+	hts_pos_t right_split_mapping_end = get_sv_end(hdr, b) + 150;
 
 	s_data = NULL;
 	len = 0;
@@ -694,7 +697,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		size_t comma_pos = mapping_range.find(",");
 		left_split_mapping_range = mapping_range.substr(0, comma_pos);
 		right_split_mapping_range = mapping_range.substr(comma_pos+1);
-	
+
 		left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
 		left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
 		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
@@ -744,7 +747,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
 	sv_t::anchor_aln_t* full_junction_aln = full_junction_score > 0 ? new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar) : NULL;
 
-	std::string svtype = get_sv_type(hdr, b);
 	sv_t* sv;
 	if (svtype == "DEL") {
 		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
@@ -896,6 +898,22 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_PREFIX_COV", &data, &len);
+	if (len > 0) {
+		((insertion_t*) sv)->prefix_cov_start = data[0];
+		((insertion_t*) sv)->prefix_cov_end = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "INS_SUFFIX_COV", &data, &len);
+	if (len > 0) {
+		((insertion_t*) sv)->suffix_cov_start = data[0];
+		((insertion_t*) sv)->suffix_cov_end = data[1];
+	}
+
+	data = NULL;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "LEFT_ANCHOR_BASE_COUNT", &data, &len);
 	if (len > 0) {
 		sv->left_anchor_base_freqs.a = data[0];
@@ -952,22 +970,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv->ins_suffix_base_freqs.c = data[1];
 		sv->ins_suffix_base_freqs.g = data[2];
 		sv->ins_suffix_base_freqs.t = data[3];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "INS_PREFIX_COV", &data, &len);
-	if (len > 0) {
-		((insertion_t*) sv)->prefix_cov_start = data[0];
-		((insertion_t*) sv)->prefix_cov_end = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "INS_SUFFIX_COV", &data, &len);
-	if (len > 0) {
-		((insertion_t*) sv)->suffix_cov_start = data[0];
-		((insertion_t*) sv)->suffix_cov_end = data[1];
 	}
 
 	sv->id = b->d.id;
