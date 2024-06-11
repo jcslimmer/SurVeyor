@@ -12,11 +12,6 @@ class Features:
                              'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                              'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
     
-    shared_denovo_features_names = \
-        ['MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2', 'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 
-         'MEDIAN_DEPTHS_HIGHMQ_NORM1', 'MEDIAN_DEPTHS_HIGHMQ_NORM2', 'MEDIAN_DEPTHS_HIGHMQ_NORM3', 'MEDIAN_DEPTHS_HIGHMQ_NORM4', 'MEDIAN_DEPTHS_HIGHMQ_RATIO1', 'MEDIAN_DEPTHS_HIGHMQ_RATIO2',
-         'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
-
     denovo_features_names = ['SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
                       'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
                       'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
@@ -24,13 +19,16 @@ class Features:
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ', 'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
                       'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'KS_PVAL_HIGHMQ', 'SIZE_NORM', 'SIZE_NORM_HIGHMQ',
-                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END']
+                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END',
+                      'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2', 'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 
+                      'MEDIAN_DEPTHS_HIGHMQ_NORM1', 'MEDIAN_DEPTHS_HIGHMQ_NORM2', 'MEDIAN_DEPTHS_HIGHMQ_NORM3', 'MEDIAN_DEPTHS_HIGHMQ_NORM4', 'MEDIAN_DEPTHS_HIGHMQ_RATIO1', 'MEDIAN_DEPTHS_HIGHMQ_RATIO2',
+                      'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
 
     def get_denovo_model_name(record, max_is):
         svtype_str = record.info['SVTYPE']
         source_str = Features.get_string_value(record.info, 'SOURCE', "")
+        split_reads = Features.get_number_value(record.info, 'SPLIT_READS', [0, 0])
         if svtype_str == "DEL":
-            split_reads = Features.get_number_value(record.info, 'SPLIT_READS', [0, 0])
             if split_reads[0] > 0 and split_reads[1] > 0:
                 source_str = "2SR"
             elif split_reads[0] > 0 or split_reads[1] > 0:
@@ -39,6 +37,18 @@ class Features:
                 source_str = "DP"
             if abs(Features.get_svlen(record)) >= max_is:
                 source_str += "_LARGE"
+        elif svtype_str == "DUP":
+            if split_reads[0] > 0 and split_reads[1] > 0:
+                source_str = "2SR"
+            elif split_reads[0] > 0 or split_reads[1] > 0:
+                source_str = "1SR"
+        elif svtype_str == "INS":
+            if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
+                pass
+            elif split_reads[0] > 0 and split_reads[1] > 0:
+                source_str = "2SR"
+            elif split_reads[0] > 0 or split_reads[1] > 0:
+                source_str = "1SR"
         return svtype_str + "_" + source_str
 
     def get_regt_model_name(record, max_is, read_len):
@@ -53,7 +63,7 @@ class Features:
         return svtype_str
 
     def get_denovo_feature_names(model_name):
-        return Features.shared_features_names + Features.shared_denovo_features_names + Features.denovo_features_names
+        return Features.shared_features_names + Features.denovo_features_names
 
     regt_shared_features_names = \
             ['IP', 'AR1', 'ARC1', 'AR2', 'ARC2', 'ARCAS1', 'ARCAS2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
@@ -476,8 +486,6 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
             regt_features_by_source[regt_model_name].append(regt_feature_values)
             regt_gts_by_source[regt_model_name].append(gts[record.id])
             regt_variant_ids_by_source[regt_model_name].append(record.id)
-        # if gts[record.id] == "./.":
-        #     print("Skipping record with no genotype: ", record.id)
     for model_name in denovo_features_by_source:
         denovo_features_by_source[model_name] = np.array(denovo_features_by_source[model_name])
         denovo_gts_by_source[model_name] = np.array(denovo_gts_by_source[model_name])
