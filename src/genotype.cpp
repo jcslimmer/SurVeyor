@@ -107,6 +107,14 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
+    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
+    const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard2_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
     const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
@@ -317,6 +325,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS1", &arcas1, 1);
     float arcas2 = sv->regenotyping_info.alt_bp2_better_consistent_avg_score;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS2", &arcas2, 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD1", &(sv->regenotyping_info.alt_bp1_better_disc_pairs), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD2", &(sv->regenotyping_info.alt_bp2_better_disc_pairs), 1);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR1", &(sv->regenotyping_info.ref_bp1_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR2", &(sv->regenotyping_info.ref_bp2_better_reads), 1);
@@ -561,7 +571,22 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         if (get_unclipped_end(read) < del_start || del_end < get_unclipped_start(read)) continue;
         if (del_start < get_unclipped_start(read) && get_unclipped_end(read) < del_end) continue;
 
-        std::string seq = get_sequence(read);
+        std::string seq;
+
+        if (!is_samechr(read)) continue;
+        if (!bam_is_mrev(read)) {
+            if (read->core.mpos < del_start-stats.max_is) continue; // positive mate and after deletion, potentially discordant...
+            // however, there is an exception: both reads in a pair can be left-clipped on the end-side of the deletion (we allow 5bp tolerance)
+            if (read->core.mpos > del_start && (abs(read->core.pos-read->core.mpos) > 5 || !is_left_clipped(read, config.min_clip_len))) continue;
+            seq = get_sequence(read, true);
+            rc(seq);
+        } else {
+            hts_pos_t mate_endpos = get_mate_endpos(read);
+            if (mate_endpos > del_end+stats.max_is) continue; // negative mate and before deletion, potentially discordant...
+            // however, there is an exception: both reads in a pair can be right-clipped on the start-side of the deletion (we allow 5bp tolerance)
+            if (mate_endpos < del_end && (abs(mate_endpos-bam_endpos(read)) > 5 || !is_right_clipped(read, config.min_clip_len))) continue;
+            seq = get_sequence(read, true);
+        }
 
         // align to ALT
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
@@ -720,7 +745,6 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
-    std::stringstream log_ss;
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
 	hts_pos_t contig_len = chr_seqs.get_len(dup->chr);

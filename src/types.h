@@ -178,6 +178,7 @@ struct sv_t {
 
     struct regenotyping_info_t {
         int alt_bp1_better_reads = 0, alt_bp2_better_reads = 0;
+        int alt_bp1_better_disc_pairs = 0, alt_bp2_better_disc_pairs = 0;
         int alt_bp1_better_consistent_reads = 0, alt_bp2_better_consistent_reads = 0;
         double alt_bp1_better_consistent_avg_score = 0, alt_bp2_better_consistent_avg_score = 0;
         int ref_bp1_better_reads = 0, ref_bp2_better_reads = 0;
