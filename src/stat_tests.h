@@ -217,6 +217,8 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, l_cluster_regions.data(), l_cluster_regions.size());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+		if (is_unmapped(read) || !is_primary(read)) continue;
+
 		while (curr_pos < deletions.size() && deletions[curr_pos]->left_anchor_aln->end < read->core.pos) curr_pos++;
 
 		// if the pair is discordant and it overlaps left_anchor_aln, increase l_cluster_region_disc_pair
@@ -275,11 +277,15 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 	int curr_pos = 0;
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, rc_cluster_regions.data(), rc_cluster_regions.size());
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+		if (is_unmapped(read) || !is_primary(read)) continue;
+
 		while (curr_pos < duplications.size() && duplications[curr_pos]->left_anchor_aln->end < read->core.pos) curr_pos++;
 
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, stats.max_is)) {
 			for (int i = curr_pos; i < duplications.size() && duplications[i]->left_anchor_aln->start <= bam_endpos(read); i++) {
-				if (read->core.pos <= duplications[i]->left_anchor_aln->end) duplications[i]->l_cluster_region_disc_pairs++;
+				if (read->core.pos <= duplications[i]->left_anchor_aln->end) {
+					duplications[i]->l_cluster_region_disc_pairs++;
+				}
 			}
 		}
 	}
@@ -296,6 +302,8 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 	curr_pos = 0;
 	iter = sam_itr_regarray(bam_file->idx, bam_file->header, lc_cluster_regions.data(), lc_cluster_regions.size());
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+		if (is_unmapped(read) || !is_primary(read)) continue;
+
 		while (curr_pos < duplications.size() && duplications[curr_pos]->right_anchor_aln->end < read->core.pos) curr_pos++;
 
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, stats.max_is)) {

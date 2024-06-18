@@ -799,7 +799,18 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
-        std::string seq = get_sequence(read);
+        std::string seq;
+        
+        if (!is_samechr(read)) continue;
+        if (!bam_is_mrev(read)) {
+            if (read->core.mpos < dup_start-stats.max_is) continue;
+            seq = get_sequence(read, true);
+            rc(seq);
+        } else {
+            if (get_mate_endpos(read) > dup_end+stats.max_is) continue;
+            seq = get_sequence(read, true);
+        }
+
         aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
 
         uint16_t best_aln_score = 0;
