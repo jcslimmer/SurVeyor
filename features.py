@@ -66,14 +66,16 @@ class Features:
         return Features.shared_features_names + Features.denovo_features_names
 
     regt_shared_features_names = \
-            ['IP', 'AR1', 'ARC1', 'AR2', 'ARC2', 'ARCAS1', 'ARCAS2', 'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
+            ['IP', 'AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
+             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
+             'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
              'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
              'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP', 
              'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
-    
+
     regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
 
     regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR']
@@ -303,12 +305,25 @@ class Features:
         rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
         rrc2 = Features.get_number_value(record.samples[0], 'RRC2', 0)
         er = Features.get_number_value(record.samples[0], 'ER', 0)
+
         features['AR1'] = Features.normalise(ar1, min_depth, max_depth)
         features['ARC1'] = Features.normalise(arc1, min_depth, max_depth)
+        features['ARCF1'] = Features.get_number_value(record.samples[0], 'ARCF1', 0, max(1, arc1))
+        features['ARCR1'] = Features.get_number_value(record.samples[0], 'ARCR1', 0, max(1, arc1))
+        features['MAXARCD1'] = max(features['ARCF1'], features['ARCR1'])
+        features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
+        features['ARC1MQ'] = Features.get_number_value(record.samples[0], 'ARC1MQ', 0)
+        features['ARC1HQ'] = Features.get_number_value(record.samples[0], 'ARC1HQ', 0, max(1, arc1))
+
         features['AR2'] = Features.normalise(ar2, min_depth, max_depth)
         features['ARC2'] = Features.normalise(arc2, min_depth, max_depth)
-        features['ARCAS1'] =Features.get_number_value(record.samples[0], 'ARCAS1', 0)
-        features['ARCAS2'] =Features.get_number_value(record.samples[0], 'ARCAS2', 0)
+        features['ARCF2'] = Features.get_number_value(record.samples[0], 'ARCF2', 0, max(1, arc2))
+        features['ARCR2'] = Features.get_number_value(record.samples[0], 'ARCR2', 0, max(1, arc2))
+        features['MAXARCD2'] = max(features['ARCF2'], features['ARCR2'])
+        features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
+        features['ARC2MQ'] = Features.get_number_value(record.samples[0], 'ARC2MQ', 0)
+        features['ARC2HQ'] = Features.get_number_value(record.samples[0], 'ARC2HQ', 0, max(1, arc2))
+
         features['RR1'] = Features.normalise(rr1, min_depth, max_depth)
         features['RRC1'] = Features.normalise(rrc1, min_depth, max_depth)
         features['RR2'] = Features.normalise(rr2, min_depth, max_depth)
@@ -402,8 +417,8 @@ class Features:
         features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DP2MQ', 0)
         features['DPLANM'] = Features.get_number_value(record.samples[0], 'DPLANM', 0)
         features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPRANM', 0)
-        features['DPSL'] = Features.get_number_value(record.samples[0], 'DPSL', 0)
-        features['DPSR'] = Features.get_number_value(record.samples[0], 'DPSR', 0)
+        features['DPSL'] = Features.get_number_value(record.samples[0], 'DPSL', 0, median_depth)
+        features['DPSR'] = Features.get_number_value(record.samples[0], 'DPSR', 0, median_depth)
 
         cp = Features.get_number_value(record.samples[0], 'CP', 0)
         features['CP'] = Features.normalise(cp, min_pairs_crossing_point, max_pairs_crossing_point)

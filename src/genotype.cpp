@@ -91,6 +91,30 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* arc1_tag = "##FORMAT=<ID=ARC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF1");
+    const char* arcf1_tag = "##FORMAT=<ID=ARCF1,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR1");
+    const char* arcr1_tag = "##FORMAT=<ID=ARCR1,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS1");
+    const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
+    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1HQ");
+    const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
+    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
     const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
@@ -99,17 +123,25 @@ void add_tags(bcf_hdr_t* hdr) {
     const char* arc2_tag = "##FORMAT=<ID=ARC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS1");
-    const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF2");
+    const char* arcf2_tag = "##FORMAT=<ID=ARCF2,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf2_tag, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR2");
+    const char* arcr2_tag = "##FORMAT=<ID=ARCR2,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr2_tag, &len));
+    
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS2");
     const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
-    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
+    const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2HQ");
+    const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
     const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
@@ -318,14 +350,23 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     // update FORMAT fields
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1", &(sv->regenotyping_info.alt_bp1_better_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCF1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads_fwd), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCR1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads_rev), 1);
     float arcas1 = sv->regenotyping_info.alt_bp1_better_consistent_avg_score;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS1", &arcas1, 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1MQ", &(sv->regenotyping_info.alt_bp1_better_consistent_max_mq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1HQ", &(sv->regenotyping_info.alt_bp1_better_consistent_high_mq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD1", &(sv->regenotyping_info.alt_bp1_better_disc_pairs), 1);
+    
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCF2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_fwd), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCR2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_rev), 1);
     float arcas2 = sv->regenotyping_info.alt_bp2_better_consistent_avg_score;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS2", &arcas2, 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD1", &(sv->regenotyping_info.alt_bp1_better_disc_pairs), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2MQ", &(sv->regenotyping_info.alt_bp2_better_consistent_max_mq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2HQ", &(sv->regenotyping_info.alt_bp2_better_consistent_high_mq), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD2", &(sv->regenotyping_info.alt_bp2_better_disc_pairs), 1);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR1", &(sv->regenotyping_info.ref_bp1_better_reads), 1);
@@ -431,7 +472,57 @@ void reset_stats(sv_t* sv) {
     sv->r_cluster_region_disc_pairs = 0;
 }
 
+std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score) {
+    std::vector<std::string> seqs;
+    for (bam1_t* read : reads) {
+        std::string seq = get_sequence(read, true);
+        if (!bam_is_mrev(read)) rc(seq);
+        seqs.push_back(seq);
+    }
+
+    StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Alignment aln;
+    std::vector<bam1_t*> consistent_reads;
+    avg_score = 0;
+    if (!reads.empty()) {
+        std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
+        std::vector<std::string> v1, v2;
+        std::vector<std::string> consensuses = generate_reference_guided_consensus(ref_seq, v1, seqs, v2, aligner, harsh_aligner, consensus_contigs_alns, config, stats);
+
+        if (consensuses.empty()) {
+            return consistent_reads;
+        }
+
+        consensus_seq = consensuses[0];
+        std::vector<int> start_positions, end_positions;
+        for (bam1_t* read : reads) {
+            std::string seq = get_sequence(read, true);
+            if (!bam_is_mrev(read)) rc(seq);
+            aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
+            if (!is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+                consistent_reads.push_back(read);
+                avg_score += double(aln.sw_score)/seq.length();
+                start_positions.push_back(aln.ref_begin);
+                end_positions.push_back(aln.ref_end);
+            }
+        }
+        std::sort(start_positions.begin(), start_positions.end());
+        std::sort(end_positions.begin(), end_positions.end());
+        if (!consistent_reads.empty()) avg_score /= consistent_reads.size();
+
+        if (start_positions.size() > 2) {
+            int start = start_positions[2];
+            int end = end_positions[start_positions.size()-3];
+            consensus_seq = consensus_seq.substr(start, end-start);
+        } else {
+            consensus_seq = "";
+        }
+    }
+    return consistent_reads;
+}
+
 std::vector<std::string> find_consistent_seqs_subset(std::string ref_seq, std::vector<std::string>& seqs, std::string& consensus_seq, double& avg_score) {
+
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln;
     std::vector<std::string> consistent_seqs;
@@ -561,8 +652,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     bam1_t* read = bam_init1();
 
     int same = 0;
-
-    std::vector<std::string> alt_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<bam1_t*> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -615,20 +705,20 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better_seqs.push_back(seq);
+            alt_better_reads.push_back(bam_dup1(read));
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
-                ref_bp1_better_seqs.push_back(seq);
+                ref_bp1_better_seqs.push_back(bam_dup1(read));
             }
             if (increase_ref_bp2_better) {
-                ref_bp2_better_seqs.push_back(seq);
+                ref_bp2_better_seqs.push_back(bam_dup1(read));
             }
         } else {
             same++;
         }
 
-        if (alt_better_seqs.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + same > 4 * stats.get_max_depth(del->chr)) {
-            alt_better_seqs.clear();
+        if (alt_better_reads.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + same > 4 * stats.get_max_depth(del->chr)) {
+            alt_better_reads.clear();
             ref_bp1_better_seqs.clear();
             ref_bp2_better_seqs.clear();
             same = 0;
@@ -639,9 +729,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
     std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
-    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq, alt_avg_score);
-    std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score);
-    std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score);
+    std::vector<bam1_t*> alt_better_reads_consistent = find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score);
+    std::vector<bam1_t*> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score);
+    std::vector<bam1_t*> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score);
 
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
@@ -682,10 +772,26 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->regenotyping_info.ext_alt_consensus_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
     }
 
-    del->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();
-    del->regenotyping_info.alt_bp2_better_reads = alt_better_seqs.size();
-    del->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
-    del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
+    del->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
+    del->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
+    del->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
+    del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
+    for (bam1_t* read : alt_better_reads_consistent) {
+        if (!bam_is_mrev(read)) {
+            del->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
+        } else {
+            del->regenotyping_info.alt_bp1_better_consistent_reads_rev++;
+        }
+        int mq = get_mq(read);
+        del->regenotyping_info.alt_bp1_better_consistent_max_mq = std::max(del->regenotyping_info.alt_bp1_better_consistent_max_mq, mq);
+        if (mq >= config.high_confidence_mapq) {
+            del->regenotyping_info.alt_bp1_better_consistent_high_mq++;
+        }
+    }
+    del->regenotyping_info.alt_bp2_better_consistent_reads_fwd = del->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
+    del->regenotyping_info.alt_bp2_better_consistent_reads_rev = del->regenotyping_info.alt_bp1_better_consistent_reads_rev;
+    del->regenotyping_info.alt_bp2_better_consistent_max_mq = del->regenotyping_info.alt_bp1_better_consistent_max_mq;
+    del->regenotyping_info.alt_bp2_better_consistent_high_mq = del->regenotyping_info.alt_bp1_better_consistent_high_mq;
     del->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
     del->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
     del->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
@@ -701,6 +807,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     free(regions[0]);
     free(regions[1]);
 
+    for (bam1_t* read : alt_better_reads) bam_destroy1(read);
+    for (bam1_t* read : ref_bp1_better_seqs) bam_destroy1(read);
+    for (bam1_t* read : ref_bp2_better_seqs) bam_destroy1(read);
     bam_destroy1(read);
     hts_itr_destroy(iter);
 }
@@ -788,8 +897,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 	
     bam1_t* read = bam_init1();
 
-    std::vector<std::string> ref_better_seqs;
-    std::vector<std::vector<std::string>> alt_better_seqs(alt_seqs.size());
+    std::vector<bam1_t*> ref_better_reads;
+    std::vector<std::vector<bam1_t*>> alt_better_reads(alt_seqs.size());
     int same = 0;
 
     StripedSmithWaterman::Filter filter;
@@ -826,34 +935,34 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (best_aln_score > ref_aln.sw_score) {
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
-                    alt_better_seqs[i].push_back(seq);
+                    alt_better_reads[i].push_back(bam_dup1(read));
                 }
             }
         } else if (best_aln_score < ref_aln.sw_score) {
-            ref_better_seqs.push_back(seq);
+            ref_better_reads.push_back(bam_dup1(read));
         } else {
             same++;
         }
     }
 
     int alt_with_most_reads = 0;
-    for (int i = 1; i < alt_better_seqs.size(); i++) {
-        if (alt_better_seqs[i].size() > alt_better_seqs[alt_with_most_reads].size()) {
+    for (int i = 1; i < alt_better_reads.size(); i++) {
+        if (alt_better_reads[i].size() > alt_better_reads[alt_with_most_reads].size()) {
             alt_with_most_reads = i;
         }
     }
 
-    if (alt_better_seqs[alt_with_most_reads].size() > 20*stats.get_max_depth(dup->chr) || ref_better_seqs.size() > 20*stats.get_max_depth(dup->chr)) {
-        alt_better_seqs[alt_with_most_reads].clear();
-        ref_better_seqs.clear();
+    if (alt_better_reads[alt_with_most_reads].size() > 20*stats.get_max_depth(dup->chr) || ref_better_reads.size() > 20*stats.get_max_depth(dup->chr)) {
+        alt_better_reads[alt_with_most_reads].clear();
+        ref_better_reads.clear();
         same = 0;
         dup->regenotyping_info.too_deep = true;
     }
 
     std::string alt_consensus_seq, ref_consensus_seq;
     double alt_avg_score, ref_avg_score;
-    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_seqs[alt_with_most_reads], alt_consensus_seq, alt_avg_score);
-    std::vector<std::string> ref_better_seqs_consistent = find_consistent_seqs_subset(ref_seq, ref_better_seqs, ref_consensus_seq, ref_avg_score);
+    std::vector<bam1_t*> alt_better_reads_consistent = find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_reads[alt_with_most_reads], alt_consensus_seq, alt_avg_score);
+    std::vector<bam1_t*> ref_better_reads_consistent = find_consistent_seqs_subset(ref_seq, ref_better_reads, ref_consensus_seq, ref_avg_score);
 
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
@@ -895,16 +1004,32 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->regenotyping_info.ext_alt_consensus_length = alt_consensus_seq.length();
     }
 
-    dup->regenotyping_info.alt_bp1_better_reads = alt_better_seqs[alt_with_most_reads].size();
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better_seqs[alt_with_most_reads].size();
-    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
-    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads[alt_with_most_reads].size();
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better_reads[alt_with_most_reads].size();
+    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
+    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
+    for (bam1_t* read : alt_better_reads_consistent) {
+        if (!bam_is_mrev(read)) {
+            dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
+        } else {
+            dup->regenotyping_info.alt_bp1_better_consistent_reads_rev++;
+        }
+        int mq = get_mq(read);
+        dup->regenotyping_info.alt_bp1_better_consistent_max_mq = std::max(dup->regenotyping_info.alt_bp1_better_consistent_max_mq, mq);
+        if (mq >= config.high_confidence_mapq) {
+            dup->regenotyping_info.alt_bp1_better_consistent_high_mq++;
+        }
+    }
+    dup->regenotyping_info.alt_bp2_better_consistent_reads_fwd = dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
+    dup->regenotyping_info.alt_bp2_better_consistent_reads_rev = dup->regenotyping_info.alt_bp1_better_consistent_reads_rev;
+    dup->regenotyping_info.alt_bp2_better_consistent_max_mq = dup->regenotyping_info.alt_bp1_better_consistent_max_mq;
+    dup->regenotyping_info.alt_bp2_better_consistent_high_mq = dup->regenotyping_info.alt_bp1_better_consistent_high_mq;
     dup->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
     dup->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
-    dup->regenotyping_info.ref_bp1_better_reads = ref_better_seqs.size();
-    dup->regenotyping_info.ref_bp2_better_reads = ref_better_seqs.size();
-    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_better_seqs_consistent.size();
-    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_better_seqs_consistent.size();
+    dup->regenotyping_info.ref_bp1_better_reads = ref_better_reads.size();
+    dup->regenotyping_info.ref_bp2_better_reads = ref_better_reads.size();
+    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_better_reads_consistent.size();
+    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_better_reads_consistent.size();
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] ref_seq;
@@ -958,7 +1083,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     bam1_t* read = bam_init1();
 
-    std::vector<std::string> alt_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<bam1_t*> alt_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -967,7 +1092,17 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
-        std::string seq = get_sequence(read);
+        std::string seq;
+        
+        if (!is_samechr(read)) continue;
+        if (!bam_is_mrev(read)) {
+            if (read->core.mpos < dup_start-stats.max_is) continue;
+            seq = get_sequence(read, true);
+            rc(seq);
+        } else {
+            if (get_mate_endpos(read) > dup_end+stats.max_is) continue;
+            seq = get_sequence(read, true);
+        }
         
         // align to ALT
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
@@ -996,20 +1131,20 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better_seqs.push_back(seq);
+            alt_better_reads.push_back(bam_dup1(read));
         } else {
             if (increase_ref_bp1_better) {
-                ref_bp1_better_seqs.push_back(seq);
+                ref_bp1_better_reads.push_back(bam_dup1(read));
             }
             if (increase_ref_bp2_better) {
-                ref_bp2_better_seqs.push_back(seq);
+                ref_bp2_better_reads.push_back(bam_dup1(read));
             }
         }
 
-        if (ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() > 4 * stats.get_max_depth(dup->chr)) {
-            alt_better_seqs.clear();
-            ref_bp1_better_seqs.clear();
-            ref_bp2_better_seqs.clear();
+        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() > 4 * stats.get_max_depth(dup->chr)) {
+            alt_better_reads.clear();
+            ref_bp1_better_reads.clear();
+            ref_bp2_better_reads.clear();
             dup->regenotyping_info.too_deep = true;
             break;
         }
@@ -1025,9 +1160,9 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
-    std::vector<std::string> alt_better_seqs_consistent = find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq, alt_avg_score);
-    std::vector<std::string> ref_bp1_better_seqs_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score);
-    std::vector<std::string> ref_bp2_better_seqs_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score);
+    std::vector<bam1_t*> alt_better_reads_consistent = find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score);
+    std::vector<bam1_t*> ref_bp1_better_reads_consistent = find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score);
+    std::vector<bam1_t*> ref_bp2_better_reads_consistent = find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score);
 
     if (!alt_consensus_seq.empty()) {
        // all we care about is the consensus sequence
@@ -1072,16 +1207,32 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->regenotyping_info.ext_alt_consensus_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
     }
 
-    dup->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better_seqs.size();
-    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_seqs_consistent.size();
-    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_seqs_consistent.size();
+    dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
+    dup->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
+    dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
+    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
+    for (bam1_t* read : alt_better_reads_consistent) {
+        if (!bam_is_mrev(read)) {
+            dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
+        } else {
+            dup->regenotyping_info.alt_bp1_better_consistent_reads_rev++;
+        }
+        int mq = get_mq(read);
+        dup->regenotyping_info.alt_bp1_better_consistent_max_mq = std::max(dup->regenotyping_info.alt_bp1_better_consistent_max_mq, mq);
+        if (mq >= config.high_confidence_mapq) {
+            dup->regenotyping_info.alt_bp1_better_consistent_high_mq++;
+        }
+    }
+    dup->regenotyping_info.alt_bp2_better_consistent_reads_fwd = dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
+    dup->regenotyping_info.alt_bp2_better_consistent_reads_rev = dup->regenotyping_info.alt_bp1_better_consistent_reads_rev;
+    dup->regenotyping_info.alt_bp2_better_consistent_max_mq = dup->regenotyping_info.alt_bp1_better_consistent_max_mq;
+    dup->regenotyping_info.alt_bp2_better_consistent_high_mq = dup->regenotyping_info.alt_bp1_better_consistent_high_mq;
     dup->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
     dup->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
-    dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
-    dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_seqs.size();
-    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
-    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_seqs_consistent.size();
+    dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_reads.size();
+    dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_reads.size();
+    dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_reads_consistent.size();
+    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_bp2_better_reads_consistent.size();
 
     delete[] alt_seq;
 
