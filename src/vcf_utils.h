@@ -511,7 +511,7 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
         throw std::runtime_error("Failed to determine SVTYPE for sv " + std::string(sv->d.id));
     }
     std::string svtype = data;
-    delete[] data;
+    free(data);
     return svtype;
 }
 
@@ -538,7 +538,7 @@ int get_sv_end(bcf_hdr_t* hdr, bcf1_t* sv) {
     bcf_get_info_int32(hdr, sv, "END", &data, &size);
     if (size > 0) {
         int end = data[0];
-        delete[] data;
+        free(data);
         return end-1; // return 0-based
     }
 
@@ -559,7 +559,7 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
 		return "";
     }
     std::string svtype = data;
-    delete[] data;
+    free(data);
     return svtype;
 }
 
@@ -576,7 +576,11 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	char* data = NULL;
 	int size = 0;
 	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
-	if (data) return data;
+	if (data) {
+		std::string ins_seq = data;
+		free(data);
+		return ins_seq;
+	}
 
 	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
 	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");

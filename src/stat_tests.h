@@ -292,7 +292,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 	hts_itr_destroy(iter);
 	
 	for (char* region : rc_cluster_regions) {
-		delete[] region;
+		free(region);
 	}
 
 	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
@@ -315,7 +315,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 	hts_itr_destroy(iter);
 
 	for (char* region : lc_cluster_regions) {
-		delete[] region;
+		free(region);
 	}
 }
 

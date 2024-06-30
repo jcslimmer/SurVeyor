@@ -1202,7 +1202,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
 
-        dup->regenotyping_info.ext_alt_consensus_length = alt_consensus->sequence.length();
+        dup->regenotyping_info.ext_alt_consensus_length = alt_consensus_seq.length();
         dup->regenotyping_info.ext_alt_consensus_to_alt_score = alt_aln.sw_score;
         dup->regenotyping_info.ext_alt_consensus_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
     }
