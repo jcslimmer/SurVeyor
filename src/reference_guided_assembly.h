@@ -86,6 +86,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		aligner.Align(assembled_sequence.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		if (!accept(aln, config.min_clip_len)) continue;
 
+
 		bool overlaps = false;
 		for (StripedSmithWaterman::Alignment& existing_aln : consensus_contigs_alns) {
 			if (std::max(existing_aln.ref_begin, aln.ref_begin) <= std::min(existing_aln.ref_end, aln.ref_end)) {
@@ -111,12 +112,6 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	std::vector<std::string> scaffolds = assemble_reads(rejected_alns_lf, rejected_alns_is, rejected_alns_rf,
 			harsh_aligner, config, stats);
 
-	for (std::string a : assembled_sequences) {
-		aligner.Align(a.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-	}
-	for (int i = 0; i < retained_assembled_sequences.size(); i++) {
-		StripedSmithWaterman::Alignment& aln = consensus_contigs_alns[i];
-	}
 
 	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > contigs_sorted_by_pos;
 	for (int i = 0; i < consensus_contigs_alns.size(); i++) {

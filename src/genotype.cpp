@@ -767,7 +767,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
     
-        del->regenotyping_info.ext_alt_consensus_length = alt_consensus->sequence.length();
+        del->regenotyping_info.ext_alt_consensus_length = alt_consensus_seq.length();
         del->regenotyping_info.ext_alt_consensus_to_alt_score = alt_aln.sw_score;
         del->regenotyping_info.ext_alt_consensus_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
     }
