@@ -17,6 +17,7 @@
 #include "utils.h"
 #include "sam_utils.h"
 #include "reference_guided_assembly.h"
+#include "assemble.h"
 #include "extend_1sr_consensus.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
@@ -485,9 +486,11 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
     std::vector<bam1_t*> consistent_reads;
     avg_score = 0;
     if (!reads.empty()) {
-        std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
-        std::vector<std::string> v1, v2;
-        std::vector<std::string> consensuses = generate_reference_guided_consensus(ref_seq, v1, seqs, v2, aligner, harsh_aligner, consensus_contigs_alns, config, stats);
+        std::vector<seq_w_pp_t> seqs_w_pp, temp1, temp2;
+        for (std::string& seq : seqs) {
+            seqs_w_pp.push_back({seq, true, true});
+        }
+        std::vector<std::string> consensuses = assemble_reads(temp1, seqs_w_pp, temp2, harsh_aligner, config, stats);
 
         if (consensuses.empty()) {
             return consistent_reads;
@@ -1141,7 +1144,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             }
         }
 
-        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() > 4 * stats.get_max_depth(dup->chr)) {
+        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() > 4*stats.get_max_depth(dup->chr)) {
             alt_better_reads.clear();
             ref_bp1_better_reads.clear();
             ref_bp2_better_reads.clear();
