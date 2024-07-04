@@ -53,13 +53,12 @@ class Features:
 
     def get_regt_model_name(record, max_is, read_len):
         svtype_str = record.info['SVTYPE']
-        if svtype_str == "DEL":
-            if abs(Features.get_svlen(record)) >= max_is:
+        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
                 svtype_str += "_LARGE"
-            if "IMPRECISE" in record.info:
-                svtype_str += "_IMPRECISE"
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
             svtype_str += "_LARGE"
+        if "IMPRECISE" in record.info:
+            svtype_str += "_IMPRECISE"
         return svtype_str
 
     def get_denovo_feature_names(model_name):
@@ -84,7 +83,7 @@ class Features:
         extra_feature_names = []
         if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
             extra_feature_names = Features.regt_stat_test_features_names
-        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS"]:
+        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
             extra_feature_names = Features.regt_dp_features_names
         return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
 
