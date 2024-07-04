@@ -359,4 +359,11 @@ struct insertion_t : sv_t {
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
 };
 
+struct inversion_t : sv_t {
+    using sv_t::sv_t;
+
+    std::string svtype() { return "INV"; }
+    hts_pos_t svlen() { return end - start; }
+};
+
 #endif /* TYPES_H */

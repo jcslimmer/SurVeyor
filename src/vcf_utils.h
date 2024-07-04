@@ -508,7 +508,14 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
     char* data = NULL;
     int len = 0;
     if (bcf_get_info_string(hdr, sv, "SVTYPE", &data, &len) < 0) {
-        throw std::runtime_error("Failed to determine SVTYPE for sv " + std::string(sv->d.id));
+		// try to determine svtype from ALT
+		bcf_unpack(sv, BCF_UN_STR);
+		if (sv->d.allele[1][0] == '<') {
+			std::string alt = sv->d.allele[1];
+			return alt.substr(1, alt.length()-2);
+		}
+		std::cerr << "Failed to determine SVTYPE for sv " << std::string(sv->d.id) << std::endl;
+		return "";
     }
     std::string svtype = data;
     free(data);
@@ -758,6 +765,8 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "INS") {
 		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+	} else if (svtype == "INV") {
+		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else {
 		return NULL;
 	}

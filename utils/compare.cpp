@@ -22,7 +22,7 @@ StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 StripedSmithWaterman::Filter filter;
 
 std::vector<sv_t*> benchmark_svs;
-std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr;
+std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
 std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
 
 bool ignore_seq = false;
@@ -62,6 +62,7 @@ int len_diff(sv_t* sv1, sv_t* sv2) {
 	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return abs(sv1->svlen()-sv2->svlen());
 	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") return abs((int) (sv1->svlen()-sv2->svlen()));
 	else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 0;
+	else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") return abs(sv1->svlen()-sv2->svlen());
 	else return INT32_MAX;
 }
 
@@ -166,6 +167,10 @@ bool check_ins_seq(sv_t* sv1, sv_t* sv2) {
 	}
 }
 
+bool is_compatible_inv_inv(sv_t* sv1, sv_t* sv2) {
+	return is_compatible_del_del(sv1, sv2);
+}
+
 bool is_compatible(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") {
 		return is_compatible_del_del(sv1, sv2);
@@ -177,6 +182,8 @@ bool is_compatible(sv_t* sv1, sv_t* sv2) {
 		return is_compatible_ins_dup(sv1, sv2);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
 		return is_compatible_ins_ins(sv1, sv2);
+	} else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") {
+		return is_compatible_inv_inv(sv1, sv2);
 	} else {
 		return false;
 	}
@@ -233,6 +240,10 @@ void find_match(int id, int start_idx, int end_idx) {
 			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
 		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
 			called_svs_chr_type = &called_inss_by_chr[bsv->chr];
+		} else if (bsv->svtype() == "INV") {
+			called_svs_chr_type = &called_invs_by_chr[bsv->chr];
+		} else {
+			continue;
 		}
 
 		std::vector<repeat_t> reps_containing_bsv;
@@ -384,18 +395,18 @@ int main(int argc, char* argv[]) {
 		wrong_gts_fout.open(wrong_gts_fname);
 	}
 
-	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP";};
+	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
 	// erase and count elements from benchmark_svs that are not supported
 	int n_unsupported = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_unsupported_func);
 	if (n_unsupported > 0) {
-		std::cerr << "Warning: only SVTYPE=DEL, DUP or INS are supported. " << n_unsupported << " unsupported variants in benchmark file." << std::endl;
+		std::cerr << "Warning: only SVTYPE=DEL, DUP, INS and INV are supported. " << n_unsupported << " unsupported variants in benchmark file." << std::endl;
 	}
 	benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), is_unsupported_func), benchmark_svs.end());
 
 	// erase and count elements from called_svs that are not supported
 	n_unsupported = std::count_if(called_svs.begin(), called_svs.end(), is_unsupported_func);
 	if (n_unsupported > 0) {
-		std::cerr << "Warning: only SVTYPE=DEL, DUP or INS are supported. " << n_unsupported << " unsupported variants in called file." << std::endl;
+		std::cerr << "Warning: only SVTYPE=DEL, DUP, INS and INV are supported. " << n_unsupported << " unsupported variants in called file." << std::endl;
 	}
 	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_unsupported_func), called_svs.end());
 
@@ -445,6 +456,7 @@ int main(int argc, char* argv[]) {
 	for (sv_t* sv : called_svs) {
 		if (sv->svtype() == "DEL") called_dels_by_chr[sv->chr].push_back(sv);
 		else if (sv->svtype() == "INS" || sv->svtype() == "DUP") called_inss_by_chr[sv->chr].push_back(sv);
+		else if (sv->svtype() == "INV") called_invs_by_chr[sv->chr].push_back(sv);
 	}
 
 	ctpl::thread_pool thread_pool(threads);
@@ -548,7 +560,7 @@ int main(int argc, char* argv[]) {
 
 	if (report) {
 		std::cout.precision(2);
-		for (std::string svtype : {"DEL", "DUP", "INS"}) {
+		for (std::string svtype : {"DEL", "DUP", "INS", "INV"}) {
 			int tp = n_benchmark_tp[svtype], fn = n_benchmark_fn[svtype];
 			std::cout << svtype << " SENSITIVITY: " << tp << "/" << (tp+fn) << " = " << tp/std::max(1.0, double(tp+fn)) << " ";
 
