@@ -531,6 +531,10 @@ int main(int argc, char* argv[]) {
 
     	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
             sv_w_samplename_t sv_w_sample(bcf_to_sv(vcf_header, vcf_record), sample_name);
+            if (sv_w_sample.sv == NULL) {
+                std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
+                continue;
+            }
     		std::string seqname = bcf_seqname(vcf_header, vcf_record);
     		svs_by_chr[seqname].push_back(sv_w_sample);
     	}
