@@ -1,6 +1,4 @@
 import sys, os, argparse, pysam, timeit
-# from random_pos_generator import RandomPositionGenerator
-# import numpy as np
 
 VERSION = "0.1"
 
@@ -47,7 +45,8 @@ call_parser.add_argument('reference', help='Reference genome in FASTA format.')
 call_parser.add_argument('--genotype', action='store_true', help='Genotype the SVs.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
-genotype_parser.add_argument('vcf_file', help='Input VCF file.')
+genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
+genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
@@ -118,16 +117,17 @@ def reads_categorizer():
     read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
     exec(read_categorizer_cmd)
 
+if cmd_args.samplename:
+    sample_name = cmd_args.samplename
+else:
+    sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
+
 if cmd_args.command == 'call':
     reads_categorizer()
 
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
     exec(clip_consensus_builder_cmd)
 
-    if cmd_args.samplename:
-        sample_name = cmd_args.samplename
-    else:
-        sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
 
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     exec(find_svs_from_sr_consensuses_cmd)
@@ -157,5 +157,9 @@ if cmd_args.command == 'call':
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/out.annotated.norm.dedup.vcf.gz %s/out.annotated.norm.dedup.gt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
         exec(genotype_cmd)
 
-if cmd_args.command == 'genotype':
-    pass
+elif cmd_args.command == 'genotype':
+    if not use_call_info():
+        reads_categorizer()
+    
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (cmd_args.in_vcf_file, cmd_args.out_vcf_file, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    exec(genotype_cmd)
