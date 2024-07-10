@@ -16,8 +16,6 @@ set(CMAKE_OSX_ARCHITECTURES "x86_64")
 include_directories(htslib-1.19.1)
 include_directories(htslib-1.19.1/include)
 
-add_executable(normalise utils/normalise.cpp)
-
 add_executable(reads_categorizer src/reads_categorizer.cpp)
 add_executable(clip_consensus_builder libs/ssw.c libs/ssw_cpp.cpp src/clip_consensus_builder.cpp)
 add_executable(find_svs_from_sr_consensuses libs/ssw.c libs/ssw_cpp.cpp src/find_svs_from_sr_consensuses.cpp)
@@ -29,6 +27,8 @@ add_executable(concat_vcf src/concat_vcf.cpp)
 add_executable(genotype libs/ssw.c libs/ssw_cpp.cpp src/genotype.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
+add_executable(normalise utils/normalise.cpp)
+add_executable(cluster utils/cluster.cpp)
 
 find_library(HTS_LIB hts PATHS htslib-1.19.1/lib NO_DEFAULT_PATH)
 
@@ -44,3 +44,4 @@ target_link_libraries(genotype "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")
 target_link_libraries(normalise "${HTS_LIB}")
+target_link_libraries(cluster "${HTS_LIB}")

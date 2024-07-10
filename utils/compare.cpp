@@ -39,24 +39,6 @@ std::string get_type(sv_t* sv) {
 	else return sv->svtype();
 }
 
-int distance(sv_t* sv1, sv_t* sv2) {
-    if (sv1->chr != sv2->chr) return INT32_MAX;
-	if ((sv1->svtype() == "DUP" && sv2->svtype() == "INS") || (sv1->svtype() == "INS" && sv2->svtype() == "DUP")) {
-		return std::min(abs(sv1->start-sv2->start), abs(sv1->end-sv2->end));
-	}
-    return std::max(abs(sv1->start-sv2->start), abs(sv1->end-sv2->end));
-}
-
-double overlap_bps(sv_t* sv1, sv_t* sv2) {
-	return std::max(hts_pos_t(0), std::min(sv1->end, sv2->end)-std::max(sv1->start, sv2->start));
-}
-
-double overlap(sv_t* sv1, sv_t* sv2) {
-	if (sv1->svtype() == "INS" && sv2->svtype() == "INS") return 1.0;
-	if (sv1->end == sv1->start || sv2->end == sv2->start) return 1.0;
-    return overlap_bps(sv1, sv2)/double(std::min(sv1->end-sv1->start, sv2->end-sv2->start));
-}
-
 int len_diff(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") return abs(sv1->svlen()-sv2->svlen());
 	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return abs(sv1->svlen()-sv2->svlen());
