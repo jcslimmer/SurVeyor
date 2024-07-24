@@ -104,8 +104,8 @@ def reads_categorizer():
     mkdir(cmd_args.workdir + "/workspace/rev-stable")
     mkdir(cmd_args.workdir + "/workspace/long-pairs")
     mkdir(cmd_args.workdir + "/workspace/outward-pairs")
+    mkdir(cmd_args.workdir + "/workspace/same-strand")
     mkdir(cmd_args.workdir + "/workspace/mateseqs")
-    mkdir(cmd_args.workdir + "/workspace/sc_mateseqs")
     mkdir(cmd_args.workdir + "/workspace/sr_consensuses")
     mkdir(cmd_args.workdir + "/workspace/hsr_consensuses")
 

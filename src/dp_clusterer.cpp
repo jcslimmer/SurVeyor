@@ -8,6 +8,7 @@
 #include "../libs/IntervalTree.h"
 #include "sam_utils.h"
 #include "sw_utils.h"
+#include "types.h"
 #include "utils.h"
 #include "vcf_utils.h"
 #include "clustering_utils.h"
@@ -45,68 +46,55 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, i
 	std::sort(clusters.begin(), clusters.end());
 }
 
-void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname) {
-	
+void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions) {
+
 	std::string dp_fname = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".bam";
 	if (!file_exists(dp_fname)) return;
-
-	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
-
-	// contains NM for mates
+	
 	std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
-	std::ifstream mateseqs_fin(workdir + "/workspace/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
+	std::ifstream mateseqs_fin(workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt");
 	std::string qname, seq;
 	int64_t nm;
 	while (mateseqs_fin >> qname >> seq >> nm) {
 		qname_to_mate_nm[qname] = nm;
 	}
 
-	std::vector<cluster_t*> lp_clusters, ow_clusters;
-	
+	std::vector<cluster_t*> lp_clusters;
+	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
 		std::string qname = bam_get_qname(read);
 		cluster_t* cluster = new cluster_t(read, qname_to_mate_nm[qname], config.high_confidence_mapq);
-		if (read->core.isize > 0) {
-			lp_clusters.push_back(cluster);
-		} else {
-			ow_clusters.push_back(cluster);
-		}
+		lp_clusters.push_back(cluster);
 	}
 	close_samFile(dp_bam_file);
 	qname_to_mate_nm.clear();
-
+	
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
-
 	if (!lp_clusters.empty()) cluster_clusters(lp_clusters, min_cluster_size, max_cluster_size);
-	if (!ow_clusters.empty()) cluster_clusters(ow_clusters, min_cluster_size, max_cluster_size);
 
 	// set leftmost_rseq
 	std::unordered_map<std::string, cluster_t*> mateseqs_to_retrieve;
 	for (cluster_t* c : lp_clusters) {
-		mateseqs_to_retrieve[c->leftmost_rseq] = c;
+		mateseqs_to_retrieve[c->ra_furthermost_seq] = c;
 	}
 
 	mateseqs_fin.clear();
 	mateseqs_fin.seekg(0);
 	while (mateseqs_fin >> qname >> seq >> nm) {
 		if (!mateseqs_to_retrieve.count(qname)) continue;
-		mateseqs_to_retrieve[qname]->leftmost_rseq = seq;
+		mateseqs_to_retrieve[qname]->ra_furthermost_seq = seq;
 	}
 	mateseqs_to_retrieve.clear();
 
-	// find deletions from clusters
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-	StripedSmithWaterman::Filter filter;
-	
-	std::vector<deletion_t*> deletions;
 	for (cluster_t* c : lp_clusters) {
 		if (c->used) continue;
 
-		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->rightmost_lseq, 0, 0, 0, 0, 0, 0);
-		consensus_t* lc_consensus = new consensus_t(false, 0, c->ra_start, 0, c->leftmost_rseq, 0, 0, 0, 0, 0, 0);
+		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0);
+		consensus_t* lc_consensus = new consensus_t(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, 0, 0);
 		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, stats.read_len/3, config.min_clip_len, 0.0);
 
 		deletion_t* del = NULL;
@@ -131,18 +119,20 @@ void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam
 			del->source = "DP";
 			deletions.push_back(del);
 		}
+		
+		delete c;
 	}
-	
+}
+
+void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname) {
+
+	std::vector<deletion_t*> deletions;
+	std::vector<inversion_t*> inversions;	
+	cluster_lp_dps(contig_id, contig_name, deletions);
+
 	maps_mtx.lock();
 	deletions_by_chr[contig_name] = deletions;
 	maps_mtx.unlock();
-
-	for (cluster_t* c : lp_clusters) {
-		delete c;
-	}
-	for (cluster_t* c : ow_clusters) {
-		delete c;
-	}
 }
 
 void merge_sr_dp(int id, int contig_id, std::string contig_name) {
@@ -303,5 +293,4 @@ int main(int argc, char* argv[]) {
 	bcf_close(merged_vcf_file);
 
 	tbx_index_build(merged_vcf_fname.c_str(), 0, &tbx_conf_vcf);
-
 }

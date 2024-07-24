@@ -24,16 +24,16 @@ bool is_samechr(bam1_t* r) {
     return r->core.tid == r->core.mtid && !is_unmapped(r) && !is_mate_unmapped(r);
 }
 bool is_samestr(bam1_t* r) {
-    return is_samechr(r) && (bam_is_rev(r) == bam_is_mrev(r));
+    return bam_is_rev(r) == bam_is_mrev(r);
 }
 bool is_dc_pair(bam1_t* r) {
     return !is_samechr(r) || std::abs(r->core.isize) > 100000 || is_unmapped(r) != is_mate_unmapped(r);
 }
 bool is_outward(bam1_t* r) {
-	return is_samechr(r) && ((!bam_is_rev(r) && r->core.isize < 0) || (bam_is_rev(r) && r->core.isize > 0));
+	return is_samechr(r) && !is_samestr(r) && ((!bam_is_rev(r) && r->core.isize < 0) || (bam_is_rev(r) && r->core.isize > 0));
 }
 bool is_long(bam1_t* r, int max_is) {
-	return is_samechr(r) && ((!bam_is_rev(r) && r->core.isize > max_is) || (bam_is_rev(r) && r->core.isize < -max_is));
+	return is_samechr(r) && !is_samestr(r) && ((!bam_is_rev(r) && r->core.isize > max_is) || (bam_is_rev(r) && r->core.isize < -max_is));
 }
 bool is_proper_pair(bam1_t* r, int max_is) {
 	return is_primary(r) && is_samechr(r) && !is_samestr(r) && !is_dc_pair(r) && !is_outward(r) && !is_long(r, max_is);

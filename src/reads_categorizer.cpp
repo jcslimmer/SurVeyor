@@ -111,7 +111,10 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 	samFile* ldc_writer = NULL;
     samFile* lp_writer = NULL;
     samFile* ow_writer = NULL;
-    std::ofstream mateseqs_fout(workspace + "/sc_mateseqs/" + std::to_string(contig_id) + ".txt");
+    samFile* ss_writer = NULL;
+    std::ofstream lp_mateseqs_fout; 
+    std::ofstream ow_mateseqs_fout;
+    std::ofstream ss_mateseqs_fout;
 
     int curr_pos = 0;
     std::vector<uint32_t> local_depths(rnd_positions.size());
@@ -158,21 +161,37 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                 mtx_contig[read->core.mtid].unlock();
             }
         }
-        if (is_samechr(read) && !is_samestr(read)) {
-        	if (!bam_is_rev(read)) {
-                if (read->core.isize > stats.max_is) {
+        if (is_samechr(read)) {
+        	if (is_long(read, stats.max_is)) {
+                if (read->core.isize > 0) {
                     if (!lp_writer) lp_writer = open_writer(workspace + "/long-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(lp_writer, bam_file->header, read);
                     if (ok < 0) throw "Failed to write to " + std::string(lp_writer->fn);
-                } else if (read->core.isize < 0) {
+                } else {
+                    if (!lp_mateseqs_fout.is_open()) lp_mateseqs_fout.open(workspace + "/long-pairs/" + std::to_string(contig_id) + ".txt");
+                    lp_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
+                }
+            } else if (is_outward(read)) {
+                if (read->core.pos < 0) {
                     if (!ow_writer) ow_writer = open_writer(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(ow_writer, bam_file->header, read);
                     if (ok < 0) throw "Failed to write to " + std::string(ow_writer->fn);
+                } else {
+                    if (!ow_mateseqs_fout.is_open()) ow_mateseqs_fout.open(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".txt");
+                    ow_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
                 }
-        	} else if (read->core.isize < -stats.max_is || read->core.isize > 0) {
-        		mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
+            } else if (is_samestr(read)) {
+                if (read->core.isize > 0) {
+                    if (!ss_writer) ss_writer = open_writer(workspace + "/same-strand/" + std::to_string(contig_id) + ".bam", bam_file->header);
+
+                    int ok = sam_write1(ss_writer, bam_file->header, read);
+                    if (ok < 0) throw "Failed to write to " + std::string(ss_writer->fn);
+                } else {
+                    if (!ss_mateseqs_fout.is_open()) ss_mateseqs_fout.open(workspace + "/same-strand/" + std::to_string(contig_id) + ".txt");
+                    ss_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
+                }
         	}
         }
 
@@ -229,7 +248,10 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     if (hsr_writer) sam_close(hsr_writer);
     if (lp_writer) sam_close(lp_writer);
     if (ow_writer) sam_close(ow_writer);
-    mateseqs_fout.close();
+    if (ss_writer) sam_close(ss_writer);
+    lp_mateseqs_fout.close();
+    ow_mateseqs_fout.close();
+    ss_mateseqs_fout.close();
 
     local_depths.erase(std::remove(local_depths.begin(), local_depths.end(), 0), local_depths.end());
     mtx.lock();

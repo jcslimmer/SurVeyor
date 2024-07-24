@@ -15,18 +15,24 @@
 
 struct cluster_t {
 	int id = -1;
+	bool la_rev, ra_rev;
 	hts_pos_t la_start, la_end, ra_start, ra_end;
 	int count = 1, confident_count = 0;
 	int la_cum_nm, ra_cum_nm = 0;
 	uint8_t max_mapq;
 	bool used = false;
-	std::string rightmost_lseq, leftmost_rseq; // right-most right-facing sequence and left-most left-facing seq
+
+	// furthermost sequence for left and right-anchor, respectively, along the direction of the anchor
+	// meaning, if l/ra_rev is true, then it is the leftmost sequence, otherwise it is the rightmost sequence
+	std::string la_furthermost_seq, ra_furthermost_seq;
 	
 	std::vector<bam1_t*> reads; // reads that are part of this cluster
 
-	cluster_t() : la_start(INT32_MAX), la_end(0), ra_start(INT32_MAX), ra_end(0), max_mapq(0) {}
+	cluster_t() : la_start(INT32_MAX), la_end(0), la_rev(false), ra_start(INT32_MAX), ra_end(0), ra_rev(false), max_mapq(0) {}
 
-	cluster_t(bam1_t* read, int64_t mate_nm, int high_confidence_mapq, bool store_read = false) : la_start(read->core.pos), la_end(bam_endpos(read)), ra_start(read->core.mpos), ra_end(get_mate_endpos(read)),
+	cluster_t(bam1_t* read, int64_t mate_nm, int high_confidence_mapq, bool store_read = false) : 
+			la_start(read->core.pos), la_end(bam_endpos(read)), la_rev(bam_is_rev(read)), 
+			ra_start(read->core.mpos), ra_end(get_mate_endpos(read)), ra_rev(bam_is_mrev(read)),
 			max_mapq(std::min(read->core.qual, (uint8_t) get_mq(read))) {
 		confident_count = max_mapq == high_confidence_mapq;
 		if (bam_is_rev(read)) {
@@ -36,8 +42,8 @@ struct cluster_t {
 			la_cum_nm = get_nm(read);
 			ra_cum_nm = mate_nm;
 		}
-		rightmost_lseq = get_sequence(read);
-		leftmost_rseq = bam_get_qname(read);
+		la_furthermost_seq = get_sequence(read);
+		ra_furthermost_seq = bam_get_qname(read);
 		if (store_read) reads.push_back(bam_dup1(read));
 	}
 
@@ -48,15 +54,17 @@ struct cluster_t {
 	}
 
 	static bool can_merge(cluster_t* c1, cluster_t* c2, int max_distance) {
-		return distance(c1, c2) <= max_distance;
+		return c1->la_rev == c2->la_rev && c1->ra_rev == c2->ra_rev && distance(c1, c2) <= max_distance;
 	}
 
 	static cluster_t* merge(cluster_t* c1, cluster_t* c2) {
 		cluster_t* merged = new cluster_t;
 		merged->la_start = std::min(c1->la_start, c2->la_start);
 		merged->la_end = std::max(c1->la_end, c2->la_end);
+		merged->la_rev = c1->la_rev;
 		merged->ra_start = std::min(c1->ra_start, c2->ra_start);
 		merged->ra_end = std::max(c1->ra_end, c2->ra_end);
+		merged->ra_rev = c1->ra_rev;
 		merged->count = c1->count + c2->count;
 		merged->confident_count = c1->confident_count + c2->confident_count;
 		merged->la_cum_nm = c1->la_cum_nm + c2->la_cum_nm;
@@ -64,16 +72,16 @@ struct cluster_t {
 		merged->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
 
 		// set rightmost_lseq
-		if (c1->la_end > c2->la_end) merged->rightmost_lseq = c1->rightmost_lseq;
-		else if (c1->la_end < c2->la_end) merged->rightmost_lseq = c2->rightmost_lseq;
-		else if (c1->la_start >= c2->la_start) merged->rightmost_lseq = c1->rightmost_lseq; // both reads may be clipped at the same position, then we choose the one that starts later
-		else merged->rightmost_lseq = c2->rightmost_lseq;
+		if (c1->la_end > c2->la_end) merged->la_furthermost_seq = c1->la_furthermost_seq;
+		else if (c1->la_end < c2->la_end) merged->la_furthermost_seq = c2->la_furthermost_seq;
+		else if (c1->la_start >= c2->la_start) merged->la_furthermost_seq = c1->la_furthermost_seq; // both reads may be clipped at the same position, then we choose the one that starts later
+		else merged->la_furthermost_seq = c2->la_furthermost_seq;
 
 		// set leftmost_lseq
-		if (c1->ra_start < c2->ra_start) merged->leftmost_rseq = c1->leftmost_rseq;
-		else if (c1->ra_start > c2->ra_start) merged->leftmost_rseq = c2->leftmost_rseq;
-		else if (c1->la_end < c2->la_end) merged->leftmost_rseq = c1->leftmost_rseq;
-		else merged->leftmost_rseq = c2->leftmost_rseq;
+		if (c1->ra_start < c2->ra_start) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
+		else if (c1->ra_start > c2->ra_start) merged->ra_furthermost_seq = c2->ra_furthermost_seq;
+		else if (c1->la_end < c2->la_end) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
+		else merged->ra_furthermost_seq = c2->ra_furthermost_seq;
 
 		merged->reads.insert(merged->reads.end(), c1->reads.begin(), c1->reads.end());
 		merged->reads.insert(merged->reads.end(), c2->reads.begin(), c2->reads.end());
@@ -88,10 +96,10 @@ struct cluster_t {
 };
 
 bool operator < (const cluster_t& c1, const cluster_t& c2) {
-	return std::make_tuple(c1.la_start, c1.la_end, c1.ra_start, c1.ra_end) < std::make_tuple(c2.la_start, c2.la_end, c2.ra_start, c2.ra_end);
+	return std::make_tuple(c1.la_start, c1.la_end, c1.la_rev, c1.ra_start, c1.ra_end, c1.ra_rev) < std::make_tuple(c2.la_start, c2.la_end, c2.la_rev, c2.ra_start, c2.ra_end, c2.ra_rev);
 }
 bool operator == (const cluster_t& c1, const cluster_t& c2) {
-	return c1.la_start == c2.la_start && c1.la_end == c2.la_end && c1.ra_start == c2.ra_start && c1.ra_end == c2.ra_end;
+	return c1.la_start == c2.la_start && c1.la_end == c2.la_end && c1.ra_start == c2.ra_start && c1.ra_end == c2.ra_end && c1.la_rev == c2.la_rev && c1.ra_rev == c2.ra_rev;
 }
 bool operator != (const cluster_t& c1, const cluster_t& c2) {
 	return !(c1 == c2);
