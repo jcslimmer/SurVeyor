@@ -19,6 +19,7 @@
 #include "sw_utils.h"
 #include "types.h"
 #include "vcf_utils.h"
+#include "clustering_utils.h"
 
 config_t config;
 stats_t stats;
@@ -30,6 +31,9 @@ contig_map_t contig_map;
 std::unordered_map<std::string, std::vector<sv_t*> > svs_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
+
+std::unordered_map<std::string, std::vector<cluster_t*> > inv_clusters_by_chr;
+std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
 std::vector<int> active_threads_per_chr;
@@ -102,7 +106,7 @@ void remove_marked_consensuses(std::vector<consensus_t*>& consensuses, std::vect
 }
 
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus_t*>& rc_consensuses, std::vector<consensus_t*>& lc_consensuses,
-		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
+		StripedSmithWaterman::Aligner& aligner, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, bool call_inversions) {
 
 	std::vector<sv_t*> local_svs;
 
@@ -114,12 +118,92 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	};
 
 	// build interval tree of left-clipped consensuses (for quick search)
-	std::vector<Interval<int>> consensus_iv;
+	std::vector<Interval<int>> lc_consensus_iv;
 	for (int i = 0; i < lc_consensuses.size(); i++) {
 		consensus_t* lc_anchor = lc_consensuses[i];
-		consensus_iv.push_back(Interval<int>(lc_anchor->breakpoint, lc_anchor->breakpoint+1, i));
+		lc_consensus_iv.push_back(Interval<int>(lc_anchor->breakpoint, lc_anchor->breakpoint+1, i));
 	}
-	IntervalTree<int> consensus_ivtree = IntervalTree<int>(consensus_iv);
+	IntervalTree<int> lc_consensus_ivtree = IntervalTree<int>(lc_consensus_iv);
+
+	std::vector<Interval<int>> rc_consensus_iv;
+	for (int i = 0; i < rc_consensuses.size(); i++) {
+		consensus_t* rc_anchor = rc_consensuses[i];
+		rc_consensus_iv.push_back(Interval<int>(rc_anchor->breakpoint, rc_anchor->breakpoint+1, i));
+	}
+	IntervalTree<int> rc_consensus_ivtree = IntervalTree<int>(rc_consensus_iv);
+
+	if (call_inversions) {
+		mtx.lock();
+		std::vector<cluster_t*>& inv_clusters = inv_clusters_by_chr[contig_name];
+		std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
+		mtx.unlock();
+		for (cluster_t* c : inv_clusters) {
+			if (c->la_rev) {
+				std::vector<Interval<int>> compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_end-stats.max_is, c->la_end);
+				std::vector<Interval<int>> compatible_ra_idxs = lc_consensus_ivtree.findOverlapping(c->ra_end-stats.max_is, c->ra_end);
+
+				for (Interval<int>& la_iv : compatible_la_idxs) {
+					consensus_t* la_consensus = lc_consensuses[la_iv.value];
+					for (Interval<int>& ra_iv : compatible_ra_idxs) {
+						if (la_iv.value == ra_iv.value) continue;
+						consensus_t* ra_consensus = lc_consensuses[ra_iv.value];
+
+						consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
+						consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
+						std::string lm_seq = leftmost_consensus->sequence;
+						rc(lm_seq);
+
+						suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rightmost_consensus->sequence, 1, -4, config.max_seq_error, config.min_clip_len);
+						if (spa.overlap > 0) {
+							sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->breakpoint, leftmost_consensus->end, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
+							sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->breakpoint, rightmost_consensus->end, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
+							inversion_t* inv = new inversion_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, NULL);
+							inv->overlap = spa.overlap;
+							inv->mismatch_rate = spa.mismatch_rate();
+							inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
+							if (!la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "2SR";
+							else if (la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "HSR-SR";
+							else if (!la_consensus->is_hsr && ra_consensus->is_hsr) inv->source = "SR-HSR";
+							else inv->source = "2HSR";
+							inv->source += "_" + lm_seq + "_" + rightmost_consensus->sequence;
+							invs.push_back(inv);
+						}
+					}
+				}
+			} else {
+				std::vector<Interval<int>> compatible_la_idxs = rc_consensus_ivtree.findOverlapping(c->la_end, c->la_start+stats.max_is);
+				std::vector<Interval<int>> compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end, c->ra_start+stats.max_is);
+
+				for (Interval<int>& la_iv : compatible_la_idxs) {
+					consensus_t* la_consensus = rc_consensuses[la_iv.value];
+					for (Interval<int>& ra_iv : compatible_ra_idxs) {
+						if (la_iv.value == ra_iv.value) continue;
+						consensus_t* ra_consensus = rc_consensuses[ra_iv.value];
+
+						consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
+						consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
+						std::string rm_seq = rightmost_consensus->sequence;
+						rc(rm_seq);
+
+						suffix_prefix_aln_t spa = aln_suffix_prefix(leftmost_consensus->sequence, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+						if (spa.overlap > 0) {
+							sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->start, leftmost_consensus->breakpoint, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
+							sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->start, rightmost_consensus->breakpoint, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
+							inversion_t* inv = new inversion_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, NULL);
+							inv->overlap = spa.overlap;
+							inv->mismatch_rate = spa.mismatch_rate();
+							if (!la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "2SR";
+							else if (la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "HSR-SR";
+							else if (!la_consensus->is_hsr && ra_consensus->is_hsr) inv->source = "SR-HSR";
+							else inv->source = "2HSR";
+							inv->source += "_" + leftmost_consensus->sequence + "_" + rm_seq;
+							invs.push_back(inv);
+						}
+					}
+				}
+			}
+		}
+	}
 
 	std::vector<pair_w_score_t> rc_lc_scored_pairs;
 	for (int i = 0; i < rc_consensuses.size(); i++) {
@@ -136,7 +220,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			query_start = rc_consensus->remap_boundary - stats.max_is;
 			query_end = rc_consensus->remap_boundary;
 		}
-		std::vector<Interval<int>> compatible_lc_idxs = consensus_ivtree.findOverlapping(query_start, query_end);
+		std::vector<Interval<int>> compatible_lc_idxs = lc_consensus_ivtree.findOverlapping(query_start, query_end);
 
 		for (auto& iv : compatible_lc_idxs) {
 			consensus_t* lc_consensus = lc_consensuses[iv.value];
@@ -277,10 +361,10 @@ void find_indels_from_paired_consensuses(int id, int contig_id, std::string cont
 	std::vector<consensus_t*>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
 
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq);
-	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq, true);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_sr_consensuses, aligner, *mateseqs_w_mapq, false);
+	find_indels_from_rc_lc_pairs(contig_name, rc_sr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq, false);
+	find_indels_from_rc_lc_pairs(contig_name, rc_hsr_consensuses, lc_hsr_consensuses, aligner, *mateseqs_w_mapq, false);
 
     /* == Deal with unpaired consensuses == */
 	mtx.lock();
@@ -323,6 +407,40 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 	mtx.unlock();
 }
 
+void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
+
+	std::string dp_fname = workdir + "/workspace/same-strand/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(dp_fname)) return;
+
+	std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
+	std::ifstream mateseqs_fin(workdir + "/workspace/same-strand/" + std::to_string(contig_id) + ".txt");
+	std::string qname, seq;
+	int64_t nm;
+	while (mateseqs_fin >> qname >> seq >> nm) {
+		qname_to_mate_nm[qname] = nm;
+	}
+
+	std::vector<cluster_t*> ss_clusters;
+	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
+	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
+	bam1_t* read = bam_init1();
+	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
+		cluster_t* cluster = new cluster_t(read, qname_to_mate_nm[qname], config.high_confidence_mapq);
+		ss_clusters.push_back(cluster);
+	}
+	close_samFile(dp_bam_file);
+
+	int min_cluster_size = 1;
+	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
+	std::vector<bam1_t*> reads;
+	if (!ss_clusters.empty()) cluster_clusters(ss_clusters, reads, stats.max_is, max_cluster_size);
+	ss_clusters.erase(std::remove(ss_clusters.begin(), ss_clusters.end(), (cluster_t*) NULL), ss_clusters.end());	
+
+	mtx.lock();
+	inv_clusters_by_chr[contig_name] = ss_clusters;
+	mtx.unlock();
+}
+
 int main(int argc, char* argv[]) {
 
     complete_bam_fname = argv[1];
@@ -358,6 +476,20 @@ int main(int argc, char* argv[]) {
 	mateseqs_w_mapq.resize(contig_map.size());
 	active_threads_per_chr = std::vector<int>(contig_map.size());
 	mutex_per_chr = std::vector<std::mutex>(contig_map.size());
+
+	std::cout << "Clustering same-strand clusters." << std::endl;
+
+	ctpl::thread_pool cluster_ss_dps_thread_pool(config.threads);
+	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+		std::string contig_name = contig_map.get_name(contig_id);
+		std::future<void> future = cluster_ss_dps_thread_pool.push(cluster_ss_dps, contig_id, contig_name);
+		futures.push_back(std::move(future));
+	}
+	cluster_ss_dps_thread_pool.stop(true);
+	for (size_t i = 0; i < futures.size(); i++) {
+		futures[i].get();
+	}
+	futures.clear();
 
 	std::cout << "Extending consensuses." << std::endl;
 	auto start_time = std::chrono::high_resolution_clock::now();
@@ -408,7 +540,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-
 	std::cout << "Finding indels." << std::endl;
 	start_time = std::chrono::high_resolution_clock::now();
 
@@ -428,7 +559,6 @@ int main(int argc, char* argv[]) {
 
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Indels found in " << elapsed_time << " seconds" << std::endl;
-
 
 	std::cout << "Extending unpaired consensuses." << std::endl;
 	start_time = std::chrono::high_resolution_clock::now();
@@ -507,6 +637,14 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
+	// ==== REMOVE =====
+	std::string out_inv_vcf_fname = workdir + "/inversions.vcf.gz";
+	htsFile* out_inv_vcf_file = bcf_open(out_inv_vcf_fname.c_str(), "wz");
+	if (bcf_hdr_write(out_inv_vcf_file, out_vcf_header) != 0) {
+		throw std::runtime_error("Failed to write the VCF header to " + out_inv_vcf_fname + ".");
+	}
+	// ++++++++++++++++
+
     bcf1_t* bcf_entry = bcf_init();
 	std::unordered_map<std::string, int> svtype_id;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
@@ -548,6 +686,24 @@ int main(int argc, char* argv[]) {
 		
 		for (consensus_t* consensus : unpaired_consensuses_by_chr[contig_name]) delete consensus;
     }
+
+	for (std::string& contig_name : chr_seqs.ordered_contigs) {
+		auto invs = invs_by_chr[contig_name];
+		std::sort(invs.begin(), invs.end(), [](inversion_t* inv1, inversion_t* inv2) {
+			return std::tie(inv1->start, inv1->end) < std::tie(inv2->start, inv2->end);
+		});
+
+		for (inversion_t* inv : invs) {
+			inv->id = "INV_SR_" + std::to_string(svtype_id["INV"]++);
+			sv2bcf(out_vcf_header, bcf_entry, inv, chr_seqs.get_seq(contig_name));
+			if (bcf_write(out_inv_vcf_file, out_vcf_header, bcf_entry) != 0) {
+				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
+			}
+			delete inv;
+		}
+	}
+
+	bcf_close(out_inv_vcf_file);
 
     chr_seqs.clear();
 
