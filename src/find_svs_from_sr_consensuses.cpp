@@ -43,10 +43,13 @@ std::mutex mtx;
 
 
 struct pair_w_score_t {
-    int rc_idx, lc_idx;
-    int score;
+    int c1_idx, c2_idx;
+	bool c1_lc, c2_lc;
+	suffix_prefix_aln_t spa;
+	cluster_t* dp_cluster;
 
-    pair_w_score_t(int rc_idx, int lc_idx, int score) : rc_idx(rc_idx), lc_idx(lc_idx), score(score) {}
+    pair_w_score_t(int c1_idx, bool c1_lc, int c2_idx, bool c2_lc, suffix_prefix_aln_t spa, cluster_t* dp_cluster) : 
+		c1_idx(c1_idx), c1_lc(c1_lc), c2_idx(c2_idx), c2_lc(c2_lc), spa(spa), dp_cluster(dp_cluster) {}
 };
 
 void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::string contig_name, int start_idx, int end_idx, bool extend_in_clip_direction) {
@@ -132,81 +135,45 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	}
 	IntervalTree<int> rc_consensus_ivtree = IntervalTree<int>(rc_consensus_iv);
 
-	if (call_inversions) {
+	std::vector<pair_w_score_t> consensuses_scored_pairs;
+	if (call_inversions) { // find viable pairs of consensuses that form inversions, and push them to consensuses_scored_pairs
 		mtx.lock();
 		std::vector<cluster_t*>& inv_clusters = inv_clusters_by_chr[contig_name];
-		std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
 		mtx.unlock();
 		for (cluster_t* c : inv_clusters) {
+			inversion_t* inv = NULL;
+			std::vector<Interval<int>> compatible_la_idxs, compatible_ra_idxs;
 			if (c->la_rev) {
-				std::vector<Interval<int>> compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_end-stats.max_is, c->la_end);
-				std::vector<Interval<int>> compatible_ra_idxs = lc_consensus_ivtree.findOverlapping(c->ra_end-stats.max_is, c->ra_end);
-
-				for (Interval<int>& la_iv : compatible_la_idxs) {
-					consensus_t* la_consensus = lc_consensuses[la_iv.value];
-					for (Interval<int>& ra_iv : compatible_ra_idxs) {
-						if (la_iv.value == ra_iv.value) continue;
-						consensus_t* ra_consensus = lc_consensuses[ra_iv.value];
-
-						consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
-						consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
-						std::string lm_seq = leftmost_consensus->sequence;
-						rc(lm_seq);
-
-						suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rightmost_consensus->sequence, 1, -4, config.max_seq_error, config.min_clip_len);
-						if (spa.overlap > 0) {
-							sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->breakpoint, leftmost_consensus->end, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
-							sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->breakpoint, rightmost_consensus->end, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
-							inversion_t* inv = new inversion_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, NULL);
-							inv->overlap = spa.overlap;
-							inv->mismatch_rate = spa.mismatch_rate();
-							inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
-							if (!la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "2SR";
-							else if (la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "HSR-SR";
-							else if (!la_consensus->is_hsr && ra_consensus->is_hsr) inv->source = "SR-HSR";
-							else inv->source = "2HSR";
-							inv->source += "_" + lm_seq + "_" + rightmost_consensus->sequence;
-							invs.push_back(inv);
-						}
-					}
-				}
+				compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_end-stats.max_is, c->la_end);
+				compatible_ra_idxs = lc_consensus_ivtree.findOverlapping(c->ra_end-stats.max_is, c->ra_end);
 			} else {
-				std::vector<Interval<int>> compatible_la_idxs = rc_consensus_ivtree.findOverlapping(c->la_end, c->la_start+stats.max_is);
-				std::vector<Interval<int>> compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end, c->ra_start+stats.max_is);
+				compatible_la_idxs = rc_consensus_ivtree.findOverlapping(c->la_end, c->la_start+stats.max_is);
+				compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end, c->ra_start+stats.max_is);
+			}
 
-				for (Interval<int>& la_iv : compatible_la_idxs) {
-					consensus_t* la_consensus = rc_consensuses[la_iv.value];
-					for (Interval<int>& ra_iv : compatible_ra_idxs) {
-						if (la_iv.value == ra_iv.value) continue;
-						consensus_t* ra_consensus = rc_consensuses[ra_iv.value];
+			for (Interval<int>& la_iv : compatible_la_idxs) {
+				consensus_t* la_consensus = (c->la_rev ? lc_consensuses[la_iv.value] : rc_consensuses[la_iv.value]);
+				for (Interval<int>& ra_iv : compatible_ra_idxs) {
+					if (la_iv.value == ra_iv.value) continue;
+					consensus_t* ra_consensus = (c->la_rev ? lc_consensuses[ra_iv.value] : rc_consensuses[ra_iv.value]);
+					
+					consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
+					consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
+					
+					std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
+					if (c->la_rev) rc(lm_seq);
+					else rc(rm_seq);
 
-						consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
-						consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
-						std::string rm_seq = rightmost_consensus->sequence;
-						rc(rm_seq);
-
-						suffix_prefix_aln_t spa = aln_suffix_prefix(leftmost_consensus->sequence, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
-						if (spa.overlap > 0) {
-							sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->start, leftmost_consensus->breakpoint, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
-							sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->start, rightmost_consensus->breakpoint, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
-							inversion_t* inv = new inversion_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, NULL);
-							inv->overlap = spa.overlap;
-							inv->mismatch_rate = spa.mismatch_rate();
-							if (!la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "2SR";
-							else if (la_consensus->is_hsr && !ra_consensus->is_hsr) inv->source = "HSR-SR";
-							else if (!la_consensus->is_hsr && ra_consensus->is_hsr) inv->source = "SR-HSR";
-							else inv->source = "2HSR";
-							inv->source += "_" + leftmost_consensus->sequence + "_" + rm_seq;
-							invs.push_back(inv);
-						}
+					suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+					if (spa.overlap > 0) {
+						consensuses_scored_pairs.push_back(pair_w_score_t(la_iv.value, la_consensus->left_clipped, ra_iv.value, ra_consensus->left_clipped, spa, c));
 					}
 				}
 			}
 		}
 	}
 
-	std::vector<pair_w_score_t> rc_lc_scored_pairs;
-	for (int i = 0; i < rc_consensuses.size(); i++) {
+	for (int i = 0; i < rc_consensuses.size(); i++) { // find viable pairs of consensuses that form deletions and tandem dups, and push them to consensuses_scored_pairs
 		consensus_t* rc_consensus = rc_consensuses[i];
 
 		// let us query the interval tree for left-clipped clusters in compatible positions
@@ -231,7 +198,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
 			if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
-				rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
+				consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
 				// TODO: investigate if we can use base qualities for this
 				std::string rc_consensus_trim = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_clip_portion);
@@ -239,29 +206,59 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, max_mm_rate, min_overlap);
 				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
-					rc_lc_scored_pairs.push_back(pair_w_score_t(i, iv.value, spa.score));
+					consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
 				}
 			}
 		}
 	}
 
-	std::sort(rc_lc_scored_pairs.begin(), rc_lc_scored_pairs.end(),
-	            [](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {return ps1.score > ps2.score;});
+	std::sort(consensuses_scored_pairs.begin(), consensuses_scored_pairs.end(),
+	            [](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {return ps1.spa.score > ps2.spa.score;});
 
+	mtx.lock();
+	std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
+	mtx.unlock();
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
-	for (pair_w_score_t& ps : rc_lc_scored_pairs) {
-		if (used_consensus_rc[ps.rc_idx] || used_consensus_lc[ps.lc_idx]) continue;
-		
-		consensus_t* rc_consensus = rc_consensuses[ps.rc_idx];
-		consensus_t* lc_consensus = lc_consensuses[ps.lc_idx];
+	for (pair_w_score_t& ps : consensuses_scored_pairs) {
+		if (used_consensus_rc[ps.c1_idx] || used_consensus_lc[ps.c2_idx]) continue;
 
-		int min_overlap = min_overlap_f(rc_consensus, lc_consensus);
-		double max_mm_rate = max_seq_error_f(rc_consensus, lc_consensus);
-		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
-			aligner, min_overlap, config.min_clip_len, max_mm_rate);
+		consensus_t* c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
+		consensus_t* c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
+
+		std::vector<sv_t*> svs;
+		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
+			consensus_t* leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
+			consensus_t* rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
+			sv_t::anchor_aln_t* left_anchor_aln, *right_anchor_aln;
+			if (c1_consensus->left_clipped) {
+				left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->breakpoint, leftmost_consensus->end, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
+				right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->breakpoint, rightmost_consensus->end, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
+			} else {
+				left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->start, leftmost_consensus->breakpoint, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
+				right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->start, rightmost_consensus->breakpoint, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
+			}
+			inversion_t* inv = new inversion_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, NULL);
+			inv->overlap = ps.spa.overlap;
+			inv->mismatch_rate = ps.spa.mismatch_rate();
+			inv->disc_pairs_lf = inv->disc_pairs_rf = ps.dp_cluster->count;
+			inv->source = "2SR";
+			std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
+			if (c1_consensus->left_clipped) rc(lm_seq);
+			else rc(rm_seq);
+			inv->source += "_" + lm_seq + "_" + rm_seq;
+			invs.push_back(inv);
+		} else {
+			int min_overlap = min_overlap_f(c1_consensus, c2_consensus);
+			double max_mm_rate = max_seq_error_f(c1_consensus, c2_consensus);
+			svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
+				aligner, min_overlap, config.min_clip_len, max_mm_rate);
+		}
 		if (svs.empty()) continue;
 
-		used_consensus_rc[ps.rc_idx] = used_consensus_lc[ps.lc_idx] = true;
+		if (ps.c1_lc) used_consensus_lc[ps.c1_idx] = true;
+		else used_consensus_rc[ps.c1_idx] = true;
+		if (ps.c2_lc) used_consensus_lc[ps.c2_idx] = true;
+		else used_consensus_rc[ps.c2_idx] = true;
 
 		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
