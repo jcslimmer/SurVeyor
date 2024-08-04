@@ -131,8 +131,11 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* rev_sr_info_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_info_tag, &len));
 
-	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of clipped reads.\">";
+	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of split reads forming the consensuss.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
+
+	const char* max_mapq_ext_tag = "##INFO=<ID=MAX_MAPQ_EXT,Number=2,Type=Integer,Description=\"Maximum MAPQ of reads forming the consensus, including reads used to extend it.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_ext_tag, &len));
 
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
@@ -377,6 +380,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 
 	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
+	int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
+	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ_EXT", max_mapq_ext, 2);
 	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
 	float mismatch_rate = sv->mismatch_rate;
 	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
@@ -629,9 +634,19 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		max_lc_mapq = data[1];
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "MAX_MAPQ_EXT", &data, &len);
+	int max_rc_mapq_ext = 0, max_lc_mapq_ext = 0;
+	if (len > 0) {
+		max_rc_mapq_ext = data[0];
+		max_lc_mapq_ext = data[1];
+	}
+
 	consensus_t* rc_consensus = NULL;
 	if (rc_fwd_reads + rc_rev_reads > 0) {
 		rc_consensus = new consensus_t(false, 0, 0, 0, "", rc_fwd_reads, rc_rev_reads, 0, max_rc_mapq, consensus_t::UPPER_BOUNDARY_NON_CALCULATED, 0);
+		rc_consensus->max_mapq_ext = max_rc_mapq_ext;
 
 		data = NULL;
 		len = 0;
@@ -659,6 +674,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	consensus_t* lc_consensus = NULL;
 	if (lc_fwd_reads + lc_rev_reads > 0) {
 		lc_consensus = new consensus_t(true, 0, 0, 0, "", lc_fwd_reads, lc_rev_reads, 0, max_lc_mapq, consensus_t::LOWER_BOUNDARY_NON_CALCULATED, 0);
+		lc_consensus->max_mapq_ext = max_lc_mapq_ext;
 
 		data = NULL;
 		len = 0;
