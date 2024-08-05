@@ -9,6 +9,7 @@
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
@@ -33,7 +34,7 @@ std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 
 std::unordered_map<std::string, std::vector<cluster_t*> > inv_clusters_by_chr;
-std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr;
+std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr, dp_invs_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
 std::vector<int> active_threads_per_chr;
@@ -136,10 +137,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	IntervalTree<int> rc_consensus_ivtree = IntervalTree<int>(rc_consensus_iv);
 
 	std::vector<pair_w_score_t> consensuses_scored_pairs;
+	mtx.lock();
+	std::vector<cluster_t*>& inv_clusters = inv_clusters_by_chr[contig_name];
+	mtx.unlock();
 	if (call_inversions) { // find viable pairs of consensuses that form inversions, and push them to consensuses_scored_pairs
-		mtx.lock();
-		std::vector<cluster_t*>& inv_clusters = inv_clusters_by_chr[contig_name];
-		mtx.unlock();
 		for (cluster_t* c : inv_clusters) {
 			inversion_t* inv = NULL;
 			std::vector<Interval<int>> compatible_la_idxs, compatible_ra_idxs;
@@ -217,6 +218,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 	mtx.lock();
 	std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
+	std::vector<inversion_t*> invs_lf, invs_rf;
 	mtx.unlock();
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
@@ -241,12 +243,25 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inv->overlap = ps.spa.overlap;
 			inv->mismatch_rate = ps.spa.mismatch_rate();
 			inv->disc_pairs_lf = inv->disc_pairs_rf = ps.dp_cluster->count;
+			inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = ps.dp_cluster->confident_count;
+			inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = ps.dp_cluster->max_mapq;
+			inv->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
+			inv->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
 			inv->source = "2SR";
 			std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
-			if (c1_consensus->left_clipped) rc(lm_seq);
-			else rc(rm_seq);
+			if (c1_consensus->left_clipped) {
+				rc(lm_seq);
+			} else { 
+				rc(rm_seq); 
+			}
 			inv->source += "_" + lm_seq + "_" + rm_seq;
 			invs.push_back(inv);
+			svs.push_back(inv);
+			if (c1_consensus->left_clipped) {
+				invs_lf.push_back(inv);
+			} else {
+				invs_rf.push_back(inv);
+			}
 		} else {
 			int min_overlap = min_overlap_f(c1_consensus, c2_consensus);
 			double max_mm_rate = max_seq_error_f(c1_consensus, c2_consensus);
@@ -261,6 +276,76 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		else used_consensus_rc[ps.c2_idx] = true;
 
 		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
+	}
+
+	// detect deletions from unused inv clusters
+	std::vector<cluster_t*> lf_inv_clusters, rf_inv_clusters;
+	for (cluster_t* c : inv_clusters) {
+		if (c->la_rev) {
+			lf_inv_clusters.push_back(c);
+		} else {
+			rf_inv_clusters.push_back(c);
+		}
+	}
+
+	if (call_inversions) {
+		mtx.lock();
+		std::vector<inversion_t*>& dp_invs = dp_invs_by_chr[contig_name];
+		mtx.unlock();
+
+		int inv_idx = 0;
+		std::sort(invs_lf.begin(), invs_lf.end(), [](const inversion_t* i1, const inversion_t* i2) { return i1->start < i2->start; });
+		for (cluster_t* c : lf_inv_clusters) {	
+			while (inv_idx < invs_lf.size() && invs_lf[inv_idx]->start < c->la_end-stats.max_is) inv_idx++;
+
+			bool has_inv = false;
+			for (int i = inv_idx; i < invs_lf.size() && invs_lf[i]->start < c->la_end; i++) {
+				if (invs_lf[i]->end >= c->ra_end-stats.max_is && invs_lf[i]->end <= c->ra_end) {
+					has_inv = true;
+					break;
+				}
+			}
+
+			if (!has_inv) {
+				sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
+				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
+				inversion_t* inv = new inversion_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
+				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
+				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
+				inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = c->max_mapq;
+				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
+				inv->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
+				inv->source = "DP_LF";
+				dp_invs.push_back(inv);
+			}
+		}
+
+		std::sort(invs_rf.begin(), invs_rf.end(), [](const inversion_t* i1, const inversion_t* i2) { return i1->start < i2->start; });
+		inv_idx = 0;
+		for (cluster_t* c : rf_inv_clusters) {
+			while (inv_idx < invs_rf.size() && invs_rf[inv_idx]->start < c->la_start) inv_idx++;
+
+			bool has_inv = false;
+			for (int i = inv_idx; i < invs_rf.size() && invs_rf[i]->start <= c->la_start+stats.max_is; i++) {
+				if (invs_rf[i]->end >= c->ra_start && invs_rf[i]->end <= c->ra_start+stats.max_is) {
+					has_inv = true;
+					break;
+				}
+			}
+
+			if (!has_inv) {
+				sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
+				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
+				inversion_t* inv = new inversion_t(contig_name, std::min(c->la_start, c->ra_start), std::max(c->la_start, c->ra_start), "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
+				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
+				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
+				inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = c->max_mapq;
+				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
+				inv->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
+				inv->source = "DP_RF";
+				dp_invs.push_back(inv);
+			}
+		}
 	}
 
 	remove_marked_consensuses(rc_consensuses, used_consensus_rc);
@@ -427,11 +512,18 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	}
 	close_samFile(dp_bam_file);
 
-	int min_cluster_size = 1;
+	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
 	std::vector<bam1_t*> reads;
 	if (!ss_clusters.empty()) cluster_clusters(ss_clusters, reads, stats.max_is, max_cluster_size);
-	ss_clusters.erase(std::remove(ss_clusters.begin(), ss_clusters.end(), (cluster_t*) NULL), ss_clusters.end());	
+	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](cluster_t* c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
+
+	for (cluster_t* c : ss_clusters) {
+		if (c->la_start > c->ra_start) {
+			std::cout << contig_name << " " << c->la_start << " " << c->ra_start << " " << c->count << " " << c->la_rev << std::endl;
+			exit(0);
+		}
+	}
 
 	mtx.lock();
 	inv_clusters_by_chr[contig_name] = ss_clusters;
@@ -640,6 +732,12 @@ int main(int argc, char* argv[]) {
 	if (bcf_hdr_write(out_inv_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_inv_vcf_fname + ".");
 	}
+
+	std::string out_dp_inv_vcf_fname = workdir + "/dp_inversions.vcf.gz";
+	htsFile* out_dp_inv_vcf_file = bcf_open(out_dp_inv_vcf_fname.c_str(), "wz");
+	if (bcf_hdr_write(out_dp_inv_vcf_file, out_vcf_header) != 0) {
+		throw std::runtime_error("Failed to write the VCF header to " + out_dp_inv_vcf_fname + ".");
+	}
 	// ++++++++++++++++
 
     bcf1_t* bcf_entry = bcf_init();
@@ -678,7 +776,7 @@ int main(int argc, char* argv[]) {
             if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
-            delete sv;
+            // delete sv;
         }
 		
 		for (consensus_t* consensus : unpaired_consensuses_by_chr[contig_name]) delete consensus;
@@ -698,9 +796,24 @@ int main(int argc, char* argv[]) {
 			}
 			delete inv;
 		}
+
+		auto dp_invs = dp_invs_by_chr[contig_name];
+		std::sort(dp_invs.begin(), dp_invs.end(), [](inversion_t* inv1, inversion_t* inv2) {
+			return std::tie(inv1->start, inv1->end) < std::tie(inv2->start, inv2->end);
+		});
+
+		for (inversion_t* inv : dp_invs) {
+			inv->id = "INV_DP_" + std::to_string(svtype_id["INV"]++);
+			sv2bcf(out_vcf_header, bcf_entry, inv, chr_seqs.get_seq(contig_name));
+			if (bcf_write(out_dp_inv_vcf_file, out_vcf_header, bcf_entry) != 0) {
+				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
+			}
+			delete inv;
+		}
 	}
 
 	bcf_close(out_inv_vcf_file);
+	bcf_close(out_dp_inv_vcf_file);
 
     chr_seqs.clear();
 
