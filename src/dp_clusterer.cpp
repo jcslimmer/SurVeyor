@@ -251,13 +251,28 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + dp_vcf_fname + ".");
 	}
 
+	// read dp inversions dp_invs.vcf.gz
+	std::string dp_inv_vcf_fname = workdir + "/dp_invs.vcf.gz";
+	htsFile* dp_inv_vcf_file = bcf_open(dp_inv_vcf_fname.c_str(), "r");
+	bcf_hdr_t* hdr_inv = bcf_hdr_read(dp_inv_vcf_file);
+
+	std::unordered_map<std::string, std::vector<sv_t*>> dp_svs_by_chr;
+	while (bcf_read(dp_inv_vcf_file, hdr_inv, bcf_entry) == 0) {
+		sv_t* sv = bcf_to_sv(hdr_inv, bcf_entry);
+		dp_svs_by_chr[sv->chr].push_back(sv);
+	}
+
 	int del_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
 		auto& deletions = deletions_by_chr[contig_name];
-		std::sort(deletions.begin(), deletions.end(), [](const sv_t* sv1, const sv_t* sv2) {return sv1->start < sv2->start;});
-		for (sv_t* del : deletions) {
-			del->id = "DEL_DP_" + std::to_string(del_id++);
-			sv2bcf(hdr, bcf_entry, del, chr_seqs.get_seq(contig_name));
+		for (deletion_t* del : deletions) del->id = "DEL_DP_" + std::to_string(del_id++);
+
+		dp_svs_by_chr[contig_name].insert(dp_svs_by_chr[contig_name].end(), deletions.begin(), deletions.end());
+		std::sort(dp_svs_by_chr[contig_name].begin(), dp_svs_by_chr[contig_name].end(), [](sv_t* sv1, sv_t* sv2) {
+			return sv1->start < sv2->start;
+		});
+		for (sv_t* dp_sv : dp_svs_by_chr[contig_name]) {
+			sv2bcf(hdr, bcf_entry, dp_sv, chr_seqs.get_seq(contig_name));
 			if (bcf_write(dp_vcf_file, hdr, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + dp_vcf_fname + ".");
 			}
@@ -276,7 +291,7 @@ int main(int argc, char* argv[]) {
 
 	for (std::string& contig_name : chr_seqs.ordered_contigs) {
 		std::vector<sv_t*> all_entries;
-		all_entries.insert(all_entries.end(), deletions_by_chr[contig_name].begin(), deletions_by_chr[contig_name].end());
+		all_entries.insert(all_entries.end(), dp_svs_by_chr[contig_name].begin(), dp_svs_by_chr[contig_name].end());
 		all_entries.insert(all_entries.end(), sr_entries_by_chr[contig_name].begin(), sr_entries_by_chr[contig_name].end());
 		all_entries.insert(all_entries.end(), sr_nonpass_entries_by_chr[contig_name].begin(), sr_nonpass_entries_by_chr[contig_name].end());
 		std::sort(all_entries.begin(), all_entries.end(), [](sv_t* sv1, sv_t* sv2) {

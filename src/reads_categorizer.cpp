@@ -183,7 +183,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     ow_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
                 }
             } else if (is_samestr(read)) {
-                if (read->core.isize > 0) {
+                if (read->core.pos < read->core.mpos) {
                     if (!ss_writer) ss_writer = open_writer(workspace + "/same-strand/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(ss_writer, bam_file->header, read);

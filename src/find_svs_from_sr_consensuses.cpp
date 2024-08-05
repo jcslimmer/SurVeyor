@@ -34,7 +34,7 @@ std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 
 std::unordered_map<std::string, std::vector<cluster_t*> > inv_clusters_by_chr;
-std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr, dp_invs_by_chr;
+std::unordered_map<std::string, std::vector<inversion_t*> > dp_invs_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
 std::vector<int> active_threads_per_chr;
@@ -217,7 +217,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	            [](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {return ps1.spa.score > ps2.spa.score;});
 
 	mtx.lock();
-	std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
 	std::vector<inversion_t*> invs_lf, invs_rf;
 	mtx.unlock();
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
@@ -255,7 +254,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				rc(rm_seq); 
 			}
 			inv->source += "_" + lm_seq + "_" + rm_seq;
-			invs.push_back(inv);
 			svs.push_back(inv);
 			if (c1_consensus->left_clipped) {
 				invs_lf.push_back(inv);
@@ -726,19 +724,11 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-	// ==== REMOVE =====
-	std::string out_inv_vcf_fname = workdir + "/inversions.vcf.gz";
-	htsFile* out_inv_vcf_file = bcf_open(out_inv_vcf_fname.c_str(), "wz");
-	if (bcf_hdr_write(out_inv_vcf_file, out_vcf_header) != 0) {
-		throw std::runtime_error("Failed to write the VCF header to " + out_inv_vcf_fname + ".");
-	}
-
-	std::string out_dp_inv_vcf_fname = workdir + "/dp_inversions.vcf.gz";
+	std::string out_dp_inv_vcf_fname = workdir + "/dp_invs.vcf.gz";
 	htsFile* out_dp_inv_vcf_file = bcf_open(out_dp_inv_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(out_dp_inv_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_dp_inv_vcf_fname + ".");
 	}
-	// ++++++++++++++++
 
     bcf1_t* bcf_entry = bcf_init();
 	std::unordered_map<std::string, int> svtype_id;
@@ -783,20 +773,6 @@ int main(int argc, char* argv[]) {
     }
 
 	for (std::string& contig_name : chr_seqs.ordered_contigs) {
-		auto invs = invs_by_chr[contig_name];
-		std::sort(invs.begin(), invs.end(), [](inversion_t* inv1, inversion_t* inv2) {
-			return std::tie(inv1->start, inv1->end) < std::tie(inv2->start, inv2->end);
-		});
-
-		for (inversion_t* inv : invs) {
-			inv->id = "INV_SR_" + std::to_string(svtype_id["INV"]++);
-			sv2bcf(out_vcf_header, bcf_entry, inv, chr_seqs.get_seq(contig_name));
-			if (bcf_write(out_inv_vcf_file, out_vcf_header, bcf_entry) != 0) {
-				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
-			}
-			delete inv;
-		}
-
 		auto dp_invs = dp_invs_by_chr[contig_name];
 		std::sort(dp_invs.begin(), dp_invs.end(), [](inversion_t* inv1, inversion_t* inv2) {
 			return std::tie(inv1->start, inv1->end) < std::tie(inv2->start, inv2->end);
@@ -812,7 +788,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	bcf_close(out_inv_vcf_file);
 	bcf_close(out_dp_inv_vcf_file);
 
     chr_seqs.clear();
