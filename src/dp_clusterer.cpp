@@ -112,7 +112,8 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 
 		if (del && -del->svlen() >= config.min_sv_size) {
 			del->disc_pairs_lf = del->disc_pairs_rf = c->count;
-			del->disc_pairs_lf_maxmapq = del->disc_pairs_rf_maxmapq = c->max_mapq;
+			del->disc_pairs_lf_maxmapq = c->la_max_mapq;
+			del->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 			del->disc_pairs_lf_high_mapq = del->disc_pairs_rf_high_mapq = c->confident_count;
 			del->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 			del->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;

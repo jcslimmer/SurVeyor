@@ -243,7 +243,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inv->mismatch_rate = ps.spa.mismatch_rate();
 			inv->disc_pairs_lf = inv->disc_pairs_rf = ps.dp_cluster->count;
 			inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = ps.dp_cluster->confident_count;
-			inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = ps.dp_cluster->max_mapq;
+			inv->disc_pairs_lf_maxmapq = ps.dp_cluster->la_max_mapq;
+			inv->disc_pairs_rf_maxmapq = ps.dp_cluster->ra_max_mapq;
 			inv->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
 			inv->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
 			inv->source = "2SR";
@@ -310,7 +311,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				inversion_t* inv = new inversion_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
 				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
-				inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = c->max_mapq;
+				inv->disc_pairs_lf_maxmapq = c->la_max_mapq;
+				inv->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				inv->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				inv->source = "DP_LF";
@@ -337,7 +339,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				inversion_t* inv = new inversion_t(contig_name, std::min(c->la_start, c->ra_start), std::max(c->la_start, c->ra_start), "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
 				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
-				inv->disc_pairs_lf_maxmapq = inv->disc_pairs_rf_maxmapq = c->max_mapq;
+				inv->disc_pairs_lf_maxmapq = c->la_max_mapq;
+				inv->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				inv->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				inv->source = "DP_RF";
@@ -515,13 +518,6 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	std::vector<bam1_t*> reads;
 	if (!ss_clusters.empty()) cluster_clusters(ss_clusters, reads, stats.max_is, max_cluster_size);
 	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](cluster_t* c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
-
-	for (cluster_t* c : ss_clusters) {
-		if (c->la_start > c->ra_start) {
-			std::cout << contig_name << " " << c->la_start << " " << c->ra_start << " " << c->count << " " << c->la_rev << std::endl;
-			exit(0);
-		}
-	}
 
 	mtx.lock();
 	inv_clusters_by_chr[contig_name] = ss_clusters;

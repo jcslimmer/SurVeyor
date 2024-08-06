@@ -26,7 +26,8 @@ struct insertion_cluster_t {
         cluster->reads.push_back(read);
         start = std::min(start, read->core.pos);
         end = std::max(end, bam_endpos(read));
-        cluster->max_mapq = std::max(cluster->max_mapq, read->core.qual);
+        cluster->la_max_mapq = std::max(cluster->la_max_mapq, read->core.qual);
+        cluster->ra_max_mapq = std::max(cluster->ra_max_mapq, read->core.qual);
     }
     void add_semi_mapped_reads(bam1_t* read) {
         if (clip_consensus) {

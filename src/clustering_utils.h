@@ -19,7 +19,7 @@ struct cluster_t {
 	hts_pos_t la_start, la_end, ra_start, ra_end;
 	int count = 1, confident_count = 0;
 	int la_cum_nm, ra_cum_nm = 0;
-	uint8_t max_mapq;
+	uint8_t la_max_mapq, ra_max_mapq;
 	bool used = false;
 
 	// furthermost sequence for left and right-anchor, respectively, along the direction of the anchor
@@ -28,19 +28,15 @@ struct cluster_t {
 	
 	std::vector<bam1_t*> reads; // reads that are part of this cluster
 
-	cluster_t() : la_start(INT32_MAX), la_end(0), la_rev(false), ra_start(INT32_MAX), ra_end(0), ra_rev(false), max_mapq(0) {}
+	cluster_t() : la_start(INT32_MAX), la_end(0), la_rev(false), ra_start(INT32_MAX), ra_end(0), ra_rev(false), la_max_mapq(0), ra_max_mapq(0) {}
 
 	cluster_t(bam1_t* read, int64_t mate_nm, int high_confidence_mapq, bool store_read = false) : 
 			la_start(read->core.pos), la_end(bam_endpos(read)), la_rev(bam_is_rev(read)), 
 			ra_start(read->core.mpos), ra_end(get_mate_endpos(read)), ra_rev(bam_is_mrev(read)),
-			max_mapq(std::min(read->core.qual, (uint8_t) get_mq(read))) {
-		confident_count = max_mapq == high_confidence_mapq;
-		if (bam_is_rev(read)) {
-			la_cum_nm = mate_nm;
-			ra_cum_nm = get_nm(read);
-		} else {
-			la_cum_nm = get_nm(read);
-			ra_cum_nm = mate_nm;
+			la_max_mapq(read->core.qual), ra_max_mapq(get_mq(read)), la_cum_nm(get_nm(read)), ra_cum_nm(mate_nm) {
+		
+		if (read->core.qual >= high_confidence_mapq && ((uint8_t) get_mq(read)) >= high_confidence_mapq) {
+			confident_count = 1;
 		}
 		la_furthermost_seq = get_sequence(read);
 		ra_furthermost_seq = bam_get_qname(read);
@@ -69,7 +65,8 @@ struct cluster_t {
 		merged->confident_count = c1->confident_count + c2->confident_count;
 		merged->la_cum_nm = c1->la_cum_nm + c2->la_cum_nm;
 		merged->ra_cum_nm = c1->ra_cum_nm + c2->ra_cum_nm;
-		merged->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
+		merged->la_max_mapq = std::max(c1->la_max_mapq, c2->la_max_mapq);
+		merged->ra_max_mapq = std::max(c1->ra_max_mapq, c2->ra_max_mapq);
 
 		// set rightmost_lseq
 		if (c1->la_end > c2->la_end) merged->la_furthermost_seq = c1->la_furthermost_seq;

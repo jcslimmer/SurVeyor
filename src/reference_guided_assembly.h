@@ -488,8 +488,8 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	for (bam1_t* read : refined_l_cluster->cluster->reads) {
 		if (read->core.qual >= config.high_confidence_mapq) insertion->disc_pairs_rf_high_mapq++;
 	}
-	insertion->disc_pairs_lf_maxmapq = refined_r_cluster->cluster->max_mapq;
-	insertion->disc_pairs_rf_maxmapq = refined_l_cluster->cluster->max_mapq;
+	insertion->disc_pairs_lf_maxmapq = refined_r_cluster->cluster->la_max_mapq;
+	insertion->disc_pairs_rf_maxmapq = refined_l_cluster->cluster->ra_max_mapq;
 	for (bam1_t* read : refined_r_cluster->cluster->reads) {
 		insertion->disc_pairs_lf_avg_nm += get_nm(read);
 	}
