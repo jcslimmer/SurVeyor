@@ -154,18 +154,19 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 }
 
 void depth_filter_del(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
-	if (deletions.empty()) return;
 	std::vector<sv_t*> testable_dels(deletions.begin(), deletions.end());
     depth_filter_indel(contig_name, testable_dels, bam_file, config, stats);
 }
 void depth_filter_dup(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
-	if (duplications.empty()) return;
 	std::vector<sv_t*> testable_dups(duplications.begin(), duplications.end());
     depth_filter_indel(contig_name, testable_dups, bam_file, config, stats);
 }
 void depth_filter_ins(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
-	if (insertions.empty()) return;
 	std::vector<sv_t*> testable_ins(insertions.begin(), insertions.end());
+	depth_filter_indel(contig_name, testable_ins, bam_file, config, stats);
+}
+void depth_filter_inv(std::string contig_name, std::vector<inversion_t*>& invertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
+	std::vector<sv_t*> testable_ins(invertions.begin(), invertions.end());
 	depth_filter_indel(contig_name, testable_ins, bam_file, config, stats);
 }
 

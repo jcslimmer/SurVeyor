@@ -31,6 +31,7 @@ bam_pool_t* del_bam_pool, *dup_bam_pool, *ins_bam_pool;
 std::unordered_map<std::string, std::vector<deletion_t*> > deletions_by_chr;
 std::unordered_map<std::string, std::vector<duplication_t*> > duplications_by_chr;
 std::unordered_map<std::string, std::vector<insertion_t*> > insertions_by_chr;
+std::unordered_map<std::string, std::vector<inversion_t*> > inversions_by_chr;
 
 void size_and_depth_filtering_del(int id, std::string contig_name) {
     open_samFile_t* bam_file = del_bam_pool->get_bam_reader(id);
@@ -81,6 +82,15 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
         }
     }
     calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, stats);
+}
+
+void size_and_depth_filtering_inv(int id, std::string contig_name) {
+    open_samFile_t* bam_file = del_bam_pool->get_bam_reader(id);
+
+    mtx.lock();
+    std::vector<inversion_t*>& inversions = inversions_by_chr[contig_name];
+    mtx.unlock();
+    depth_filter_inv(contig_name, inversions, bam_file, config, stats);
 }
 
 void apply_ALL_filters(sv_t* sv) {
@@ -145,9 +155,11 @@ int main(int argc, char* argv[]) {
 			deletions_by_chr[sv->chr].push_back((deletion_t*) sv);
 		} else if (sv->svtype() == "DUP") {
 			duplications_by_chr[sv->chr].push_back((duplication_t*) sv);
-		} else {
+		} else if (sv->svtype() == "INS") {
 			insertions_by_chr[sv->chr].push_back((insertion_t*) sv);
-		}
+		} else if (sv->svtype() == "INV") {
+            inversions_by_chr[sv->chr].push_back((inversion_t*) sv);
+        }
 	}	
 
 	std::cout << "Computing statistics for indels." << std::endl;
@@ -162,6 +174,8 @@ int main(int argc, char* argv[]) {
         future = thread_pool3.push(size_and_depth_filtering_dup, contig_name);
         futures.push_back(std::move(future));
         future = thread_pool3.push(size_and_depth_filtering_ins, contig_name);
+        futures.push_back(std::move(future));
+        future = thread_pool3.push(size_and_depth_filtering_inv, contig_name);
         futures.push_back(std::move(future));
     }
     thread_pool3.stop(true);
@@ -305,6 +319,27 @@ int main(int argc, char* argv[]) {
             }
 
             sv_entries[contig_name].push_back(ins);
+        }
+    }
+
+    for (std::string& contig_name : chr_seqs.ordered_contigs) {
+        if (!inversions_by_chr.count(contig_name)) continue;
+        std::vector<inversion_t*>& inversions = inversions_by_chr[contig_name];
+        for (inversion_t* inv : inversions) {
+            // apply_ALL_filters(inv);
+            if (inv->median_left_flanking_cov > stats.get_max_depth(inv->chr) || inv->median_right_flanking_cov > stats.get_max_depth(inv->chr) ||
+                inv->median_left_flanking_cov < stats.get_min_depth(inv->chr) || inv->median_right_flanking_cov < stats.get_min_depth(inv->chr)) {
+                inv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+            }
+            if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {
+                inv->filters.push_back("ANOMALOUS_SC_NUMBER");
+            }
+
+            if (inv->filters.empty()) {
+                inv->filters.push_back("PASS");
+            }
+
+            sv_entries[contig_name].push_back(inv);
         }
     }
 
