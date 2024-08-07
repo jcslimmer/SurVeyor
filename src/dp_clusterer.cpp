@@ -114,13 +114,14 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 			del->disc_pairs_lf = del->disc_pairs_rf = c->count;
 			del->disc_pairs_lf_maxmapq = c->la_max_mapq;
 			del->disc_pairs_rf_maxmapq = c->ra_max_mapq;
-			del->disc_pairs_lf_high_mapq = del->disc_pairs_rf_high_mapq = c->confident_count;
+			del->disc_pairs_lf_high_mapq = c->la_confident_count;
+			del->disc_pairs_rf_high_mapq = c->ra_confident_count;
 			del->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 			del->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 			del->source = "DP";
 			deletions.push_back(del);
 		}
-		
+
 		delete c;
 	}
 }

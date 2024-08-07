@@ -242,7 +242,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inv->overlap = ps.spa.overlap;
 			inv->mismatch_rate = ps.spa.mismatch_rate();
 			inv->disc_pairs_lf = inv->disc_pairs_rf = ps.dp_cluster->count;
-			inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = ps.dp_cluster->confident_count;
+			inv->disc_pairs_lf_high_mapq = ps.dp_cluster->la_confident_count;
+			inv->disc_pairs_rf_high_mapq = ps.dp_cluster->ra_confident_count;
 			inv->disc_pairs_lf_maxmapq = ps.dp_cluster->la_max_mapq;
 			inv->disc_pairs_rf_maxmapq = ps.dp_cluster->ra_max_mapq;
 			inv->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
@@ -310,7 +311,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
 				inversion_t* inv = new inversion_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
-				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
+				inv->disc_pairs_lf_high_mapq = c->la_confident_count;
+				inv->disc_pairs_rf_high_mapq = c->ra_confident_count;
 				inv->disc_pairs_lf_maxmapq = c->la_max_mapq;
 				inv->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
@@ -338,7 +340,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
 				inversion_t* inv = new inversion_t(contig_name, std::min(c->la_start, c->ra_start), std::max(c->la_start, c->ra_start), "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
-				inv->disc_pairs_lf_high_mapq = inv->disc_pairs_rf_high_mapq = c->confident_count;
+				inv->disc_pairs_lf_high_mapq = c->la_confident_count;
+				inv->disc_pairs_rf_high_mapq = c->ra_confident_count;
 				inv->disc_pairs_lf_maxmapq = c->la_max_mapq;
 				inv->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				inv->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;

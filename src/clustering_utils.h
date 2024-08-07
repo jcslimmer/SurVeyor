@@ -17,7 +17,7 @@ struct cluster_t {
 	int id = -1;
 	bool la_rev, ra_rev;
 	hts_pos_t la_start, la_end, ra_start, ra_end;
-	int count = 1, confident_count = 0;
+	int count = 1, la_confident_count = 0, ra_confident_count = 0;
 	int la_cum_nm, ra_cum_nm = 0;
 	uint8_t la_max_mapq, ra_max_mapq;
 	bool used = false;
@@ -35,8 +35,11 @@ struct cluster_t {
 			ra_start(read->core.mpos), ra_end(get_mate_endpos(read)), ra_rev(bam_is_mrev(read)),
 			la_max_mapq(read->core.qual), ra_max_mapq(get_mq(read)), la_cum_nm(get_nm(read)), ra_cum_nm(mate_nm) {
 		
-		if (read->core.qual >= high_confidence_mapq && ((uint8_t) get_mq(read)) >= high_confidence_mapq) {
-			confident_count = 1;
+		if (read->core.qual >= high_confidence_mapq) {
+			la_confident_count = 1;
+		}
+		if ((uint8_t) get_mq(read) >= high_confidence_mapq) {
+			ra_confident_count = 1;
 		}
 		la_furthermost_seq = get_sequence(read);
 		ra_furthermost_seq = bam_get_qname(read);
@@ -62,7 +65,8 @@ struct cluster_t {
 		merged->ra_end = std::max(c1->ra_end, c2->ra_end);
 		merged->ra_rev = c1->ra_rev;
 		merged->count = c1->count + c2->count;
-		merged->confident_count = c1->confident_count + c2->confident_count;
+		merged->la_confident_count += c1->la_confident_count + c2->la_confident_count;
+		merged->ra_confident_count += c1->ra_confident_count + c2->ra_confident_count;
 		merged->la_cum_nm = c1->la_cum_nm + c2->la_cum_nm;
 		merged->ra_cum_nm = c1->ra_cum_nm + c2->ra_cum_nm;
 		merged->la_max_mapq = std::max(c1->la_max_mapq, c2->la_max_mapq);
