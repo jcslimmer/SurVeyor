@@ -565,6 +565,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+			if (is_unmapped(read) || !is_primary(read)) continue;
+
 			while (curr_pos < deletions.size() && deletions[curr_pos]->start < read->core.pos) curr_pos++;
 
 			if (read->core.isize > stats.max_is) {
@@ -574,7 +576,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
 						deletions[i]->disc_pairs_lf++;
 						deletions[i]->disc_pairs_rf++;
-						
+
 						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
 							deletions[i]->disc_pairs_lf_high_mapq++;
