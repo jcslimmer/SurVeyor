@@ -570,16 +570,23 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 			if (read->core.isize > stats.max_is) {
 				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.pos + read->core.isize - read->core.l_qseq/2;
 				for (int i = curr_pos; i < deletions.size() && deletions[i]->start <= pair_end; i++) {
-					if (pair_start <= deletions[i]->start && deletions[i]->end <= pair_end) {
+					if (pair_start <= deletions[i]->start && deletions[i]->end <= pair_end && 
+						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
 						deletions[i]->disc_pairs_lf++;
 						deletions[i]->disc_pairs_rf++;
+						
+						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
 							deletions[i]->disc_pairs_lf_high_mapq++;
+						}
+						if (mq >= config.high_confidence_mapq) {
 							deletions[i]->disc_pairs_rf_high_mapq++;
 						}
 						if (read->core.qual > deletions[i]->disc_pairs_lf_maxmapq) {
 							deletions[i]->disc_pairs_lf_maxmapq = read->core.qual;
-							deletions[i]->disc_pairs_rf_maxmapq = read->core.qual;
+						}
+						if (mq > deletions[i]->disc_pairs_rf_maxmapq) {
+							deletions[i]->disc_pairs_rf_maxmapq = mq;
 						}
 						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
 						// TODO: is it worth it to spend the extra time to calculate the rf avg NM?
