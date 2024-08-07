@@ -429,13 +429,11 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     float dplanm = sv->disc_pairs_lf_avg_nm;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "DPLANM", &dplanm, 1);
 
-    if (sv->svtype() == "INS") {
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
-        float dpranm = sv->disc_pairs_rf_avg_nm;
-        bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
-    }
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
+    float dpranm = sv->disc_pairs_rf_avg_nm;
+    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
