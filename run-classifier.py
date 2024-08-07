@@ -46,6 +46,8 @@ for model_name in test_data:
         model_file = os.path.join(cmd_args.model_dir, "regt", "yes_or_no", model_name + '.model')
     else:
         model_file = os.path.join(cmd_args.model_dir, "denovo", "yes_or_no", model_name + '.model')
+    if not os.path.exists(model_file): # can we find a better way to handle this?
+        continue
     classifier = joblib.load(model_file)
     predictions = classifier.predict(test_data[model_name])
     probs = classifier.predict_proba(test_data[model_name])
