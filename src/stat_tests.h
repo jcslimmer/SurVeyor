@@ -565,14 +565,15 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-			if (is_unmapped(read) || !is_primary(read)) continue;
+			if (is_unmapped(read) || !is_primary(read) || bam_is_rev(read)) continue;
 
 			while (curr_pos < deletions.size() && deletions[curr_pos]->start < read->core.pos) curr_pos++;
 
 			if (read->core.isize > stats.max_is) {
-				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.pos + read->core.isize - read->core.l_qseq/2;
+				hts_pos_t pair_start = std::min(read->core.pos + read->core.l_qseq/2, bam_endpos(read));
+				hts_pos_t pair_end = std::max(read->core.pos + read->core.isize - read->core.l_qseq/2, read->core.mpos);
 				for (int i = curr_pos; i < deletions.size() && deletions[i]->start <= pair_end; i++) {
-					if (pair_start <= deletions[i]->start && deletions[i]->end <= pair_end && 
+					if (pair_start <= deletions[i]->start+5 && deletions[i]->end-5 <= pair_end && 
 						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
 						deletions[i]->disc_pairs_lf++;
 						deletions[i]->disc_pairs_rf++;
