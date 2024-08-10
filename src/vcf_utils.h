@@ -72,6 +72,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* weak_split_aln_flt_tag = "##FILTER=<ID=WEAK_SPLIT_ALIGNMENT,Description=\"Split alignment not significantly better than full junction alignment.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_split_aln_flt_tag, &len));
 
+	const char* low_mapq_disc_pairs_flt_tag = "##FILTER=<ID=LOW_MAPQ_DISC_PAIRS,Description=\"Discordant pairs supporting the SV have low MAPQ.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_mapq_disc_pairs_flt_tag, &len));
+
 	const char* low_mapq_cons_flt_tag = "##FILTER=<ID=LOW_MAPQ_CONSENSUSES,Description=\"No high MAPQ read supports the consensus(es) used to call this SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_mapq_cons_flt_tag, &len));
 
@@ -506,6 +509,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		int suffix_cov_end = ins->suffix_cov_start == insertion_t::NOT_COMPUTED ? ins->ins_seq.length() : ins->suffix_cov_end;
 		int isc[] = {suffix_cov_start, suffix_cov_end};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_COV", isc, 2);
+	} else if (sv->svtype() == "INV") {
+		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
+		bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 	}
 }
 

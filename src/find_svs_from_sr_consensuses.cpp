@@ -338,7 +338,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			if (!has_inv) {
 				sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
 				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
-				inversion_t* inv = new inversion_t(contig_name, std::min(c->la_start, c->ra_start), std::max(c->la_start, c->ra_start), "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
+				if (left_anchor_aln->end > right_anchor_aln->end) {
+					std::swap(left_anchor_aln, right_anchor_aln);
+				}
+				inversion_t* inv = new inversion_t(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", NULL, NULL, left_anchor_aln, right_anchor_aln, NULL);
 				inv->disc_pairs_lf = inv->disc_pairs_rf = c->count;
 				inv->disc_pairs_lf_high_mapq = c->la_confident_count;
 				inv->disc_pairs_rf_high_mapq = c->ra_confident_count;

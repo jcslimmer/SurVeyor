@@ -1669,6 +1669,7 @@ int main(int argc, char* argv[]) {
     std::unordered_map<std::string, std::vector<deletion_t*> > dels_by_chr;
     std::unordered_map<std::string, std::vector<duplication_t*> > dups_by_chr;
     std::unordered_map<std::string, std::vector<insertion_t*> > inss_by_chr;
+    std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr;
     while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
         sv_t* sv = bcf_to_sv(in_vcf_header, vcf_record);
         sv->vcf_entry = bcf_dup(vcf_record);
@@ -1679,6 +1680,8 @@ int main(int argc, char* argv[]) {
             dups_by_chr[sv->chr].push_back((duplication_t*) sv);
         } else if (sv->svtype() == "INS") {
         	inss_by_chr[sv->chr].push_back((insertion_t*) sv);
+        } else if (sv->svtype() == "INV") {
+            invs_by_chr[sv->chr].push_back((inversion_t*) sv);
         }
     }
 
@@ -1754,6 +1757,7 @@ int main(int argc, char* argv[]) {
     	if (dels_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dels_by_chr[contig_name].begin(), dels_by_chr[contig_name].end());
     	if (dups_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dups_by_chr[contig_name].begin(), dups_by_chr[contig_name].end());
     	if (inss_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), inss_by_chr[contig_name].begin(), inss_by_chr[contig_name].end());
+        if (invs_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), invs_by_chr[contig_name].begin(), invs_by_chr[contig_name].end());
     	std::sort(contig_svs.begin(), contig_svs.end(), [](const sv_t* sv1, const sv_t* sv2) {return sv1->start < sv2->start;});
 
 		for (auto& sv : contig_svs) {

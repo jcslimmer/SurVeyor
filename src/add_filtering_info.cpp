@@ -334,6 +334,9 @@ int main(int argc, char* argv[]) {
             if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {
                 inv->filters.push_back("ANOMALOUS_SC_NUMBER");
             }
+            if (inv->disc_pairs_lf_maxmapq < config.high_confidence_mapq || inv->disc_pairs_rf_maxmapq < config.high_confidence_mapq) {
+                inv->filters.push_back("LOW_MAPQ_DISC_PAIRS");
+            }
 
             if (inv->filters.empty()) {
                 inv->filters.push_back("PASS");

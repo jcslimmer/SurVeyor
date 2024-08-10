@@ -18,15 +18,18 @@ cmd_args = cmd_parser.parse_args()
 def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
     vcf_writer = pysam.VariantFile(fname, 'w', header=vcf_header)
     for record in vcf_reader.fetch():
-        record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
-        record.filter.clear()
-        record.filter.add('PASS')
-        if record.id in svid_to_gt:
-            record.samples[0]['GT'] = (svid_to_gt[record.id]//2, 1 if svid_to_gt[record.id] >= 1 else 0)
-            record.samples[0]['EPR'] = svid_to_prob[record.id]
-        else:
-            record.samples[0]['GT'] = (None, None)
-        vcf_writer.write(record)
+        if record.info['SVTYPE'] != "INV":
+            record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
+            record.filter.clear()
+            record.filter.add('PASS')
+            if record.id in svid_to_gt:
+                record.samples[0]['GT'] = (svid_to_gt[record.id]//2, 1 if svid_to_gt[record.id] >= 1 else 0)
+                record.samples[0]['EPR'] = svid_to_prob[record.id]
+            else:
+                record.samples[0]['GT'] = (None, None)
+            vcf_writer.write(record)
+        elif "PASS" in record.filter:
+            vcf_writer.write(record)
     vcf_writer.close()
 
 test_denovo_data, test_regt_data, test_denovo_labels, test_regt_labels, test_denovo_variant_ids, test_regt_variant_ids = \
@@ -46,8 +49,10 @@ for model_name in test_data:
         model_file = os.path.join(cmd_args.model_dir, "regt", "yes_or_no", model_name + '.model')
     else:
         model_file = os.path.join(cmd_args.model_dir, "denovo", "yes_or_no", model_name + '.model')
-    if not os.path.exists(model_file): # can we find a better way to handle this?
+    
+    if model_name.startswith("INV"):
         continue
+    
     classifier = joblib.load(model_file)
     predictions = classifier.predict(test_data[model_name])
     probs = classifier.predict_proba(test_data[model_name])
