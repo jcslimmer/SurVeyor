@@ -82,8 +82,11 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 			regions_of_interest.emplace_back(l_cluster_start, sv->start, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
 			hts_pos_t r_cluster_end = std::max(sv->right_anchor_aln->end, sv->end+stats.read_len);
 	    	regions_of_interest.emplace_back(sv->end, r_cluster_end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
-    	}
-    }
+    	} else if (sv->svtype() == "INV") {
+			regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->left_anchor_aln->end, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
+			regions_of_interest.emplace_back(sv->right_anchor_aln->start, sv->right_anchor_aln->end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
+		}
+	}
     std::sort(regions_of_interest.begin(), regions_of_interest.end(), [](region_w_median_t& r1, region_w_median_t& r2) {return r1.start < r2.start;});
 
     std::vector<region_depth_t> merged_regions_of_interest;
@@ -162,12 +165,12 @@ void depth_filter_dup(std::string contig_name, std::vector<duplication_t*>& dupl
     depth_filter_indel(contig_name, testable_dups, bam_file, config, stats);
 }
 void depth_filter_ins(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
-	std::vector<sv_t*> testable_ins(insertions.begin(), insertions.end());
-	depth_filter_indel(contig_name, testable_ins, bam_file, config, stats);
+	std::vector<sv_t*> testable_inss(insertions.begin(), insertions.end());
+	depth_filter_indel(contig_name, testable_inss, bam_file, config, stats);
 }
 void depth_filter_inv(std::string contig_name, std::vector<inversion_t*>& invertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
-	std::vector<sv_t*> testable_ins(invertions.begin(), invertions.end());
-	depth_filter_indel(contig_name, testable_ins, bam_file, config, stats);
+	std::vector<sv_t*> testable_invs(invertions.begin(), invertions.end());
+	depth_filter_indel(contig_name, testable_invs, bam_file, config, stats);
 }
 
 int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum) {

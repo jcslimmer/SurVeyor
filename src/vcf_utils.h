@@ -933,6 +933,14 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
+	bcf_get_info_int32(hdr, b, "CLUSTER_DEPTHS", &data, &len);
+	if (len > 0) {
+		sv->median_left_cluster_cov = data[0];
+		sv->median_right_cluster_cov = data[1];
+	}
+
+	data = NULL;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "INS_PREFIX_COV", &data, &len);
 	if (len > 0) {
 		((insertion_t*) sv)->prefix_cov_start = data[0];
