@@ -328,7 +328,8 @@ int main(int argc, char* argv[]) {
         for (inversion_t* inv : inversions) {
             // apply_ALL_filters(inv);
             if (inv->median_left_flanking_cov > stats.get_max_depth(inv->chr) || inv->median_right_flanking_cov > stats.get_max_depth(inv->chr) ||
-                inv->median_left_flanking_cov < stats.get_min_depth(inv->chr) || inv->median_right_flanking_cov < stats.get_min_depth(inv->chr)) {
+                inv->median_left_flanking_cov < stats.get_min_depth(inv->chr) || inv->median_right_flanking_cov < stats.get_min_depth(inv->chr) ||
+                inv->median_left_cluster_cov > stats.get_max_depth(inv->chr) || inv->median_right_cluster_cov > stats.get_max_depth(inv->chr)) {
                 inv->filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {

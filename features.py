@@ -488,9 +488,10 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
         sl = line.strip().split()
         stats[sl[0]][sl[1]] = int(sl[2])
 
-    read_len = stats['read_len']['.']
     for record in vcf_reader.fetch():
         if svtype != 'ALL' and record.info['SVTYPE'] != svtype:
+            continue
+        if record.info['SVTYPE'].startswith('INV'):
             continue
 
         denovo_model_name = Features.get_denovo_model_name(record, stats['max_is']['.'])

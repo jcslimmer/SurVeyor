@@ -46,11 +46,19 @@ def merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_trai
         regt_training_gts = vcf_regt_training_gts
     else:
         for source in vcf_denovo_training_data:
-            denovo_training_data[source] = np.concatenate((denovo_training_data[source], vcf_denovo_training_data[source]))
-            denovo_training_gts[source] = np.concatenate((denovo_training_gts[source], vcf_denovo_training_gts[source]))
+            if len(denovo_training_data[source]) == 0:
+                denovo_training_data[source] = vcf_denovo_training_data[source]
+                denovo_training_gts[source] = vcf_denovo_training_gts[source]
+            else:
+                denovo_training_data[source] = np.concatenate((denovo_training_data[source], vcf_denovo_training_data[source]))
+                denovo_training_gts[source] = np.concatenate((denovo_training_gts[source], vcf_denovo_training_gts[source]))
         for source in vcf_regt_training_data:
-            regt_training_data[source] = np.concatenate((regt_training_data[source], vcf_regt_training_data[source]))
-            regt_training_gts[source] = np.concatenate((regt_training_gts[source], vcf_regt_training_gts[source]))
+            if len(regt_training_data[source]) == 0:
+                regt_training_data[source] = vcf_regt_training_data[source]
+                regt_training_gts[source] = vcf_regt_training_gts[source]
+            else:
+                regt_training_data[source] = np.concatenate((regt_training_data[source], vcf_regt_training_data[source]))
+                regt_training_gts[source] = np.concatenate((regt_training_gts[source], vcf_regt_training_gts[source]))
 
 training_prefixes = cmd_args.training_prefixes.split(",")
 with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
@@ -58,7 +66,6 @@ with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
     for future in as_completed(future_to_prefix):
         vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts = future.result()
         merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts)
-
 
 classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
 
