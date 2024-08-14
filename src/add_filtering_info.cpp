@@ -91,6 +91,7 @@ void size_and_depth_filtering_inv(int id, std::string contig_name) {
     std::vector<inversion_t*>& inversions = inversions_by_chr[contig_name];
     mtx.unlock();
     depth_filter_inv(contig_name, inversions, bam_file, config, stats);
+    calculate_ptn_ratio(contig_name, inversions, bam_file, stats);
 }
 
 void apply_ALL_filters(sv_t* sv) {
@@ -229,7 +230,7 @@ int main(int argc, char* argv[]) {
                 if (del->ks_pval > 0.01) {
                     del->filters.push_back("KS_FILTER");
                 }
-                if (-del->svlen() >= stats.max_is && double(del->disc_pairs_lf)/(del->disc_pairs_lf+del->conc_pairs) < 0.25) {
+                if (-del->svlen() >= stats.max_is && double(del->disc_pairs_lf)/(del->disc_pairs_lf+del->conc_pairs_midp) < 0.25) {
                     del->filters.push_back("LOW_PTN_RATIO");
                 }
                 if (-del->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs_lf || del->r_cluster_region_disc_pairs >= del->disc_pairs_lf)) {
@@ -291,14 +292,14 @@ int main(int argc, char* argv[]) {
                 auto support = {ins->disc_pairs_rf+ins->rc_reads(), ins->disc_pairs_lf+ins->lc_reads()};
                 
                 int r_positive = ins->disc_pairs_rf + ins->rc_reads();
-                int r_negative = ins->conc_pairs;
+                int r_negative = ins->conc_pairs_lbp;
                 int l_positive = ins->disc_pairs_lf + ins->lc_reads();
-                int l_negative = ins->conc_pairs;
+                int l_negative = ins->conc_pairs_rbp;
                 if (r_positive < stats.get_median_depth(ins->chr)/5 && l_positive < stats.get_median_depth(ins->chr)/5) {
 		            ins->filters.push_back("LOW_SUPPORT");
                 }
                 if (double(r_positive)/(r_positive+r_negative) < 0.25 || double(l_positive)/(l_positive+l_negative) < 0.25) {
-                    ins->filters.push_back("LOW_SCORE");
+                    ins->filters.push_back("LOW_PTN_RATIO");
                 }
 
                 int svinslen = ins->ins_seq.length();
@@ -337,6 +338,21 @@ int main(int argc, char* argv[]) {
             }
             if (inv->disc_pairs_lf_maxmapq < config.high_confidence_mapq || inv->disc_pairs_rf_maxmapq < config.high_confidence_mapq) {
                 inv->filters.push_back("LOW_MAPQ_DISC_PAIRS");
+            }
+
+            if (inv->disc_pairs_lf < stats.get_min_disc_pairs_by_insertion_size(inv->svlen())/2) {
+                inv->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
+            }
+
+            double ptn_ratio;
+            if (inv->is_left_facing()) {
+                ptn_ratio = double(inv->disc_pairs_lf)/(inv->disc_pairs_lf+inv->conc_pairs_rbp);
+            } else {
+                ptn_ratio = double(inv->disc_pairs_rf)/(inv->disc_pairs_rf+inv->conc_pairs_lbp);
+            }
+
+            if (ptn_ratio < 0.25) {
+                inv->filters.push_back("LOW_PTN_RATIO");
             }
 
             if (inv->filters.empty()) {

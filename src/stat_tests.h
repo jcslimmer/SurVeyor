@@ -507,40 +507,44 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 
 	if (svs.empty()) return;
 
-	std::sort(svs.begin(), svs.end(), [](const sv_t* sv1, const sv_t* sv2) {
-		return (sv1->start+sv1->end)/2 < (sv2->start+sv2->end)/2;
+	std::vector<std::pair<hts_pos_t, int*> > bkp_with_conc_pairs_count;
+	for (sv_t* sv : svs) {
+		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->conc_pairs_lbp)});
+		bkp_with_conc_pairs_count.push_back({(sv->start+sv->end)/2, &(sv->conc_pairs_midp)});
+		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->conc_pairs_rbp)});
+	}
+
+	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const std::pair<hts_pos_t, int*>& p1, const std::pair<hts_pos_t, int*>& p2) {
+		return p1.first < p2.first;
 	});
 
-	std::vector<hts_pos_t> midpoints;
-	std::vector<char*> mid_regions;
-	for (sv_t* sv : svs) {
-		hts_pos_t midpoint = (sv->start+sv->end)/2;
-		midpoints.push_back(midpoint);
-
+	std::vector<char*> regions;
+	for (auto& b : bkp_with_conc_pairs_count) {
 		std::stringstream ss;
-		ss << contig_name << ":" << std::max(hts_pos_t(1), midpoint-stats.max_is) << "-" << midpoint;
-		char* region = new char[ss.str().length()+1];
-		strcpy(region, ss.str().c_str());
-		mid_regions.push_back(region);
+		ss << contig_name << ":" << std::max(hts_pos_t(1), b.first-stats.max_is) << "-" << b.first;
+		char* region = strdup(ss.str().c_str());
+		regions.push_back(region);
 	}
 
 	int curr_pos = 0;
-	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, mid_regions.data(), mid_regions.size());
+	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		while (curr_pos < svs.size() && midpoints[curr_pos] < read->core.pos) curr_pos++;
+		while (curr_pos < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[curr_pos].first < read->core.pos) curr_pos++;
 
 		if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
 		if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0 || read->core.isize > stats.max_is) continue;
 
 		hts_pos_t start = read->core.pos + read->core.l_qseq/2;
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
-		for (int i = curr_pos; i < svs.size() && midpoints[i] <= end; i++) {
-			if (start <= midpoints[i] && midpoints[i] <= end) svs[i]->conc_pairs++;
+		for (int i = curr_pos; i < svs.size() && bkp_with_conc_pairs_count[i].first <= end; i++) {
+			if (start <= bkp_with_conc_pairs_count[i].first && bkp_with_conc_pairs_count[i].first <= end) {
+				(*bkp_with_conc_pairs_count[i].second)++;
+			}
 		}
 	}
 
-	for (char* region : mid_regions) {
+	for (char* region : regions) {
 		delete[] region;
 	}
 }
@@ -609,6 +613,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats) {
 	if (insertions.empty()) return;
 	std::vector<sv_t*> svs(insertions.begin(), insertions.end());
+	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+}
+void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inversions, open_samFile_t* bam_file, stats_t& stats) {
+	if (inversions.empty()) return;
+	std::vector<sv_t*> svs(inversions.begin(), inversions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
 }
 

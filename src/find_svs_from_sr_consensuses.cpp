@@ -248,14 +248,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inv->disc_pairs_rf_maxmapq = ps.dp_cluster->ra_max_mapq;
 			inv->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
 			inv->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
-			inv->source = "2SR";
-			std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
-			if (c1_consensus->left_clipped) {
-				rc(lm_seq);
-			} else { 
-				rc(rm_seq); 
-			}
-			inv->source += "_" + lm_seq + "_" + rm_seq;
+			inv->source = (c1_consensus->left_clipped ? "2SR_LF" : "2SR_RF");
 			svs.push_back(inv);
 			if (c1_consensus->left_clipped) {
 				invs_lf.push_back(inv);
@@ -514,6 +507,7 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
+		std::string qname = bam_get_qname(read);
 		cluster_t* cluster = new cluster_t(read, qname_to_mate_nm[qname], config.high_confidence_mapq);
 		ss_clusters.push_back(cluster);
 	}

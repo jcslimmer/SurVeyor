@@ -97,8 +97,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* weak_anchor_flt_tag = "##FILTER=<ID=WEAK_ANCHOR,Description=\"Left or right split junction alignment score is too low.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_anchor_flt_tag, &len));
 
-	const char* low_score_flt_tag = "##FILTER=<ID=LOW_SCORE,Description=\"Evidence against the insertion overwhelms the evidence in its favour.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_score_flt_tag, &len));
+	const char* ss_inv_flt_tag = "##FILTER=<ID=SINGLE_SIDE_INVERSION,Description=\"Only one side of the inversion is supported.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ss_inv_flt_tag, &len));
 
 	// add INFO tags
 	const char* svtype_tag = "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of the SV.\">";
@@ -200,7 +200,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* disc_pairs_surr_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING,Number=2,Type=Integer,Description=\"Discordant pairs around the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_tag, &len));
 \
-	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=1,Type=Integer,Description=\"Concordant pairs supporting the absence of a SV.\">";
+	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=3,Type=Integer,Description=\"Concordant pairs crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
 	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
@@ -489,7 +489,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		}
 		int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", &sv->conc_pairs, 1);
+		int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
+		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
 		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
 		bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 	} else if (sv->svtype() == "DUP") {
@@ -510,6 +511,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		int isc[] = {suffix_cov_start, suffix_cov_end};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_COV", isc, 2);
 	} else if (sv->svtype() == "INV") {
+		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
+		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
 		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
 		bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 	}
@@ -866,7 +869,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	bcf_get_info_int32(hdr, b, "CONC_PAIRS", &data, &len);
 	if (len > 0) {
-		sv->conc_pairs = data[0];
+		sv->conc_pairs_lbp = data[0];
+		sv->conc_pairs_midp = data[1];
+		sv->conc_pairs_rbp = data[2];
 	}
 
 	f_data = NULL;

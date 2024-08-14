@@ -281,7 +281,7 @@ void add_tags(bcf_hdr_t* hdr) {
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsr_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
-    const char* cp_tag = "##FORMAT=<ID=CP,Number=1,Type=Integer,Description=\"Number of concordant pairs disproving the SV.\">";
+    const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
@@ -438,7 +438,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
     if (sv->svtype() != "DUP") {
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", &(sv->conc_pairs), 1);
+        int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
     }
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", &(sv->regenotyping_info.alt_ext_reads), 1);

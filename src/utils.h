@@ -111,7 +111,7 @@ struct stats_t {
     int get_min_disc_pairs_by_insertion_size(int is) {
         if (min_disc_pairs_by_insertion_size.count(is))
             return min_disc_pairs_by_insertion_size[is];
-        else return min_disc_pairs_by_insertion_size[min_is];
+        else return min_disc_pairs_by_insertion_size[max_is];
     }
     int get_max_disc_pairs_by_insertion_size(int is) {
         if (max_disc_pairs_by_insertion_size.count(is))
@@ -122,7 +122,7 @@ struct stats_t {
     int get_median_disc_pairs_by_del_size(int ds) {
         if (min_disc_pairs_by_insertion_size.count(ds))
             return min_disc_pairs_by_insertion_size[ds];
-        else return min_disc_pairs_by_insertion_size[min_is];
+        else return min_disc_pairs_by_insertion_size[max_is];
     }
 };
 

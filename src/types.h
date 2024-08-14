@@ -150,7 +150,7 @@ struct sv_t {
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
     int disc_pairs_lf = 0, disc_pairs_rf = 0, disc_pairs_lf_high_mapq = 0, disc_pairs_rf_high_mapq = 0, disc_pairs_lf_maxmapq = 0, 
-        disc_pairs_rf_maxmapq = 0, conc_pairs = 0;
+        disc_pairs_rf_maxmapq = 0, conc_pairs_lbp = 0, conc_pairs_midp = 0, conc_pairs_rbp = 0;
     double disc_pairs_lf_avg_nm = 0, disc_pairs_rf_avg_nm = 0;
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
@@ -364,6 +364,10 @@ struct inversion_t : sv_t {
 
     std::string svtype() { return "INV"; }
     hts_pos_t svlen() { return end - start; }
+
+    bool is_left_facing() {
+        return source[source.length()-2] == 'L';
+    }
 };
 
 #endif /* TYPES_H */
