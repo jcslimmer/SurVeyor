@@ -6,10 +6,12 @@
 #include <chrono>
 #include <cmath>
 #include <ostream>
+#include <queue>
 #include <sstream>
 #include <unordered_map>
 
 #include "../libs/cptl_stl.h"
+#include "htslib/hts.h"
 #include "stat_tests.h"
 #include "types.h"
 #include "utils.h"
@@ -344,21 +346,15 @@ int main(int argc, char* argv[]) {
                 inv->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
             }
 
-            double ptn_ratio;
-            if (inv->is_left_facing()) {
-                ptn_ratio = double(inv->disc_pairs_lf)/(inv->disc_pairs_lf+inv->conc_pairs_rbp);
-            } else {
-                ptn_ratio = double(inv->disc_pairs_rf)/(inv->disc_pairs_rf+inv->conc_pairs_lbp);
-            }
-
-            if (ptn_ratio < 0.25) {
+            double ptn_ratio_lbp = double(inv->disc_pairs_rf)/(inv->disc_pairs_rf+inv->conc_pairs_lbp);
+            double ptn_ratio_rbp = double(inv->disc_pairs_lf)/(inv->disc_pairs_lf+inv->conc_pairs_rbp);
+            if (ptn_ratio_lbp < 0.25 || ptn_ratio_rbp < 0.25) {
                 inv->filters.push_back("LOW_PTN_RATIO");
             }
 
             if (inv->filters.empty()) {
                 inv->filters.push_back("PASS");
             }
-
             sv_entries[contig_name].push_back(inv);
         }
     }

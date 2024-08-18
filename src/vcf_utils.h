@@ -7,6 +7,7 @@
 #include <ctime>
 #include <htslib/vcf.h>
 #include "htslib/hts.h"
+#include "htslib/sam.h"
 #include "types.h"
 #include "utils.h"
 
@@ -125,7 +126,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
-	const char* sr_info_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this ins.\">";
+	const char* sr_info_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_info_tag, &len));
 
 	const char* fwd_sr_info_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
@@ -143,8 +144,20 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
 
+	const char* overlap_lbp_tag = "##INFO=<ID=OVERLAP_LBP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the contigs supporting the left breakpoint.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_lbp_tag, &len));
+
+	const char* overlap_rbp_tag = "##INFO=<ID=OVERLAP_RBP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the contigs supporting the right breakpoint.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_rbp_tag, &len));
+
 	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
+
+	const char* mismatch_rate_lbp_tag = "##INFO=<ID=MISMATCH_RATE_LBP,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the contigs supporting the left breakpoint.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_lbp_tag, &len));
+
+	const char* mismatch_rate_rbp_tag = "##INFO=<ID=MISMATCH_RATE_RBP,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the contigs supporting the right breakpoint.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_rbp_tag, &len));
 	
 	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
@@ -170,8 +183,14 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* splitj_score2_tag = "##INFO=<ID=SPLIT_JUNCTION_SCORE2,Number=2,Type=Integer,Description=\"Score of the second best alignment of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_score2_tag, &len));
 
-	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the prefix and suffix of the junction sequence to the reference.\">";
+	const char* splitj_size_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE,Number=2,Type=Integer,Description=\"Size of the the prefix and suffix of the junction sequenc alignment to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_tag, &len));
+
+	const char* splitj_size_lbp_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE_LBP,Number=2,Type=Integer,Description=\"Size of the the prefix and suffix of the alignment of the junction sequence supporting the left breakpoint to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_lbp_tag, &len));
+
+	const char* splitj_size_rbp_tag = "##INFO=<ID=SPLIT_JUNCTION_SIZE_RBP,Number=2,Type=Integer,Description=\"Size of the the prefix and suffix of the alignment of the junction sequence supporting the right breakpoint to the reference.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_size_rbp_tag, &len));
 
 	const char* splitj_cigar_tag = "##INFO=<ID=SPLIT_JUNCTION_CIGAR,Number=2,Type=String,Description=\"CIGAR of the best alignment of the prefix and suffix of the junction sequence to the reference.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_cigar_tag, &len));
@@ -323,7 +342,18 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 	bcf_entry->pos = sv->start;
 	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
 	
-	std::string alleles = std::string(1, chr_seq[sv->start]) + ",<" + sv->svtype() + ">";
+	std::string ref_allele = std::string(1, chr_seq[sv->start]);
+	std::string alleles = ref_allele + ",";
+	if (sv->svtype() == "BND") {
+		breakend_t* bnd = (breakend_t*) sv;
+		if (bnd->direction == '+') {
+			alleles += std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
+		} else {
+			alleles += std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
+		}
+	} else {
+		alleles += "<" + sv->svtype() + ">";
+	}
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	// add FILTERs
@@ -368,26 +398,46 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
 		bcf_update_info_string(hdr, bcf_entry, "FULL_JUNCTION_CIGAR", sv->full_junction_aln->cigar.c_str());
 	}
-	int2_conv[0] = sv->left_anchor_aln->best_score, int2_conv[1] = sv->right_anchor_aln->best_score;
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", int2_conv, 2);
-	int2_conv[0] = sv->left_anchor_aln->next_best_score, int2_conv[1] = sv->right_anchor_aln->next_best_score;
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", int2_conv, 2);
-	int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
-	char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
-	std::stringstream ss;
-	ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
-	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
-	std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
-	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
+	if (sv->left_anchor_aln != NULL && sv->right_anchor_aln != NULL) {
+		int2_conv[0] = sv->left_anchor_aln->best_score, int2_conv[1] = sv->right_anchor_aln->best_score;
+		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", int2_conv, 2);
+		int2_conv[0] = sv->left_anchor_aln->next_best_score, int2_conv[1] = sv->right_anchor_aln->next_best_score;
+		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", int2_conv, 2);
+		if (sv->svtype() == "INV") {
+			inversion_t* inv = (inversion_t*) sv;
+			int2_conv[0] = inv->left_anchor_aln->seq_len, int2_conv[1] = inv->right_anchor_aln->seq_len;
+			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_LBP", int2_conv, 2);
+			int2_conv[0] = inv->rbp_left_anchor_aln->seq_len, int2_conv[1] = inv->rbp_right_anchor_aln->seq_len;
+			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_RBP", int2_conv, 2);
+			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_LBP", &inv->overlap, 1);
+			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_RBP", &inv->overlap_rbp, 1);
+			float mismatch_rate_lbp = inv->mismatch_rate;
+			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_LBP", &mismatch_rate_lbp, 1);
+			float mismatch_rate_rbp = inv->mismatch_rate_rbp;
+			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_RBP", &mismatch_rate_rbp, 1);
+		} else {
+			int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
+			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
+			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
+			float mismatch_rate = sv->mismatch_rate;
+			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
+		}
+		char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
+		std::stringstream ss;
+		ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
+		bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
+		std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
+		if (sv->svtype() == "INV") {
+			inversion_t* inv = (inversion_t*) sv;
+			split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
+		}
+		bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
+	}
 
 	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
 	int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
 	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ_EXT", max_mapq_ext, 2);
-	bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
-	float mismatch_rate = sv->mismatch_rate;
-	bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
 
 	if (sv->rc_consensus) {
 		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
@@ -719,25 +769,20 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (s_data) full_junction_cigar = s_data;
 
 	std::string svtype = get_sv_type(hdr, b);
-	hts_pos_t left_split_mapping_end = (svtype == "DUP" ? get_sv_end(hdr, b) : b->pos);
-	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150);
-	hts_pos_t right_split_mapping_start = (svtype == "DUP" ? b->pos : get_sv_end(hdr, b));	
-	hts_pos_t right_split_mapping_end = get_sv_end(hdr, b) + 150;
 
 	s_data = NULL;
 	len = 0;
 	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
-	std::string left_split_mapping_range = "", right_split_mapping_range = "";
-	if (s_data) {
-		std::string mapping_range = s_data;
-		size_t comma_pos = mapping_range.find(",");
-		left_split_mapping_range = mapping_range.substr(0, comma_pos);
-		right_split_mapping_range = mapping_range.substr(comma_pos+1);
 
-		left_split_mapping_start = std::stoi(left_split_mapping_range.substr(0, left_split_mapping_range.find("-")))-1;
-		left_split_mapping_end = std::stoi(left_split_mapping_range.substr(left_split_mapping_range.find("-")+1))-1;
-		right_split_mapping_start = std::stoi(right_split_mapping_range.substr(0, right_split_mapping_range.find("-")))-1;
-		right_split_mapping_end = std::stoi(right_split_mapping_range.substr(right_split_mapping_range.find("-")+1))-1;
+	std::vector<std::string> split_junction_mapping_ranges;
+	std::string mapping_range_str;
+	if (s_data != NULL) {
+		mapping_range_str = s_data;
+		std::string mapping_range;
+		std::istringstream tokenStream(mapping_range_str);
+		while (std::getline(tokenStream, mapping_range, ',')) {
+			split_junction_mapping_ranges.push_back(mapping_range);
+		}
 	}
 
 	data = NULL;
@@ -764,6 +809,21 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		left_split_size = data[0], right_split_size = data[1];
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SIZE_LBP", &data, &len);
+	if (len > 0) {
+		left_split_size = data[0], right_split_size = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	int rbp_left_split_size = 0, rbp_right_split_size = 0;
+	bcf_get_info_int32(hdr, b, "SPLIT_JUNCTION_SIZE_RBP", &data, &len);
+	if (len > 0) {
+		rbp_left_split_size = data[0], rbp_right_split_size = data[1];
+	}
+
 	s_data = NULL;
 	len = 0;
 	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_CIGAR", (void**) &s_data, &len);
@@ -779,21 +839,57 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
 
+	hts_pos_t left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos + 150;
+	hts_pos_t right_split_mapping_start = std::max(0, get_sv_end(hdr, b) - 150), right_split_mapping_end = get_sv_end(hdr, b) + 150;
+	if (!split_junction_mapping_ranges.empty()) {
+		left_split_mapping_start = std::stoi(split_junction_mapping_ranges[0].substr(0, split_junction_mapping_ranges[0].find("-")))-1;
+		left_split_mapping_end = std::stoi(split_junction_mapping_ranges[0].substr(split_junction_mapping_ranges[0].find("-")+1))-1;
+		right_split_mapping_start = std::stoi(split_junction_mapping_ranges[1].substr(0, split_junction_mapping_ranges[1].find("-")))-1;
+		right_split_mapping_end = std::stoi(split_junction_mapping_ranges[1].substr(split_junction_mapping_ranges[1].find("-")+1))-1;
+	}
 	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, left_split_size, left_split_score, left_split_score2, left_split_cigar);
 	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, right_split_size, right_split_score, right_split_score2, right_split_cigar);
 	sv_t::anchor_aln_t* full_junction_aln = full_junction_score > 0 ? new sv_t::anchor_aln_t(0, 0, 0, full_junction_score, 0, full_junction_cigar) : NULL;
 
 	sv_t* sv;
+	hts_pos_t end = get_sv_end(hdr, b);
 	if (svtype == "DEL") {
-		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "DUP") {
-		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "INS") {
-		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
 	} else if (svtype == "INV") {
-		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, full_junction_aln);
+		sv_t::anchor_aln_t* lbp_left_anchor_aln = left_anchor_aln, *lbp_right_anchor_aln = right_anchor_aln;
+		hts_pos_t rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_right_split_mapping_start, rbp_right_split_mapping_end;
+		if (split_junction_mapping_ranges.size() > 2){
+			rbp_left_split_mapping_start = std::stoi(split_junction_mapping_ranges[2].substr(0, split_junction_mapping_ranges[2].find("-")))-1;
+			rbp_left_split_mapping_end = std::stoi(split_junction_mapping_ranges[2].substr(split_junction_mapping_ranges[2].find("-")+1))-1;
+			rbp_right_split_mapping_start = std::stoi(split_junction_mapping_ranges[3].substr(0, split_junction_mapping_ranges[3].find("-")))-1;
+			rbp_right_split_mapping_end = std::stoi(split_junction_mapping_ranges[3].substr(split_junction_mapping_ranges[3].find("-")+1))-1;
+		} else {
+			left_split_mapping_end = b->pos, right_split_mapping_start = b->pos, right_split_mapping_end = b->pos + 150;
+			rbp_left_split_mapping_start = std::max(hts_pos_t(0), end - 150), rbp_left_split_mapping_end = end;
+			rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
+		}
+		sv_t::anchor_aln_t* rbp_left_anchor_aln = new sv_t::anchor_aln_t(rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_left_split_size, 0, 0, "");
+		sv_t::anchor_aln_t* rbp_right_anchor_aln = new sv_t::anchor_aln_t(rbp_right_split_mapping_start, rbp_right_split_mapping_end, rbp_right_split_size, 0, 0, "");
+		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
+	} else if (svtype == "BND") {
+		std::string alt = b->d.allele[1];
+		size_t colon_pos = alt.find(':');
+		size_t pos_start = colon_pos + 1, pos_end = alt.find_last_of("[]");
+    	hts_pos_t pos2 = std::stoi(alt.substr(pos_start, pos_end-pos_start));
+		char dir;
+		if (alt[pos_end] == ']') {
+			dir = '+';
+		} else if (alt[pos_end] == '[') {
+			dir = '-';
+		}
+		sv = new breakend_t(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
 	} else {
-		return NULL;
+		std::cerr << "Unsupported SV type " << svtype << std::endl;
+		exit(1);
 	}
 	sv->imprecise = (imprecise == 1);
 
@@ -818,11 +914,39 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv->overlap = data[0];
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "OVERLAP_LBP", &data, &len);
+	if (len > 0) {
+		sv->overlap = data[0];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "OVERLAP_RBP", &data, &len);
+	if (len > 0) {
+		((inversion_t*) sv)->overlap_rbp = data[0];
+	}
+
 	f_data = NULL;
 	len = 0;
 	bcf_get_info_float(hdr, b, "MISMATCH_RATE", &f_data, &len);
 	if (len > 0) {
 		sv->mismatch_rate = f_data[0];
+	}
+
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "MISMATCH_RATE_LBP", &f_data, &len);
+	if (len > 0) {
+		sv->mismatch_rate = f_data[0];
+	}
+
+	f_data = NULL;
+	len = 0;
+	bcf_get_info_float(hdr, b, "MISMATCH_RATE_RBP", &f_data, &len);
+	if (len > 0) {
+		((inversion_t*) sv)->mismatch_rate_rbp = f_data[0];
 	}
 
 	data = NULL;

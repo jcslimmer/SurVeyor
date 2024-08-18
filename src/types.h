@@ -140,6 +140,12 @@ struct sv_t {
 
         anchor_aln_t(hts_pos_t start, hts_pos_t end, int seq_len, int best_score, int next_best_score, std::string cigar) : 
             start(start), end(end), seq_len(seq_len), best_score(best_score), next_best_score(next_best_score), cigar(cigar) {}
+
+        std::string to_string() {
+            std::stringstream ss;
+            ss << start << "-" << end;
+            return ss.str();
+        }
     };
 
     std::string id;
@@ -359,8 +365,28 @@ struct insertion_t : sv_t {
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
 };
 
+struct breakend_t : sv_t {
+    char direction;
+    
+    breakend_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
+        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, char direction) :
+    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, NULL), direction(direction) {}
+
+    std::string svtype() { return "BND"; }
+    hts_pos_t svlen() { return 0; }
+};
+
 struct inversion_t : sv_t {
-    using sv_t::sv_t;
+
+    anchor_aln_t* rbp_left_anchor_aln, * rbp_right_anchor_aln;
+    int overlap_rbp = 0;
+    double mismatch_rate_rbp = 0.0;
+
+    inversion_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus,
+        anchor_aln_t* lbp_left_anchor_aln, anchor_aln_t* lbp_right_anchor_aln, 
+        anchor_aln_t* rbp_left_anchor_aln, anchor_aln_t* rbp_right_anchor_aln) :
+    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, NULL),
+    rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {}
 
     std::string svtype() { return "INV"; }
     hts_pos_t svlen() { return end - start; }
