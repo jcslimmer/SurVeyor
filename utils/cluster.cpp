@@ -254,7 +254,10 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 			bcf_update_info_int32(out_hdr, vcf_sv, "SVLEN", &int_conv, 1);
 		}
 
-		int sv_ploidy = clique_svs[0].sv->ngt;
+		int sv_ploidy = 0;
+		for (sv_w_samplename_t& sv : clique_svs) {
+			if (sv_ploidy < sv.sv->ngt) sv_ploidy = sv.sv->ngt;
+		}
 		for (sv_w_samplename_t& sv : clique_svs) if (sv.sv->ngt != sv_ploidy) { // all SVs being clustered must have same ploidy
 			mtx.lock();
 			std::cerr << clique_svs[0].sample << "," << clique_svs[0].sv->id << " and " << sv.sample << "," << sv.sv->id << " have different ploidy." << std::endl;
