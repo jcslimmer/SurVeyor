@@ -399,8 +399,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inv->disc_pairs_rf = bnd_lf->disc_pairs_rf;
 			inv->disc_pairs_lf_high_mapq = bnd_rf->disc_pairs_lf_high_mapq;
 			inv->disc_pairs_rf_high_mapq = bnd_lf->disc_pairs_rf_high_mapq;
-			inv->disc_pairs_lf_maxmapq = std::min(bnd_rf->disc_pairs_lf_maxmapq, bnd_rf->disc_pairs_rf_maxmapq);
-			inv->disc_pairs_rf_maxmapq = std::min(bnd_lf->disc_pairs_lf_maxmapq, bnd_lf->disc_pairs_rf_maxmapq);
+			inv->disc_pairs_lf_maxmapq = std::max(bnd_rf->disc_pairs_lf_maxmapq, bnd_lf->disc_pairs_lf_maxmapq);
+			inv->disc_pairs_rf_maxmapq = std::max(bnd_rf->disc_pairs_rf_maxmapq, bnd_lf->disc_pairs_rf_maxmapq);
 			inv->disc_pairs_lf_avg_nm = (bnd_rf->disc_pairs_lf_avg_nm + bnd_rf->disc_pairs_rf_avg_nm)/2;
 			inv->disc_pairs_rf_avg_nm = (bnd_lf->disc_pairs_lf_avg_nm + bnd_lf->disc_pairs_rf_avg_nm)/2;
 			inv->source = bnd_rf->source + "-" + bnd_lf->source;

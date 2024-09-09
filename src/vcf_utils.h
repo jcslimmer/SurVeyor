@@ -98,8 +98,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* weak_anchor_flt_tag = "##FILTER=<ID=WEAK_ANCHOR,Description=\"Left or right split junction alignment score is too low.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_anchor_flt_tag, &len));
 
-	const char* ss_inv_flt_tag = "##FILTER=<ID=SINGLE_SIDE_INVERSION,Description=\"Only one side of the inversion is supported.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ss_inv_flt_tag, &len));
+	const char* short_anchor_flt_tag = "##FILTER=<ID=SHORT_ANCHOR,Description=\"Read pairs supporting the SV are limited to a very small portion of the genome.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, short_anchor_flt_tag, &len));
 
 	// add INFO tags
 	const char* svtype_tag = "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of the SV.\">";

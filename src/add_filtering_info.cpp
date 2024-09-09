@@ -352,6 +352,10 @@ int main(int argc, char* argv[]) {
                 inv->filters.push_back("LOW_PTN_RATIO");
             }
 
+            if (inv->right_anchor_aln->end-inv->left_anchor_aln->start < stats.max_is/2 || inv->rbp_right_anchor_aln->end-inv->rbp_left_anchor_aln->start < stats.max_is/2) {
+                inv->filters.push_back("SHORT_ANCHOR");
+            }
+
             if (inv->filters.empty()) {
                 inv->filters.push_back("PASS");
             }
