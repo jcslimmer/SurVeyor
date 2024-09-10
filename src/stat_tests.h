@@ -537,7 +537,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 
 		hts_pos_t start = read->core.pos + read->core.l_qseq/2;
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
-		for (int i = curr_pos; i < svs.size() && bkp_with_conc_pairs_count[i].first <= end; i++) {
+		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].first <= end; i++) {
 			if (start <= bkp_with_conc_pairs_count[i].first && bkp_with_conc_pairs_count[i].first <= end) {
 				(*bkp_with_conc_pairs_count[i].second)++;
 			}
@@ -615,10 +615,65 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 	std::vector<sv_t*> svs(insertions.begin(), insertions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
 }
-void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inversions, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inversions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (inversions.empty()) return;
 	std::vector<sv_t*> svs(inversions.begin(), inversions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+
+	if (find_disc_pairs) {
+		std::vector<char*> regions;
+		for (inversion_t* inv : inversions) {
+			std::stringstream ss;
+			ss << contig_name << ":" << std::max(hts_pos_t(1), inv->start-stats.max_is) << "-" << inv->start+stats.max_is;
+			char* region = new char[ss.str().length()+1];
+			strcpy(region, ss.str().c_str());
+			regions.push_back(region);
+		}
+
+		std::sort(inversions.begin(), inversions.end(), [](const inversion_t* i1, const inversion_t* i2) {
+			return i1->start < i2->start;
+		});
+		
+		int curr_pos = 0;
+		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+		bam1_t* read = bam_init1();
+		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+			if (is_unmapped(read) || !is_primary(read) || !is_samechr(read) || !is_samestr(read)) continue;
+
+			while (curr_pos < inversions.size() && inversions[curr_pos]->start+stats.max_is < bam_endpos(read)) curr_pos++;
+
+			for (int i = curr_pos; i < inversions.size() && read->core.pos >= inversions[i]->start-stats.max_is; i++) {
+				inversion_t* inv = inversions[i];
+				
+				if (!bam_is_rev(read) && read->core.pos+stats.read_len/2 > inv->start) continue;
+				if (bam_is_rev(read) && bam_endpos(read)-stats.read_len/2 < inv->start) break;
+
+				hts_pos_t mate_startpos = read->core.mpos, mate_endpos = get_mate_endpos(read);
+				if (!bam_is_mrev(read) && mate_startpos >= inv->end-stats.max_is && mate_startpos+stats.read_len/2 <= inv->end) {
+					inv->disc_pairs_lf++;
+					
+					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
+					if (qual >= config.high_confidence_mapq) {
+						inv->disc_pairs_lf_high_mapq++;
+					}
+					if (read->core.qual > qual) {
+						inv->disc_pairs_lf_maxmapq = qual;
+					}
+				}
+				if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
+					inv->disc_pairs_rf++;
+
+					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
+					if (qual >= config.high_confidence_mapq) {
+						inv->disc_pairs_rf_high_mapq++;
+					}	
+					if (read->core.qual > qual) {
+						inv->disc_pairs_rf_maxmapq = qual;
+					}
+				}
+			}
+		}
+	}
 }
 
 

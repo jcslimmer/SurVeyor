@@ -93,7 +93,7 @@ void size_and_depth_filtering_inv(int id, std::string contig_name) {
     std::vector<inversion_t*>& inversions = inversions_by_chr[contig_name];
     mtx.unlock();
     depth_filter_inv(contig_name, inversions, bam_file, config, stats);
-    calculate_ptn_ratio(contig_name, inversions, bam_file, stats);
+    calculate_ptn_ratio(contig_name, inversions, bam_file, config, stats);
 }
 
 void apply_ALL_filters(sv_t* sv) {
