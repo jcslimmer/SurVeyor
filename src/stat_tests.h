@@ -617,8 +617,51 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 }
 void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inversions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (inversions.empty()) return;
-	std::vector<sv_t*> svs(inversions.begin(), inversions.end());
-	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+
+	std::vector<std::pair<hts_pos_t, inversion_t*> > bkp_with_conc_pairs_count;
+	for (inversion_t* inv : inversions) {
+		bkp_with_conc_pairs_count.push_back({inv->start, inv});
+		bkp_with_conc_pairs_count.push_back({inv->end, inv});
+	}
+
+	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const std::pair<hts_pos_t, inversion_t*>& p1, const std::pair<hts_pos_t, inversion_t*>& p2) {
+		return p1.first < p2.first;
+	});
+
+	std::vector<char*> regions;
+	for (auto& b : bkp_with_conc_pairs_count) {
+		std::stringstream ss;
+		ss << contig_name << ":" << std::max(hts_pos_t(1), b.first-stats.max_is) << "-" << b.first;
+		char* region = strdup(ss.str().c_str());
+		regions.push_back(region);
+	}
+
+	int curr_pos = 0;
+	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+	bam1_t* read = bam_init1();
+	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+		while (curr_pos < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[curr_pos].first < read->core.pos) curr_pos++;
+
+		if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
+		if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0 || read->core.isize > stats.max_is) continue;
+
+		hts_pos_t start = read->core.pos + read->core.l_qseq/2;
+		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
+		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].first <= end; i++) {
+			if (start <= bkp_with_conc_pairs_count[i].first) { // pair is concordant and crosses the breakpoint
+				inversion_t* inv = bkp_with_conc_pairs_count[i].second;
+				if (start <= inv->start && end <= inv->end) {
+					inv->conc_pairs_lbp++;
+				} else if (start >= inv->start && end >= inv->end) {
+					inv->conc_pairs_rbp++;
+				}
+			}
+		}
+	}
+
+	for (char* region : regions) {
+		delete[] region;
+	}
 
 	if (find_disc_pairs) {
 		std::vector<char*> regions;
