@@ -468,6 +468,9 @@ void reset_stats(sv_t* sv) {
     sv->disc_pairs_rf_maxmapq = 0;
     sv->disc_pairs_lf_avg_nm = 0;
     sv->disc_pairs_rf_avg_nm = 0;
+    sv->conc_pairs_lbp = 0;
+    sv->conc_pairs_midp = 0;
+    sv->conc_pairs_rbp = 0;
     sv->l_cluster_region_disc_pairs = 0;
     sv->r_cluster_region_disc_pairs = 0;
 }
@@ -1863,13 +1866,40 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         if (bam_is_rev(read) && bam_is_mrev(read) && inv->end+stats.read_len/2 <= get_mate_endpos(read)) rc(seq);
         if (!bam_is_rev(read) && !bam_is_mrev(read) && read->core.mpos <= inv->start-stats.read_len/2) rc(seq);
 
-        // align to ALT
-        aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
-        aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+        // if mate is inside the inversion, we can't infer the orientation and we have to test both
+        if (inv->start-10 <= read->core.mpos && get_mate_endpos(read) <= inv->end+10) {
+            // align to ALT
+            StripedSmithWaterman::Alignment alt1_aln_fwd, alt1_aln_rev, alt2_aln_fwd, alt2_aln_rev;
+            aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln_fwd, 0);
+            aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln_fwd, 0);
 
-        // align to REF
-        aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
-        aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+            rc(seq);
+            aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln_rev, 0);
+            aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln_rev, 0);
+
+            alt1_aln = alt1_aln_fwd.sw_score >= alt1_aln_rev.sw_score ? alt1_aln_fwd : alt1_aln_rev;
+            alt2_aln = alt2_aln_fwd.sw_score >= alt2_aln_rev.sw_score ? alt2_aln_fwd : alt2_aln_rev;
+
+            // align to REF
+            StripedSmithWaterman::Alignment ref1_aln_fwd, ref1_aln_rev, ref2_aln_fwd, ref2_aln_rev;
+            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln_fwd, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln_fwd, 0);
+
+            rc(seq);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln_rev, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln_rev, 0);
+
+            ref1_aln = ref1_aln_fwd.sw_score >= ref1_aln_rev.sw_score ? ref1_aln_fwd : ref1_aln_rev;
+            ref2_aln = ref2_aln_fwd.sw_score >= ref2_aln_rev.sw_score ? ref2_aln_fwd : ref2_aln_rev;
+        } else {
+            // align to ALT
+            aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+            aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+
+            // align to REF
+            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+        }
 
         StripedSmithWaterman::Alignment& alt_aln = alt1_aln.sw_score >= alt2_aln.sw_score ? alt1_aln : alt2_aln;
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
