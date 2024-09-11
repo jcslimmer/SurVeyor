@@ -1,3 +1,4 @@
+from __future__ import division
 import os, pysam
 from collections import defaultdict
 import numpy as np
@@ -19,7 +20,8 @@ class Features:
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ', 'MAX_MAPQ_EXT1', 'MAX_MAPQ_EXT2', 'MAX_MAPQ_EXT',
                       'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                      'CONC_PAIRS_SCALED', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 'KS_PVAL', 'KS_PVAL_HIGHMQ', 'SIZE_NORM', 'SIZE_NORM_HIGHMQ',
+                      'CONC_PAIRS_SCALED1', 'CONC_PAIRS_SCALED2', 'CONC_PAIRS_SCALED3', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 
+                      'KS_PVAL', 'KS_PVAL_HIGHMQ', 'SIZE_NORM', 'SIZE_NORM_HIGHMQ',
                       'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END',
                       'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2', 'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 
                       'MEDIAN_DEPTHS_HIGHMQ_NORM1', 'MEDIAN_DEPTHS_HIGHMQ_NORM2', 'MEDIAN_DEPTHS_HIGHMQ_NORM3', 'MEDIAN_DEPTHS_HIGHMQ_NORM4', 'MEDIAN_DEPTHS_HIGHMQ_RATIO1', 'MEDIAN_DEPTHS_HIGHMQ_RATIO2',
@@ -73,12 +75,12 @@ class Features:
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
              'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
-             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP', 
+             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP1', 'CP2', 'CP3',
              'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
 
     regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
 
-    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR']
+    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_regt_feature_names(model_name):
         extra_feature_names = []
@@ -223,20 +225,20 @@ class Features:
         else:
             disc_pairs_scaled = [d/median_depth for d in disc_pairs]
         features['DISC_PAIRS_SCALED1'], features['DISC_PAIRS_SCALED2'] = disc_pairs_scaled
-        disc_pairs_highmapq = Features.get_number_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0], median_depth)
-        features['DISC_PAIRS_HIGHMAPQ_RATIO1'], features['DISC_PAIRS_HIGHMAPQ_RATIO2'] = [d/max(1, disc_pairs[i]) for i, d in enumerate(disc_pairs_highmapq)]
+        disc_pairs_highmapq = Features.get_number_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0])
+        features['DISC_PAIRS_HIGHMAPQ_RATIO1'], features['DISC_PAIRS_HIGHMAPQ_RATIO2'] = [dphq/max(1, dp) for dphq, dp in zip(disc_pairs_highmapq, disc_pairs)]
+
         features['DISC_PAIRS_MAXMAPQ1'], features['DISC_PAIRS_MAXMAPQ2'] = Features.get_number_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
 
-        conc_pairs = Features.get_number_value(info, 'CONC_PAIRS', 0, median_depth)
+        conc_pairs = Features.get_number_value(info, 'CONC_PAIRS', [0, 0, 0])
         min_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"]
         max_pairs_crossing_point = stats['max_pairs_crossing_gap']["0"]
-        features['CONC_PAIRS_SCALED'] = Features.normalise(conc_pairs, min_pairs_crossing_point, max_pairs_crossing_point)
+        features['CONC_PAIRS_SCALED1'], features['CONC_PAIRS_SCALED2'], features['CONC_PAIRS_SCALED3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in conc_pairs]
 
         features['DISC_PAIRS_SURROUNDING1'], features['DISC_PAIRS_SURROUNDING2'] = Features.get_number_value(info, 'DISC_PAIRS_SURROUNDING', [0, 0], median_depth) 
         features['DISC_AVG_NM1'], features['DISC_AVG_NM2'] = Features.get_number_value(info, 'DISC_AVG_NM', [0, 0], read_len)
 
-        disc_pairs = [d/median_depth for d in disc_pairs]
-        features['PTN_RATIO1'], features['PTN_RATIO2'] = [d/max(1, d+conc_pairs) for d in disc_pairs]
+        features['PTN_RATIO1'], features['PTN_RATIO2'] = disc_pairs[0]/max(1, disc_pairs[0]+conc_pairs[0]), disc_pairs[1]/max(1, disc_pairs[1]+conc_pairs[2])
         features['KS_PVAL'] = max(0, Features.get_number_value(info, 'KS_PVAL', 1.0))
         features['KS_PVAL_HIGHMQ'] = max(0, Features.get_number_value(info, 'KS_PVAL_HIGHMQ', 1.0))
         features['SIZE_NORM'] = 2
@@ -422,9 +424,10 @@ class Features:
         features['DPSL'] = Features.get_number_value(record.samples[0], 'DPSL', 0, median_depth)
         features['DPSR'] = Features.get_number_value(record.samples[0], 'DPSR', 0, median_depth)
 
-        cp = Features.get_number_value(record.samples[0], 'CP', 0)
-        features['CP'] = Features.normalise(cp, min_pairs_crossing_point, max_pairs_crossing_point)
-        features['PTNR'] = dp1/max(1, cp)
+        cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
+        features['CP1'], features['CP2'], features['CP3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
+        features['PTNR1'] = dp1/max(1, cp[0])
+        features['PTNR2'] = dp2/max(1, cp[2])
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
