@@ -413,6 +413,25 @@ int main(int argc, char* argv[]) {
 		for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
 	}
 
+	// if two variants have the same ID, give a warning that the user should consider --force-ids
+	std::unordered_set<std::string> benchmark_id_count, called_id_count;
+	for (sv_t* sv : benchmark_svs) {
+		if (benchmark_id_count.count(sv->id)) {
+			std::cerr << "Warning: benchmark file contains duplicated IDs. Sensitivity may not be computed correctly. Consider using --force-ids." << std::endl;
+			break;
+		} else {
+			benchmark_id_count.insert(sv->id);
+		}
+	}
+	for (sv_t* sv : called_svs) {
+		if (called_id_count.count(sv->id)) {
+			std::cerr << "Warning: called file contains duplicated IDs. Precision may not be computed correctly. Consider using --force-ids." << std::endl;
+			break;
+		} else {
+			called_id_count.insert(sv->id);
+		}
+	}
+
 	if (parsed_args.count("reference")) {
 		std::string ref_fname = parsed_args["reference"].as<std::string>();
 		chr_seqs.read_fasta_into_map(ref_fname);
