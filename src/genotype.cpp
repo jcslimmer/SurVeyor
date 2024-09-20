@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
@@ -350,6 +351,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
     // update FORMAT fields
+    bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->regenotyping_info.gt, sv->regenotyping_info.n_gt);
+
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1", &(sv->regenotyping_info.alt_bp1_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCF1", &(sv->regenotyping_info.alt_bp1_better_consistent_reads_fwd), 1);
@@ -2114,6 +2117,24 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
 
     calculate_ptn_ratio(contig_name, invs, bam_file, config, stats, true);
     depth_filter_inv(contig_name, invs, bam_file, config, stats);
+
+    for (inversion_t* inv : invs) {
+        double ptn1 = inv->disc_pairs_lf/double(inv->conc_pairs_lbp);
+        double ptn2 = inv->disc_pairs_rf/double(inv->conc_pairs_rbp);
+        double ptn = std::min(ptn1, ptn2);
+        inv->regenotyping_info.n_gt = 2;
+        inv->regenotyping_info.gt = new int[2];
+        if (ptn >= 0.75) {
+            inv->regenotyping_info.gt[0] = bcf_gt_unphased(1);
+            inv->regenotyping_info.gt[1] = bcf_gt_unphased(1);
+        } else if (ptn <= 0.25) {
+            inv->regenotyping_info.gt[0] = bcf_gt_unphased(0);
+            inv->regenotyping_info.gt[1] = bcf_gt_unphased(0);
+        } else {
+            inv->regenotyping_info.gt[0] = bcf_gt_unphased(0);
+            inv->regenotyping_info.gt[1] = bcf_gt_unphased(1);
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {

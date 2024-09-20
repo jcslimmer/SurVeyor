@@ -183,6 +183,7 @@ struct sv_t {
     base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
 
     struct regenotyping_info_t {
+        int* gt, n_gt = 1;
         int alt_bp1_better_reads = 0, alt_bp2_better_reads = 0;
         int alt_bp1_better_disc_pairs = 0, alt_bp2_better_disc_pairs = 0;
         int alt_bp1_better_consistent_reads = 0, alt_bp2_better_consistent_reads = 0;
@@ -196,6 +197,14 @@ struct sv_t {
         int ext_alt_consensus_length = 0;
         int ext_alt_consensus_to_alt_score = 0, ext_alt_consensus_to_ref_score = 0;
         bool too_deep = false;
+
+        regenotyping_info_t() : gt(new int[1]) {
+            gt[0] = bcf_gt_unphased(1);
+        }
+
+        ~regenotyping_info_t() {
+            delete[] gt;
+        }
     } regenotyping_info;
 
     int* gt = NULL, ngt;
