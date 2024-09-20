@@ -804,13 +804,13 @@ int main(int argc, char* argv[]) {
 
     // create VCF out files
 	bcf_hdr_t* out_vcf_header = generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
-    std::string out_vcf_fname = workdir + "/sr.vcf.gz";
+    std::string out_vcf_fname = workdir + "/intermediate_results/sr.vcf.gz";
 	htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-	std::string out_dp_inv_vcf_fname = workdir + "/dp_invs.vcf.gz";
+	std::string out_dp_inv_vcf_fname = workdir + "/intermediate_results/dp_invs.vcf.gz";
 	htsFile* out_dp_inv_vcf_file = bcf_open(out_dp_inv_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(out_dp_inv_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_dp_inv_vcf_fname + ".");

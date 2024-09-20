@@ -95,6 +95,8 @@ with open(cmd_args.workdir + "/config.txt", "w") as config_file:
     config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
     config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
 
+mkdir(cmd_args.workdir + "/intermediate_results")
+
 def reads_categorizer():
     mkdir(cmd_args.workdir)
     mkdir(cmd_args.workdir + "/workspace")
@@ -132,7 +134,7 @@ if cmd_args.command == 'call':
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     exec(find_svs_from_sr_consensuses_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/sr.vcf.gz %s/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(merge_identical_calls_cmd)
 
     dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
@@ -141,20 +143,20 @@ if cmd_args.command == 'call':
     ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
     exec(ins_assembler_cmd)
 
-    concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/sr_dp.vcf.gz %s/assembled_ins.vcf.gz %s/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+    concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
     exec(concat_cmd)
 
-    add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
+    add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/intermediate_results/out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
     exec(add_filtering_info_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/out.annotated.vcf.gz %s/out.annotated.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.annotated.vcf.gz %s/intermediate_results/out.annotated.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(normalise_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/out.annotated.norm.vcf.gz %s/out.annotated.norm.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.annotated.norm.vcf.gz %s/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(merge_identical_calls_cmd)
 
     if cmd_args.genotype:
-        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/out.annotated.norm.dedup.vcf.gz %s/out.annotated.norm.dedup.gt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/calls-raw.vcf.gz %s/calls-raw.with-fmt-info.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
         exec(genotype_cmd)
 
 elif cmd_args.command == 'genotype':

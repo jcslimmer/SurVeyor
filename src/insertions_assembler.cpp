@@ -478,9 +478,9 @@ int main(int argc, char* argv[]) {
     contigs.read_fasta_into_map(reference_fname);
     contig_map.load(workdir);
 
-    assembly_failed_no_seq.open(workdir + "/assembly_failed.no_seq.sv");
-    assembly_failed_cycle_writer.open(workdir + "/assembly_failed.w_cycle.sv");
-    assembly_failed_too_many_reads_writer.open(workdir + "/assembly_failed.too_many_reads.sv");
+    assembly_failed_no_seq.open(workdir + "/intermediate_results/assembly_failed.no_seq.sv");
+    assembly_failed_cycle_writer.open(workdir + "/intermediate_results/assembly_failed.w_cycle.sv");
+    assembly_failed_too_many_reads_writer.open(workdir + "/intermediate_results/assembly_failed.too_many_reads.sv");
 
     ctpl::thread_pool thread_pool(config.threads);
 
@@ -497,7 +497,7 @@ int main(int argc, char* argv[]) {
 	bcf1_t* bcf_entry = bcf_init();
 
 	// out transurveyor insertions
-	std::string out_vcf_fname = workdir + "/assembled_ins.vcf.gz";
+	std::string out_vcf_fname = workdir + "/intermediate_results/assembled_ins.vcf.gz";
     bcf_hdr_t* out_vcf_header = generate_vcf_header(contigs, sample_name, config, full_cmd_str);
 	htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
 	if (out_vcf_file == NULL) {

@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-	std::string sr_vcf_fname = workdir + "/sr.dedup.vcf.gz";
+	std::string sr_vcf_fname = workdir + "/intermediate_results/sr.dedup.vcf.gz";
 	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
 	bcf_hdr_t* hdr = bcf_hdr_read(sr_vcf_file);
 
@@ -247,14 +247,14 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-	std::string dp_vcf_fname = workdir + "/dp.vcf.gz";
+	std::string dp_vcf_fname = workdir + "/intermediate_results/dp.vcf.gz";
 	htsFile* dp_vcf_file = bcf_open(dp_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(dp_vcf_file, hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + dp_vcf_fname + ".");
 	}
 
 	// read dp inversions dp_invs.vcf.gz
-	std::string dp_inv_vcf_fname = workdir + "/dp_invs.vcf.gz";
+	std::string dp_inv_vcf_fname = workdir + "/intermediate_results/dp_invs.vcf.gz";
 	htsFile* dp_inv_vcf_file = bcf_open(dp_inv_vcf_fname.c_str(), "r");
 	bcf_hdr_t* hdr_inv = bcf_hdr_read(dp_inv_vcf_file);
 
@@ -285,7 +285,7 @@ int main(int argc, char* argv[]) {
 
 	tbx_index_build(dp_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 
-	std::string merged_vcf_fname = workdir + "/sr_dp.vcf.gz";
+	std::string merged_vcf_fname = workdir + "/intermediate_results/sr_dp.vcf.gz";
 	htsFile* merged_vcf_file = bcf_open(merged_vcf_fname.c_str(), "wz");
 	if (bcf_hdr_write(merged_vcf_file, hdr) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + merged_vcf_fname + ".");
