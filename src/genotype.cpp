@@ -2194,6 +2194,11 @@ int main(int argc, char* argv[]) {
     std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr;
     while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
         sv_t* sv = bcf_to_sv(in_vcf_header, vcf_record);
+        if (sv == NULL) {
+            std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
+            continue;
+        }
+
         sv->vcf_entry = bcf_dup(vcf_record);
         reset_stats(sv);
         if (sv->svtype() == "DEL") {

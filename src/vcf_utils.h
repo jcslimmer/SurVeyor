@@ -888,8 +888,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		}
 		sv = new breakend_t(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
 	} else {
-		std::cerr << "Unsupported SV type " << svtype << std::endl;
-		exit(1);
+		return NULL;
 	}
 	sv->imprecise = (imprecise == 1);
 
