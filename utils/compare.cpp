@@ -409,7 +409,11 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (parsed_args["force-ids"].as<bool>()) {
-		for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
+		if (!dup_ids.empty()) {
+			std::cerr << "Warning: --force-ids and --dup-ids are both used. Only the IDs of called SVs will be forced." << std::endl;
+		} else {
+			for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
+		}
 		for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
 	}
 
