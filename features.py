@@ -431,13 +431,13 @@ class Features:
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
-        exl = Features.get_number_value(record.samples[0], 'EXL', 0, max_is)
-        features['EXL'] = exl
-        exas = Features.get_number_value(record.samples[0], 'EXAS', 0)
-        features['EXAS'] = exas/max(1, exl)
-        exrs = Features.get_number_value(record.samples[0], 'EXRS', 0)
-        features['EXRS'] = exrs/max(1, exl)
-        features['EXAS_EXRS_RATIO'] = exas/max(1, exrs)
+        exl = Features.get_number_value(record.samples[0], 'EXL', 0)
+        features['EXL'] = exl/max_is
+        exas = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl))
+        features['EXAS'] = exas
+        exrs = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl))
+        features['EXRS'] = exrs
+        features['EXAS_EXRS_RATIO'] = exas/max(0.01, exrs)
         features['EXAS_EXRS_DIFF'] = exas-exrs
 
         denovo_feature_values, regt_feature_values = [], []
