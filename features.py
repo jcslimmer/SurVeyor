@@ -60,7 +60,8 @@ class Features:
                 svtype_str += "_LARGE"
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
             svtype_str += "_LARGE"
-        if "IMPRECISE" in record.info:
+        
+        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0:
             svtype_str += "_IMPRECISE"
         return svtype_str
 

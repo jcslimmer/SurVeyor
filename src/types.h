@@ -372,6 +372,15 @@ struct insertion_t : sv_t {
 
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
+
+    int known_seq_prefix_len() {
+        int d = ins_seq.find("-");
+        return d == std::string::npos ? ins_seq.length() : d;
+    }
+    int known_seq_suffix_len() {
+        int d = ins_seq.find("-");
+        return d == std::string::npos ? ins_seq.length() : ins_seq.length() - d - 1;
+    }
 };
 
 struct breakend_t : sv_t {
