@@ -42,7 +42,6 @@ call_parser = subparsers.add_parser('call', parents=[common_parser], help='Call 
 call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
-call_parser.add_argument('--genotype', action='store_true', help='Genotype the SVs.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
@@ -155,9 +154,8 @@ if cmd_args.command == 'call':
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.annotated.norm.vcf.gz %s/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(merge_identical_calls_cmd)
 
-    if cmd_args.genotype:
-        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/calls-raw.vcf.gz %s/calls-raw.with-fmt-info.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-        exec(genotype_cmd)
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/calls-raw.vcf.gz %s/calls-raw.with-fmt-info.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    exec(genotype_cmd)
 
 elif cmd_args.command == 'genotype':
     if not use_call_info():

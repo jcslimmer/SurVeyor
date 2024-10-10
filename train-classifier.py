@@ -6,8 +6,6 @@ import features
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-os.environ['OMP_NUM_THREADS'] = '96'  # Set within the script to ensure it takes effect
-
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
 cmd_parser.add_argument('svtype', help='SV type to filter.', choices=['DEL', 'DUP', 'INS', 'ALL'])
@@ -15,7 +13,7 @@ cmd_parser.add_argument('outdir')
 cmd_parser.add_argument('--n-trees', type=int, default=5000, help='Number of trees in the random forest.')
 cmd_parser.add_argument('--model_name', default='ALL', help='Restrict to this model.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use for training.')
-cmd_parser.add_argument('--regenotyping', action='store_true', help='Build regenotyping models.')
+cmd_parser.add_argument('--denovo', action='store_true', help='Build denovo model.')
 cmd_args = cmd_parser.parse_args()
 
 denovo_yes_or_no_outdir = os.path.join(cmd_args.outdir, "denovo", "yes_or_no")
@@ -27,8 +25,8 @@ os.makedirs(denovo_gts_outdir, exist_ok=True)
 regt_yes_or_no_outdir = os.path.join(cmd_args.outdir, "regt", "yes_or_no")
 os.makedirs(regt_yes_or_no_outdir, exist_ok=True)
 
-regt_regt_outdir = os.path.join(cmd_args.outdir, "regt", "gts")
-os.makedirs(regt_regt_outdir, exist_ok=True)
+regt_gts_outdir = os.path.join(cmd_args.outdir, "regt", "gts")
+os.makedirs(regt_gts_outdir, exist_ok=True)
 
 denovo_training_data, regt_training_data, denovo_training_gts, regt_training_gts = None, None, None, None
 
@@ -69,10 +67,10 @@ with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
 
 classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
 
-training_data = regt_training_data if cmd_args.regenotyping else denovo_training_data
-training_gts = regt_training_gts if cmd_args.regenotyping else denovo_training_gts
-yes_or_no_outdir = regt_yes_or_no_outdir if cmd_args.regenotyping else denovo_yes_or_no_outdir
-gts_outdir = regt_regt_outdir if cmd_args.regenotyping else denovo_gts_outdir
+training_data = denovo_training_data if cmd_args.denovo else regt_training_data
+training_gts = denovo_training_gts if cmd_args.denovo else regt_training_gts
+yes_or_no_outdir = denovo_yes_or_no_outdir if cmd_args.denovo else regt_yes_or_no_outdir
+gts_outdir = denovo_gts_outdir if cmd_args.denovo else regt_gts_outdir
 
 for model_name in training_data:
     if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
@@ -82,12 +80,13 @@ for model_name in training_data:
     classifier.fit(training_data[model_name], training_labels)
 
     # print feature importance to file
-    if cmd_args.regenotyping:
-        features_names = features.Features.get_regt_feature_names(model_name)
-    else:
+    if cmd_args.denovo:
         features_names = features.Features.get_denovo_feature_names(model_name)
+    else:
+        features_names = features.Features.get_regt_feature_names(model_name)
     importances = classifier.feature_importances_
     indices = np.argsort(importances)[::-1]
+    
     with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
         for i in range(len(features_names)):
             f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
