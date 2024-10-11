@@ -327,7 +327,7 @@ struct random_pos_generator_t {
     const int NO_SAMPLING_PADDING = 1000;
 
     chr_seqs_map_t& chr_seqs_map;
-    hts_pos_t reference_len;
+    hts_pos_t reference_len = 0;
     std::mt19937 rng;
     std::uniform_int_distribution<hts_pos_t> dist;
 
