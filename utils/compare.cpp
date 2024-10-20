@@ -552,9 +552,9 @@ int main(int argc, char* argv[]) {
 	std::unordered_map<std::string, int> n_called_tp, n_called_fp, n_called_gt_tp, n_called_gt_fp;
 	for (sv_t* csv : called_svs) {
 		if (c_tps.count(csv->id)) {
-			n_called_tp[get_type(csv)]++;
+			n_called_tp[csv->svtype()]++;
 		} else {
-			n_called_fp[get_type(csv)]++;
+			n_called_fp[csv->svtype()]++;
 		}
 		if (c_gt_tps.count(csv->id)) {
 			n_called_gt_tp[get_type(csv)]++;
