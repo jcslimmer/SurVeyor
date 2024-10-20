@@ -1,7 +1,4 @@
 import pysam, argparse
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from collections import defaultdict
 import joblib
 import features
 import os
@@ -18,7 +15,7 @@ cmd_args = cmd_parser.parse_args()
 def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
     vcf_writer = pysam.VariantFile(fname, 'w', header=vcf_header)
     for record in vcf_reader.fetch():
-        if record.info['SVTYPE'] != "INV":
+        if features.Features.get_svtype(record) != "INV":
             record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
             record.filter.clear()
             record.filter.add('PASS')

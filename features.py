@@ -28,7 +28,7 @@ class Features:
                       'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
 
     def get_denovo_model_name(record, max_is):
-        svtype_str = record.info['SVTYPE']
+        svtype_str = Features.get_svtype(record)
         source_str = Features.get_string_value(record.info, 'SOURCE', "")
         split_reads = Features.get_number_value(record.info, 'SPLIT_READS', [0, 0])
         if svtype_str == "DEL":
@@ -55,7 +55,7 @@ class Features:
         return svtype_str + "_" + source_str
 
     def get_regt_model_name(record, max_is, read_len):
-        svtype_str = record.info['SVTYPE']
+        svtype_str = Features.get_svtype(record)
         if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
                 svtype_str += "_LARGE"
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
@@ -118,6 +118,11 @@ class Features:
             return svlen[0]
         else:
             return svlen
+        
+    def get_svtype(record):
+        if isinstance(record.info['SVTYPE'], list) or isinstance(record.info['SVTYPE'], tuple):
+            return record.info['SVTYPE'][0]
+        return record.info['SVTYPE']
 
     def normalise(value, min, max):
         if max == min:
@@ -136,7 +141,7 @@ class Features:
         features = dict()
 
         info = record.info
-        svtype_str = record.info['SVTYPE']
+        svtype_str = Features.get_svtype(record)
         source_str = Features.get_string_value(info, 'SOURCE', "")
         features['START_STOP_DIST'] = record.stop - record.pos
 
@@ -493,9 +498,10 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
         stats[sl[0]][sl[1]] = int(sl[2])
 
     for record in vcf_reader.fetch():
-        if svtype != 'ALL' and record.info['SVTYPE'] != svtype:
+        record_svtype = Features.get_svtype(record)
+        if svtype != 'ALL' and record_svtype != svtype:
             continue
-        if record.info['SVTYPE'].startswith('INV'):
+        if record_svtype.startswith('INV'):
             continue
 
         denovo_model_name = Features.get_denovo_model_name(record, stats['max_is']['.'])
