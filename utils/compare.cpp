@@ -16,7 +16,7 @@ chr_seqs_map_t chr_seqs;
 int max_prec_dist, max_imprec_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
-std::unordered_set<std::string> dup_ids;
+std::unordered_set<std::string> bdup_ids, cdup_ids;
 
 StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 StripedSmithWaterman::Filter filter;
@@ -34,8 +34,12 @@ bool compatible_gts(sv_t* sv1, sv_t* sv2) {
 	return ac_iv_overlap;
 }
 
-std::string get_type(sv_t* sv) {
-	if (dup_ids.count(sv->id)) return "DUP";
+std::string get_bsv_type(sv_t* sv) {
+	if (bdup_ids.count(sv->id)) return "DUP";
+	else return sv->svtype();
+}
+std::string get_csv_type(sv_t* sv) {
+	if (cdup_ids.count(sv->id)) return "DUP";
 	else return sv->svtype();
 }
 
@@ -298,7 +302,8 @@ int main(int argc, char* argv[]) {
 		("i,force-ids", "Generate new IDs for the variants, required when variants do not have IDs or have duplicated IDs.",
 				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
-		("dup-ids", "ID of SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
+		("bdup-ids", "ID of benchmark SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
+		("cdup-ids", "ID of called SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
@@ -336,11 +341,18 @@ int main(int argc, char* argv[]) {
     	max_prec_len_diff = max_imprec_len_diff;
     }
 
-	if (parsed_args.count("dup-ids")) {
+	if (parsed_args.count("bdup-ids")) {
 		std::string line;
-		std::ifstream dup_f(parsed_args["dup-ids"].as<std::string>());
+		std::ifstream dup_f(parsed_args["bdup-ids"].as<std::string>());
 		while (getline(dup_f, line)) {
-			dup_ids.insert(line);
+			bdup_ids.insert(line);
+		}
+	}
+	if (parsed_args.count("cdup-ids")) {
+		std::string line;
+		std::ifstream dup_f(parsed_args["cdup-ids"].as<std::string>());
+		while (getline(dup_f, line)) {
+			cdup_ids.insert(line);
 		}
 	}
 
@@ -409,12 +421,16 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (parsed_args["force-ids"].as<bool>()) {
-		if (!dup_ids.empty()) {
-			std::cerr << "Warning: --force-ids and --dup-ids are both used. Only the IDs of called SVs will be forced." << std::endl;
+		if (!bdup_ids.empty()) {
+			std::cerr << "Warning: --force-ids and --bdup-ids are both used. IDs of benchmark SVs will not be forced." << std::endl;
 		} else {
 			for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
 		}
-		for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
+		if (!cdup_ids.empty()) {
+			std::cerr << "Warning: --force-ids and --cdup-ids are both used. IDs of called SVs will not be forced." << std::endl;
+		} else {
+			for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
+		}
 	}
 
 	// if two variants have the same ID, give a warning that the user should consider --force-ids
@@ -538,28 +554,28 @@ int main(int argc, char* argv[]) {
 	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn, n_benchmark_gt_tp, n_benchmark_gt_fn;
 	for (sv_t* bsv : benchmark_svs) {
 		if (b_tps.count(bsv->id)) {
-			n_benchmark_tp[get_type(bsv)]++;
+			n_benchmark_tp[get_bsv_type(bsv)]++;
 		} else {
-			n_benchmark_fn[get_type(bsv)]++;
+			n_benchmark_fn[get_bsv_type(bsv)]++;
 		}
 		if (b_gt_tps.count(bsv->id)) {
-			n_benchmark_gt_tp[get_type(bsv)]++;
+			n_benchmark_gt_tp[get_bsv_type(bsv)]++;
 		} else {
-			n_benchmark_gt_fn[get_type(bsv)]++;
+			n_benchmark_gt_fn[get_bsv_type(bsv)]++;
 		}
 	}
 
 	std::unordered_map<std::string, int> n_called_tp, n_called_fp, n_called_gt_tp, n_called_gt_fp;
 	for (sv_t* csv : called_svs) {
 		if (c_tps.count(csv->id)) {
-			n_called_tp[csv->svtype()]++;
+			n_called_tp[get_csv_type(csv)]++;
 		} else {
-			n_called_fp[csv->svtype()]++;
+			n_called_fp[get_csv_type(csv)]++;
 		}
 		if (c_gt_tps.count(csv->id)) {
-			n_called_gt_tp[get_type(csv)]++;
+			n_called_gt_tp[get_csv_type(csv)]++;
 		} else {
-			n_called_gt_fp[get_type(csv)]++;
+			n_called_gt_fp[get_csv_type(csv)]++;
 		}
 	}
 
