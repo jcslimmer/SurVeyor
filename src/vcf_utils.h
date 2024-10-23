@@ -1152,6 +1152,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int n = 0;
 	sv->ngt = bcf_get_genotypes(hdr, b, &(sv->gt), &n);
+	if (sv->ngt < 0) sv->ngt = 0;
 	std::sort(sv->gt, sv->gt+sv->ngt);
 
 	return sv;
