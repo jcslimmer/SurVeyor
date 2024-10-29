@@ -29,15 +29,15 @@ def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
             vcf_writer.write(record)
     vcf_writer.close()
 
-test_denovo_data, test_regt_data, test_denovo_labels, test_regt_labels, test_denovo_variant_ids, test_regt_variant_ids = \
-    features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, tolerate_no_gts = True)
+test_data, _, test_variant_ids = \
+    features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, cmd_args.denovo, tolerate_no_gts = True)
 
-if cmd_args.denovo:
-    test_data = test_denovo_data
-    test_variant_ids = test_denovo_variant_ids
-else:
-    test_data = test_regt_data
-    test_variant_ids = test_regt_variant_ids
+# if cmd_args.denovo:
+#     test_data = test_denovo_data
+#     test_variant_ids = test_denovo_variant_ids
+# else:
+#     test_data = test_regt_data
+#     test_variant_ids = test_regt_variant_ids
 
 svid_to_gt = dict()
 svid_to_prob = dict()

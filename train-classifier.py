@@ -5,6 +5,7 @@ import joblib
 import features
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import defaultdict
 
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
@@ -28,47 +29,33 @@ os.makedirs(regt_yes_or_no_outdir, exist_ok=True)
 regt_gts_outdir = os.path.join(cmd_args.outdir, "regt", "gts")
 os.makedirs(regt_gts_outdir, exist_ok=True)
 
-denovo_training_data, regt_training_data, denovo_training_gts, regt_training_gts = None, None, None, None
+training_data, training_gts = defaultdict(list), defaultdict(list)
 
 def process_vcf(training_prefix):
-    vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts, vcf_denovo_variants_ids, vcf_regt_variants_ids = \
-        features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", cmd_args.svtype, tolerate_no_gts = False)
-    return vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts
+    vcf_training_data, vcf_training_gts, _ = \
+        features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", cmd_args.svtype, 
+                           cmd_args.denovo, tolerate_no_gts = False)
+    return vcf_training_data, vcf_training_gts
 
-def merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts):
-    global denovo_training_data, regt_training_data, denovo_training_gts, regt_training_gts
-    if denovo_training_data is None:
-        denovo_training_data = vcf_denovo_training_data
-        regt_training_data = vcf_regt_training_data
-        denovo_training_gts = vcf_denovo_training_gts
-        regt_training_gts = vcf_regt_training_gts
-    else:
-        for source in vcf_denovo_training_data:
-            if len(denovo_training_data[source]) == 0:
-                denovo_training_data[source] = vcf_denovo_training_data[source]
-                denovo_training_gts[source] = vcf_denovo_training_gts[source]
-            else:
-                denovo_training_data[source] = np.concatenate((denovo_training_data[source], vcf_denovo_training_data[source]))
-                denovo_training_gts[source] = np.concatenate((denovo_training_gts[source], vcf_denovo_training_gts[source]))
-        for source in vcf_regt_training_data:
-            if len(regt_training_data[source]) == 0:
-                regt_training_data[source] = vcf_regt_training_data[source]
-                regt_training_gts[source] = vcf_regt_training_gts[source]
-            else:
-                regt_training_data[source] = np.concatenate((regt_training_data[source], vcf_regt_training_data[source]))
-                regt_training_gts[source] = np.concatenate((regt_training_gts[source], vcf_regt_training_gts[source]))
+def merge_data(vcf_training_data, vcf_training_gts):
+    global training_data, training_gts
+    for source in vcf_training_data:
+        if len(training_data[source]) == 0:
+            training_data[source] = vcf_training_data[source]
+            training_gts[source] = vcf_training_gts[source]
+        else:
+            training_data[source] = np.concatenate((training_data[source], vcf_training_data[source]))
+            training_gts[source] = np.concatenate((training_gts[source], vcf_training_gts[source]))
 
 training_prefixes = cmd_args.training_prefixes.split(",")
 with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
     future_to_prefix = {executor.submit(process_vcf, prefix): prefix for prefix in training_prefixes}
     for future in as_completed(future_to_prefix):
-        vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts = future.result()
-        merge_data(vcf_denovo_training_data, vcf_regt_training_data, vcf_denovo_training_gts, vcf_regt_training_gts)
+        vcf_training_data, vcf_training_gts = future.result()
+        merge_data(vcf_training_data, vcf_training_gts)
 
 classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
 
-training_data = denovo_training_data if cmd_args.denovo else regt_training_data
-training_gts = denovo_training_gts if cmd_args.denovo else regt_training_gts
 yes_or_no_outdir = denovo_yes_or_no_outdir if cmd_args.denovo else regt_yes_or_no_outdir
 gts_outdir = denovo_gts_outdir if cmd_args.denovo else regt_gts_outdir
 

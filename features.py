@@ -26,6 +26,38 @@ class Features:
                       'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2', 'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 
                       'MEDIAN_DEPTHS_HIGHMQ_NORM1', 'MEDIAN_DEPTHS_HIGHMQ_NORM2', 'MEDIAN_DEPTHS_HIGHMQ_NORM3', 'MEDIAN_DEPTHS_HIGHMQ_NORM4', 'MEDIAN_DEPTHS_HIGHMQ_RATIO1', 'MEDIAN_DEPTHS_HIGHMQ_RATIO2',
                       'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
+    
+    regt_shared_features_names = \
+            ['IP', 'AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
+             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
+             'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
+             'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
+             'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
+             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
+             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
+             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP1', 'CP2', 'CP3',
+             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
+
+    regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
+
+    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+
+    def get_denovo_feature_names(model_name):
+        return Features.shared_features_names + Features.denovo_features_names
+
+    def get_regt_feature_names(model_name):
+        extra_feature_names = []
+        if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
+            extra_feature_names = Features.regt_stat_test_features_names
+        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
+            extra_feature_names = Features.regt_dp_features_names
+        return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
+    
+    def get_feature_names(model_name, denovo):
+        if denovo:
+            return Features.get_denovo_feature_names(model_name)
+        else:
+            return Features.get_regt_feature_names(model_name)
 
     def get_denovo_model_name(record, max_is):
         svtype_str = Features.get_svtype(record)
@@ -64,32 +96,12 @@ class Features:
         if Features.get_number_value(record.samples[0], 'EXL', 0) == 0:
             svtype_str += "_IMPRECISE"
         return svtype_str
-
-    def get_denovo_feature_names(model_name):
-        return Features.shared_features_names + Features.denovo_features_names
-
-    regt_shared_features_names = \
-            ['IP', 'AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
-             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
-             'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
-             'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
-             'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
-             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
-             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
-             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP1', 'CP2', 'CP3',
-             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
-
-    regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
-
-    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
-
-    def get_regt_feature_names(model_name):
-        extra_feature_names = []
-        if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
-            extra_feature_names = Features.regt_stat_test_features_names
-        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
-            extra_feature_names = Features.regt_dp_features_names
-        return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
+    
+    def get_model_name(record, max_is, read_len, denovo):
+        if denovo:
+            return Features.get_denovo_model_name(record, max_is)
+        else:
+            return Features.get_regt_model_name(record, max_is, read_len)
 
     def get_number_value(info, key, default, norm_factor = 1.0):
         if key in info:
@@ -129,17 +141,15 @@ class Features:
             return value - min
         return (value - min) / (max - min)
 
-    def record_to_features(record, stats):
+    def record_to_features(record, stats, denovo):
         min_depth = get_stat(stats, 'min_depth', record.chrom)
         median_depth = get_stat(stats, 'median_depth', record.chrom)
         max_depth = get_stat(stats, 'max_depth', record.chrom)
         max_is = stats['max_is']['.']
         read_len = stats['read_len']['.']
-        
-        denovo_model_name = Features.get_denovo_model_name(record, max_is)
-        regt_model_name = Features.get_regt_model_name(record, max_is, read_len)
-        features = dict()
+        model_name = Features.get_model_name(record, max_is, read_len, denovo)
 
+        features = dict()
         info = record.info
         svtype_str = Features.get_svtype(record)
         source_str = Features.get_string_value(info, 'SOURCE', "")
@@ -446,13 +456,10 @@ class Features:
         features['EXAS_EXRS_RATIO'] = exas/max(0.01, exrs)
         features['EXAS_EXRS_DIFF'] = exas-exrs
 
-        denovo_feature_values, regt_feature_values = [], []
-        for feature_name in Features.get_denovo_feature_names(denovo_model_name):
-            denovo_feature_values.append(features[feature_name])
-        for feature_name in Features.get_regt_feature_names(regt_model_name):
-            regt_feature_values.append(features[feature_name])
-
-        return denovo_feature_values, regt_feature_values
+        feature_values = []
+        for feature_name in Features.get_feature_names(model_name, denovo):
+            feature_values.append(features[feature_name])
+        return feature_values
 
 def select_gt(gt1, gt2):
     if gt1 == "./." and gt2 != "./.":
@@ -483,13 +490,11 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False):
+def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, denovo, tolerate_no_gts = False):
     gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats_reader = open(stats_fname, 'r')
-    denovo_features_by_source, regt_features_by_source = defaultdict(list), defaultdict(list)
-    denovo_gts_by_source, regt_gts_by_source = defaultdict(list), defaultdict(list)
-    denovo_variant_ids_by_source, regt_variant_ids_by_source = defaultdict(list), defaultdict(list)
+    features_by_source, gts_by_source, variant_ids_by_source = defaultdict(list), defaultdict(list), defaultdict(list)
 
     # read the stats file and extract the relevant values
     stats = defaultdict(dict)
@@ -504,23 +509,16 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, tolerate_no_gts = False)
         if record_svtype.startswith('INV'):
             continue
 
-        denovo_model_name = Features.get_denovo_model_name(record, stats['max_is']['.'])
-        regt_model_name = Features.get_regt_model_name(record, stats['max_is']['.'], stats['read_len']['.'])
-        denovo_feature_values, regt_feature_values = Features.record_to_features(record, stats)
-        denovo_features_by_source[denovo_model_name].append(denovo_feature_values)
-        denovo_gts_by_source[denovo_model_name].append(gts[record.id])
-        denovo_variant_ids_by_source[denovo_model_name].append(record.id)
-        if 'TD' not in record.samples[0] and gts[record.id] != "./.": # if too deep or no genotype is available, skip the record
-            regt_features_by_source[regt_model_name].append(regt_feature_values)
-            regt_gts_by_source[regt_model_name].append(gts[record.id])
-            regt_variant_ids_by_source[regt_model_name].append(record.id)
-    for model_name in denovo_features_by_source:
-        denovo_features_by_source[model_name] = np.array(denovo_features_by_source[model_name])
-        denovo_gts_by_source[model_name] = np.array(denovo_gts_by_source[model_name])
-        denovo_variant_ids_by_source[model_name] = np.array(denovo_variant_ids_by_source[model_name])
-    for model_name in regt_features_by_source:
-        regt_features_by_source[model_name] = np.array(regt_features_by_source[model_name])
-        regt_gts_by_source[model_name] = np.array(regt_gts_by_source[model_name])
-        regt_variant_ids_by_source[model_name] = np.array(regt_variant_ids_by_source[model_name])
-    return denovo_features_by_source, regt_features_by_source, denovo_gts_by_source, regt_gts_by_source, \
-        denovo_variant_ids_by_source, regt_variant_ids_by_source
+        model_name = Features.get_model_name(record, stats['max_is']['.'], stats['read_len']['.'], denovo)
+        feature_values = Features.record_to_features(record, stats, denovo)
+        if denovo or ('TD' not in record.samples[0] and gts[record.id] != "./."): # if too deep or no genotype is available, skip the record
+            features_by_source[model_name].append(feature_values)
+            gts_by_source[model_name].append(gts[record.id])
+            variant_ids_by_source[model_name].append(record.id)
+
+    for model_name in features_by_source:
+        features_by_source[model_name] = np.array(features_by_source[model_name])
+        gts_by_source[model_name] = np.array(gts_by_source[model_name])
+        variant_ids_by_source[model_name] = np.array(variant_ids_by_source[model_name])
+    
+    return features_by_source, gts_by_source, variant_ids_by_source
