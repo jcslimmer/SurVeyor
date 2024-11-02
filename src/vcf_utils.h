@@ -330,12 +330,14 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	std::string called_by = called_by_ss.str();
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, called_by.c_str(), &len));
 
-	bcf_hdr_add_sample(header, sample_name.c_str());
+	if (!sample_name.empty()) {
+		bcf_hdr_add_sample(header, sample_name.c_str());
+	}
 	
 	return header;
 }
 
-void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
+void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for_gt = false) {
 	bcf_clear(bcf_entry);
 	
 	bcf_entry->rid = bcf_hdr_name2id(hdr, sv->chr.c_str());
@@ -386,128 +388,127 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq) {
 		}
 	}
 
-	int int2_conv[2];
-	int2_conv[0] = sv->rc_reads(), int2_conv[1] = sv->lc_reads();
-	bcf_update_info_int32(hdr, bcf_entry, "SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = sv->rc_fwd_reads(), int2_conv[1] = sv->lc_fwd_reads();
-	bcf_update_info_int32(hdr, bcf_entry, "FWD_SPLIT_READS", int2_conv, 2);
-	int2_conv[0] = sv->rc_rev_reads(), int2_conv[1] = sv->lc_rev_reads();
-	bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
+	if (!for_gt) {
+		int int2_conv[2];
+		int2_conv[0] = sv->rc_reads(), int2_conv[1] = sv->lc_reads();
+		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_READS", int2_conv, 2);
+		int2_conv[0] = sv->rc_fwd_reads(), int2_conv[1] = sv->lc_fwd_reads();
+		bcf_update_info_int32(hdr, bcf_entry, "FWD_SPLIT_READS", int2_conv, 2);
+		int2_conv[0] = sv->rc_rev_reads(), int2_conv[1] = sv->lc_rev_reads();
+		bcf_update_info_int32(hdr, bcf_entry, "REV_SPLIT_READS", int2_conv, 2);
 
-	if (sv->full_junction_aln != NULL) {
-		bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
-		bcf_update_info_string(hdr, bcf_entry, "FULL_JUNCTION_CIGAR", sv->full_junction_aln->cigar.c_str());
-	}
-	if (sv->left_anchor_aln != NULL && sv->right_anchor_aln != NULL) {
-		int2_conv[0] = sv->left_anchor_aln->best_score, int2_conv[1] = sv->right_anchor_aln->best_score;
-		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", int2_conv, 2);
-		int2_conv[0] = sv->left_anchor_aln->next_best_score, int2_conv[1] = sv->right_anchor_aln->next_best_score;
-		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", int2_conv, 2);
-		if (sv->svtype() == "INV") {
-			inversion_t* inv = (inversion_t*) sv;
-			int2_conv[0] = inv->left_anchor_aln->seq_len, int2_conv[1] = inv->right_anchor_aln->seq_len;
-			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_LBP", int2_conv, 2);
-			int2_conv[0] = inv->rbp_left_anchor_aln->seq_len, int2_conv[1] = inv->rbp_right_anchor_aln->seq_len;
-			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_RBP", int2_conv, 2);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_LBP", &inv->overlap, 1);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_RBP", &inv->overlap_rbp, 1);
-			float mismatch_rate_lbp = inv->mismatch_rate;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_LBP", &mismatch_rate_lbp, 1);
-			float mismatch_rate_rbp = inv->mismatch_rate_rbp;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_RBP", &mismatch_rate_rbp, 1);
-		} else {
-			int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
-			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
-			float mismatch_rate = sv->mismatch_rate;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
+		if (sv->full_junction_aln != NULL) {
+			bcf_update_info_int32(hdr, bcf_entry, "FULL_JUNCTION_SCORE", &sv->full_junction_aln->best_score, 1);
+			bcf_update_info_string(hdr, bcf_entry, "FULL_JUNCTION_CIGAR", sv->full_junction_aln->cigar.c_str());
 		}
-		char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
-		std::stringstream ss;
-		ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
-		bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
-		std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
-		if (sv->svtype() == "INV") {
-			inversion_t* inv = (inversion_t*) sv;
-			split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
+		if (sv->left_anchor_aln != NULL && sv->right_anchor_aln != NULL) {
+			int2_conv[0] = sv->left_anchor_aln->best_score, int2_conv[1] = sv->right_anchor_aln->best_score;
+			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE", int2_conv, 2);
+			int2_conv[0] = sv->left_anchor_aln->next_best_score, int2_conv[1] = sv->right_anchor_aln->next_best_score;
+			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SCORE2", int2_conv, 2);
+			if (sv->svtype() == "INV") {
+				inversion_t* inv = (inversion_t*) sv;
+				int2_conv[0] = inv->left_anchor_aln->seq_len, int2_conv[1] = inv->right_anchor_aln->seq_len;
+				bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_LBP", int2_conv, 2);
+				int2_conv[0] = inv->rbp_left_anchor_aln->seq_len, int2_conv[1] = inv->rbp_right_anchor_aln->seq_len;
+				bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_RBP", int2_conv, 2);
+				bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_LBP", &inv->overlap, 1);
+				bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_RBP", &inv->overlap_rbp, 1);
+				float mismatch_rate_lbp = inv->mismatch_rate;
+				bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_LBP", &mismatch_rate_lbp, 1);
+				float mismatch_rate_rbp = inv->mismatch_rate_rbp;
+				bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_RBP", &mismatch_rate_rbp, 1);
+			} else {
+				int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
+				bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
+				bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
+				float mismatch_rate = sv->mismatch_rate;
+				bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
+			}
+			char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
+			std::stringstream ss;
+			ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
+			bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
+			std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
+			if (sv->svtype() == "INV") {
+				inversion_t* inv = (inversion_t*) sv;
+				split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
+			}
+			bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
 		}
-		bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
-	}
 
-	int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-	int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
-	bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ_EXT", max_mapq_ext, 2);
+		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
+		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
+		int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
+		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ_EXT", max_mapq_ext, 2);
 
-	if (sv->rc_consensus) {
-		int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-		if (sv->rc_consensus->remap_boundary != consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-			bcf_update_info_int32(hdr, bcf_entry, "REMAP_UB", &sv->rc_consensus->remap_boundary, 1);
+		if (sv->rc_consensus) {
+			int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
+			bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
+			int hq_ext_1sr_reads[] = { sv->rc_consensus->hq_left_ext_reads, sv->rc_consensus->hq_right_ext_reads };
+			bcf_update_info_int32(hdr, bcf_entry, "RCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
+			if (sv->rc_consensus->remap_boundary != consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+				bcf_update_info_int32(hdr, bcf_entry, "REMAP_UB", &sv->rc_consensus->remap_boundary, 1);
+			}
 		}
-	}
-	if (sv->lc_consensus) {
-		int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
-		int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
-		bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
-		if (sv->lc_consensus->remap_boundary != consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
-			bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
+		if (sv->lc_consensus) {
+			int ext_1sr_reads[] = { sv->lc_consensus->left_ext_reads, sv->lc_consensus->right_ext_reads };
+			bcf_update_info_int32(hdr, bcf_entry, "LCC_EXT_1SR_READS", ext_1sr_reads, 2);
+			int hq_ext_1sr_reads[] = { sv->lc_consensus->hq_left_ext_reads, sv->lc_consensus->hq_right_ext_reads };
+			bcf_update_info_int32(hdr, bcf_entry, "LCC_HQ_EXT_1SR_READS", hq_ext_1sr_reads, 2);
+			if (sv->lc_consensus->remap_boundary != consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
+				bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
+			}
 		}
+
+		if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+			int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
+			int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
+			int disc_pairs_maxmapq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", disc_pairs_maxmapq, 2);
+			float avg_nm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
+			bcf_update_info_float(hdr, bcf_entry, "DISC_AVG_NM", avg_nm, 2);
+		}
+
+		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
+		bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
+
+		int median_depths_highmq[] = {sv->median_left_flanking_cov_highmq, sv->median_indel_left_cov_highmq, sv->median_indel_right_cov_highmq, sv->median_right_flanking_cov_highmq};
+		bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS_HIGHMQ", median_depths_highmq, 4);
+
+		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
+		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
+
+		base_frequencies_t right_anchor_base_freqs = sv->get_right_anchor_base_freqs(chr_seq);
+		int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
+
+		base_frequencies_t prefix_ref_base_freqs = sv->get_prefix_ref_base_freqs(chr_seq);
+		int svrefpbc[] = {prefix_ref_base_freqs.a, prefix_ref_base_freqs.c, prefix_ref_base_freqs.g, prefix_ref_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "SV_REF_PREFIX_BASE_COUNT", svrefpbc, 4);
+		
+		base_frequencies_t suffix_ref_base_freqs = sv->get_suffix_ref_base_freqs(chr_seq);
+		int svrefsbc[] = {suffix_ref_base_freqs.a, suffix_ref_base_freqs.c, suffix_ref_base_freqs.g, suffix_ref_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "SV_REF_SUFFIX_BASE_COUNT", svrefsbc, 4);
+
+		base_frequencies_t ins_prefix_base_freqs = sv->get_ins_prefix_base_freqs();
+		int pbc[] = {ins_prefix_base_freqs.a, ins_prefix_base_freqs.c, ins_prefix_base_freqs.g, ins_prefix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
+		
+		base_frequencies_t ins_suffix_base_freqs = sv->get_ins_suffix_base_freqs();
+		int sbc[] = {ins_suffix_base_freqs.a, ins_suffix_base_freqs.c, ins_suffix_base_freqs.g, ins_suffix_base_freqs.t};
+		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
+
+		bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
 	}
 
-	if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
-		int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
-		int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
-		int disc_pairs_maxmapq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", disc_pairs_maxmapq, 2);
-		float avg_nm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
-		bcf_update_info_float(hdr, bcf_entry, "DISC_AVG_NM", avg_nm, 2);
-	}
-
-	int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
-	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
-
-	int median_depths_highmq[] = {sv->median_left_flanking_cov_highmq, sv->median_indel_left_cov_highmq, sv->median_indel_right_cov_highmq, sv->median_right_flanking_cov_highmq};
-	bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS_HIGHMQ", median_depths_highmq, 4);
-
-	base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
-	int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
-
-	base_frequencies_t right_anchor_base_freqs = sv->get_right_anchor_base_freqs(chr_seq);
-	int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
-
-	base_frequencies_t prefix_ref_base_freqs = sv->get_prefix_ref_base_freqs(chr_seq);
-	int svrefpbc[] = {prefix_ref_base_freqs.a, prefix_ref_base_freqs.c, prefix_ref_base_freqs.g, prefix_ref_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_PREFIX_BASE_COUNT", svrefpbc, 4);
-	
-	base_frequencies_t suffix_ref_base_freqs = sv->get_suffix_ref_base_freqs(chr_seq);
-	int svrefsbc[] = {suffix_ref_base_freqs.a, suffix_ref_base_freqs.c, suffix_ref_base_freqs.g, suffix_ref_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "SV_REF_SUFFIX_BASE_COUNT", svrefsbc, 4);
-
-	base_frequencies_t ins_prefix_base_freqs = sv->get_ins_prefix_base_freqs();
-	int pbc[] = {ins_prefix_base_freqs.a, ins_prefix_base_freqs.c, ins_prefix_base_freqs.g, ins_prefix_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
-	
-	base_frequencies_t ins_suffix_base_freqs = sv->get_ins_suffix_base_freqs();
-	int sbc[] = {ins_suffix_base_freqs.a, ins_suffix_base_freqs.c, ins_suffix_base_freqs.g, ins_suffix_base_freqs.t};
-	bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
-
-	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
-
-	// add GT info
-	int gt[1];
-	gt[0] = bcf_gt_unphased(1);
-	bcf_update_genotypes(hdr, bcf_entry, gt, 1);
+	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->ngt);
 
 	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, 1);
+	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->ngt);
 
 	if (sv->svtype() == "DEL") {
 		deletion_t* del = (deletion_t*) sv;

@@ -149,8 +149,58 @@ int* smith_waterman_gotoh(const char* ref, int ref_len, const char* read, int re
 	return prefix_scores;
 }
 
+std::vector<int> compute_prefix_scores(std::vector<uint32_t> cigar, int query_len, int match_score, int mismatch_score, 
+						int gap_open_score, int gap_extend_score) {
+	
+	std::vector<int> prefix_scores(query_len + 1, 0); // Stores scores for each prefix up to query_len.
+    int score = 0, query_prefix_len = 0;
+
+	for (int i = 0; i < cigar.size() && query_prefix_len < query_len; ++i) {
+        int op = cigar_int_to_op(cigar[i]);
+        int len = cigar_int_to_len(cigar[i]);
+
+		for (int k = 0; k < len; ++k) {
+            if (op == '=') {
+                score += match_score;
+                prefix_scores[++query_prefix_len] = score;
+            } else if (op == 'X') {
+                score += mismatch_score;
+                prefix_scores[++query_prefix_len] = score;
+            } else if (op == 'I') {
+                if (k == 0) {
+                    score += gap_open_score;
+                } else {
+                    score += gap_extend_score;
+                }
+                prefix_scores[++query_prefix_len] = score;
+            } else if (op == 'D') {
+                if (k == 0) {
+                    score += gap_open_score;
+                } else {
+                    score += gap_extend_score;
+                }
+                // No change to query_prefix_len since deletion skips query sequence.
+            } else if (op == 'S') { // Soft-clipping
+                // Soft-clipped bases don't change the score, but they do increment query_prefix_len.
+                prefix_scores[++query_prefix_len] = score;
+            }
+        }
+	}
+
+	return prefix_scores;
+}
+
+std::vector<int> compute_suffix_scores(std::vector<uint32_t> cigar, int query_len, int match_score, int mismatch_score, 
+						int gap_open_score, int gap_extend_score) {
+
+	std::vector<uint32_t> cigar_rev(cigar.rbegin(), cigar.rend());
+	std::vector<int> suffix_scores = compute_prefix_scores(cigar_rev, query_len, match_score, mismatch_score, gap_open_score, gap_extend_score);
+	std::reverse(suffix_scores.begin(), suffix_scores.end());
+	return suffix_scores;
+}
+
 std::pair<int, int> find_aln_prefix_score(std::vector<uint32_t> cigar, int ref_prefix_len, int match_score, int mismatch_score,
-						  int gap_open_score, int gap_extend_score) {
+						int gap_open_score, int gap_extend_score) {
 	int score = 0, query_prefix_len = 0;
 	for (int i = 0, j = 0; i < cigar.size() && j < ref_prefix_len; i++) {
 		int op = cigar_int_to_op(cigar[i]);

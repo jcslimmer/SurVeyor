@@ -29,6 +29,7 @@ add_executable(genotype libs/ssw.c libs/ssw_cpp.cpp src/genotype.cpp)
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 add_executable(normalise utils/normalise.cpp)
 add_executable(cluster utils/cluster.cpp)
+add_executable(insertions_to_duplications libs/ssw.c libs/ssw_cpp.cpp utils/insertions_to_duplications.cpp)
 
 find_library(HTS_LIB hts PATHS htslib-1.21/lib NO_DEFAULT_PATH)
 
@@ -45,3 +46,4 @@ target_link_libraries(genotype "${HTS_LIB}")
 target_link_libraries(compare "${HTS_LIB}")
 target_link_libraries(normalise "${HTS_LIB}")
 target_link_libraries(cluster "${HTS_LIB}")
+target_link_libraries(insertions_to_duplications "${HTS_LIB}")

@@ -75,7 +75,7 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
 		throw "Failed to read reference " + reference_fname;
 	}
-	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), mateseqs_w_mapq[contig_id], stats, bam_file);
+	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), stats, bam_file);
 	if (!candidate_reads_for_extension.empty()) {
 		std::vector<Interval<ext_read_t*>> it_ivals;
 		for (ext_read_t* ext_read : candidate_reads_for_extension) {

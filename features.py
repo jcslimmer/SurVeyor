@@ -118,12 +118,21 @@ class Features:
             return info[key]
         else:
             return default
+        
+    def generate_id(record):
+        svinsseq = Features.get_svinsseq(record)
+        return f"{record.chrom}:{record.pos}-{record.stop}:{Features.get_svtype(record)}:{Features.get_svlen(record)}:{hash(svinsseq)}"
+
+    def get_svinsseq(record):
+        if "<" not in record.alts[0]:
+            return record.alts[0]
+        elif 'SVINSSEQ' in record.info:
+            return record.info['SVINSSEQ']
+        return ""
 
     def get_svlen(record):
         if 'SVLEN' not in record.info:
-            svinsseq = ""
-            if 'SVINSSEQ' in record.info:
-                svinsseq = record.info['SVINSSEQ']
+            svinsseq = Features.get_svinsseq(record)
             return len(svinsseq) - (record.stop - record.pos)
         svlen = record.info['SVLEN']
         if isinstance(svlen, list) or isinstance(svlen, tuple):
@@ -514,7 +523,7 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, denovo, tolerate_no_gts 
         if denovo or ('TD' not in record.samples[0] and gts[record.id] != "./."): # if too deep or no genotype is available, skip the record
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gts[record.id])
-            variant_ids_by_source[model_name].append(record.id)
+            variant_ids_by_source[model_name].append(Features.generate_id(record))
 
     for model_name in features_by_source:
         features_by_source[model_name] = np.array(features_by_source[model_name])

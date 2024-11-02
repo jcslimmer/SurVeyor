@@ -309,7 +309,7 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 //	}
 }
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
+		stats_t& stats, open_samFile_t* bam_file) {
 
 	ext_read_allocator_t ext_read_allocator;
 
@@ -357,7 +357,7 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 }
 
 std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq, stats_t& stats, open_samFile_t* bam_file) {
+		stats_t& stats, open_samFile_t* bam_file) {
 
 	if (consensuses.empty()) return std::vector<ext_read_t*>();
 
@@ -373,7 +373,7 @@ std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consen
 		target_ival.beg = right_ext_target_start, target_ival.end = right_ext_target_end;
 		target_ivals.push_back(target_ival);
 	}
-	return get_extension_reads(contig_name, target_ivals, contig_len, mateseqs_w_mapq, stats, bam_file);
+	return get_extension_reads(contig_name, target_ivals, contig_len, stats, bam_file);
 }
 
 void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev) {

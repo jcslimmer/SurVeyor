@@ -19,9 +19,10 @@ def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
             record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
             record.filter.clear()
             record.filter.add('PASS')
-            if record.id in svid_to_gt:
-                record.samples[0]['GT'] = (svid_to_gt[record.id]//2, 1 if svid_to_gt[record.id] >= 1 else 0)
-                record.samples[0]['EPR'] = svid_to_prob[record.id]
+            record_id = features.Features.generate_id(record)
+            if record_id in svid_to_gt:
+                record.samples[0]['GT'] = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
+                record.samples[0]['EPR'] = svid_to_prob[record_id]
             else:
                 record.samples[0]['GT'] = (None, None)
             vcf_writer.write(record)
@@ -31,13 +32,6 @@ def write_vcf(vcf_reader, vcf_header, svid_to_gt, fname):
 
 test_data, _, test_variant_ids = \
     features.parse_vcf(cmd_args.in_vcf, cmd_args.stats, "XXX", cmd_args.svtype, cmd_args.denovo, tolerate_no_gts = True)
-
-# if cmd_args.denovo:
-#     test_data = test_denovo_data
-#     test_variant_ids = test_denovo_variant_ids
-# else:
-#     test_data = test_regt_data
-#     test_variant_ids = test_regt_variant_ids
 
 svid_to_gt = dict()
 svid_to_prob = dict()
