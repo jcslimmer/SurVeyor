@@ -499,7 +499,7 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, denovo, tolerate_no_gts = False):
+def parse_vcf(vcf_fname, stats_fname, fp_fname, denovo, tolerate_no_gts = False):
     gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats_reader = open(stats_fname, 'r')
@@ -513,8 +513,6 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, svtype, denovo, tolerate_no_gts 
 
     for record in vcf_reader.fetch():
         record_svtype = Features.get_svtype(record)
-        if svtype != 'ALL' and record_svtype != svtype:
-            continue
         if record_svtype.startswith('INV'):
             continue
 

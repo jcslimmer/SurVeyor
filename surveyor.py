@@ -1,4 +1,5 @@
 import sys, os, argparse, pysam, timeit
+from run_classifier import Classifier
 
 VERSION = "0.1"
 
@@ -49,6 +50,7 @@ genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
+genotype_parser.add_argument('ml_model', help='Path to the ML model to be used for filtering and genotyping.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
 
 cmd_args = parser.parse_args()
@@ -127,6 +129,7 @@ else:
     sample_name = os.path.basename(cmd_args.bam_file).split(".")[0]
 
 if cmd_args.command == 'call':
+
     reads_categorizer()
 
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
@@ -171,5 +174,8 @@ elif cmd_args.command == 'genotype':
     insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s %s %s %s" % (cmd_args.in_vcf_file, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
     exec(insertions_to_duplications_cmd)
 
-    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.out_vcf_file, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    vcf_with_fmt_fname = cmd_args.workdir + "/vcf_with_fmt.vcf.gz"
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, vcf_with_fmt_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
+
+    Classifier.run_classifier(vcf_with_fmt_fname, cmd_args.out_vcf_file, cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
