@@ -53,11 +53,14 @@ genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse
 
 cmd_args = parser.parse_args()
 
-def exec(cmd):
+def exec(cmd, error_msg=None):
     start_time = timeit.default_timer()
     print("Executing:", cmd)
     if os.system(cmd) != 0:
-        print("Error executing:", cmd)
+        if error_msg:
+            print(error_msg)
+        else:
+            print("Error executing:", cmd)
         exit(1)
     elapsed = timeit.default_timer() - start_time
     print(cmd, "was run in %.2f seconds" % elapsed)
@@ -129,7 +132,6 @@ if cmd_args.command == 'call':
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
     exec(clip_consensus_builder_cmd)
 
-
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     exec(find_svs_from_sr_consensuses_cmd)
 
@@ -158,8 +160,16 @@ if cmd_args.command == 'call':
     exec(genotype_cmd)
 
 elif cmd_args.command == 'genotype':
+
+    check_duplicate_ids_cmd = SURVEYOR_PATH + "/bin/check_duplicate_ids %s" % cmd_args.in_vcf_file
+    exec(check_duplicate_ids_cmd, "Error: Duplicate IDs found in the input VCF file. Please remove duplicates before running the genotype command.")
+
     if not use_call_info():
         reads_categorizer()
-    
-    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (cmd_args.in_vcf_file, cmd_args.out_vcf_file, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+
+    vcf_for_genotyping_fname = cmd_args.workdir + "/vcf_for_genotyping.vcf.gz"
+    insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s %s %s %s" % (cmd_args.in_vcf_file, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
+    exec(insertions_to_duplications_cmd)
+
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.out_vcf_file, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
