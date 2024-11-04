@@ -9,7 +9,6 @@ from collections import defaultdict
 
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
-cmd_parser.add_argument('svtype', help='SV type to filter.', choices=['DEL', 'DUP', 'INS', 'ALL'])
 cmd_parser.add_argument('outdir')
 cmd_parser.add_argument('--n-trees', type=int, default=5000, help='Number of trees in the random forest.')
 cmd_parser.add_argument('--model_name', default='ALL', help='Restrict to this model.')
@@ -33,7 +32,7 @@ training_data, training_gts = defaultdict(list), defaultdict(list)
 
 def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
-        features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", cmd_args.svtype, 
+        features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
                            cmd_args.denovo, tolerate_no_gts = False)
     return vcf_training_data, vcf_training_gts
 

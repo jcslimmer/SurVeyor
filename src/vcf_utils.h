@@ -689,14 +689,19 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			std::stringstream ss;
 			ss << sv->left_anchor_aln->cigar << "," << sv->right_anchor_aln->cigar;
 			bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_CIGAR", ss.str().c_str());
-			std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
-			if (sv->svtype() == "INV") {
-				inversion_t* inv = (inversion_t*) sv;
-				split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
-			}
-			bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
 		}
+	}
 
+	if (sv->left_anchor_aln != NULL && sv->right_anchor_aln != NULL) {
+		std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
+		if (sv->svtype() == "INV") {
+			inversion_t* inv = (inversion_t*) sv;
+			split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
+		}
+		bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
+	}
+
+	if (!for_gt) {
 		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
 		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
 		int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
@@ -771,43 +776,47 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->ngt);
 
 	if (sv->svtype() == "DEL") {
-		deletion_t* del = (deletion_t*) sv;
-		if (!del->original_range.empty()) {
-			bcf_update_info_string(hdr, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
-		}
-		if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-			bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE", &(del->min_conf_size), 1);
-			if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-				bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE_HIGHMQ", &(del->min_conf_size_highmq), 1);
+		if (!for_gt) {
+			deletion_t* del = (deletion_t*) sv;
+			if (!del->original_range.empty()) {
+				bcf_update_info_string(hdr, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
 			}
-		}
-		if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-			bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
-			if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-				bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE_HIGHMQ", &(del->max_conf_size_highmq), 1);
+			if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+				bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE", &(del->min_conf_size), 1);
+				if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+					bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE_HIGHMQ", &(del->min_conf_size_highmq), 1);
+				}
 			}
-		}
-		if (del->imprecise && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
-			bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
-		}
-		if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
-			float ks_pval = del->ks_pval;
-			bcf_update_info_float(hdr, bcf_entry, "KS_PVAL", &ks_pval, 1);
-			if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
-				float ks_pval_highmq = del->ks_pval_highmq;
-				bcf_update_info_float(hdr, bcf_entry, "KS_PVAL_HIGHMQ", &ks_pval_highmq, 1);
+			if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
+				bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
+				if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
+					bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE_HIGHMQ", &(del->max_conf_size_highmq), 1);
+				}
 			}
+			if (del->imprecise && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
+				bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
+			}
+			if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
+				float ks_pval = del->ks_pval;
+				bcf_update_info_float(hdr, bcf_entry, "KS_PVAL", &ks_pval, 1);
+				if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
+					float ks_pval_highmq = del->ks_pval_highmq;
+					bcf_update_info_float(hdr, bcf_entry, "KS_PVAL_HIGHMQ", &ks_pval_highmq, 1);
+				}
+			}
+			int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
+			int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
+			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
+			int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
+			bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 		}
-		int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-		int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
-		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
-		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
-		bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 	} else if (sv->svtype() == "DUP") {
 		duplication_t* dup = (duplication_t*) sv;
-		int disc_pairs_surr[] = {dup->l_cluster_region_disc_pairs, dup->r_cluster_region_disc_pairs};
-		bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
+		if (!for_gt) {
+			int disc_pairs_surr[] = {dup->l_cluster_region_disc_pairs, dup->r_cluster_region_disc_pairs};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
+		}
 	} else if (sv->svtype() == "INS") {
 		insertion_t* ins = (insertion_t*) sv;
 		if (ins->incomplete_assembly()) {
