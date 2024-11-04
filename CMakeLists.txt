@@ -25,6 +25,7 @@ add_executable(insertions_assembler libs/ssw.c libs/ssw_cpp.cpp src/insertions_a
 add_executable(add_filtering_info src/add_filtering_info.cpp)
 add_executable(concat_vcf src/concat_vcf.cpp)
 add_executable(genotype libs/ssw.c libs/ssw_cpp.cpp src/genotype.cpp)
+add_executable(reconcile_vcf_gt src/reconcile_vcf_gt.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 add_executable(normalise utils/normalise.cpp)
@@ -43,6 +44,7 @@ target_link_libraries(insertions_assembler "${HTS_LIB}")
 target_link_libraries(add_filtering_info "${HTS_LIB}")
 target_link_libraries(concat_vcf "${HTS_LIB}")
 target_link_libraries(genotype "${HTS_LIB}")
+target_link_libraries(reconcile_vcf_gt "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")
 target_link_libraries(normalise "${HTS_LIB}")

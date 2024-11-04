@@ -43,6 +43,7 @@ call_parser = subparsers.add_parser('call', parents=[common_parser], help='Call 
 call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
+call_parser.add_argument('ml_model', help='Path to the ML model to be used for filtering and genotyping.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
@@ -162,6 +163,8 @@ if cmd_args.command == 'call':
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/calls-raw.vcf.gz %s/calls-raw.with-fmt-info.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
 
+    Classifier.run_classifier(cmd_args.workdir + "/calls-raw.with-fmt-info.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+
 elif cmd_args.command == 'genotype':
 
     check_duplicate_ids_cmd = SURVEYOR_PATH + "/bin/check_duplicate_ids %s" % cmd_args.in_vcf_file
@@ -178,4 +181,8 @@ elif cmd_args.command == 'genotype':
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, vcf_with_fmt_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
 
-    Classifier.run_classifier(vcf_with_fmt_fname, cmd_args.out_vcf_file, cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+    vcf_with_gt_fname = cmd_args.workdir + "/vcf_with_gt.vcf.gz"
+    Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+
+    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, cmd_args.out_vcf_file, sample_name)
+    exec(reconcile_vcf_gt_cmd)

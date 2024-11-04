@@ -39,34 +39,40 @@ int main(int argc, char* argv[]) {
         sv_t* sv = bcf_to_sv(hdr, b);
         sv_t* new_dup = NULL;
 
-        if (sv->svtype() == "INS" && sv->ins_seq.length() < 16000) {
-            std::string ins_seq = sv->ins_seq;
-
+        std::string ins_seq = sv->ins_seq;
+        if (sv->svtype() == "INS" && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
             std::string contig_name = sv->chr;
+            hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
-            aligner.Align(ins_seq.c_str(), chr_seqs.get_seq(contig_name)+sv->start-ins_seq.length()+1, ins_seq.length(), filter, &aln_before, 0);
-            aligner.Align(ins_seq.c_str(), chr_seqs.get_seq(contig_name)+sv->start+1, ins_seq.length(), filter, &aln_after, 0);
+            bool skip = false;
+            if (sv->start+1 < ins_seq.length()) skip = true;
+            if (sv->start+ins_seq.length() >= contig_len) skip = true;
 
-            std::vector<int> prefix_scores = compute_prefix_scores(aln_after.cigar, ins_seq.length(), 1, -4, -6, -1);
-            std::vector<int> suffix_scores = compute_suffix_scores(aln_before.cigar, ins_seq.length(), 1, -4, -6, -1);
+            if (!skip) {
+                aligner.Align(ins_seq.c_str(), chr_seqs.get_seq(contig_name)+sv->start-ins_seq.length()+1, ins_seq.length(), filter, &aln_before, 0);
+                aligner.Align(ins_seq.c_str(), chr_seqs.get_seq(contig_name)+sv->start+1, ins_seq.length(), filter, &aln_after, 0);
 
-            int max_score = 0, best_i = 0;
-            for (int i = 0; i <= ins_seq.length(); i++) {
-                if (prefix_scores[i] + suffix_scores[i] > max_score) {
-                    max_score = prefix_scores[i] + suffix_scores[i];
-                    best_i = i;
+                std::vector<int> prefix_scores = compute_prefix_scores(aln_after.cigar, ins_seq.length(), 1, -4, -6, -1);
+                std::vector<int> suffix_scores = compute_suffix_scores(aln_before.cigar, ins_seq.length(), 1, -4, -6, -1);
+
+                int max_score = 0, best_i = 0;
+                for (int i = 0; i <= ins_seq.length(); i++) {
+                    if (prefix_scores[i] + suffix_scores[i] > max_score) {
+                        max_score = prefix_scores[i] + suffix_scores[i];
+                        best_i = i;
+                    }
                 }
-            }
 
-            bool aln_alter_lc = get_left_clip_size(aln_after) >= config.min_clip_len;
-            bool aln_before_rc = get_right_clip_size(aln_before) >= config.min_clip_len;
-            int aln_len = 0;
-            if (!aln_alter_lc) aln_len += aln_after.query_end+aln_after.query_begin+1;
-            if (!aln_before_rc) aln_len += aln_before.query_end-aln_before.query_begin+1;
-            if (aln_len >= ins_seq.length()) {
-                sv_t::anchor_aln_t* anchor_aln = new sv_t::anchor_aln_t(sv->start-ins_seq.length()+best_i, sv->start+best_i, ins_seq.length(), 0, 0, "");
-                new_dup = new duplication_t(contig_name, anchor_aln->start, anchor_aln->end, "", NULL, NULL, anchor_aln, anchor_aln, NULL);
-                new_dup->id = sv->id;
+                bool aln_alter_lc = get_left_clip_size(aln_after) >= config.min_clip_len;
+                bool aln_before_rc = get_right_clip_size(aln_before) >= config.min_clip_len;
+                int aln_len = 0;
+                if (!aln_alter_lc) aln_len += aln_after.query_end+aln_after.query_begin+1;
+                if (!aln_before_rc) aln_len += aln_before.query_end-aln_before.query_begin+1;
+                if (aln_len >= ins_seq.length()) {
+                    sv_t::anchor_aln_t* anchor_aln = new sv_t::anchor_aln_t(sv->start-ins_seq.length()+best_i, sv->start+best_i, ins_seq.length(), 0, 0, "");
+                    new_dup = new duplication_t(contig_name, anchor_aln->start, anchor_aln->end, "", NULL, NULL, anchor_aln, anchor_aln, NULL);
+                    new_dup->id = sv->id;
+                }
             }
         }
 
