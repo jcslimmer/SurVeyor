@@ -207,7 +207,7 @@ struct sv_t {
         }
     } regenotyping_info;
 
-    int* gt = NULL, ngt;
+    int* gt = NULL, ngt = 1;
     bcf1_t* vcf_entry = NULL;
 
     std::vector<std::string> filters;
@@ -215,7 +215,11 @@ struct sv_t {
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
         anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
-        left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {}
+        left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {
+        
+        gt = new int[1];
+        gt[0] = bcf_gt_unphased(1);
+    }
 
     int rc_reads() { return rc_consensus ? rc_consensus->fwd_clipped + rc_consensus->rev_clipped : 0; }
     int lc_reads() { return lc_consensus ? lc_consensus->fwd_clipped + lc_consensus->rev_clipped : 0; }
