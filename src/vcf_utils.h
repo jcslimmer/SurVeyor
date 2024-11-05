@@ -767,9 +767,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int sbc[] = {ins_suffix_base_freqs.a, ins_suffix_base_freqs.c, ins_suffix_base_freqs.g, ins_suffix_base_freqs.t};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
-		bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
 	}
 
+	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
 	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->ngt);
 
 	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
