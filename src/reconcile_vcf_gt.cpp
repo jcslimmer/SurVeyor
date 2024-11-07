@@ -2,6 +2,7 @@
 #include "vcf_utils.h"
 #include <htslib/vcf.h>
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
 #include <string>
 #include <vector>
@@ -68,6 +69,13 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
         if (it != gt_records.end()) {
             bcf1_t* gt_record = it->second.record;
             bcf_unpack(gt_record, BCF_UN_ALL);
+
+            // if SVTYPE of gt_record is DUP continue
+            if (get_sv_type(gt_hdr, gt_record) == "DUP" && get_sv_type(base_hdr, b) == "INS") {
+                std::stringstream dup_str; 
+                dup_str << bcf_seqname(gt_hdr, gt_record) << ":" << std::to_string(gt_record->pos) << "-" << get_sv_end(gt_hdr, gt_record);
+                bcf_update_info_string(out_hdr, b, "GT_AS_DUP", dup_str.str().c_str());
+            }
 
             int32_t* gt = NULL, ngt = 0;
             int gt_ret = bcf_get_genotypes(gt_hdr, it->second.record, &gt, &ngt);
@@ -149,6 +157,10 @@ int main(int argc, char** argv) {
     // reset samples in out header
     bcf_hdr_t* out_hdr = bcf_hdr_dup(base_hdr);
     add_genotyping_tags(out_hdr);
+    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
+    int len = 0;
+    const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";
+    bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, gt_as_dup_tag, &len));
     if (bcf_hdr_set_samples(out_hdr, NULL, 0) != 0) {
         throw std::runtime_error("Failed to unset samples in VCF header");
     }
