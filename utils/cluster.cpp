@@ -288,7 +288,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 			}
 			coos_str[sample2id[sv.sample]] += std::to_string(sv.sv->start+1) + "-" + std::to_string(sv.sv->end+1); // report 1-based
 			sizes_str[sample2id[sv.sample]] += std::to_string(sv.sv->svlen());
-			prec_str[sample2id[sv.sample]] += (sv.sv->imprecise ? "P" : "I");
+			prec_str[sample2id[sv.sample]] += (sv.sv->imprecise ? "I" : "P");
 			incomplete_ass_str[sample2id[sv.sample]] += (sv.sv->incomplete_assembly() ? "T" : "F");
 		}
 		for (int i = 0; i < n_samples; i++) {
