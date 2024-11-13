@@ -2,10 +2,12 @@
 #define SW_UTILS_H
 
 #include <iostream>
+#include <mutex>
 
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "simd_macros.h"
+#include "sam_utils.h"
 #include "types.h"
 #include "utils.h"
 
@@ -456,7 +458,6 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
     std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(ref_lh_cstr, 0, ref_remap_lh_len, (char*) left_part.c_str(), aligner);
 	std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(ref_rh_cstr, 0, ref_remap_rh_len, (char*) right_part.c_str(), aligner);
 
-	StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment left_part_aln, right_part_aln;
 	int min_size = INT32_MAX;
 	for (StripedSmithWaterman::Alignment& _lh_aln : left_part_alns) {
@@ -483,6 +484,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, left_part_aln.cigar_string);
 	sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, right_part_aln.cigar_string);
 
+	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment full_aln_lh, full_aln_rh;
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_lh_start, ref_remap_lh_len, filter, &full_aln_lh, 0);
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_rh_start, ref_remap_rh_len, filter, &full_aln_rh, 0);
@@ -663,6 +665,115 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 	}
 
     return svs;
+}
+
+breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t contig_len, consensus_t* leftmost_consensus, consensus_t* rightmost_consensus, 
+	suffix_prefix_aln_t& spa, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
+
+	std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
+	if (leftmost_consensus->left_clipped) rc(lm_seq);
+	else rc(rm_seq);
+	std::string full_junction_seq = lm_seq + rm_seq.substr(spa.overlap);
+
+	hts_pos_t ref_remap_lh_start = leftmost_consensus->breakpoint - full_junction_seq.length();
+	if (ref_remap_lh_start < 0) ref_remap_lh_start = 0;
+	hts_pos_t ref_remap_lh_end = leftmost_consensus->breakpoint + full_junction_seq.length();
+	if (ref_remap_lh_end > contig_len) ref_remap_lh_end = contig_len;
+
+	hts_pos_t ref_remap_rh_start = rightmost_consensus->breakpoint - full_junction_seq.length();
+	if (ref_remap_rh_start < 0) ref_remap_rh_start = 0;
+	hts_pos_t ref_remap_rh_end = rightmost_consensus->breakpoint + full_junction_seq.length();
+	if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
+
+	if (!leftmost_consensus->left_clipped) {
+		int* fwd_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_lh_start, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
+		rc(full_junction_seq);
+		int* revc_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
+
+		int max_score = 0, best_i = 0, best_j = 0;
+		for (int i = min_clip_len; i < full_junction_seq.length()-min_clip_len; i++) {
+			int fwd_prefix_score = fwd_prefix_scores[i-1]; // score of the best aln of full_junction_seq[0..i-1]
+			for (int j = i; j <= full_junction_seq.length()-min_clip_len; j++) {
+				int rev_prefix_score = revc_prefix_scores[full_junction_seq.length()-j-1]; // score of the best aln of RC of full_junction_seq[j..junction_seq.length()-1]
+				if (fwd_prefix_score + rev_prefix_score >= max_score) {
+					max_score = fwd_prefix_score + rev_prefix_score;
+					best_i = i, best_j = j;
+				}
+			}
+		}
+
+		free(fwd_prefix_scores);
+		free(revc_prefix_scores);
+
+		if (max_score == 0) return NULL;
+
+		rc(full_junction_seq);
+		std::string left_part = full_junction_seq.substr(0, best_i);
+		std::string middle_part = full_junction_seq.substr(best_i, best_j-best_i);
+		std::string right_part = full_junction_seq.substr(best_j);
+		rc(right_part);
+
+		std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(contig_seq, ref_remap_lh_start, ref_remap_lh_end-ref_remap_lh_start, (char*) left_part.c_str(), aligner);
+		std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(contig_seq, ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, (char*) right_part.c_str(), aligner);
+		StripedSmithWaterman::Alignment left_part_aln = left_part_alns[left_part_alns.size()-1], right_part_aln = right_part_alns[0];
+
+		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, "");
+		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, "");
+
+		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_end, end = ref_remap_rh_start + right_part_aln.ref_end;
+		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '-');
+	} else {
+
+		rc(full_junction_seq);
+		std::string full_junction_seq_rev = std::string(full_junction_seq.rbegin(), full_junction_seq.rend());
+		char* ref_remap_lh_rev = new char[ref_remap_lh_end-ref_remap_lh_start+1];
+		for (int i = 0; i < ref_remap_lh_end-ref_remap_lh_start; i++) {
+			ref_remap_lh_rev[i] = std::toupper(contig_seq[ref_remap_lh_end-1-i]);
+		} ref_remap_lh_rev[ref_remap_lh_end-ref_remap_lh_start] = '\0';
+		int* revc_suffix_scores = smith_waterman_gotoh(ref_remap_lh_rev, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
+		
+		rc(full_junction_seq);
+		full_junction_seq_rev = std::string(full_junction_seq.rbegin(), full_junction_seq.rend());
+		char* ref_remap_rh_rev = new char[ref_remap_rh_end-ref_remap_rh_start+1];
+		for (int i = 0; i < ref_remap_rh_end-ref_remap_rh_start; i++) {
+			ref_remap_rh_rev[i] = std::toupper(contig_seq[ref_remap_rh_end-1-i]);
+		} ref_remap_rh_rev[ref_remap_rh_end-ref_remap_rh_start] = '\0';
+		int* fwd_suffix_scores = smith_waterman_gotoh(ref_remap_rh_rev, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
+
+		int max_score = 0, best_i = 0, best_j = 0;
+		for (int i = min_clip_len; i < full_junction_seq.length()-min_clip_len; i++) {
+			int revc_suffix_score = revc_suffix_scores[i-1]; // score of the best aln of the RC of full_junction_seq[i..n]
+			for (int j = i; j <= full_junction_seq.length()-min_clip_len; j++) {
+				int fwd_suffix_score = fwd_suffix_scores[full_junction_seq.length()-j-1]; // score of the best aln of [j..junction_seq.length()-1]
+				if (fwd_suffix_score + revc_suffix_score > max_score) {
+					max_score = fwd_suffix_score + revc_suffix_score;
+					best_i = i, best_j = j;
+				}
+			}
+		}
+
+		free(fwd_suffix_scores);
+		free(revc_suffix_scores);
+		delete[] ref_remap_lh_rev;
+		delete[] ref_remap_rh_rev;
+
+		if (max_score == 0) return NULL;
+
+		std::string left_part = full_junction_seq.substr(0, best_i);
+		rc(left_part);
+		std::string middle_part = full_junction_seq.substr(best_i, best_j-best_i);
+		std::string right_part = full_junction_seq.substr(best_j);
+
+		std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(contig_seq, ref_remap_lh_start, ref_remap_lh_end-ref_remap_lh_start, (char*) left_part.c_str(), aligner);
+		std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(contig_seq, ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, (char*) right_part.c_str(), aligner);
+		StripedSmithWaterman::Alignment left_part_aln = left_part_alns[left_part_alns.size()-1], right_part_aln = right_part_alns[0];
+
+		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, "");
+		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, "");
+
+		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_begin-1, end = ref_remap_rh_start + right_part_aln.ref_begin-1;
+		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '+');
+	}
 }
 
 #endif // SW_UTILS_H

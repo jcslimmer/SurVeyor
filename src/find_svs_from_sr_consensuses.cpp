@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cstddef>
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 #include <htslib/tbx.h>
@@ -230,18 +231,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
 			consensus_t* leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
 			consensus_t* rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
-			sv_t::anchor_aln_t* left_anchor_aln, *right_anchor_aln;
-			char dir;
-			if (c1_consensus->left_clipped) {
-				left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->breakpoint, leftmost_consensus->end, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
-				right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->breakpoint, rightmost_consensus->end, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
-				dir = '-';
-			} else {
-				left_anchor_aln = new sv_t::anchor_aln_t(leftmost_consensus->start, leftmost_consensus->breakpoint, leftmost_consensus->end-leftmost_consensus->start, 0, 0, "");
-				right_anchor_aln = new sv_t::anchor_aln_t(rightmost_consensus->start, rightmost_consensus->breakpoint, rightmost_consensus->end-rightmost_consensus->start, 0, 0, "");
-				dir = '+';
+			breakend_t* bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
+			if (bnd->end-bnd->start < config.min_sv_size) {
+				delete bnd;
+				continue;
 			}
-			breakend_t* bnd = new breakend_t(contig_name, leftmost_consensus->breakpoint, rightmost_consensus->breakpoint, "", leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, dir);
 			bnd->overlap = ps.spa.overlap;
 			bnd->mismatch_rate = ps.spa.mismatch_rate();
 			bnd->disc_pairs_lf = bnd->disc_pairs_rf = ps.dp_cluster->count;
@@ -302,6 +296,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0, 0, "");
 				sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0, 0, "");
 				breakend_t* bnd = new breakend_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '-');
+				if (bnd->end-bnd->start < config.min_sv_size) {
+					delete bnd;
+					continue;
+				}
 				bnd->disc_pairs_lf = bnd->disc_pairs_rf = c->count;
 				bnd->disc_pairs_lf_high_mapq = c->la_confident_count;
 				bnd->disc_pairs_rf_high_mapq = c->ra_confident_count;
@@ -335,6 +333,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					std::swap(left_anchor_aln, right_anchor_aln);
 				}
 				breakend_t* bnd = new breakend_t(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '+');
+				if (bnd->end-bnd->start < config.min_sv_size) {
+					delete bnd;
+					continue;
+				}
 				bnd->disc_pairs_lf = bnd->disc_pairs_rf = c->count;
 				bnd->disc_pairs_lf_high_mapq = c->la_confident_count;
 				bnd->disc_pairs_rf_high_mapq = c->ra_confident_count;
