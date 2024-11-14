@@ -176,7 +176,7 @@ if cmd_args.command == 'call':
 
     Classifier.run_classifier(cmd_args.workdir + "/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
 
-    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "calls-genotyped.vcf.gz", sample_name)
+    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
 
 elif cmd_args.command == 'genotype':
