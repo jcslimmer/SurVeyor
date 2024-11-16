@@ -38,20 +38,21 @@ common_parser.add_argument('--min-diff-hsr', type=int, default=3, help='Minimum 
 common_parser.add_argument('--max-trans-size', type=int, default=10000, help='Maximum size of the transpositions which '
                                                                           'SurVeyor will predict when only one side is available.')
 common_parser.add_argument('--min-stable-mapq', type=int, default=20, help='Minimum MAPQ for a stable read.')
-common_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
 
 call_parser = subparsers.add_parser('call', parents=[common_parser], help='Call SVs denovo.')
 call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
+call_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
+call_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
+genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
-genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
 genotype_parser.add_argument('ml_model', help='Path to the ML model to be used for genotyping.')
 
 cmd_args = parser.parse_args()
@@ -169,6 +170,10 @@ if cmd_args.command == 'call':
 
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
+
+    if cmd_args.generate_training_data:
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-raw.vcf.gz %s/training-data.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        exec(genotype_cmd)
 
     if not cmd_args.ml_model:
         print("No model provided. Skipping filtering and genotyping.")

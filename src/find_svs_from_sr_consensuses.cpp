@@ -232,7 +232,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			consensus_t* leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
 			consensus_t* rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
 			breakend_t* bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
-			if (bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
 				delete bnd;
 				continue;
 			}
