@@ -40,7 +40,7 @@ class Features:
 
     regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
 
-    regt_dp_features_names = ['DP1', 'DP2', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+    regt_dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_denovo_feature_names(model_name):
         return Features.shared_features_names + Features.denovo_features_names
@@ -423,26 +423,36 @@ class Features:
 
         dp1 = Features.get_number_value(record.samples[0], 'DP1', 0)
         dp2 = Features.get_number_value(record.samples[0], 'DP2', 0)
+        dp1hq = Features.get_number_value(record.samples[0], 'DP1HQ', 0)
+        dp2hq = Features.get_number_value(record.samples[0], 'DP2HQ', 0)
         if svtype_str == "DEL":
             min_is_to_become_disc = int(max(0, max_is-svlen))
             min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
             max_disc_pairs = stats['max_pairs_crossing_gap'][str(min_is_to_become_disc)]
             dp1_scaled = Features.normalise(dp1, min_disc_pairs, max_disc_pairs)
             dp2_scaled = Features.normalise(dp2, min_disc_pairs, max_disc_pairs)
+            dp1hq_scaled = Features.normalise(dp1hq, min_disc_pairs, max_disc_pairs)
+            dp2hq_scaled = Features.normalise(dp2hq, min_disc_pairs, max_disc_pairs)
         elif svtype_str == "INS" and source_str in ("DE_NOVO_ASSEMBLY", "REFERENCE_GUIDED_ASSEMBLY"):
             min_inslen = int(min(max_is, svinslen))
             min_disc_pairs = stats['min_disc_pairs_by_insertion_size'][str(min_inslen)]
             max_disc_pairs = stats['max_disc_pairs_by_insertion_size'][str(min_inslen)]
             dp1_scaled = Features.normalise(dp1, min_disc_pairs, max_disc_pairs)
             dp2_scaled = Features.normalise(dp2, min_disc_pairs, max_disc_pairs)
+            dp1hq_scaled = Features.normalise(dp1hq, min_disc_pairs, max_disc_pairs)
+            dp2hq_scaled = Features.normalise(dp2hq, min_disc_pairs, max_disc_pairs)
         else:
             dp1_scaled = dp1/median_depth
             dp2_scaled = dp2/median_depth
+            dp1hq_scaled = dp1hq/median_depth
+            dp2hq_scaled = dp2hq/median_depth
 
         features['DP1'] = dp1_scaled
         features['DP2'] = dp2_scaled
-        features['DP1_HQ_RATIO'] = Features.get_number_value(record.samples[0], 'DP1HQ', 0, max(1, dp1))
-        features['DP2_HQ_RATIO'] = Features.get_number_value(record.samples[0], 'DP2HQ', 0, max(1, dp2))
+        features['DP1HQ'] = dp1hq_scaled
+        features['DP2HQ'] = dp2hq_scaled
+        features['DP1_HQ_RATIO'] = dp1hq/max(1, dp1)
+        features['DP2_HQ_RATIO'] = dp2hq/max(1, dp2)
         features['DP1MQ'] = Features.get_number_value(record.samples[0], 'DP1MQ', 0)
         features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DP2MQ', 0)
         features['DPLANM'] = Features.get_number_value(record.samples[0], 'DPLANM', 0)
@@ -452,8 +462,8 @@ class Features:
 
         cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
         features['CP1'], features['CP2'], features['CP3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
-        features['PTNR1'] = dp1/max(1, cp[0])
-        features['PTNR2'] = dp2/max(1, cp[2])
+        features['PTNR1'] = dp1/max(1, dp1+cp[0])
+        features['PTNR2'] = dp2/max(1, dp2+cp[2])
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
