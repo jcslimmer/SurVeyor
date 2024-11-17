@@ -151,7 +151,7 @@ struct sv_t {
     std::string id;
     std::string chr;
     hts_pos_t start, end;
-    std::string ins_seq;
+    std::string ins_seq, inferred_ins_seq;
     int prefix_mh_len = 0, suffix_mh_len = 0;
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;

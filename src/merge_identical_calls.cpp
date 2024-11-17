@@ -1,11 +1,9 @@
-#include <iostream>
 #include <unordered_map>
 
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 
 #include "types.h"
-#include "sam_utils.h"
 #include "vcf_utils.h"
 
 // if store_in_rc, the new 2SR entry will be in rc_sv, otherwise in lc_sv

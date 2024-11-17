@@ -1,8 +1,6 @@
 #ifndef GUIDED_REFERENCE_ASSEMBLE_H
 #define GUIDED_REFERENCE_ASSEMBLE_H
 
-#include <iostream>
-
 #include "../libs/ssw_cpp.h"
 #include "utils.h"
 #include "sam_utils.h"
@@ -476,6 +474,11 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 		insertion->suffix_cov_start -= ins_seq_start;
 		if (insertion->suffix_cov_start < 0) insertion->suffix_cov_start = 0;
 		insertion->suffix_cov_end -= ins_seq_start;
+	}
+
+	if (insertion->prefix_cov_end < insertion->suffix_cov_start) {
+		insertion->inferred_ins_seq = insertion->ins_seq;
+		insertion->ins_seq = insertion->ins_seq.substr(0, insertion->prefix_cov_end) + "-" + insertion->ins_seq.substr(insertion->suffix_cov_start);
 	}
 
 	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;

@@ -4,21 +4,15 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
-#include <set>
-#include <list>
 #include <algorithm>
 #include <queue>
 #include <unistd.h>
-#include <climits>
-#include <random>
-#include <cassert>
 
 #include <htslib/sam.h>
 #include <htslib/kseq.h>
 #include <vector>
 
 #include "../libs/cptl_stl.h"
-#include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/IntervalTree.h"
 #include "dc_remapper.h"

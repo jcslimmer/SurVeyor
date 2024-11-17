@@ -56,12 +56,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int sv_end = sv->end+1;
     bcf_update_info_int32(out_hdr, sv->vcf_entry, "END", &sv_end, 1);
 
-    int svlen = sv->svlen();
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVLEN", &svlen, 1);
-
-    if (!sv->ins_seq.empty()) {
-        int svinslen = sv->ins_seq.length();
-        bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVINSLEN", &svinslen, 1);
+    if (sv->ins_seq.find("-") == std::string::npos) {
+        if (!sv->ins_seq.empty()) {
+            int svinslen = sv->ins_seq.length();
+            bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVINSLEN", &svinslen, 1);
+        }
+        int svlen = sv->svlen();
+        bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVLEN", &svlen, 1);
     }
 
     base_frequencies_t left_anchor_base_freqs = get_base_frequencies(chr_seq+sv->left_anchor_aln->start, sv->left_anchor_aln->end-sv->left_anchor_aln->start);
@@ -1094,7 +1095,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     delete[] alt_bp1_seq;
     std::vector<bam1_t*> alt_bp2_better_seqs_consistent = find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, alt_bp2_consensus_seq, alt_bp2_avg_score);
     delete[] alt_bp2_seq;
-    
+
     char* ref_bp1_seq = new char[ref_bp1_len+1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
     ref_bp1_seq[ref_bp1_len] = 0;
@@ -1126,6 +1127,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         alt_bp2_consensus_seq = alt_bp2_consensus->sequence;
         delete alt_bp2_consensus;
     }
+
     ins->regenotyping_info.ext_alt_consensus_length = alt_bp1_consensus_seq.length() + alt_bp2_consensus_seq.length();
 
     ref1_aln.Clear();
