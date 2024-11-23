@@ -18,7 +18,7 @@ class Classifier:
                 else:
                     record.samples[0]['GT'] = (None, None)
                 vcf_writer.write(record)
-            elif "PASS" in record.filter:
+            else:
                 vcf_writer.write(record)
         vcf_writer.close()
 
@@ -33,10 +33,10 @@ class Classifier:
                 model_file = os.path.join(model_dir, "denovo", "yes_or_no", model_name + '.model')
             else:
                 model_file = os.path.join(model_dir, "regt", "yes_or_no", model_name + '.model')
-            
+
             if model_name.startswith("INV"):
                 continue
-            
+
             classifier = joblib.load(model_file)
             predictions = classifier.predict(test_data[model_name])
             probs = classifier.predict_proba(test_data[model_name])

@@ -380,6 +380,10 @@ void add_genotyping_tags(bcf_hdr_t* hdr) {
 	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,sbc_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "HARD_FILTERS");
+	const char* hf_tag = "##INFO=<ID=HARD_FILTERS,Number=.,Type=String,Description=\"PASS or not according to hard filters.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,hf_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
     const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
@@ -599,6 +603,10 @@ void add_genotyping_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS");
     const char* exrs_tag = "##FORMAT=<ID=EXRS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the reference.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
+	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));
 }
 
 void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for_gt = false) {

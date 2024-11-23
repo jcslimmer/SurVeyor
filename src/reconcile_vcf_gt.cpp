@@ -69,8 +69,8 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
         if (it != gt_records.end()) {
             bcf1_t* gt_record = it->second.record;
             bcf_unpack(gt_record, BCF_UN_ALL);
-
-            // if SVTYPE of gt_record is DUP continue
+            
+            // if SVTYPE of gt_record is DUP and SVTYPE of base_record is INS, add GT_AS_DUP tag
             if (get_sv_type(gt_hdr, gt_record) == "DUP" && get_sv_type(base_hdr, b) == "INS") {
                 std::stringstream dup_str; 
                 dup_str << bcf_seqname(gt_hdr, gt_record) << ":" << std::to_string(gt_record->pos) << "-" << get_sv_end(gt_hdr, gt_record);
@@ -121,6 +121,20 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
                 }
             }
 
+            bcf_update_filter(out_hdr, b, NULL, 0);
+            if (gt_record->d.n_flt > 0) {
+                for (int i = 0; i < gt_record->d.n_flt; i++) {
+                    bcf_add_filter(out_hdr, b, gt_record->d.flt[i]);
+                }
+            }
+
+            // copy INFO/HARD_FILTERS from gt_record to b
+            int n_hard_filters = 0;
+            char* hard_filters = NULL;
+            if (bcf_get_info_string(gt_hdr, gt_record, "HARD_FILTERS", &hard_filters, &n_hard_filters) > 0) {
+                bcf_update_info_string(out_hdr, b, "HARD_FILTERS", hard_filters);
+            }
+            free(hard_filters);
         }
 
         if (bcf_write(out_fp, out_hdr, b) < 0) {

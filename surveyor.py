@@ -132,6 +132,10 @@ else:
 
 if cmd_args.command == 'call':
 
+    if not cmd_args.ml_model and not cmd_args.generate_training_data:
+        print("At least one of --ml-model or --generate-training-data must be provided.")
+        exit(0)
+
     reads_categorizer()
 
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
@@ -168,7 +172,7 @@ if cmd_args.command == 'call':
     else:
         vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz"
 
-    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     exec(genotype_cmd)
 
     if cmd_args.generate_training_data:
@@ -179,7 +183,7 @@ if cmd_args.command == 'call':
         print("No model provided. Skipping filtering and genotyping.")
         exit(0)
 
-    Classifier.run_classifier(cmd_args.workdir + "/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
