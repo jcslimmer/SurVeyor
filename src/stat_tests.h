@@ -190,7 +190,7 @@ int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum)
 	return best_start;
 }
 
-void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion_t*> deletions, open_samFile_t* bam_file) {
+void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion_t*> deletions, open_samFile_t* bam_file, config_t& config) {
 
 	if (deletions.empty()) return;
 
@@ -228,7 +228,10 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 		// if the pair is discordant and it overlaps left_anchor_aln, increase l_cluster_region_disc_pair
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_outward(read)) {
 			for (int i = curr_pos; i < deletions.size() && deletions[i]->left_anchor_aln->start <= bam_endpos(read); i++) {
-				if (read->core.pos <= deletions[i]->left_anchor_aln->end) deletions[i]->l_cluster_region_disc_pairs++;
+				if (read->core.pos <= deletions[i]->left_anchor_aln->end) {
+					deletions[i]->l_cluster_region_disc_pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) deletions[i]->l_cluster_region_disc_pairs_high_mapq++;
+				}
 				// TODO: try to remap the mate instead?
 			}
 		}
@@ -245,7 +248,10 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_outward(read)) {
 			for (int i = curr_pos; i < deletions.size() && deletions[i]->right_anchor_aln->start <= bam_endpos(read); i++) {
-				if (read->core.pos <= deletions[i]->right_anchor_aln->end) deletions[i]->r_cluster_region_disc_pairs++;
+				if (read->core.pos <= deletions[i]->right_anchor_aln->end) {
+					deletions[i]->r_cluster_region_disc_pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) deletions[i]->r_cluster_region_disc_pairs_high_mapq++;
+				}
 			}
 		}
 	}
@@ -258,7 +264,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<deletion
 	}
 }
 
-void calculate_cluster_region_disc(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_cluster_region_disc(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 
 	if (duplications.empty()) return;
 
@@ -289,6 +295,7 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 			for (int i = curr_pos; i < duplications.size() && duplications[i]->left_anchor_aln->start <= bam_endpos(read); i++) {
 				if (read->core.pos <= duplications[i]->left_anchor_aln->end) {
 					duplications[i]->l_cluster_region_disc_pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) duplications[i]->l_cluster_region_disc_pairs_high_mapq++;
 				}
 			}
 		}
@@ -312,7 +319,10 @@ void calculate_cluster_region_disc(std::string contig_name, std::vector<duplicat
 
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_long(read, stats.max_is)) {
 			for (int i = curr_pos; i < duplications.size() && duplications[i]->right_anchor_aln->start <= bam_endpos(read); i++) {
-				if (read->core.pos <= duplications[i]->right_anchor_aln->end) duplications[i]->r_cluster_region_disc_pairs++;
+				if (read->core.pos <= duplications[i]->right_anchor_aln->end) {
+					duplications[i]->r_cluster_region_disc_pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) duplications[i]->r_cluster_region_disc_pairs_high_mapq++;
+				}
 			}
 		}
 	}
@@ -503,25 +513,33 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
     bam_destroy1(read);
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 
 	if (svs.empty()) return;
 
-	std::vector<std::pair<hts_pos_t, int*> > bkp_with_conc_pairs_count;
+	struct conc_pairs_count_t {
+		hts_pos_t pos;
+		int* conc_pairs_ptr, *conc_pairs_highmq_ptr;
+
+		conc_pairs_count_t(hts_pos_t pos, int* conc_pairs_ptr, int* conc_pairs_highmq_ptr) :
+			pos(pos), conc_pairs_ptr(conc_pairs_ptr), conc_pairs_highmq_ptr(conc_pairs_highmq_ptr) {}
+	};
+
+	std::vector<conc_pairs_count_t> bkp_with_conc_pairs_count;
 	for (sv_t* sv : svs) {
-		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->conc_pairs_lbp)});
-		bkp_with_conc_pairs_count.push_back({(sv->start+sv->end)/2, &(sv->conc_pairs_midp)});
-		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->conc_pairs_rbp)});
+		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->conc_pairs_lbp), &(sv->conc_pairs_lbp_high_mapq)});
+		bkp_with_conc_pairs_count.push_back({(sv->start+sv->end)/2, &(sv->conc_pairs_midp), &(sv->conc_pairs_midp_high_mapq)});
+		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->conc_pairs_rbp), &(sv->conc_pairs_rbp_high_mapq)});
 	}
 
-	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const std::pair<hts_pos_t, int*>& p1, const std::pair<hts_pos_t, int*>& p2) {
-		return p1.first < p2.first;
+	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const conc_pairs_count_t& p1, const conc_pairs_count_t& p2) {
+		return p1.pos < p2.pos;
 	});
 
 	std::vector<char*> regions;
 	for (auto& b : bkp_with_conc_pairs_count) {
 		std::stringstream ss;
-		ss << contig_name << ":" << std::max(hts_pos_t(1), b.first-stats.max_is) << "-" << b.first;
+		ss << contig_name << ":" << std::max(hts_pos_t(1), b.pos-stats.max_is) << "-" << b.pos;
 		char* region = strdup(ss.str().c_str());
 		regions.push_back(region);
 	}
@@ -530,16 +548,17 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		while (curr_pos < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[curr_pos].first < read->core.pos) curr_pos++;
+		while (curr_pos < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[curr_pos].pos < read->core.pos) curr_pos++;
 
 		if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
 		if (!is_samechr(read) || is_samestr(read) || bam_is_rev(read) || read->core.isize <= 0 || read->core.isize > stats.max_is) continue;
 
 		hts_pos_t start = read->core.pos + read->core.l_qseq/2;
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
-		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].first <= end; i++) {
-			if (start <= bkp_with_conc_pairs_count[i].first && bkp_with_conc_pairs_count[i].first <= end) {
-				(*bkp_with_conc_pairs_count[i].second)++;
+		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].pos <= end; i++) {
+			if (start <= bkp_with_conc_pairs_count[i].pos && bkp_with_conc_pairs_count[i].pos <= end) {
+				(*bkp_with_conc_pairs_count[i].conc_pairs_ptr)++;
+				if (read->core.qual >= config.high_confidence_mapq) (*bkp_with_conc_pairs_count[i].conc_pairs_highmq_ptr)++;
 			}
 		}
 	}
@@ -552,7 +571,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (deletions.empty()) return;
 	std::vector<sv_t*> svs(deletions.begin(), deletions.end());
-	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
 
 	if (find_disc_pairs) {
 		std::vector<char*> regions;
@@ -610,10 +629,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		}
 	}
 }
-void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
 	if (insertions.empty()) return;
 	std::vector<sv_t*> svs(insertions.begin(), insertions.end());
-	calculate_ptn_ratio(contig_name, svs, bam_file, stats);
+	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
 }
 void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inversions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (inversions.empty()) return;
@@ -652,8 +671,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 				inversion_t* inv = bkp_with_conc_pairs_count[i].second;
 				if (start <= inv->start && end <= inv->end) {
 					inv->conc_pairs_lbp++;
+					if (read->core.qual >= config.high_confidence_mapq) inv->conc_pairs_lbp_high_mapq++;
 				} else if (start >= inv->start && end >= inv->end) {
 					inv->conc_pairs_rbp++;
+					if (read->core.qual >= config.high_confidence_mapq) inv->conc_pairs_rbp_high_mapq++;
 				}
 			}
 		}

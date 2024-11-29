@@ -4,25 +4,20 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <unordered_set>
-#include <chrono>
 
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
 #include "htslib/faidx.h"
-#include "htslib/tbx.h"
 
 #include "sw_utils.h"
 #include "types.h"
 #include "utils.h"
 #include "sam_utils.h"
-#include "reference_guided_assembly.h"
 #include "assemble.h"
 #include "extend_1sr_consensus.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
-#include "../libs/ssw.h"
 #include "vcf_utils.h"
 #include "stat_tests.h"
 
@@ -181,9 +176,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSLHQ", &(sv->l_cluster_region_disc_pairs_high_mapq), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSRHQ", &(sv->r_cluster_region_disc_pairs_high_mapq), 1);
     if (sv->svtype() != "DUP") {
         int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
+        int cphq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CPHQ", cphq, 3);
     }
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", &(sv->regenotyping_info.alt_ext_reads), 1);
@@ -557,7 +556,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats, true);
-    calculate_cluster_region_disc(contig_name, dels, bam_file);
+    calculate_cluster_region_disc(contig_name, dels, bam_file, config);
 }
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
@@ -983,7 +982,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
-    calculate_cluster_region_disc(contig_name, dups, bam_file, stats);
+    calculate_cluster_region_disc(contig_name, dups, bam_file, config, stats);
 }
 
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
@@ -1274,6 +1273,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
             } else {
                 insertions[i]->l_cluster_region_disc_pairs++;
+                if (read->core.qual >= config.high_confidence_mapq) insertions[i]->l_cluster_region_disc_pairs_high_mapq++;
             }
         }
     }
@@ -1323,6 +1323,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
             } else {
                 insertions[i]->r_cluster_region_disc_pairs++;
+                if (read->core.qual >= config.high_confidence_mapq) insertions[i]->r_cluster_region_disc_pairs_high_mapq++;
             }
         }
     }
@@ -1357,9 +1358,9 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
-    calculate_ptn_ratio(contig_name, inss, bam_file, stats);
+    calculate_ptn_ratio(contig_name, inss, bam_file, config, stats);
     find_discordant_pairs(contig_name, inss, bam_file, stats, mateseqs_w_mapq[contig_id]);
-    
+
     release_mates(contig_id);
 }
 

@@ -222,9 +222,15 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* disc_pairs_surr_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING,Number=2,Type=Integer,Description=\"Discordant pairs around the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_tag, &len));
-\
+
+	const char* disc_pairs_surr_hmapq_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING_HIGHMAPQ,Number=2,Type=Integer,Description=\"Discordant pairs around the SV with high MAPQ.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_hmapq_tag, &len));
+
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=3,Type=Integer,Description=\"Concordant pairs crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
+
+	const char* conc_pairs_hmapq_tag = "##INFO=<ID=CONC_PAIRS_HIGHMAPQ,Number=3,Type=Integer,Description=\"Concordant pairs with high MAPQ crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_hmapq_tag, &len));
 
 	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_tag, &len));
@@ -580,9 +586,21 @@ void add_genotyping_tags(bcf_hdr_t* hdr) {
     const char* dpsr_tag = "##FORMAT=<ID=DPSR,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsr_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSLHQ");
+	const char* dpslhq_tag = "##FORMAT=<ID=DPSLHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left breakpoint of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpslhq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSRHQ");
+	const char* dpsrhq_tag = "##FORMAT=<ID=DPSRHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsrhq_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
     const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "CPHQ");
+	const char* cphq_tag = "##FORMAT=<ID=CPHQ,Number=3,Type=Integer,Description=\"Number of high-quality concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cphq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
     const char* axr_tag = "##FORMAT=<ID=AXR,Number=1,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus.\">";
@@ -821,8 +839,12 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			}
 			int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
 			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
+			int disc_pairs_surr_hq[] = {del->l_cluster_region_disc_pairs_high_mapq, del->r_cluster_region_disc_pairs_high_mapq};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", disc_pairs_surr_hq, 2);
 			int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
 			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
+			int conc_pairs_hq[] = {del->conc_pairs_lbp_high_mapq, del->conc_pairs_midp_high_mapq, del->conc_pairs_rbp_high_mapq};
+			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
 			int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
 			bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 		}
@@ -831,6 +853,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		if (!for_gt) {
 			int disc_pairs_surr[] = {dup->l_cluster_region_disc_pairs, dup->r_cluster_region_disc_pairs};
 			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
+			int disc_pairs_surr_hq[] = {dup->l_cluster_region_disc_pairs_high_mapq, dup->r_cluster_region_disc_pairs_high_mapq};
+			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", disc_pairs_surr_hq, 2);
 		}
 	} else if (sv->svtype() == "INS") {
 		insertion_t* ins = (insertion_t*) sv;
@@ -1275,11 +1299,28 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
+	bcf_get_info_int32(hdr, b, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", &data, &len);
+	if (len > 0) {
+		sv->l_cluster_region_disc_pairs_high_mapq = data[0];
+		sv->r_cluster_region_disc_pairs_high_mapq = data[1];
+	}
+
+	data = NULL;
+	len = 0;
 	bcf_get_info_int32(hdr, b, "CONC_PAIRS", &data, &len);
 	if (len > 0) {
 		sv->conc_pairs_lbp = data[0];
 		sv->conc_pairs_midp = data[1];
 		sv->conc_pairs_rbp = data[2];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_info_int32(hdr, b, "CONC_PAIRS_HIGHMAPQ", &data, &len);
+	if (len > 0) {
+		sv->conc_pairs_lbp_high_mapq = data[0];
+		sv->conc_pairs_midp_high_mapq = data[1];
+		sv->conc_pairs_rbp_high_mapq = data[2];
 	}
 
 	f_data = NULL;

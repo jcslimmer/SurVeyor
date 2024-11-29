@@ -56,7 +56,7 @@ void size_and_depth_filtering_del(int id, std::string contig_name) {
     depth_filter_del(contig_name, deletions, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size);
     calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats);
-    calculate_cluster_region_disc(contig_name, deletions, bam_file);
+    calculate_cluster_region_disc(contig_name, deletions, bam_file, config);
 }
 
 void size_and_depth_filtering_dup(int id, std::string contig_name) {
@@ -66,7 +66,7 @@ void size_and_depth_filtering_dup(int id, std::string contig_name) {
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
     mtx.unlock();
     depth_filter_dup(contig_name, duplications, bam_file, config, stats);
-    calculate_cluster_region_disc(contig_name, duplications, bam_file, stats);
+    calculate_cluster_region_disc(contig_name, duplications, bam_file, config, stats);
 
 }
 
@@ -83,7 +83,7 @@ void size_and_depth_filtering_ins(int id, std::string contig_name) {
             assembled_insertions.push_back(ins);
         }
     }
-    calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, stats);
+    calculate_ptn_ratio(contig_name, assembled_insertions, bam_file, config, stats);
 }
 
 void size_and_depth_filtering_inv(int id, std::string contig_name) {
