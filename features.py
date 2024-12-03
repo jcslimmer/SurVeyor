@@ -28,17 +28,17 @@ class Features:
                       'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
     
     regt_shared_features_names = \
-            ['IP', 'AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
+            ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
              'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
              'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
-             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF',
-             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ', 'DPSL', 'DPSR', 'CP1', 'CP2', 'CP3',
-             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
+             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ',
+             'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ',
+             'CP1', 'CP2', 'CP3', 'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
 
-    regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_KSPVAL_HQ', 'FMT_SIZE_NORM', 'FMT_SIZE_NORM_HQ']
+    regt_stat_test_features_names = ['FMT_KSPVAL', 'FMT_SIZE_NORM']
 
     regt_dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
@@ -92,7 +92,7 @@ class Features:
                 svtype_str += "_LARGE"
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
             svtype_str += "_LARGE"
-        
+
         if Features.get_number_value(record.samples[0], 'EXL', 0) == 0:
             svtype_str += "_IMPRECISE"
         return svtype_str
@@ -324,7 +324,6 @@ class Features:
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
         features['IMPRECISE'] = True if "IMPRECISE" in record.info else False
-        features['IP'] = True if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 else False
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         arc1 = Features.get_number_value(record.samples[0], 'ARC1', 0)
@@ -376,27 +375,28 @@ class Features:
         features['RR2_OVER_AR2'] = rr2/max(1, ar2+rr2)
         features['RRC2_OVER_ARC2'] = rrc2/max(1, arc2+rrc2)
 
-        mdlf = Features.get_number_value(record.samples[0], 'MDLF', 0)
-        features['MDLF'] = Features.normalise(mdlf, min_depth, max_depth)
-        mdsp = Features.get_number_value(record.samples[0], 'MDSP', 0)
-        features['MDSP'] = Features.normalise(mdsp, min_depth, max_depth)
-        mdsf = Features.get_number_value(record.samples[0], 'MDSF', 0)
-        features['MDSF'] = Features.normalise(mdsf, min_depth, max_depth)
-        mdrf = Features.get_number_value(record.samples[0], 'MDRF', 0)
-        features['MDRF'] = Features.normalise(mdrf, min_depth, max_depth)
+        mdlf = Features.normalise(Features.get_number_value(record.samples[0], 'MDLF', 0), min_depth, max_depth)
+        features['MDLF'] = mdlf
+        mdsp = Features.normalise(Features.get_number_value(record.samples[0], 'MDSP', 0), min_depth, max_depth)
+        features['MDSP'] = mdsp
+        mdsf = Features.normalise(Features.get_number_value(record.samples[0], 'MDSF', 0), min_depth, max_depth)
+        features['MDSF'] = mdsf
+        mdrf = Features.normalise(Features.get_number_value(record.samples[0], 'MDRF', 0), min_depth, max_depth)
+        features['MDRF'] = mdrf
+
         mdlc = Features.get_number_value(record.samples[0], 'MDLC', 0)
         features['MDLC'] = Features.normalise(mdlc, min_depth, max_depth)
         mdrc = Features.get_number_value(record.samples[0], 'MDRC', 0)
         features['MDRC'] = Features.normalise(mdrc, min_depth, max_depth)
 
-        mdlfhq = Features.get_number_value(record.samples[0], 'MDLFHQ', 0)
-        features['MDLFHQ'] = Features.normalise(mdlfhq, min_depth, max_depth)
-        mdsphq = Features.get_number_value(record.samples[0], 'MDSPHQ', 0)
-        features['MDSPHQ'] = Features.normalise(mdsphq, min_depth, max_depth)
-        mdsfhq = Features.get_number_value(record.samples[0], 'MDSFHQ', 0)
-        features['MDSFHQ'] = Features.normalise(mdsfhq, min_depth, max_depth)
-        mdrfhq = Features.get_number_value(record.samples[0], 'MDRFHQ', 0)
-        features['MDRFHQ'] = Features.normalise(mdrfhq, min_depth, max_depth)
+        mdlfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDLFHQ', 0), min_depth, max_depth)
+        features['MDLFHQ'] = mdlfhq
+        mdsphq = Features.normalise(Features.get_number_value(record.samples[0], 'MDSPHQ', 0), min_depth, max_depth)
+        features['MDSPHQ'] = mdsphq
+        mdsfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDSFHQ', 0), min_depth, max_depth)
+        features['MDSFHQ'] = mdsfhq
+        mdrfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDRFHQ', 0), min_depth, max_depth)
+        features['MDRFHQ'] = mdrfhq
 
         features['MDSP_OVER_MDLF'] = mdsp/max(1, mdlf)
         features['MDLF_OVER_MDSP'] = mdlf/max(1, mdsp)
@@ -409,17 +409,11 @@ class Features:
         features['MDRF_OVER_MDSF_HQ'] = mdrfhq/max(1, mdsfhq)
 
         features['FMT_KSPVAL'] = max(0, Features.get_number_value(record.samples[0], 'KSPVAL', 1.0))
-        features['FMT_KSPVAL_HQ'] = max(0, Features.get_number_value(record.samples[0], 'KSPVALHQ', 1.0))
         features['FMT_SIZE_NORM'] = 2
-        features['FMT_SIZE_NORM_HQ'] = 2
         if 'MAXSIZE' in record.samples[0]:
             min_size = float(record.samples[0]['MINSIZE'])
             max_size = float(record.samples[0]['MAXSIZE'])
             features['FMT_SIZE_NORM'] = Features.normalise(svlen/2, min_size, max_size)
-        if 'MAXSIZEHQ' in record.samples[0]:
-            min_size = float(record.samples[0]['MINSIZEHQ'])
-            max_size = float(record.samples[0]['MAXSIZEHQ'])
-            features['FMT_SIZE_NORM_HQ'] = Features.normalise(svlen/2, min_size, max_size)
 
         dp1 = Features.get_number_value(record.samples[0], 'DP1', 0)
         dp2 = Features.get_number_value(record.samples[0], 'DP2', 0)
@@ -459,6 +453,8 @@ class Features:
         features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPRANM', 0)
         features['DPSL'] = Features.get_number_value(record.samples[0], 'DPSL', 0, median_depth)
         features['DPSR'] = Features.get_number_value(record.samples[0], 'DPSR', 0, median_depth)
+        features['DPSLHQ'] = Features.get_number_value(record.samples[0], 'DPSLHQ', 0, median_depth)
+        features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSRHQ', 0, median_depth)
 
         cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
         features['CP1'], features['CP2'], features['CP3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
