@@ -72,6 +72,7 @@ int main(int argc, char* argv[]) {
                     sv_t::anchor_aln_t* anchor_aln = new sv_t::anchor_aln_t(sv->start-ins_seq.length()+best_i, sv->start+best_i, ins_seq.length(), 0, 0, "");
                     new_dup = new duplication_t(contig_name, anchor_aln->start, anchor_aln->end, "", NULL, NULL, anchor_aln, anchor_aln, NULL);
                     new_dup->id = sv->id;
+                    new_dup->source = sv->source;
                 }
             }
         }

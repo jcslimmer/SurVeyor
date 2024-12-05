@@ -261,17 +261,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));
 
-	const char* median_depths_tag = "##INFO=<ID=MEDIAN_DEPTHS,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
-			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, median_depths_tag, &len));
-
-	const char* median_depths_highmq_tag = "##INFO=<ID=MEDIAN_DEPTHS_HIGHMQ,Number=4,Type=Integer,Description=\"Depths of, respectively, the region flanking the indel to the left,"
-			"the left portion of the indel, the right portion of the indel, the region flanking the indel to the right. Numbers 2 and 3 will be identical for short indels. Only high MAPQ reads are considered.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, median_depths_highmq_tag, &len));
-
-	const char* cluster_depths_tag = "##INFO=<ID=CLUSTER_DEPTHS,Number=2,Type=Integer,Description=\"Depths of the left and right cluster regions.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cluster_depths_tag, &len));
-
 	const char* ipc_tag = "##INFO=<ID=INS_PREFIX_COV,Number=2,Type=Integer,Description=\"Portion of the prefix of the inserted sequence that was actually supported by reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,ipc_tag, &len));
 
@@ -309,11 +298,26 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ins_alt_tag = "##ALT=<ID=INS,Description=\"Insertion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ins_alt_tag, &len));
 
+	const char* inv_alt_tag = "##ALT=<ID=INV,Description=\"Invertion\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, inv_alt_tag, &len));
+
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
 
 	const char* ft_tag = "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Filter. PASS indicates a reliable call. Any other value means the call is not reliable.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ft_tag, &len));
+
+	const char* md_tag = "##FORMAT=<ID=MD,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV.\">";
+    bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, md_tag, &len));
+
+	const char* mdhq_tag = "##FORMAT=<ID=MDHQ,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mdhq_tag, &len));
+
+	const char* clmd_tag = "##FORMAT=<ID=CLMD,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clmd_tag, &len));
+
+	const char* clmdhq_tag = "##FORMAT=<ID=CLMDHQ,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clmdhq_tag, &len));
 
 	std::string cmd_tag = "##SurVeyorCommand=" + command;
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
@@ -477,46 +481,6 @@ void add_genotyping_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
     const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLF");
-    const char* mdlf_tag = "##FORMAT=<ID=MDLF,Number=1,Type=Integer,Description=\"Median depth of coverage in the left flanking region of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlf_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSP");
-    const char* mdsp_tag = "##FORMAT=<ID=MDSP,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV prefix region of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsp_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSF");
-    const char* mdsf_tag = "##FORMAT=<ID=MDSF,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV suffix region of the SV (for short SVs, it will be the same as MDSP).\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsf_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRF");
-    const char* mdrf_tag = "##FORMAT=<ID=MDRF,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLFHQ");
-    const char* mdlfhq_tag = "##FORMAT=<ID=MDLFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the left flanking region of the SV for high-quality reads.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlfhq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSPHQ");
-    const char* mdsp_hq_tag = "##FORMAT=<ID=MDSPHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV prefix region of the SV for high-quality reads.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsp_hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDSFHQ");
-    const char* mdsf_hq_tag = "##FORMAT=<ID=MDSFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the SV suffix region of the SV for high-quality reads (for short SVs, it will be the same as MDSPHQ).\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdsf_hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRFHQ");
-    const char* mdrf_hq_tag = "##FORMAT=<ID=MDRFHQ,Number=1,Type=Integer,Description=\"Median depth of coverage in the right flanking region of the SV for high-quality reads.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrf_hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDLC");
-    const char* mdlc_tag = "##FORMAT=<ID=MDLC,Number=1,Type=Integer,Description=\"Median depth of coverage in the left cluster region of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdlc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MDRC");
-    const char* mdrc_tag = "##FORMAT=<ID=MDRC,Number=1,Type=Integer,Description=\"Median depth of coverage in the right cluster region of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdrc_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
     const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
@@ -771,10 +735,16 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		}
 
 		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
-		bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS", median_depths, 4);
+		bcf_update_format_int32(hdr, bcf_entry, "MD", median_depths, 4);
 
 		int median_depths_highmq[] = {sv->median_left_flanking_cov_highmq, sv->median_indel_left_cov_highmq, sv->median_indel_right_cov_highmq, sv->median_right_flanking_cov_highmq};
-		bcf_update_info_int32(hdr, bcf_entry, "MEDIAN_DEPTHS_HIGHMQ", median_depths_highmq, 4);
+		bcf_update_format_int32(hdr, bcf_entry, "MDHQ", median_depths_highmq, 4);
+
+		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
+		bcf_update_format_int32(hdr, bcf_entry, "CLMD", cluster_depths, 2);
+
+		int cluster_depths_highmq[] = {sv->median_left_cluster_cov_highmq, sv->median_right_cluster_cov_highmq};
+		bcf_update_format_int32(hdr, bcf_entry, "CLMDHQ", cluster_depths_highmq, 2);
 
 		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
@@ -799,7 +769,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		base_frequencies_t ins_suffix_base_freqs = sv->get_ins_suffix_base_freqs();
 		int sbc[] = {ins_suffix_base_freqs.a, ins_suffix_base_freqs.c, ins_suffix_base_freqs.g, ins_suffix_base_freqs.t};
 		bcf_update_info_int32(hdr, bcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
-
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
@@ -845,8 +814,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
 			int conc_pairs_hq[] = {del->conc_pairs_lbp_high_mapq, del->conc_pairs_midp_high_mapq, del->conc_pairs_rbp_high_mapq};
 			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
-			int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
-			bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 		}
 	} else if (sv->svtype() == "DUP") {
 		duplication_t* dup = (duplication_t*) sv;
@@ -872,8 +839,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	} else if (sv->svtype() == "INV") {
 		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
 		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
-		int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
-		bcf_update_info_int32(hdr, bcf_entry, "CLUSTER_DEPTHS", cluster_depths, 2);
 	}
 }
 
@@ -1367,7 +1332,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "MEDIAN_DEPTHS", &data, &len);
+	bcf_get_format_int32(hdr, b, "MD", &data, &len);
 	if (len > 0) {
 		sv->median_left_flanking_cov = data[0];
 		sv->median_indel_left_cov = data[1];
@@ -1377,7 +1342,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "MEDIAN_DEPTHS_HIGHMQ", &data, &len);
+	bcf_get_format_int32(hdr, b, "MDHQ", &data, &len);
 	if (len > 0) {
 		sv->median_left_flanking_cov_highmq = data[0];
 		sv->median_indel_left_cov_highmq = data[1];
@@ -1387,10 +1352,18 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "CLUSTER_DEPTHS", &data, &len);
+	bcf_get_format_int32(hdr, b, "CLMD", &data, &len);
 	if (len > 0) {
 		sv->median_left_cluster_cov = data[0];
 		sv->median_right_cluster_cov = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_format_int32(hdr, b, "CLMDHQ", &data, &len);
+	if (len > 0) {
+		sv->median_left_cluster_cov_highmq = data[0];
+		sv->median_right_cluster_cov_highmq = data[1];
 	}
 
 	data = NULL;

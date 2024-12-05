@@ -6,13 +6,16 @@ import numpy as np
 class Features:
 
     shared_features_names = ['START_STOP_DIST', 'SVLEN', 'SVINSLEN',
+                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
+                             'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
+                             'MDLC', 'MDRC',
                              'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
                              'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
                              'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
                              'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
                              'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                              'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
-    
+
     denovo_features_names = ['IMPRECISE', 'SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
                       'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
                       'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
@@ -22,19 +25,14 @@ class Features:
                       'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
                       'CONC_PAIRS_SCALED1', 'CONC_PAIRS_SCALED2', 'CONC_PAIRS_SCALED3', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 
                       'KS_PVAL', 'KS_PVAL_HIGHMQ', 'SIZE_NORM', 'SIZE_NORM_HIGHMQ',
-                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END',
-                      'MEDIAN_DEPTHS_NORM1', 'MEDIAN_DEPTHS_NORM2', 'MEDIAN_DEPTHS_NORM3', 'MEDIAN_DEPTHS_NORM4', 'MEDIAN_DEPTHS_RATIO1', 'MEDIAN_DEPTHS_RATIO2', 
-                      'MEDIAN_DEPTHS_HIGHMQ_NORM1', 'MEDIAN_DEPTHS_HIGHMQ_NORM2', 'MEDIAN_DEPTHS_HIGHMQ_NORM3', 'MEDIAN_DEPTHS_HIGHMQ_NORM4', 'MEDIAN_DEPTHS_HIGHMQ_RATIO1', 'MEDIAN_DEPTHS_HIGHMQ_RATIO2',
-                      'CLUSTER_DEPTHS_ABOVE_MAX1', 'CLUSTER_DEPTHS_ABOVE_MAX2']
-    
+                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END']
+
     regt_shared_features_names = \
             ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
              'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
              'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
-             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDLC', 'MDRC', 'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ',
-             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ',
              'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ',
              'CP1', 'CP2', 'CP3', 'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
 
@@ -277,19 +275,6 @@ class Features:
             max_size = float(info['MAX_SIZE_HIGHMQ'])
             features['SIZE_NORM_HIGHMQ'] = Features.normalise(svlen/2, min_size, max_size)
 
-        median_depths = Features.get_number_value(info, 'MEDIAN_DEPTHS', [0, 0, 0, 0])
-        features['MEDIAN_DEPTHS_NORM1'], features['MEDIAN_DEPTHS_NORM2'], features['MEDIAN_DEPTHS_NORM3'], features['MEDIAN_DEPTHS_NORM4'] = [Features.normalise(x, min_depth, max_depth) for x in median_depths]
-        features['MEDIAN_DEPTHS_RATIO1'], features['MEDIAN_DEPTHS_RATIO2'] = median_depths[0]/max(1, median_depths[1]), median_depths[3]/max(1, median_depths[2])
-
-        median_depths_highmq = Features.get_number_value(info, 'MEDIAN_DEPTHS_HIGHMQ', [0, 0, 0, 0])
-        features['MEDIAN_DEPTHS_HIGHMQ_NORM1'], features['MEDIAN_DEPTHS_HIGHMQ_NORM2'], features['MEDIAN_DEPTHS_HIGHMQ_NORM3'], features['MEDIAN_DEPTHS_HIGHMQ_NORM4'] = [Features.normalise(x, min_depth, max_depth) for x in median_depths_highmq]
-        features['MEDIAN_DEPTHS_HIGHMQ_RATIO1'], features['MEDIAN_DEPTHS_HIGHMQ_RATIO2'] = median_depths_highmq[0]/max(1, median_depths_highmq[1]), median_depths_highmq[3]/max(1, median_depths_highmq[2])
-
-        if 'CLUSTER_DEPTHS' in info:
-            features['CLUSTER_DEPTHS_ABOVE_MAX1'], features['CLUSTER_DEPTHS_ABOVE_MAX2'] = [max(0, float(x)-max_depth)/median_depth for x in info['CLUSTER_DEPTHS']]
-        else:
-            features['CLUSTER_DEPTHS_ABOVE_MAX1'], features['CLUSTER_DEPTHS_ABOVE_MAX2'] = 0, 0
-
         features['PREFIX_MH_LEN_RATIO'] = Features.get_number_value(info, 'PREFIX_MH_LEN', 0, max(1, svinslen))
         features['SUFFIX_MH_LEN_RATIO'] = Features.get_number_value(info, 'SUFFIX_MH_LEN', 0, max(1, svinslen))
 
@@ -375,38 +360,38 @@ class Features:
         features['RR2_OVER_AR2'] = rr2/max(1, ar2+rr2)
         features['RRC2_OVER_ARC2'] = rrc2/max(1, arc2+rrc2)
 
-        mdlf = Features.normalise(Features.get_number_value(record.samples[0], 'MDLF', 0), min_depth, max_depth)
-        features['MDLF'] = mdlf
-        mdsp = Features.normalise(Features.get_number_value(record.samples[0], 'MDSP', 0), min_depth, max_depth)
-        features['MDSP'] = mdsp
-        mdsf = Features.normalise(Features.get_number_value(record.samples[0], 'MDSF', 0), min_depth, max_depth)
-        features['MDSF'] = mdsf
-        mdrf = Features.normalise(Features.get_number_value(record.samples[0], 'MDRF', 0), min_depth, max_depth)
-        features['MDRF'] = mdrf
+        mdlf = Features.get_number_value(record.samples[0], 'MDLF', 0)
+        features['MDLF'] = Features.normalise(mdlf, min_depth, max_depth)
+        mdsp = Features.get_number_value(record.samples[0], 'MDSP', 0)
+        features['MDSP'] = Features.normalise(mdsp, min_depth, max_depth)
+        mdsf = Features.get_number_value(record.samples[0], 'MDSF', 0)
+        features['MDSF'] = Features.normalise(mdsf, min_depth, max_depth)
+        mdrf = Features.get_number_value(record.samples[0], 'MDRF', 0)
+        features['MDRF'] = Features.normalise(mdrf, min_depth, max_depth)
+        
+        features['MDSP_OVER_MDLF'] = mdsp/max(1, mdlf)
+        features['MDSF_OVER_MDRF'] = mdsf/max(1, mdrf)
+        features['MDLF_OVER_MDSP'] = mdlf/max(1, mdsp)
+        features['MDRF_OVER_MDSF'] = mdrf/max(1, mdsf)
+
+        mdlfhq = Features.get_number_value(record.samples[0], 'MDLFHQ', 0)
+        features['MDLFHQ'] = Features.normalise(mdlfhq, min_depth, max_depth)
+        mdsphq = Features.get_number_value(record.samples[0], 'MDSPHQ', 0)
+        features['MDSPHQ'] = Features.normalise(mdsphq, min_depth, max_depth)
+        mdsfhq = Features.get_number_value(record.samples[0], 'MDSFHQ', 0)
+        features['MDSFHQ'] = Features.normalise(mdsfhq, min_depth, max_depth)
+        mdrfhq = Features.get_number_value(record.samples[0], 'MDRFHQ', 0)
+        features['MDRFHQ'] = Features.normalise(mdrfhq, min_depth, max_depth)
+
+        features['MDSP_OVER_MDLF_HQ'] = mdsphq/max(1, mdlfhq)
+        features['MDSF_OVER_MDRF_HQ'] = mdsfhq/max(1, mdrfhq)
+        features['MDLF_OVER_MDSP_HQ'] = mdlfhq/max(1, mdsphq)
+        features['MDRF_OVER_MDSF_HQ'] = mdrfhq/max(1, mdsfhq)
 
         mdlc = Features.get_number_value(record.samples[0], 'MDLC', 0)
         features['MDLC'] = Features.normalise(mdlc, min_depth, max_depth)
         mdrc = Features.get_number_value(record.samples[0], 'MDRC', 0)
         features['MDRC'] = Features.normalise(mdrc, min_depth, max_depth)
-
-        mdlfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDLFHQ', 0), min_depth, max_depth)
-        features['MDLFHQ'] = mdlfhq
-        mdsphq = Features.normalise(Features.get_number_value(record.samples[0], 'MDSPHQ', 0), min_depth, max_depth)
-        features['MDSPHQ'] = mdsphq
-        mdsfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDSFHQ', 0), min_depth, max_depth)
-        features['MDSFHQ'] = mdsfhq
-        mdrfhq = Features.normalise(Features.get_number_value(record.samples[0], 'MDRFHQ', 0), min_depth, max_depth)
-        features['MDRFHQ'] = mdrfhq
-
-        features['MDSP_OVER_MDLF'] = mdsp/max(1, mdlf)
-        features['MDLF_OVER_MDSP'] = mdlf/max(1, mdsp)
-        features['MDSF_OVER_MDRF'] = mdsf/max(1, mdrf)
-        features['MDRF_OVER_MDSF'] = mdrf/max(1, mdsf)
-
-        features['MDSP_OVER_MDLF_HQ'] = mdsphq/max(1, mdlfhq)
-        features['MDLF_OVER_MDSP_HQ'] = mdlfhq/max(1, mdsphq)
-        features['MDSF_OVER_MDRF_HQ'] = mdsfhq/max(1, mdrfhq)
-        features['MDRF_OVER_MDSF_HQ'] = mdrfhq/max(1, mdsfhq)
 
         features['FMT_KSPVAL'] = max(0, Features.get_number_value(record.samples[0], 'KSPVAL', 1.0))
         features['FMT_SIZE_NORM'] = 2
