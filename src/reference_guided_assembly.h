@@ -447,38 +447,47 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	int i = 0;
 	std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.first < p2.first;});
 	while (i < covered_segments.size() && covered_segments[i].second <= ins_seq_start) i++; // find left-most segment that either overlaps or is fully contained in the inserted sequence
-	insertion->prefix_cov_start = 0, insertion->prefix_cov_end = 0;
+	int prefix_cov_start = 0, prefix_cov_end = 0;
 	if (i < covered_segments.size()) {
-		insertion->prefix_cov_start = std::max(ins_seq_start, covered_segments[i].first);
-		insertion->prefix_cov_end = covered_segments[i].second;
-		while (i < covered_segments.size() && covered_segments[i].first <= insertion->prefix_cov_end) {
-			insertion->prefix_cov_end = std::max(insertion->prefix_cov_end, covered_segments[i].second);
+		prefix_cov_start = std::max(ins_seq_start, covered_segments[i].first);
+		prefix_cov_end = covered_segments[i].second;
+		while (i < covered_segments.size() && covered_segments[i].first <= prefix_cov_end) {
+			prefix_cov_end = std::max(prefix_cov_end, covered_segments[i].second);
 			i++;
 		}
-		insertion->prefix_cov_start -= ins_seq_start;
-		insertion->prefix_cov_end -= ins_seq_start;
-		if (insertion->prefix_cov_end >= insertion->ins_seq.length()) insertion->prefix_cov_end = insertion->ins_seq.length()-1;
+		prefix_cov_start -= ins_seq_start;
+		prefix_cov_end -= ins_seq_start;
+	}
+	if (prefix_cov_end >= insertion->ins_seq.length()) {
+		prefix_cov_end = insertion->ins_seq.length()-1;
+	}
+	if (prefix_cov_end == 0 || prefix_cov_start >= insertion->ins_seq.length()) {
+		return NULL;
 	}
 
 	i = covered_segments.size()-1;
 	std::sort(covered_segments.begin(), covered_segments.end(), [] (std::pair<int,int>& p1, std::pair<int,int>& p2) {return p1.second < p2.second;});
 	while (i >= 0 && covered_segments[i].first >= ins_seq_end) i--; // find right-most segment that either overlaps or is fully contained in the inserted sequence
-	insertion->suffix_cov_start = 0, insertion->suffix_cov_end = 0;
+	int suffix_cov_start = 0, suffix_cov_end = 0;
 	if (i >= 0) {
-		insertion->suffix_cov_end = std::min(ins_seq_end-1, covered_segments[i].second);
-		insertion->suffix_cov_start = covered_segments[i].first;
-		while (i >= 0 && covered_segments[i].second >= insertion->suffix_cov_start) {
-			insertion->suffix_cov_start = std::min(insertion->suffix_cov_start, covered_segments[i].first);
+		suffix_cov_end = std::min(ins_seq_end-1, covered_segments[i].second);
+		suffix_cov_start = covered_segments[i].first;
+		while (i >= 0 && covered_segments[i].second >= suffix_cov_start) {
+			suffix_cov_start = std::min(suffix_cov_start, covered_segments[i].first);
 			i--;
 		}
-		insertion->suffix_cov_start -= ins_seq_start;
-		if (insertion->suffix_cov_start < 0) insertion->suffix_cov_start = 0;
-		insertion->suffix_cov_end -= ins_seq_start;
+		suffix_cov_start -= ins_seq_start;
+		if (suffix_cov_start < 0) suffix_cov_start = 0;
+		suffix_cov_end -= ins_seq_start;
 	}
 
-	if (insertion->prefix_cov_end < insertion->suffix_cov_start) {
+	if (prefix_cov_end < suffix_cov_start) {
 		insertion->inferred_ins_seq = insertion->ins_seq;
-		insertion->ins_seq = insertion->ins_seq.substr(0, insertion->prefix_cov_end) + "-" + insertion->ins_seq.substr(insertion->suffix_cov_start);
+		std::string ins_seq_prefix = insertion->ins_seq.substr(prefix_cov_start, prefix_cov_end-prefix_cov_start+1);
+		std::string ins_seq_suffix = insertion->ins_seq.substr(suffix_cov_start, suffix_cov_end-suffix_cov_start+1);
+		insertion->ins_seq = ins_seq_prefix + "-" + ins_seq_suffix;
+	} else {
+		insertion->ins_seq = insertion->ins_seq.substr(prefix_cov_start, suffix_cov_end-prefix_cov_start+1);
 	}
 
 	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;
