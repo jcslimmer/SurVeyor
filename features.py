@@ -8,7 +8,7 @@ class Features:
     shared_features_names = ['START_STOP_DIST', 'SVLEN', 'SVINSLEN',
                              'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
                              'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
-                             'MDLC', 'MDRC',
+                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ',
                              'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
                              'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
                              'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
@@ -175,13 +175,10 @@ class Features:
 
         features['INS_SEQ_COV_PREFIX_START'], features['INS_SEQ_COV_PREFIX_END'] = 0, 1
         features['INS_SEQ_COV_SUFFIX_START'], features['INS_SEQ_COV_SUFFIX_END'] = 0, 1
-        if source_str == "DE_NOVO_ASSEMBLY":
-            if '-' in svinsseq:
-                features['INS_SEQ_COV_PREFIX_END'] = svinsseq.index('-')/len(svinsseq)
-                features['INS_SEQ_COV_SUFFIX_START'] = features['INS_SEQ_COV_PREFIX_END']
-        elif source_str == "REFERENCE_GUIDED_ASSEMBLY":
-            features['INS_SEQ_COV_PREFIX_START'], features['INS_SEQ_COV_PREFIX_END'] = Features.get_number_value(info, 'INS_PREFIX_COV', [0, 0], len(svinsseq)-1)
-            features['INS_SEQ_COV_SUFFIX_START'], features['INS_SEQ_COV_SUFFIX_END'] = Features.get_number_value(info, 'INS_SUFFIX_COV', [0, 0], len(svinsseq)-1)
+        if '-' in svinsseq:
+            i = svinsseq.index('-')
+            features['INS_SEQ_COV_SUFFIX_START'] = i/len(svinsseq)
+            features['INS_SEQ_COV_PREFIX_END'] = (len(svinsseq)-i)/len(svinsseq)
 
         split_reads = Features.get_number_value(info, 'SPLIT_READS', [0, 0])
         features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = Features.normalise(split_reads[0], min_depth, max_depth), Features.normalise(split_reads[1], min_depth, max_depth)
@@ -360,38 +357,33 @@ class Features:
         features['RR2_OVER_AR2'] = rr2/max(1, ar2+rr2)
         features['RRC2_OVER_ARC2'] = rrc2/max(1, arc2+rrc2)
 
-        mdlf = Features.get_number_value(record.samples[0], 'MDLF', 0)
-        features['MDLF'] = Features.normalise(mdlf, min_depth, max_depth)
-        mdsp = Features.get_number_value(record.samples[0], 'MDSP', 0)
-        features['MDSP'] = Features.normalise(mdsp, min_depth, max_depth)
-        mdsf = Features.get_number_value(record.samples[0], 'MDSF', 0)
-        features['MDSF'] = Features.normalise(mdsf, min_depth, max_depth)
-        mdrf = Features.get_number_value(record.samples[0], 'MDRF', 0)
-        features['MDRF'] = Features.normalise(mdrf, min_depth, max_depth)
-        
-        features['MDSP_OVER_MDLF'] = mdsp/max(1, mdlf)
-        features['MDSF_OVER_MDRF'] = mdsf/max(1, mdrf)
-        features['MDLF_OVER_MDSP'] = mdlf/max(1, mdsp)
-        features['MDRF_OVER_MDSF'] = mdrf/max(1, mdsf)
+        md = Features.get_number_value(record.samples[0], 'MD', [0, 0, 0, 0])
+        features['MDLF'] = Features.normalise(md[0], min_depth, max_depth)
+        features['MDSP'] = Features.normalise(md[1], min_depth, max_depth)
+        features['MDSF'] = Features.normalise(md[2], min_depth, max_depth)
+        features['MDRF'] = Features.normalise(md[3], min_depth, max_depth)
+        features['MDSP_OVER_MDLF'] = md[1]/max(1, md[0])
+        features['MDSF_OVER_MDRF'] = md[2]/max(1, md[3])
+        features['MDLF_OVER_MDSP'] = md[0]/max(1, md[1])
+        features['MDRF_OVER_MDSF'] = md[3]/max(1, md[2])
 
-        mdlfhq = Features.get_number_value(record.samples[0], 'MDLFHQ', 0)
-        features['MDLFHQ'] = Features.normalise(mdlfhq, min_depth, max_depth)
-        mdsphq = Features.get_number_value(record.samples[0], 'MDSPHQ', 0)
-        features['MDSPHQ'] = Features.normalise(mdsphq, min_depth, max_depth)
-        mdsfhq = Features.get_number_value(record.samples[0], 'MDSFHQ', 0)
-        features['MDSFHQ'] = Features.normalise(mdsfhq, min_depth, max_depth)
-        mdrfhq = Features.get_number_value(record.samples[0], 'MDRFHQ', 0)
-        features['MDRFHQ'] = Features.normalise(mdrfhq, min_depth, max_depth)
+        mdhq = Features.get_number_value(record.samples[0], 'MDHQ', [0, 0, 0, 0])
+        features['MDLFHQ'] = Features.normalise(mdhq[0], min_depth, max_depth)
+        features['MDSPHQ'] = Features.normalise(mdhq[1], min_depth, max_depth)
+        features['MDSFHQ'] = Features.normalise(mdhq[2], min_depth, max_depth)
+        features['MDRFHQ'] = Features.normalise(mdhq[3], min_depth, max_depth)
+        features['MDSP_OVER_MDLF_HQ'] = mdhq[1]/max(1, mdhq[0])
+        features['MDSF_OVER_MDRF_HQ'] = mdhq[2]/max(1, mdhq[3])
+        features['MDLF_OVER_MDSP_HQ'] = mdhq[0]/max(1, mdhq[1])
+        features['MDRF_OVER_MDSF_HQ'] = mdhq[3]/max(1, mdhq[2])
 
-        features['MDSP_OVER_MDLF_HQ'] = mdsphq/max(1, mdlfhq)
-        features['MDSF_OVER_MDRF_HQ'] = mdsfhq/max(1, mdrfhq)
-        features['MDLF_OVER_MDSP_HQ'] = mdlfhq/max(1, mdsphq)
-        features['MDRF_OVER_MDSF_HQ'] = mdrfhq/max(1, mdsfhq)
+        clmd = Features.get_number_value(record.samples[0], 'CLMD', [0, 0])
+        features['MDLC'] = Features.normalise(clmd[0], min_depth, max_depth)
+        features['MDRC'] = Features.normalise(clmd[1], min_depth, max_depth)
 
-        mdlc = Features.get_number_value(record.samples[0], 'MDLC', 0)
-        features['MDLC'] = Features.normalise(mdlc, min_depth, max_depth)
-        mdrc = Features.get_number_value(record.samples[0], 'MDRC', 0)
-        features['MDRC'] = Features.normalise(mdrc, min_depth, max_depth)
+        clmdhq = Features.get_number_value(record.samples[0], 'CLMDHQ', [0, 0])
+        features['MDLCHQ'] = Features.normalise(clmdhq[0], min_depth, max_depth)
+        features['MDRCHQ'] = Features.normalise(clmdhq[1], min_depth, max_depth)
 
         features['FMT_KSPVAL'] = max(0, Features.get_number_value(record.samples[0], 'KSPVAL', 1.0))
         features['FMT_SIZE_NORM'] = 2
