@@ -76,16 +76,8 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
     	regions_of_interest.emplace_back(sv->start, std::min(sv->start + INDEL_TESTED_REGION_SIZE, sv->end), &(sv->median_indel_left_cov), &(sv->median_indel_left_cov_highmq));
     	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->median_indel_right_cov), &(sv->median_indel_right_cov_highmq));
     	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->median_right_flanking_cov), &(sv->median_right_flanking_cov_highmq));
-    	if (sv->svtype() == "DEL") {
-			hts_pos_t l_cluster_start = std::min(sv->left_anchor_aln->start, sv->start-stats.read_len);
-			l_cluster_start = std::max(hts_pos_t(0), l_cluster_start);
-			regions_of_interest.emplace_back(l_cluster_start, sv->start, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
-			hts_pos_t r_cluster_end = std::max(sv->right_anchor_aln->end, sv->end+stats.read_len);
-	    	regions_of_interest.emplace_back(sv->end, r_cluster_end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
-    	} else if (sv->svtype() == "INV") {
-			regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->left_anchor_aln->end, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
-			regions_of_interest.emplace_back(sv->right_anchor_aln->start, sv->right_anchor_aln->end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
-		}
+		regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->left_anchor_aln->end, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
+		regions_of_interest.emplace_back(sv->right_anchor_aln->start, sv->right_anchor_aln->end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
 	}
     std::sort(regions_of_interest.begin(), regions_of_interest.end(), [](region_w_median_t& r1, region_w_median_t& r2) {return r1.start < r2.start;});
 
@@ -624,8 +616,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 			}
 
 		}
-		for (deletion_t* del : deletions) {
-			if (del->disc_pairs_lf > 0) del->disc_pairs_lf_avg_nm /= del->disc_pairs_lf;
+		for (int i = 0; i < deletions.size(); i++) {
+			if (deletions[i]->disc_pairs_lf > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->disc_pairs_lf;
 		}
 	}
 }
