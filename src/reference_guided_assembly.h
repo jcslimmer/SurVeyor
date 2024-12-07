@@ -441,7 +441,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 		if (ri.accepted) covered_segments.push_back({ri.start, ri.end});
 	}
 
-	int ins_seq_start = insertion->left_anchor_aln->seq_len - insertion->prefix_mh_len;
+	int ins_seq_start = insertion->left_anchor_aln->seq_len - insertion->mh_len;
 	int ins_seq_end = ins_seq_start + insertion->ins_seq.length();
 
 	int i = 0;
@@ -512,6 +512,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	insertion->disc_pairs_rf_avg_nm /= std::max(1, (int) refined_l_cluster->cluster->reads.size());
 	insertion->imprecise = !left_bp_precise || !right_bp_precise;
 	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
+	insertion->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
 		bam1_t* r = r_cluster->cluster->reads[i];

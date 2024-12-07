@@ -844,6 +844,8 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
+			sv->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
+
 			if (sv->source == "1SR_RC" || sv->source == "1HSR_RC") {
             	if (sv->rc_consensus->right_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
             } else if (sv->source == "1SR_LC" || sv->source == "1HSR_LC") {

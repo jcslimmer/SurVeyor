@@ -478,7 +478,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 	}
 
 	// start and end of inserted sequence within the full assembled sequence
-	int ins_seq_start = chosen_ins->left_anchor_aln->seq_len - chosen_ins->prefix_mh_len;
+	int ins_seq_start = chosen_ins->left_anchor_aln->seq_len - chosen_ins->mh_len;
 	int ins_seq_end = ins_seq_start + chosen_ins->ins_seq.length(); // corrected_consensus_sequence.length() - (chosen_ins->right_anchor_aln->seq_len - chosen_ins->suffix_mh_len);
 	for (bam1_t* read : r_cluster->semi_mapped_reads) {
 		StripedSmithWaterman::Alignment aln;
@@ -510,6 +510,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 	}
 
 	chosen_ins->source = "DE_NOVO_ASSEMBLY";
+	chosen_ins->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 	return chosen_ins;
 }
 

@@ -491,7 +491,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	StripedSmithWaterman::Alignment& best_full_aln = full_aln_lh.sw_score >= full_aln_rh.sw_score ? full_aln_lh : full_aln_rh;
 	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+best_full_aln.ref_begin, ref_remap_lh_start+best_full_aln.ref_end, junction_seq.length(), best_full_aln.sw_score, best_full_aln.sw_score_next_best, best_full_aln.cigar_string);
 
-	int prefix_mh_len = 0, suffix_mh_len = 0;
+	int prefix_mh_len = 0;
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
         int mh_len = left_bp - right_bp;
         std::pair<int, int> lp_suffix_score = find_aln_suffix_score(left_part_aln.cigar, mh_len, 1, -4, -6, -1);
@@ -517,7 +517,6 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
             mh = right_part.substr(0, query_mh_bases);
             right_bp = left_bp + right_bp_adjustment;
             middle_part = middle_part + mh;
-			suffix_mh_len = mh.length();
         } else {
             // the prefix of the right part is more similar to the reference, hence we choose the suffix of the left part
             // to add as part of the inserted sequence
@@ -540,7 +539,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 		sv->precompute_base_frequencies(contig_seq);
         svs.push_back(sv);
     }
-	svs[0]->prefix_mh_len = prefix_mh_len;
+	svs[0]->mh_len = prefix_mh_len;
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_start, right_anchor_end);

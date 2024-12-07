@@ -86,18 +86,19 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
-    // if (sv->svtype() == "DEL" && sv->ins_seq.empty()) {
-    //     int prefix_mh_len = 0, suffix_mh_len = 0;
-    //     while (prefix_mh_len < sv->svlen() && sv->end+prefix_mh_len+1 < chr_len && chr_seq[sv->start+prefix_mh_len+1] == chr_seq[sv->end+prefix_mh_len+1]) {
-    //         prefix_mh_len++;
-    //     }
-    //     bcf_update_info_int32(out_hdr, sv->vcf_entry, "PREFIX_MH_LEN", &prefix_mh_len, 1);
-
-    //     while (suffix_mh_len < sv->svlen() && sv->start-suffix_mh_len-1 >= 0 && chr_seq[sv->start-suffix_mh_len] == chr_seq[sv->end-suffix_mh_len]) {
-    //         suffix_mh_len++;
-    //     }
-    //     bcf_update_info_int32(out_hdr, sv->vcf_entry, "SUFFIX_MH_LEN", &suffix_mh_len, 1);
-    // }
+    int mh_len = 0;
+    if ((sv->svtype() == "DEL" || sv->svtype() == "DUP") && sv->ins_seq.empty()) {
+        while (mh_len < abs(sv->svlen()) && sv->end+mh_len+1 < chr_len && toupper(chr_seq[sv->start+mh_len+1]) == toupper(chr_seq[sv->end+mh_len+1])) {
+            mh_len++;
+        }
+    } else if (sv->svtype() == "INS" && sv->start == sv->end) {
+        while (mh_len < sv->ins_seq.length() && sv->end+mh_len+1 < chr_len && toupper(sv->ins_seq[mh_len]) == toupper(chr_seq[sv->end+mh_len+1])) {
+            mh_len++;
+        }
+    }
+    if (mh_len > 0) {
+        bcf_update_info_int32(out_hdr, sv->vcf_entry, "MH_LEN", &mh_len, 1);
+    }
 
     // update FORMAT fields
     bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->regenotyping_info.gt, sv->regenotyping_info.n_gt);

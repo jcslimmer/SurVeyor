@@ -363,8 +363,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 		"to be fully assembled but SurVeyor suspects it to be a transposition, it uses the reference to infer the content of the insertion. Not guaranteed to be accurate. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, infsvinsseq_tag, &len));
 
-	const char* prefix_mh_len = "##INFO=<ID=PREFIX_MH_LEN,Number=1,Type=Integer,Description=\"Length of the prefix of the inserted sequence that is a microhomology.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,prefix_mh_len, &len));
+	const char* mh_len = "##INFO=<ID=MH_LEN,Number=1,Type=Integer,Description=\"Length of the microhomology.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,mh_len, &len));
 
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
@@ -567,8 +567,8 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
 	if (!sv->ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
-		if (sv->prefix_mh_len > 0) {
-			bcf_update_info_int32(hdr, bcf_entry, "PREFIX_MH_LEN", &sv->prefix_mh_len, 1);
+		if (sv->mh_len > 0) {
+			bcf_update_info_int32(hdr, bcf_entry, "MH_LEN", &sv->mh_len, 1);
 		}
 	}
 	if (!sv->inferred_ins_seq.empty()) {
@@ -1079,9 +1079,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "PREFIX_MH_LEN", &data, &len);
+	bcf_get_info_int32(hdr, b, "MH_LEN", &data, &len);
 	if (len > 0) {
-		sv->prefix_mh_len = data[0];
+		sv->mh_len = data[0];
 	}
 
 	data = NULL;
