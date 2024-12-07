@@ -7,7 +7,6 @@
 #include <ctime>
 #include <htslib/vcf.h>
 #include "htslib/hts.h"
-#include "htslib/sam.h"
 #include "types.h"
 #include "utils.h"
 
@@ -25,6 +24,249 @@ bcf_hrec_t* generate_contig_hrec() {
 	}
 	return contig_hrec;
 }
+
+void add_fmt_tags(bcf_hdr_t* hdr) {
+    int len = 0;
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "END");
+    const char* end_tag = "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the variant described in this record.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, end_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "SVLEN");
+    const char* svlen_tag = "##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, svlen_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "SVINSLEN");
+    const char* svinslen_tag = "##INFO=<ID=SVINSLEN,Number=1,Type=Integer,Description=\"Length of the inserted sequence.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, svinslen_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT");
+    const char* labc_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the left anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc_tag, &len));
+	
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT");
+	const char* rabc_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the right anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "SV_REF_PREFIX_BASE_COUNT");
+	const char* svrefpbc_tag = "##INFO=<ID=SV_REF_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,svrefpbc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "SV_REF_SUFFIX_BASE_COUNT");
+	const char* svrefsbc_tag = "##INFO=<ID=SV_REF_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the last 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,svrefsbc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "INS_PREFIX_BASE_COUNT");
+	const char* pbc_tag = "##INFO=<ID=INS_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,pbc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "INS_SUFFIX_BASE_COUNT");
+	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,sbc_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "HARD_FILTERS");
+	const char* hf_tag = "##INFO=<ID=HARD_FILTERS,Number=.,Type=String,Description=\"PASS or not according to hard filters.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,hf_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "GT");
+	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, gt_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "FT");
+	const char* ft_tag = "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Filter. PASS indicates a reliable call. Any other value means the call is not reliable.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ft_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "MD");
+	const char* md_tag = "##FORMAT=<ID=MD,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, md_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "MDHQ");
+	const char* mdhq_tag = "##FORMAT=<ID=MDHQ,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, mdhq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "CLMD");
+	const char* clmd_tag = "##FORMAT=<ID=CLMD,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, clmd_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "CLMDHQ");
+	const char* clmdhq_tag = "##FORMAT=<ID=CLMDHQ,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies. Only high MAPQ reads are considered.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, clmdhq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPS");
+    const char* dps_tag = "##FORMAT=<ID=DPS,Number=2,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dps_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSHQ");
+	const char* dpshq_tag = "##FORMAT=<ID=DPSHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpshq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
+    const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1");
+    const char* arc1_tag = "##FORMAT=<ID=ARC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF1");
+    const char* arcf1_tag = "##FORMAT=<ID=ARCF1,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR1");
+    const char* arcr1_tag = "##FORMAT=<ID=ARCR1,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS1");
+    const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
+    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1HQ");
+    const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
+    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
+    const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2");
+    const char* arc2_tag = "##FORMAT=<ID=ARC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF2");
+    const char* arcf2_tag = "##FORMAT=<ID=ARCF2,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR2");
+    const char* arcr2_tag = "##FORMAT=<ID=ARCR2,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr2_tag, &len));
+    
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS2");
+    const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
+    const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2HQ");
+    const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
+    const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
+    const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC1");
+    const char* rrc1_tag = "##FORMAT=<ID=RRC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR2");
+    const char* rr2_tag = "##FORMAT=<ID=RR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC2");
+    const char* rrc2_tag = "##FORMAT=<ID=RRC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 reference allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
+    const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
+    const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
+    const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
+            "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsize_tag, &len));
+    
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZE");
+    const char* maxsize_tag = "##FORMAT=<ID=MAXSIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
+			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsize_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
+    const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1");
+    const char* dp1_tag = "##FORMAT=<ID=DP1,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2");
+    const char* dp2_tag = "##FORMAT=<ID=DP2,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1HQ");
+    const char* dp1hq_tag = "##FORMAT=<ID=DP1HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1hq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2HQ");
+    const char* dp2hq_tag = "##FORMAT=<ID=DP2HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2hq_tag, &len));
+    
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1MQ");
+    const char* dp1mq_tag = "##FORMAT=<ID=DP1MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2MQ");
+    const char* dp2mq_tag = "##FORMAT=<ID=DP2MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPLANM");
+    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Float,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dplanm_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
+    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Float,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
+    const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "CPHQ");
+	const char* cphq_tag = "##FORMAT=<ID=CPHQ,Number=3,Type=Integer,Description=\"Number of high-quality concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cphq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
+    const char* axr_tag = "##FORMAT=<ID=AXR,Number=1,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axr_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "AXRHQ");
+    const char* axrhq_tag = "##FORMAT=<ID=AXRHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads used to extend the alternative allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axrhq_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXL");
+    const char* exl_tag = "##FORMAT=<ID=EXL,Number=1,Type=Integer,Description=\"Length of the extended alternative allele consensus.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exl_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXAS");
+    const char* exas_tag = "##FORMAT=<ID=EXAS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the original alternative allele (the reference with the SV applied).\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas_tag, &len));
+
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS");
+    const char* exrs_tag = "##FORMAT=<ID=EXRS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the reference.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
+	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));
+}
+
 bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");
 
@@ -220,37 +462,11 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* avg_nm_tag = "##INFO=<ID=DISC_AVG_NM,Number=2,Type=Float,Description=\"Average NM of discordant pairs (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, avg_nm_tag, &len));
 
-	const char* disc_pairs_surr_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING,Number=2,Type=Integer,Description=\"Discordant pairs around the SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_tag, &len));
-
-	const char* disc_pairs_surr_hmapq_tag = "##INFO=<ID=DISC_PAIRS_SURROUNDING_HIGHMAPQ,Number=2,Type=Integer,Description=\"Discordant pairs around the SV with high MAPQ.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_surr_hmapq_tag, &len));
-
 	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=3,Type=Integer,Description=\"Concordant pairs crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
 
 	const char* conc_pairs_hmapq_tag = "##INFO=<ID=CONC_PAIRS_HIGHMAPQ,Number=3,Type=Integer,Description=\"Concordant pairs with high MAPQ crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_hmapq_tag, &len));
-
-	const char* ks_pval_tag = "##INFO=<ID=KS_PVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_tag, &len));
-
-	const char* ks_pval_highmq_tag = "##INFO=<ID=KS_PVAL_HIGHMQ,Number=1,Type=Float,Description=\"p-value of the KS test, considering only high MAPQ reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_pval_highmq_tag, &len));
-
-	const char* min_size_tag = "##INFO=<ID=MIN_SIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, min_size_tag, &len));
-
-	const char* min_size_highmq_tag = "##INFO=<ID=MIN_SIZE_HIGHMQ,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution. Only high MAPQ reads are considered.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, min_size_highmq_tag, &len));
-
-	const char* max_size_tag = "##INFO=<ID=MAX_SIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
-			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. \">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_tag, &len));
-
-	const char* max_size_highmq_tag = "##INFO=<ID=MAX_SIZE_HIGHMQ,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
-			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events. Only high MAPQ reads are considered.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_size_highmq_tag, &len));
 
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
@@ -260,24 +476,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* imprecise_tag = "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"The reported boundaries are not precise.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, imprecise_tag, &len));
-
-	const char* labc_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the left anchor region of the SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,labc_tag, &len));
-	
-	const char* rabc_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the right anchor region of the SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,rabc_tag, &len));
-
-	const char* svrefpbc_tag = "##INFO=<ID=SV_REF_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,svrefpbc_tag, &len));
-
-	const char* svrefsbc_tag = "##INFO=<ID=SV_REF_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the last 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,svrefsbc_tag, &len));
-
-	const char* pbc_tag = "##INFO=<ID=INS_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,pbc_tag, &len));
-
-	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,sbc_tag, &len));
 
 	const char* ia_tag = "##INFO=<ID=INCOMPLETE_ASSEMBLY,Number=0,Type=Flag,Description=\"The inserted sequence is too long, and it could not be fully assembled using short reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ia_tag, &len));
@@ -295,23 +493,7 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* inv_alt_tag = "##ALT=<ID=INV,Description=\"Invertion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, inv_alt_tag, &len));
 
-	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, gt_tag, &len));
-
-	const char* ft_tag = "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Filter. PASS indicates a reliable call. Any other value means the call is not reliable.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ft_tag, &len));
-
-	const char* md_tag = "##FORMAT=<ID=MD,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV.\">";
-    bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, md_tag, &len));
-
-	const char* mdhq_tag = "##FORMAT=<ID=MDHQ,Number=4,Type=Integer,Description=\"Median depth in the left flanking, prefix, suffix and right flanking regions of the SV. Only high MAPQ reads are considered.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mdhq_tag, &len));
-
-	const char* clmd_tag = "##FORMAT=<ID=CLMD,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clmd_tag, &len));
-
-	const char* clmdhq_tag = "##FORMAT=<ID=CLMDHQ,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies. Only high MAPQ reads are considered.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, clmdhq_tag, &len));
+	add_fmt_tags(header);
 
 	std::string cmd_tag = "##SurVeyorCommand=" + command;
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, cmd_tag.c_str(), &len));
@@ -343,246 +525,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	}
 	
 	return header;
-}
-
-void add_genotyping_tags(bcf_hdr_t* hdr) {
-    int len = 0;
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "END");
-    const char* end_tag = "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the variant described in this record.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, end_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "SVLEN");
-    const char* svlen_tag = "##INFO=<ID=SVLEN,Number=.,Type=Integer,Description=\"Difference in length between REF and ALT alleles.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, svlen_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "SVINSLEN");
-    const char* svinslen_tag = "##INFO=<ID=SVINSLEN,Number=1,Type=Integer,Description=\"Length of the inserted sequence.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, svinslen_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT");
-    const char* labc_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the left anchor region of the SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc_tag, &len));
-	
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT");
-	const char* rabc_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the right anchor region of the SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "SV_REF_PREFIX_BASE_COUNT");
-	const char* svrefpbc_tag = "##INFO=<ID=SV_REF_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,svrefpbc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "SV_REF_SUFFIX_BASE_COUNT");
-	const char* svrefsbc_tag = "##INFO=<ID=SV_REF_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the last 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,svrefsbc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "INS_PREFIX_BASE_COUNT");
-	const char* pbc_tag = "##INFO=<ID=INS_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the prefix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,pbc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_INFO, "INS_SUFFIX_BASE_COUNT");
-	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,sbc_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_INFO, "HARD_FILTERS");
-	const char* hf_tag = "##INFO=<ID=HARD_FILTERS,Number=.,Type=String,Description=\"PASS or not according to hard filters.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,hf_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
-    const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1");
-    const char* arc1_tag = "##FORMAT=<ID=ARC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF1");
-    const char* arcf1_tag = "##FORMAT=<ID=ARCF1,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR1");
-    const char* arcr1_tag = "##FORMAT=<ID=ARCR1,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS1");
-    const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
-    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1HQ");
-    const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
-    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
-    const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2");
-    const char* arc2_tag = "##FORMAT=<ID=ARC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF2");
-    const char* arcf2_tag = "##FORMAT=<ID=ARCF2,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR2");
-    const char* arcr2_tag = "##FORMAT=<ID=ARCR2,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr2_tag, &len));
-    
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS2");
-    const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
-    const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2HQ");
-    const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
-    const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
-    const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC1");
-    const char* rrc1_tag = "##FORMAT=<ID=RRC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR2");
-    const char* rr2_tag = "##FORMAT=<ID=RR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC2");
-    const char* rrc2_tag = "##FORMAT=<ID=RRC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
-    const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
-    const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
-    const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
-            "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsize_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZEHQ");
-    const char* minsizehq_tag = "##FORMAT=<ID=MINSIZEHQ,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution for high-quality reads."
-            "Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, minsizehq_tag, &len));
-    
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZE");
-    const char* maxsize_tag = "##FORMAT=<ID=MAXSIZE,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution."
-			"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsize_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "MAXSIZEHQ");
-    const char* maxsizehq_tag = "##FORMAT=<ID=MAXSIZEHQ,Number=1,Type=Integer,Description=\"Maximum size of the event calculated based on insert size distribution for high-quality reads."
-        	"Note that this is calculated on the assumption of HOM_ALT events, and should be doubled to accommodate HET events.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsizehq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
-    const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVALHQ");
-    const char* kspvalhq_tag = "##FORMAT=<ID=KSPVALHQ,Number=1,Type=Float,Description=\"p-value of the KS test for high-quality reads.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspvalhq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1");
-    const char* dp1_tag = "##FORMAT=<ID=DP1,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2");
-    const char* dp2_tag = "##FORMAT=<ID=DP2,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1HQ");
-    const char* dp1hq_tag = "##FORMAT=<ID=DP1HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2HQ");
-    const char* dp2hq_tag = "##FORMAT=<ID=DP2HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2hq_tag, &len));
-    
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1MQ");
-    const char* dp1mq_tag = "##FORMAT=<ID=DP1MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2MQ");
-    const char* dp2mq_tag = "##FORMAT=<ID=DP2MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPLANM");
-    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Float,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dplanm_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
-    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Float,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSL");
-    const char* dpsl_tag = "##FORMAT=<ID=DPSL,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the left breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsl_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSR");
-    const char* dpsr_tag = "##FORMAT=<ID=DPSR,Number=1,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsr_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSLHQ");
-	const char* dpslhq_tag = "##FORMAT=<ID=DPSLHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left breakpoint of the SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpslhq_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSRHQ");
-	const char* dpsrhq_tag = "##FORMAT=<ID=DPSRHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the right breakpoint of the SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsrhq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
-    const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "CPHQ");
-	const char* cphq_tag = "##FORMAT=<ID=CPHQ,Number=3,Type=Integer,Description=\"Number of high-quality concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cphq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
-    const char* axr_tag = "##FORMAT=<ID=AXR,Number=1,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axr_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AXRHQ");
-    const char* axrhq_tag = "##FORMAT=<ID=AXRHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads used to extend the alternative allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axrhq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXL");
-    const char* exl_tag = "##FORMAT=<ID=EXL,Number=1,Type=Integer,Description=\"Length of the extended alternative allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exl_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXAS");
-    const char* exas_tag = "##FORMAT=<ID=EXAS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the original alternative allele (the reference with the SV applied).\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS");
-    const char* exrs_tag = "##FORMAT=<ID=EXRS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the reference.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
-	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));
 }
 
 void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for_gt = false) {
@@ -736,6 +678,12 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int cluster_depths_highmq[] = {sv->median_left_cluster_cov_highmq, sv->median_right_cluster_cov_highmq};
 		bcf_update_format_int32(hdr, bcf_entry, "CLMDHQ", cluster_depths_highmq, 2);
 
+		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
+		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
+		
+		int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
+		bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+
 		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 		bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
@@ -764,6 +712,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
 	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->ngt);
 
+	if (sv->incomplete_ins_seq()) {
+		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
+	}
+
 	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
 	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->ngt);
 
@@ -774,53 +726,28 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 				bcf_update_info_string(hdr, bcf_entry, "ORIGINAL_RANGE", del->original_range.c_str());
 			}
 			if (del->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-				bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE", &(del->min_conf_size), 1);
-				if (del->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-					bcf_update_info_int32(hdr, bcf_entry, "MIN_SIZE_HIGHMQ", &(del->min_conf_size_highmq), 1);
-				}
+				bcf_update_format_int32(hdr, bcf_entry, "MINSIZE", &(del->min_conf_size), 1);
 			}
 			if (del->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
-				bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE", &(del->max_conf_size), 1);
-				if (del->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-					bcf_update_info_int32(hdr, bcf_entry, "MAX_SIZE_HIGHMQ", &(del->max_conf_size_highmq), 1);
-				}
+				bcf_update_format_int32(hdr, bcf_entry, "MAXSIZE", &(del->max_conf_size), 1);
 			}
 			if (del->imprecise && del->estimated_size != deletion_t::SIZE_NOT_COMPUTED) {
 				bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
 			}
 			if (del->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
 				float ks_pval = del->ks_pval;
-				bcf_update_info_float(hdr, bcf_entry, "KS_PVAL", &ks_pval, 1);
-				if (del->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
-					float ks_pval_highmq = del->ks_pval_highmq;
-					bcf_update_info_float(hdr, bcf_entry, "KS_PVAL_HIGHMQ", &ks_pval_highmq, 1);
-				}
+				bcf_update_format_float(hdr, bcf_entry, "KSPVAL", &ks_pval, 1);
 			}
-			int disc_pairs_surr[] = {del->l_cluster_region_disc_pairs, del->r_cluster_region_disc_pairs};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-			int disc_pairs_surr_hq[] = {del->l_cluster_region_disc_pairs_high_mapq, del->r_cluster_region_disc_pairs_high_mapq};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", disc_pairs_surr_hq, 2);
 			int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
 			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
 			int conc_pairs_hq[] = {del->conc_pairs_lbp_high_mapq, del->conc_pairs_midp_high_mapq, del->conc_pairs_rbp_high_mapq};
 			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
 		}
-	} else if (sv->svtype() == "DUP") {
-		duplication_t* dup = (duplication_t*) sv;
-		if (!for_gt) {
-			int disc_pairs_surr[] = {dup->l_cluster_region_disc_pairs, dup->r_cluster_region_disc_pairs};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING", disc_pairs_surr, 2);
-			int disc_pairs_surr_hq[] = {dup->l_cluster_region_disc_pairs_high_mapq, dup->r_cluster_region_disc_pairs_high_mapq};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", disc_pairs_surr_hq, 2);
-		}
-	} else if (sv->svtype() == "INS") {
-		insertion_t* ins = (insertion_t*) sv;
-		if (ins->incomplete_assembly()) {
-			bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
-		}
 	} else if (sv->svtype() == "INV") {
 		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
 		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
+		int conc_pairs_hq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
+		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
 	}
 }
 
@@ -1246,22 +1173,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_PAIRS_SURROUNDING", &data, &len);
-	if (len > 0) {
-		sv->l_cluster_region_disc_pairs = data[0];
-		sv->r_cluster_region_disc_pairs = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_PAIRS_SURROUNDING_HIGHMAPQ", &data, &len);
-	if (len > 0) {
-		sv->l_cluster_region_disc_pairs_high_mapq = data[0];
-		sv->r_cluster_region_disc_pairs_high_mapq = data[1];
-	}
-
-	data = NULL;
-	len = 0;
 	bcf_get_info_int32(hdr, b, "CONC_PAIRS", &data, &len);
 	if (len > 0) {
 		sv->conc_pairs_lbp = data[0];
@@ -1280,44 +1191,23 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	f_data = NULL;
 	len = 0;
-	bcf_get_info_float(hdr, b, "KS_PVAL", &f_data, &len);
+	bcf_get_format_float(hdr, b, "KSPVAL", &f_data, &len);
 	if (len > 0) {
 		sv->ks_pval = f_data[0];
 	}
 
-	f_data = NULL;
-	len = 0;
-	bcf_get_info_float(hdr, b, "KS_PVAL_HIGHMQ", &f_data, &len);
-	if (len > 0) {
-		sv->ks_pval_highmq = f_data[0];
-	}
-
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "MIN_SIZE", &data, &len);
+	bcf_get_format_int32(hdr, b, "MINSIZE", &data, &len);
 	if (len > 0) {
 		sv->min_conf_size = data[0];
 	}
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "MIN_SIZE_HIGHMQ", &data, &len);
-	if (len > 0) {
-		sv->min_conf_size_highmq = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "MAX_SIZE", &data, &len);
+	bcf_get_format_int32(hdr, b, "MAXSIZE", &data, &len);
 	if (len > 0) {
 		sv->max_conf_size = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "MAX_SIZE_HIGHMQ", &data, &len);
-	if (len > 0) {
-		sv->max_conf_size_highmq = data[0];
 	}
 
 	data = NULL;
@@ -1354,6 +1244,22 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->median_left_cluster_cov_highmq = data[0];
 		sv->median_right_cluster_cov_highmq = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_format_int32(hdr, b, "DPS", &data, &len);
+	if (len > 0) {
+		sv->l_cluster_region_disc_pairs = data[0];
+		sv->r_cluster_region_disc_pairs = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_format_int32(hdr, b, "DPSHQ", &data, &len);
+	if (len > 0) {
+		sv->l_cluster_region_disc_pairs_high_mapq = data[0];
+		sv->r_cluster_region_disc_pairs_high_mapq = data[1];
 	}
 
 	data = NULL;

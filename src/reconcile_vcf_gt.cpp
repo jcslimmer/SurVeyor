@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
 
     // reset samples in out header
     bcf_hdr_t* out_hdr = bcf_hdr_dup(base_hdr);
-    add_genotyping_tags(out_hdr);
+    add_fmt_tags(out_hdr);
     bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
     int len = 0;
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";

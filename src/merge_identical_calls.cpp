@@ -18,7 +18,7 @@ void merge_1sr_with_1sr(bcf_hdr_t* hdr, sv_t* rc_sv, sv_t* lc_sv, bool store_in_
 int priority(sv_t* sv) {
 	if (sv->source == "DE_NOVO_ASSEMBLY" || sv->source == "REFERENCE_GUIDED_ASSEMBLY") {
 		insertion_t* ins = dynamic_cast<insertion_t*>(sv);
-		if (ins->imprecise || ins->incomplete_assembly()) return 7;
+		if (ins->imprecise || ins->incomplete_ins_seq()) return 7;
 		else return 1;
 	} else if (sv->source == "2SR") return 2;
 	else if (sv->source == "HSR-SR" || sv->source == "SR-HSR") return 3;

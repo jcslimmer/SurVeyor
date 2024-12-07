@@ -41,7 +41,7 @@ std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mate
 std::vector<int> active_threads_per_chr;
 std::vector<std::mutex> mutex_per_chr;
 
-void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, int sample_idx) {
+void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, hts_pos_t chr_len, int sample_idx) {
     
     bcf_translate(out_hdr, in_hdr, sv->vcf_entry);
 
@@ -85,6 +85,19 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_PREFIX_BASE_COUNT", pbc, 4);
 	int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
+
+    // if (sv->svtype() == "DEL" && sv->ins_seq.empty()) {
+    //     int prefix_mh_len = 0, suffix_mh_len = 0;
+    //     while (prefix_mh_len < sv->svlen() && sv->end+prefix_mh_len+1 < chr_len && chr_seq[sv->start+prefix_mh_len+1] == chr_seq[sv->end+prefix_mh_len+1]) {
+    //         prefix_mh_len++;
+    //     }
+    //     bcf_update_info_int32(out_hdr, sv->vcf_entry, "PREFIX_MH_LEN", &prefix_mh_len, 1);
+
+    //     while (suffix_mh_len < sv->svlen() && sv->start-suffix_mh_len-1 >= 0 && chr_seq[sv->start-suffix_mh_len] == chr_seq[sv->end-suffix_mh_len]) {
+    //         suffix_mh_len++;
+    //     }
+    //     bcf_update_info_int32(out_hdr, sv->vcf_entry, "SUFFIX_MH_LEN", &suffix_mh_len, 1);
+    // }
 
     // update FORMAT fields
     bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->regenotyping_info.gt, sv->regenotyping_info.n_gt);
@@ -137,22 +150,12 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     if (sv->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(sv->min_conf_size), 1);
     }
-    if (sv->min_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZEHQ", &(sv->min_conf_size_highmq), 1);
-    }
     if (sv->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(sv->max_conf_size), 1);
     }
-    if (sv->max_conf_size_highmq != deletion_t::SIZE_NOT_COMPUTED) {
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZEHQ", &(sv->max_conf_size_highmq), 1);
-    }
     if (sv->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
-        float ks_pvalue = sv->ks_pval;
-        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pvalue, 1);
-    }
-    if (sv->ks_pval_highmq != deletion_t::KS_PVAL_NOT_COMPUTED) {
-        float ks_pvalue_highmq = sv->ks_pval_highmq;
-        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVALHQ", &ks_pvalue_highmq, 1);
+        float ks_pval = sv->ks_pval;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pval, 1);
     }
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
@@ -167,10 +170,12 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     float dpranm = sv->disc_pairs_rf_avg_nm;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
 
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSL", &(sv->l_cluster_region_disc_pairs), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSR", &(sv->r_cluster_region_disc_pairs), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSLHQ", &(sv->l_cluster_region_disc_pairs_high_mapq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSRHQ", &(sv->r_cluster_region_disc_pairs_high_mapq), 1);
+    int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPS", disc_pairs_surr, 2);
+    
+    int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+
     if (sv->svtype() != "DUP") {
         int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
@@ -1961,7 +1966,7 @@ int main(int argc, char* argv[]) {
         bcf_hdr_add_sample(out_vcf_header, sample_name.c_str());
         imap[0] = -1;
     }
-    add_genotyping_tags(out_vcf_header);
+    add_fmt_tags(out_vcf_header);
     if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
     	throw std::runtime_error("Failed to read the VCF header.");
     }
@@ -2034,7 +2039,7 @@ int main(int argc, char* argv[]) {
 		for (auto& sv : contig_svs) {
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            update_record(in_vcf_header, out_vcf_header, sv, chr_seqs.get_seq(contig_name), imap[0]);
+            update_record(in_vcf_header, out_vcf_header, sv, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
 				throw std::runtime_error("Failed to write VCF record to " + out_vcf_fname);
 			}

@@ -404,15 +404,10 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				int avg_is_highmq = sum_highmq/n_highmq;
 				int var_is_highmq = (sq_sum_highmq - sum_highmq*sum_highmq/n_highmq)/(n_highmq-1);
 				int confidence_ival_highmq = 2.576 * sqrt(var_is_highmq/n_highmq);
-				sv->min_conf_size_highmq = abs(avg_is_highmq - stats.pop_avg_crossing_is) - confidence_ival_highmq;
-				sv->max_conf_size_highmq = abs(avg_is_highmq - stats.pop_avg_crossing_is) + confidence_ival_highmq;
 			}
 
             if (!global_crossing_isize_dist.empty()) {
 				sv->ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
-				if (n_highmq >= 4) {
-					sv->ks_pval_highmq = ks_test(global_crossing_isize_dist, local_dists_highmq[i]);
-				}
             
 				if (sv->svtype() != "DEL" || !sv->imprecise || disallow_changes) continue;
 
