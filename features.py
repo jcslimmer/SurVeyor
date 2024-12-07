@@ -14,7 +14,8 @@ class Features:
                              'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
                              'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
                              'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
-                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO']
+                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
+                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN']
 
     denovo_features_names = ['IMPRECISE', 'SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
                       'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
@@ -25,7 +26,7 @@ class Features:
                       'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
                       'CONC_PAIRS_SCALED1', 'CONC_PAIRS_SCALED2', 'CONC_PAIRS_SCALED3', 'DISC_PAIRS_SURROUNDING1', 'DISC_PAIRS_SURROUNDING2', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2', 
                       'KS_PVAL', 'KS_PVAL_HIGHMQ', 'SIZE_NORM', 'SIZE_NORM_HIGHMQ',
-                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO', 'INS_SEQ_COV_PREFIX_START', 'INS_SEQ_COV_PREFIX_END', 'INS_SEQ_COV_SUFFIX_START', 'INS_SEQ_COV_SUFFIX_END']
+                      'PREFIX_MH_LEN_RATIO', 'SUFFIX_MH_LEN_RATIO']
 
     regt_shared_features_names = \
             ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
@@ -173,12 +174,12 @@ class Features:
             svinslen = len(svinsseq)
         features['SVINSLEN'] = svinslen
 
-        features['INS_SEQ_COV_PREFIX_START'], features['INS_SEQ_COV_PREFIX_END'] = 0, 1
-        features['INS_SEQ_COV_SUFFIX_START'], features['INS_SEQ_COV_SUFFIX_END'] = 0, 1
+        features['INS_SEQ_COV_PREFIX_LEN'] = 1
+        features['INS_SEQ_COV_SUFFIX_LEN'] = 1
         if '-' in svinsseq:
             i = svinsseq.index('-')
-            features['INS_SEQ_COV_SUFFIX_START'] = i/len(svinsseq)
-            features['INS_SEQ_COV_PREFIX_END'] = (len(svinsseq)-i)/len(svinsseq)
+            features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
+            features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
         split_reads = Features.get_number_value(info, 'SPLIT_READS', [0, 0])
         features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = Features.normalise(split_reads[0], min_depth, max_depth), Features.normalise(split_reads[1], min_depth, max_depth)
