@@ -541,7 +541,6 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
         svs.push_back(sv);
     }
 	svs[0]->prefix_mh_len = prefix_mh_len;
-	svs[0]->suffix_mh_len = suffix_mh_len;
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_start, right_anchor_end);

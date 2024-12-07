@@ -111,7 +111,7 @@ bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Alignment& al
 	if (ignore_seq) return true;
 	if (sv1->ins_seq.length() > UINT16_MAX || sv2->ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
 
-	if (sv1->incomplete_assembly() || sv2->incomplete_assembly()) return true; // do not compare incomplete assemblies
+	if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) return true; // do not compare incomplete assemblies
 
 	int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
 	if (abs((int) (sv1->ins_seq.length()-sv2->ins_seq.length())) > max_len_diff) return false;

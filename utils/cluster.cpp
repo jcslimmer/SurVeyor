@@ -152,7 +152,7 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
 sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     std::unordered_map<std::string, int> counts;
     for (sv_w_samplename_t& sv : svs) {
-        if (!sv.sv->imprecise && !sv.sv->incomplete_assembly()) {
+        if (!sv.sv->imprecise && !sv.sv->incomplete_ins_seq()) {
             counts[sv.sv->unique_key()]++;
         }
     }
@@ -244,7 +244,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		int_conv = clique.size();
 		bcf_update_info_int32(out_hdr, vcf_sv, "N_SVS", &int_conv, 1);
 		bcf_update_info_flag(out_hdr, vcf_sv, "IMPRECISE", "", chosen_sv.sv->imprecise);
-		bcf_update_info_flag(out_hdr, vcf_sv, "INCOMPLETE_ASSEMBLY", "", chosen_sv.sv->incomplete_assembly());
+		bcf_update_info_flag(out_hdr, vcf_sv, "INCOMPLETE_ASSEMBLY", "", chosen_sv.sv->incomplete_ins_seq());
 
 		if (!chosen_sv.sv->ins_seq.empty()) {
 			bcf_update_info_string(out_hdr, vcf_sv, "SVINSSEQ", chosen_sv.sv->ins_seq.c_str());
@@ -289,7 +289,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 			coos_str[sample2id[sv.sample]] += std::to_string(sv.sv->start+1) + "-" + std::to_string(sv.sv->end+1); // report 1-based
 			sizes_str[sample2id[sv.sample]] += std::to_string(sv.sv->svlen());
 			prec_str[sample2id[sv.sample]] += (sv.sv->imprecise ? "I" : "P");
-			incomplete_ass_str[sample2id[sv.sample]] += (sv.sv->incomplete_assembly() ? "T" : "F");
+			incomplete_ass_str[sample2id[sv.sample]] += (sv.sv->incomplete_ins_seq() ? "T" : "F");
 		}
 		for (int i = 0; i < n_samples; i++) {
 			if (coos_str[i].empty()) {

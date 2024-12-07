@@ -366,9 +366,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* prefix_mh_len = "##INFO=<ID=PREFIX_MH_LEN,Number=1,Type=Integer,Description=\"Length of the prefix of the inserted sequence that is a microhomology.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,prefix_mh_len, &len));
 
-	const char* suffix_mh_len = "##INFO=<ID=SUFFIX_MH_LEN,Number=1,Type=Integer,Description=\"Length of the suffix of the inserted sequence that is a microhomology.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header,suffix_mh_len, &len));
-
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
@@ -572,9 +569,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
 		if (sv->prefix_mh_len > 0) {
 			bcf_update_info_int32(hdr, bcf_entry, "PREFIX_MH_LEN", &sv->prefix_mh_len, 1);
-		}
-		if (sv->suffix_mh_len > 0) {
-			bcf_update_info_int32(hdr, bcf_entry, "SUFFIX_MH_LEN", &sv->suffix_mh_len, 1);
 		}
 	}
 	if (!sv->inferred_ins_seq.empty()) {
@@ -1088,13 +1082,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "PREFIX_MH_LEN", &data, &len);
 	if (len > 0) {
 		sv->prefix_mh_len = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "SUFFIX_MH_LEN", &data, &len);
-	if (len > 0) {
-		sv->suffix_mh_len = data[0];
 	}
 
 	data = NULL;
