@@ -554,7 +554,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
-    calculate_ptn_ratio(contig_name, large_deletions, bam_file, config, stats, true);
+    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, true);
     calculate_cluster_region_disc(contig_name, dels, bam_file, config);
 }
 

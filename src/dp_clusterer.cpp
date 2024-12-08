@@ -70,7 +70,7 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 	}
 	close_samFile(dp_bam_file);
 	qname_to_mate_nm.clear();
-	
+
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
 	if (!lp_clusters.empty()) cluster_clusters(lp_clusters, min_cluster_size, max_cluster_size);
