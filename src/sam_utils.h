@@ -4,7 +4,6 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
-#include <queue>
 #include <mutex>
 
 #include "htslib/sam.h"
@@ -196,6 +195,7 @@ void rc(std::string& read) {
 }
 void rc(char* read) {
     int len = strlen(read);
+
     for (int i = 0; i < len/2; i++) {
         std::swap(read[i], read[len-i-1]);
     }

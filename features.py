@@ -46,7 +46,7 @@ class Features:
     def get_regt_feature_names(model_name):
         extra_feature_names = []
         if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
-            extra_feature_names = Features.stat_test_features_names
+            extra_feature_names = Features.stat_test_features_names + Features.regt_dp_features_names
         elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
             extra_feature_names = Features.regt_dp_features_names
         return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names

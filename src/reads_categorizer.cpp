@@ -173,7 +173,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     lp_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
                 }
             } else if (is_outward(read)) {
-                if (read->core.pos < 0) {
+                if (read->core.isize < 0) {
                     if (!ow_writer) ow_writer = open_writer(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(ow_writer, bam_file->header, read);

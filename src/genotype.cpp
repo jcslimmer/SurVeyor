@@ -1251,6 +1251,13 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
         if (bam_is_rev(read)) continue;
 
         std::string qname = bam_get_qname(read);
+        if (is_samechr(read)) {
+            if (read->core.flag & BAM_FREAD1) {
+                qname += "_2";
+            } else {
+                qname += "_1";
+            }
+        }
         if (mateseqs_w_mapq_chr.count(qname) == 0) continue;
 
         std::string mate_seq = mateseqs_w_mapq_chr[qname].first;
@@ -1302,6 +1309,13 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
         if (!bam_is_rev(read)) continue;
 
         std::string qname = bam_get_qname(read);
+        if (is_samechr(read)) {
+            if (read->core.flag & BAM_FREAD1) {
+                qname += "_2";
+            } else {
+                qname += "_1";
+            }
+        }
         if (mateseqs_w_mapq_chr.count(qname) == 0) continue;
 
         std::string mate_seq = mateseqs_w_mapq_chr[qname].first;
