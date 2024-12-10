@@ -47,10 +47,7 @@ std::ofstream open_mateseqs_fout(int contig_id) {
     return std::ofstream(workspace + "/mateseqs/" + fname, std::ios_base::app);
 }
 
-void get_base_stats(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
-
-    std::mt19937 rng(config.seed);
-    std::shuffle(rnd_positions.begin(), rnd_positions.end(), rng);
+void get_base_stats(int id, std::string bam_fname, std::string reference_fname, std::vector<std::pair<std::string, hts_pos_t> > rnd_positions) {
 
     open_samFile_t* bam_file = open_samFile(bam_fname);
     if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
@@ -61,9 +58,9 @@ void get_base_stats(int id, int contig_id, std::string contig_name, std::string 
     bam1_t* read = bam_init1();
     int read_len = 0;
 
-    for (hts_pos_t pos : rnd_positions) {
+    for (auto& rnd_pos : rnd_positions) {
         std::stringstream ss;
-        ss << contig_name << ":" << pos << "-" << pos+1000;
+        ss << rnd_pos.first << ":" << rnd_pos.second << "-" << rnd_pos.second+1000;
         hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
 
         int added = 0;
@@ -354,19 +351,25 @@ int main(int argc, char* argv[]) {
     mate_seqs.resize(contig_map.size());
 
     // generate random positions
-	std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
+	std::vector<std::pair<std::string, hts_pos_t> > rnd_positions;
+    std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
 	random_pos_generator_t random_pos_generator(chr_seqs, config.seed, config.sampling_regions);
     int n_rand_pos = random_pos_generator.reference_len/1000;
 	for (int i = 0; i < n_rand_pos; i++) {
         std::pair<std::string, hts_pos_t> rnd_pos = random_pos_generator.get_random_pos();
-		rnd_pos_map[rnd_pos.first].push_back(rnd_pos.second);
+		rnd_positions.push_back(rnd_pos);
+        rnd_pos_map[rnd_pos.first].push_back(rnd_pos.second);
 	}
+
+    std::mt19937 rng(config.seed);
+    std::shuffle(rnd_positions.begin(), rnd_positions.end(), rng);    
 
     ctpl::thread_pool base_stats_thread_pool(config.threads);
     std::vector<std::future<void> > futures;
-    for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-        std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = base_stats_thread_pool.push(get_base_stats, contig_id, contig_name, bam_fname, reference_fname, rnd_pos_map[contig_name]);
+    int RND_POS_BLOCK_SIZE = rnd_positions.size()/(config.threads*10);
+    for (int i = 0; i < rnd_positions.size(); i+=RND_POS_BLOCK_SIZE) {
+        std::vector<std::pair<std::string, hts_pos_t> > rnd_pos_block(rnd_positions.begin()+i, rnd_positions.begin()+std::min(i+RND_POS_BLOCK_SIZE, (int) rnd_positions.size()));
+        std::future<void> future = base_stats_thread_pool.push(get_base_stats, bam_fname, reference_fname, rnd_pos_block);
         futures.push_back(std::move(future));
     }
     base_stats_thread_pool.stop(true);
@@ -380,7 +383,6 @@ int main(int argc, char* argv[]) {
     futures.clear();
 
     // Calculate base stats
-
     int mean_is = mean(general_isize_dist);
     int stddev_is = stddev(general_isize_dist);
     general_isize_dist.erase(std::remove_if(general_isize_dist.begin(), general_isize_dist.end(), [mean_is, stddev_is](int x) { return std::abs(x-mean_is) >= 5*stddev_is; }), general_isize_dist.end());
@@ -412,7 +414,6 @@ int main(int argc, char* argv[]) {
     dist_between_end_and_rnd.resize(stats.max_is+1);
 
     // Categorize reads
-
     ctpl::thread_pool categorize_thread_pool(config.threads);
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
