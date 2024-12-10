@@ -65,6 +65,8 @@ void size_and_depth_filtering_dup(int id, std::string contig_name) {
     mtx.lock();
     std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
     mtx.unlock();
+
+    calculate_ptn_ratio(contig_name, duplications, bam_file, config, stats);
     depth_filter_dup(contig_name, duplications, bam_file, config, stats);
     calculate_cluster_region_disc(contig_name, duplications, bam_file, config, stats);
 

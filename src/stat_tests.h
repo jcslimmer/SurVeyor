@@ -616,7 +616,45 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		}
 	}
 }
-void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
+	if (duplications.empty()) return;
+	std::vector<sv_t*> svs(duplications.begin(), duplications.end());
+	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
+
+	std::vector<char*> regions;
+	for (duplication_t* dup : duplications) {
+		std::stringstream ss;
+		ss << contig_name << ":" << std::max(hts_pos_t(1), dup->start) << "-" << dup->start+stats.max_is;
+		char* region = new char[ss.str().length()+1];
+		strcpy(region, ss.str().c_str());
+		regions.push_back(region);
+	}
+
+	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
+		return d1->start < d2->start;
+	});
+
+	int curr_pos = 0;
+	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+	bam1_t* read = bam_init1();
+	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+		if (!bam_is_rev(read) || is_unmapped(read) || !is_primary(read) || !is_outward(read)) continue;
+
+		while (curr_pos < duplications.size() && duplications[curr_pos]->start+stats.max_is < read->core.pos) curr_pos++;
+
+		for (int i = curr_pos; i < duplications.size() && bam_endpos(read) > duplications[i]->start; i++) {
+			duplication_t* dup = duplications[i];
+			hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
+			if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
+				dup->disc_pairs_lf++;
+				dup->disc_pairs_rf++;
+				if (read->core.qual >= config.high_confidence_mapq) dup->disc_pairs_lf_high_mapq++;
+				if (get_mq(read) >= config.high_confidence_mapq) dup->disc_pairs_rf_high_mapq++;
+			}
+		}
+	}
+}
+void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
 	if (insertions.empty()) return;
 	std::vector<sv_t*> svs(insertions.begin(), insertions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);

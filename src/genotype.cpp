@@ -177,12 +177,10 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
 
-    if (sv->svtype() != "DUP") {
-        int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
-        int cphq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "CPHQ", cphq, 3);
-    }
+    int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
+    int cphq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "CPHQ", cphq, 3);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", &(sv->regenotyping_info.alt_ext_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXRHQ", &(sv->regenotyping_info.hq_alt_ext_reads), 1);
@@ -981,6 +979,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats);
     calculate_cluster_region_disc(contig_name, dups, bam_file, config, stats);
 }
 
