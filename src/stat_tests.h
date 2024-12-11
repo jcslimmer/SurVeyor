@@ -555,7 +555,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 	}
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false,
+	std::string nm_file = "") {
+	
 	if (deletions.empty()) return;
 	std::vector<sv_t*> svs(deletions.begin(), deletions.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
@@ -573,6 +575,14 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		std::sort(deletions.begin(), deletions.end(), [](const deletion_t* d1, const deletion_t* d2) {
 			return d1->start < d2->start;
 		});
+
+		std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
+		std::ifstream mateseqs_fin(nm_file);
+		std::string qname, seq;
+		int64_t nm;
+		while (mateseqs_fin >> qname >> seq >> nm) {
+			qname_to_mate_nm[qname] = nm;
+		}
 
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -605,7 +615,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 							deletions[i]->disc_pairs_rf_maxmapq = mq;
 						}
 						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
-						// TODO: is it worth it to spend the extra time to calculate the rf avg NM?
+						deletions[i]->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
 					}
 				}
 			}
@@ -613,44 +623,63 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		}
 		for (int i = 0; i < deletions.size(); i++) {
 			if (deletions[i]->disc_pairs_lf > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->disc_pairs_lf;
+			if (deletions[i]->disc_pairs_rf > 0) deletions[i]->disc_pairs_rf_avg_nm /= deletions[i]->disc_pairs_rf;
 		}
 	}
 }
-void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats) {
+void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats, bool find_disc_pairs = false,
+	std::string nm_file = "") {
+	
 	if (duplications.empty()) return;
 	std::vector<sv_t*> svs(duplications.begin(), duplications.end());
 	calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
 
-	std::vector<char*> regions;
-	for (duplication_t* dup : duplications) {
-		std::stringstream ss;
-		ss << contig_name << ":" << std::max(hts_pos_t(1), dup->start) << "-" << dup->start+stats.max_is;
-		char* region = new char[ss.str().length()+1];
-		strcpy(region, ss.str().c_str());
-		regions.push_back(region);
-	}
+	if (find_disc_pairs) {
+		std::vector<char*> regions;
+		for (duplication_t* dup : duplications) {
+			std::stringstream ss;
+			ss << contig_name << ":" << std::max(hts_pos_t(1), dup->start) << "-" << dup->start+stats.max_is;
+			char* region = new char[ss.str().length()+1];
+			strcpy(region, ss.str().c_str());
+			regions.push_back(region);
+		}
 
-	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
-		return d1->start < d2->start;
-	});
+		std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
+			return d1->start < d2->start;
+		});
 
-	int curr_pos = 0;
-	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
-	bam1_t* read = bam_init1();
-	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		if (!bam_is_rev(read) || is_unmapped(read) || !is_primary(read) || !is_outward(read)) continue;
+		std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
+		std::ifstream mateseqs_fin(nm_file);
+		std::string qname, seq;
+		int64_t nm;
+		while (mateseqs_fin >> qname >> seq >> nm) {
+			qname_to_mate_nm[qname] = nm;
+		}
 
-		while (curr_pos < duplications.size() && duplications[curr_pos]->start+stats.max_is < read->core.pos) curr_pos++;
+		int curr_pos = 0;
+		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
+		bam1_t* read = bam_init1();
+		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+			if (!bam_is_rev(read) || is_unmapped(read) || !is_primary(read) || !is_outward(read)) continue;
 
-		for (int i = curr_pos; i < duplications.size() && bam_endpos(read) > duplications[i]->start; i++) {
-			duplication_t* dup = duplications[i];
-			hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
-			if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
-				dup->disc_pairs_lf++;
-				dup->disc_pairs_rf++;
-				if (read->core.qual >= config.high_confidence_mapq) dup->disc_pairs_lf_high_mapq++;
-				if (get_mq(read) >= config.high_confidence_mapq) dup->disc_pairs_rf_high_mapq++;
+			while (curr_pos < duplications.size() && duplications[curr_pos]->start+stats.max_is < read->core.pos) curr_pos++;
+
+			for (int i = curr_pos; i < duplications.size() && bam_endpos(read) > duplications[i]->start; i++) {
+				duplication_t* dup = duplications[i];
+				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
+				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
+					dup->disc_pairs_lf++;
+					dup->disc_pairs_rf++;
+					if (read->core.qual >= config.high_confidence_mapq) dup->disc_pairs_lf_high_mapq++;
+					if (get_mq(read) >= config.high_confidence_mapq) dup->disc_pairs_rf_high_mapq++;
+					dup->disc_pairs_lf_avg_nm += get_nm(read);
+					dup->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
+				}
 			}
+		}
+		for (int i = 0; i < duplications.size(); i++) {
+			if (duplications[i]->disc_pairs_lf > 0) duplications[i]->disc_pairs_lf_avg_nm /= duplications[i]->disc_pairs_lf;
+			if (duplications[i]->disc_pairs_rf > 0) duplications[i]->disc_pairs_rf_avg_nm /= duplications[i]->disc_pairs_rf;
 		}
 	}
 }

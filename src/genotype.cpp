@@ -162,14 +162,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1HQ", &(sv->disc_pairs_lf_high_mapq), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1MQ", &(sv->disc_pairs_lf_maxmapq), 1);
-    float dplanm = sv->disc_pairs_lf_avg_nm;
-    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPLANM", &dplanm, 1);
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
-    float dpranm = sv->disc_pairs_rf_avg_nm;
-    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPRANM", &dpranm, 1);
+
+    float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
+    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPNM", &dpnm, 2);
 
     int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPS", disc_pairs_surr, 2);
@@ -552,7 +551,8 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
-    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, true);
+    std::string mates_nms_file = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt";
+    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, true, mates_nms_file);
     calculate_cluster_region_disc(contig_name, dels, bam_file, config);
 }
 
@@ -979,7 +979,8 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
-    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats);
+    std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, true, mates_nms_file);
     calculate_cluster_region_disc(contig_name, dups, bam_file, config, stats);
 }
 

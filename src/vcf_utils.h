@@ -226,13 +226,9 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* dp2mq_tag = "##FORMAT=<ID=DP2MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the second breakpoint of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPLANM");
-    const char* dplanm_tag = "##FORMAT=<ID=DPLANM,Number=1,Type=Float,Description=\"Average NM value of the left-most reads in the discordant pairs supporting this SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dplanm_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPRANM");
-    const char* dpranm_tag = "##FORMAT=<ID=DPRANM,Number=1,Type=Float,Description=\"Average NM value of the right-most reads in the discordant pairs supporting this SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpranm_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPNM");
+	const char* dpnm_tag = "##FORMAT=<ID=DPNM,Number=2,Type=Float,Description=\"Average NM value of the left and right reads in the discordant pairs supporting this SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpnm_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
     const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
@@ -459,12 +455,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* avg_nm_tag = "##INFO=<ID=DISC_AVG_NM,Number=2,Type=Float,Description=\"Average NM of discordant pairs (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, avg_nm_tag, &len));
 
-	const char* conc_pairs_tag = "##INFO=<ID=CONC_PAIRS,Number=3,Type=Integer,Description=\"Concordant pairs crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_tag, &len));
-
-	const char* conc_pairs_hmapq_tag = "##INFO=<ID=CONC_PAIRS_HIGHMAPQ,Number=3,Type=Integer,Description=\"Concordant pairs with high MAPQ crossing the left breakpoint, the mid point and the right breakpoint, respectively.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, conc_pairs_hmapq_tag, &len));
-
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
 
@@ -567,9 +557,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
 	if (!sv->ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
-		if (sv->mh_len > 0) {
-			bcf_update_info_int32(hdr, bcf_entry, "MH_LEN", &sv->mh_len, 1);
-		}
+	}
+	if (sv->mh_len > 0) {
+		bcf_update_info_int32(hdr, bcf_entry, "MH_LEN", &sv->mh_len, 1);
 	}
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
@@ -678,6 +668,12 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
 		bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
 
+		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
+		bcf_update_format_int32(hdr, bcf_entry, "CP", conc_pairs, 3);
+
+		int conc_pairs_hq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
+		bcf_update_format_int32(hdr, bcf_entry, "CPHQ", conc_pairs_hq, 3);
+
 		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 		bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
@@ -732,16 +728,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 				float ks_pval = del->ks_pval;
 				bcf_update_format_float(hdr, bcf_entry, "KSPVAL", &ks_pval, 1);
 			}
-			int conc_pairs[] = {del->conc_pairs_lbp, del->conc_pairs_midp, del->conc_pairs_rbp};
-			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
-			int conc_pairs_hq[] = {del->conc_pairs_lbp_high_mapq, del->conc_pairs_midp_high_mapq, del->conc_pairs_rbp_high_mapq};
-			bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
 		}
-	} else if (sv->svtype() == "INV") {
-		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
-		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS", conc_pairs, 3);
-		int conc_pairs_hq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
-		bcf_update_info_int32(hdr, bcf_entry, "CONC_PAIRS_HIGHMAPQ", conc_pairs_hq, 3);
 	}
 }
 
@@ -1160,7 +1147,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "CONC_PAIRS", &data, &len);
+	bcf_get_format_int32(hdr, b, "CP", &data, &len);
 	if (len > 0) {
 		sv->conc_pairs_lbp = data[0];
 		sv->conc_pairs_midp = data[1];
@@ -1169,7 +1156,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "CONC_PAIRS_HIGHMAPQ", &data, &len);
+	bcf_get_format_int32(hdr, b, "CPHQ", &data, &len);
 	if (len > 0) {
 		sv->conc_pairs_lbp_high_mapq = data[0];
 		sv->conc_pairs_midp_high_mapq = data[1];
