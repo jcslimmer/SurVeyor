@@ -5,17 +5,18 @@ import numpy as np
 
 class Features:
 
-    shared_features_names = ['START_STOP_DIST', 'SVLEN', 'SVINSLEN',
-                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
-                             'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
-                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ',
-                             'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
-                             'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
-                             'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
-                             'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
-                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
-                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
-                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
+    info_features_names = [ 'START_STOP_DIST', 'SVLEN', 'SVINSLEN', 
+                            'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
+                            'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
+                            'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
+                            'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
+                            'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
+                            'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
+                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
+
+    fmt_features_names = [  'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
+                            'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
+                            'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
 
     denovo_features_names = ['IMPRECISE', 'SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
                       'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
@@ -24,7 +25,7 @@ class Features:
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ', 'MAX_MAPQ_EXT1', 'MAX_MAPQ_EXT2', 'MAX_MAPQ_EXT',
                       'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                      'CONC_PAIRS_SCALED1', 'CONC_PAIRS_SCALED2', 'CONC_PAIRS_SCALED3', 'DISC_AVG_NM1', 'DISC_AVG_NM2', 'PTN_RATIO1', 'PTN_RATIO2']
+                      'DPLANM', 'DPRANM']
 
     regt_shared_features_names = \
             ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
@@ -32,24 +33,26 @@ class Features:
              'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
-             'CP1', 'CP2', 'CP3', 'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
+             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
 
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
 
     regt_dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
-    denovo_dp_features_names = []
+    denovo_dp_features_names = ['PTNR1', 'PTNR2']
 
     def get_denovo_feature_names(model_name):
-        return Features.shared_features_names + Features.denovo_features_names + Features.stat_test_features_names + Features.denovo_dp_features_names
+        return Features.info_features_names + Features.fmt_features_names + \
+            Features.denovo_features_names + Features.stat_test_features_names + Features.denovo_dp_features_names
 
     def get_regt_feature_names(model_name):
         extra_feature_names = []
-        if model_name in ["DEL", "DEL_IMPRECISE", "DUP"]:
+        if model_name in ["DEL", "DEL_IMPRECISE", "DUP", "DUP_IMPRECISE"]:
             extra_feature_names = Features.stat_test_features_names + Features.regt_dp_features_names
-        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
+        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "DUP_LARGE", "DUP_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
             extra_feature_names = Features.regt_dp_features_names
-        return Features.shared_features_names + Features.regt_shared_features_names + extra_feature_names
+        return Features.info_features_names + Features.fmt_features_names + \
+            Features.regt_shared_features_names + extra_feature_names
 
     def get_feature_names(model_name, denovo):
         if denovo:
@@ -250,14 +253,7 @@ class Features:
 
         features['DISC_PAIRS_MAXMAPQ1'], features['DISC_PAIRS_MAXMAPQ2'] = Features.get_number_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
 
-        conc_pairs = Features.get_number_value(info, 'CONC_PAIRS', [0, 0, 0])
-        min_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"]
-        max_pairs_crossing_point = stats['max_pairs_crossing_gap']["0"]
-        features['CONC_PAIRS_SCALED1'], features['CONC_PAIRS_SCALED2'], features['CONC_PAIRS_SCALED3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in conc_pairs]
-
         features['DISC_AVG_NM1'], features['DISC_AVG_NM2'] = Features.get_number_value(info, 'DISC_AVG_NM', [0, 0], read_len)
-
-        features['PTN_RATIO1'], features['PTN_RATIO2'] = disc_pairs[0]/max(1, disc_pairs[0]+conc_pairs[0]), disc_pairs[1]/max(1, disc_pairs[1]+conc_pairs[2])
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
@@ -418,10 +414,10 @@ class Features:
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
 
+        min_pairs_crossing_point, max_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"], stats['max_pairs_crossing_gap']["0"]
         cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
         features['CP1'], features['CP2'], features['CP3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
-        features['PTNR1'] = dp1/max(1, dp1+cp[0])
-        features['PTNR2'] = dp2/max(1, dp2+cp[2])
+        features['PTNR1'], features['PTNR2'] = dp1/max(1, dp1+cp[0]), dp2/max(1, dp2+cp[2])
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
