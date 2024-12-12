@@ -252,8 +252,6 @@ class Features:
 
         features['DISC_PAIRS_MAXMAPQ1'], features['DISC_PAIRS_MAXMAPQ2'] = Features.get_number_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
 
-        features['DISC_AVG_NM1'], features['DISC_AVG_NM2'] = Features.get_number_value(info, 'DISC_AVG_NM', [0, 0], read_len)
-
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
 

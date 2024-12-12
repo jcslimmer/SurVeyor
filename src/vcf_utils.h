@@ -202,29 +202,17 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1");
-    const char* dp1_tag = "##FORMAT=<ID=DP1,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP");
+    const char* dp_tag = "##FORMAT=<ID=DP,Number=2,Type=Integer,Description=\"Number of discordant pairs supporting the first and second breakpoints of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2");
-    const char* dp2_tag = "##FORMAT=<ID=DP2,Number=1,Type=Integer,Description=\"Number of discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPHQ");
+    const char* dphq_tag = "##FORMAT=<ID=DPHQ,Number=2,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first and second breakpoint of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dphq_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1HQ");
-    const char* dp1hq_tag = "##FORMAT=<ID=DP1HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1hq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2HQ");
-    const char* dp2hq_tag = "##FORMAT=<ID=DP2HQ,Number=1,Type=Integer,Description=\"Number of high quality discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2hq_tag, &len));
-    
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP1MQ");
-    const char* dp1mq_tag = "##FORMAT=<ID=DP1MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp1mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP2MQ");
-    const char* dp2mq_tag = "##FORMAT=<ID=DP2MQ,Number=1,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp2mq_tag, &len));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPMQ");
+    const char* dpmq_tag = "##FORMAT=<ID=DPMQ,Number=2,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first and the second breakpoints of the SV.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpmq_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPNM");
 	const char* dpnm_tag = "##FORMAT=<ID=DPNM,Number=2,Type=Float,Description=\"Average NM value of the left and right reads in the discordant pairs supporting this SV.\">";
@@ -446,14 +434,8 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=2,Type=Integer,Description=\"Discordant pairs supporting the SV (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
 
-	const char* dp_max_mapq_tag = "##INFO=<ID=DISC_PAIRS_MAXMAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of supporting discordant pairs (left and right flanking regions, respectively).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, dp_max_mapq_tag, &len));
-
 	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=2,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV (left and right flanking regions, respectively).\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
-
-	const char* avg_nm_tag = "##INFO=<ID=DISC_AVG_NM,Number=2,Type=Float,Description=\"Average NM of discordant pairs (left and right flanking regions, respectively).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, avg_nm_tag, &len));
 
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
@@ -644,10 +626,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
 			int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
 			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
-			int disc_pairs_maxmapq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_MAXMAPQ", disc_pairs_maxmapq, 2);
-			float avg_nm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
-			bcf_update_info_float(hdr, bcf_entry, "DISC_AVG_NM", avg_nm, 2);
 		}
 
 		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
@@ -665,8 +643,16 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
-		int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
-		bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+		if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+			int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
+			bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+
+			int dpmq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+			bcf_update_format_int32(hdr, bcf_entry, "DPMQ", dpmq, 2);
+		}
+
+		float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
+    	bcf_update_format_float(hdr, bcf_entry, "DPNM", &dpnm, 2);
 
 		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
 		bcf_update_format_int32(hdr, bcf_entry, "CP", conc_pairs, 3);
@@ -1123,23 +1109,23 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_PAIRS_MAXMAPQ", &data, &len);
-	if (len > 0) {
-		sv->disc_pairs_lf_maxmapq = data[0];
-		sv->disc_pairs_rf_maxmapq = data[1];
-	}
-
-	data = NULL;
-	len = 0;
 	bcf_get_info_int32(hdr, b, "DISC_PAIRS_HIGHMAPQ", &data, &len);
 	if (len > 0) {
 		sv->disc_pairs_lf_high_mapq = data[0];
 		sv->disc_pairs_rf_high_mapq = data[1];
 	}
 
+	data = NULL;
+	len = 0;
+	bcf_get_format_int32(hdr, b, "DPMQ", &data, &len);
+	if (len > 0) {
+		sv->disc_pairs_lf_maxmapq = data[0];
+		sv->disc_pairs_rf_maxmapq = data[1];
+	}
+
 	f_data = NULL;
 	len = 0;
-	bcf_get_info_float(hdr, b, "DISC_AVG_NM", &f_data, &len);
+	bcf_get_format_float(hdr, b, "DPNM", &f_data, &len);
 	if (len > 0) {
 		sv->disc_pairs_lf_avg_nm = f_data[0];
 		sv->disc_pairs_rf_avg_nm = f_data[1];

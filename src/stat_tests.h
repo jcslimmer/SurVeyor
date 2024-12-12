@@ -1,6 +1,7 @@
 #ifndef STAT_TESTS_H
 #define STAT_TESTS_H
 
+#include <cstdint>
 #include <cstring>
 #include <set>
 #include <cmath>
@@ -670,8 +671,19 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
 					dup->disc_pairs_lf++;
 					dup->disc_pairs_rf++;
-					if (read->core.qual >= config.high_confidence_mapq) dup->disc_pairs_lf_high_mapq++;
-					if (get_mq(read) >= config.high_confidence_mapq) dup->disc_pairs_rf_high_mapq++;
+					int64_t mq = get_mq(read);
+					if (read->core.qual >= config.high_confidence_mapq) {
+						dup->disc_pairs_lf_high_mapq++;
+					}
+					if (mq >= config.high_confidence_mapq) {
+						dup->disc_pairs_rf_high_mapq++;
+					}
+					if (read->core.qual > duplications[i]->disc_pairs_lf_maxmapq) {
+						duplications[i]->disc_pairs_lf_maxmapq = read->core.qual;
+					}
+					if (mq > duplications[i]->disc_pairs_rf_maxmapq) {
+						duplications[i]->disc_pairs_rf_maxmapq = mq;
+					}
 					dup->disc_pairs_lf_avg_nm += get_nm(read);
 					dup->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
 				}

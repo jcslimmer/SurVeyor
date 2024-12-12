@@ -159,13 +159,14 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pval, 1);
     }
 
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1", &(sv->disc_pairs_lf), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1HQ", &(sv->disc_pairs_lf_high_mapq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP1MQ", &(sv->disc_pairs_lf_maxmapq), 1);
+    int dp[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP", dp, 2);
 
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2", &(sv->disc_pairs_rf), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2HQ", &(sv->disc_pairs_rf_high_mapq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP2MQ", &(sv->disc_pairs_rf_maxmapq), 1);
+    int dphq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPHQ", dphq, 2);
+    
+    int dpmq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPMQ", dpmq, 2);
 
     float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
     bcf_update_format_float(out_hdr, sv->vcf_entry, "DPNM", &dpnm, 2);
