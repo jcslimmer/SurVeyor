@@ -24,8 +24,7 @@ class Features:
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ', 'MAX_MAPQ_EXT1', 'MAX_MAPQ_EXT2', 'MAX_MAPQ_EXT',
-                      'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2',
-                      'DPLANM', 'DPRANM']
+                      'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2']
 
     regt_shared_features_names = \
             ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
@@ -39,7 +38,7 @@ class Features:
 
     regt_dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
-    denovo_dp_features_names = ['PTNR1', 'PTNR2']
+    denovo_dp_features_names = ['DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_denovo_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
@@ -409,8 +408,7 @@ class Features:
         features['DP2_HQ_RATIO'] = dp2hq/max(1, dp2)
         features['DP1MQ'] = Features.get_number_value(record.samples[0], 'DP1MQ', 0)
         features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DP2MQ', 0)
-        features['DPLANM'] = Features.get_number_value(record.samples[0], 'DPLANM', 0)
-        features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPRANM', 0)
+        features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', 0, read_len)
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
 
