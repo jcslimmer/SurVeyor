@@ -454,9 +454,6 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 		}
 	} else {
 		consensus->end += ext_consensus.length() - consensus->sequence.length();
-		if (consensus->hq_right_ext_reads >= 3) {
-			consensus->max_mapq_ext = high_confidence_mapq;
-		}
 	}
 	consensus->sequence = ext_consensus;
 	consensus->extended_to_right = true;
@@ -526,9 +523,6 @@ void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>&
 		}
 	} else {
 		consensus->start -= ext_consensus.length() - consensus->sequence.length();
-		if (consensus->hq_left_ext_reads >= 3) {
-			consensus->max_mapq_ext = high_confidence_mapq;
-		}
 	}
 	consensus->sequence = ext_consensus;
 	consensus->extended_to_left = true;

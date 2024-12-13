@@ -14,7 +14,7 @@ struct consensus_t {
     hts_pos_t start, breakpoint, end;
     std::string sequence;
     int fwd_clipped, rev_clipped;
-    uint8_t max_mapq, max_mapq_ext;
+    uint8_t max_mapq;
     hts_pos_t remap_boundary;
     int clip_len, lowq_clip_portion;
     int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
@@ -37,7 +37,7 @@ struct consensus_t {
         int max_mapq_int;
         ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_clipped >> rev_clipped >> max_mapq_int >> remap_boundary >> lowq_clip_portion;
         left_clipped = dir == 'L';
-        max_mapq = max_mapq_ext = (uint8_t) max_mapq_int;
+        max_mapq = (uint8_t) max_mapq_int;
         if (is_hsr) {
             clip_len = UNKNOWN_CLIP_LEN;
         } else {

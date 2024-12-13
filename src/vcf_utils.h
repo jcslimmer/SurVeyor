@@ -365,9 +365,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of split reads forming the consensuss.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
 
-	const char* max_mapq_ext_tag = "##INFO=<ID=MAX_MAPQ_EXT,Number=2,Type=Integer,Description=\"Maximum MAPQ of reads forming the consensus, including reads used to extend it.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_ext_tag, &len));
-
 	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
 
@@ -430,12 +427,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
-
-	const char* disc_pairs_tag = "##INFO=<ID=DISC_PAIRS,Number=2,Type=Integer,Description=\"Discordant pairs supporting the SV (left and right flanking regions, respectively).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_tag, &len));
-
-	const char* disc_pairs_hmapq_tag = "##INFO=<ID=DISC_PAIRS_HIGHMAPQ,Number=2,Type=Integer,Description=\"HDiscordant pairs with high MAPQ supporting the SV (left and right flanking regions, respectively).\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, disc_pairs_hmapq_tag, &len));
 
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
@@ -599,8 +590,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	if (!for_gt) {
 		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
 		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-		int max_mapq_ext[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq_ext : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq_ext : 0};
-		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ_EXT", max_mapq_ext, 2);
 
 		if (sv->rc_consensus) {
 			int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
@@ -621,13 +610,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			}
 		}
 
-		if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
-			int disc_pairs[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS", disc_pairs, 2);
-			int disc_pairs_high_mapq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
-			bcf_update_info_int32(hdr, bcf_entry, "DISC_PAIRS_HIGHMAPQ", disc_pairs_high_mapq, 2);
-		}
-
 		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
 		bcf_update_format_int32(hdr, bcf_entry, "MD", median_depths, 4);
 
@@ -643,9 +625,14 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
+		int dp[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+		bcf_update_format_int32(hdr, bcf_entry, "DP", dp, 2);
 		if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
 			int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
 			bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+
+			int dphq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+			bcf_update_format_int32(hdr, bcf_entry, "DPHQ", dphq, 2);
 
 			int dpmq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
 			bcf_update_format_int32(hdr, bcf_entry, "DPMQ", dpmq, 2);
@@ -843,19 +830,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		max_lc_mapq = data[1];
 	}
 
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "MAX_MAPQ_EXT", &data, &len);
-	int max_rc_mapq_ext = 0, max_lc_mapq_ext = 0;
-	if (len > 0) {
-		max_rc_mapq_ext = data[0];
-		max_lc_mapq_ext = data[1];
-	}
-
 	consensus_t* rc_consensus = NULL;
 	if (rc_fwd_reads + rc_rev_reads > 0) {
 		rc_consensus = new consensus_t(false, 0, 0, 0, "", rc_fwd_reads, rc_rev_reads, 0, max_rc_mapq, consensus_t::UPPER_BOUNDARY_NON_CALCULATED, 0);
-		rc_consensus->max_mapq_ext = max_rc_mapq_ext;
 
 		data = NULL;
 		len = 0;
@@ -883,7 +860,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	consensus_t* lc_consensus = NULL;
 	if (lc_fwd_reads + lc_rev_reads > 0) {
 		lc_consensus = new consensus_t(true, 0, 0, 0, "", lc_fwd_reads, lc_rev_reads, 0, max_lc_mapq, consensus_t::LOWER_BOUNDARY_NON_CALCULATED, 0);
-		lc_consensus->max_mapq_ext = max_lc_mapq_ext;
 
 		data = NULL;
 		len = 0;
@@ -1101,7 +1077,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_PAIRS", &data, &len);
+	bcf_get_format_int32(hdr, b, "DP", &data, &len);
 	if (len > 0) {
 		sv->disc_pairs_lf = data[0];
 		sv->disc_pairs_rf = data[1];
@@ -1109,7 +1085,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "DISC_PAIRS_HIGHMAPQ", &data, &len);
+	bcf_get_format_int32(hdr, b, "DPHQ", &data, &len);
 	if (len > 0) {
 		sv->disc_pairs_lf_high_mapq = data[0];
 		sv->disc_pairs_rf_high_mapq = data[1];

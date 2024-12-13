@@ -23,8 +23,8 @@ class Features:
                       'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
-                      'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ', 'MAX_MAPQ_EXT1', 'MAX_MAPQ_EXT2', 'MAX_MAPQ_EXT',
-                      'LB_DIFF', 'UB_DIFF', 'B_DIFF', 'DISC_PAIRS_SCALED1', 'DISC_PAIRS_SCALED2', 'DISC_PAIRS_HIGHMAPQ_RATIO1', 'DISC_PAIRS_HIGHMAPQ_RATIO2', 'DISC_PAIRS_MAXMAPQ1', 'DISC_PAIRS_MAXMAPQ2']
+                      'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ'
+                      'B_DIFF']
 
     regt_shared_features_names = \
             ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
@@ -36,22 +36,17 @@ class Features:
 
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
 
-    regt_dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
-
-    denovo_dp_features_names = ['DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+    dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_denovo_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
-            Features.denovo_features_names + Features.stat_test_features_names + Features.denovo_dp_features_names
+            Features.denovo_features_names + Features.stat_test_features_names + Features.dp_features_names
 
     def get_regt_feature_names(model_name):
-        extra_feature_names = []
+        features_names = Features.info_features_names + Features.fmt_features_names + Features.regt_shared_features_names + Features.dp_features_names
         if model_name in ["DEL", "DEL_IMPRECISE", "DUP", "DUP_IMPRECISE"]:
-            extra_feature_names = Features.stat_test_features_names + Features.regt_dp_features_names
-        elif model_name in ["DEL_LARGE", "DEL_LARGE_IMPRECISE", "DUP_LARGE", "DUP_LARGE_IMPRECISE", "INS", "INS_IMPRECISE"]:
-            extra_feature_names = Features.regt_dp_features_names
-        return Features.info_features_names + Features.fmt_features_names + \
-            Features.regt_shared_features_names + extra_feature_names
+            features_names += Features.stat_test_features_names
+        return features_names
 
     def get_feature_names(model_name, denovo):
         if denovo:
@@ -226,31 +221,10 @@ class Features:
 
         features['MAX_MAPQ1'], features['MAX_MAPQ2'] = Features.get_number_value(info, 'MAX_MAPQ', [0, 0])
         features['MAX_MAPQ'] = max(features['MAX_MAPQ1'], features['MAX_MAPQ2'])
-        features['MAX_MAPQ_EXT1'], features['MAX_MAPQ_EXT2'] = Features.get_number_value(info, 'MAX_MAPQ_EXT', [0, 0])
-        features['MAX_MAPQ_EXT'] = max(features['MAX_MAPQ_EXT1'], features['MAX_MAPQ_EXT2'])
         remap_lb = Features.get_number_value(info, 'REMAP_LB', record.pos)
         remap_ub = Features.get_number_value(info, 'REMAP_UB', record.stop)
         features['LB_DIFF'], features['UB_DIFF'] = max(0, remap_lb-record.pos), max(0, record.stop-remap_ub)
         features['B_DIFF'] = features['LB_DIFF'] + features['UB_DIFF']
-
-        disc_pairs = Features.get_number_value(info, 'DISC_PAIRS', [0, 0])
-        if svtype_str == "DEL":
-            min_is_to_become_disc = int(max(0, max_is-svlen))
-            min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
-            max_disc_pairs = stats['max_pairs_crossing_gap'][str(min_is_to_become_disc)]
-            disc_pairs_scaled = [Features.normalise(d, min_disc_pairs, max_disc_pairs) for d in disc_pairs]
-        elif svtype_str == "INS" and source_str in ("DE_NOVO_ASSEMBLY", "REFERENCE_GUIDED_ASSEMBLY"):
-            min_inslen = int(min(max_is, svinslen))
-            min_disc_pairs = stats['min_disc_pairs_by_insertion_size'][str(min_inslen)]
-            max_disc_pairs = stats['max_disc_pairs_by_insertion_size'][str(min_inslen)]
-            disc_pairs_scaled = [Features.normalise(d, min_disc_pairs, max_disc_pairs) for d in disc_pairs]
-        else:
-            disc_pairs_scaled = [d/median_depth for d in disc_pairs]
-        features['DISC_PAIRS_SCALED1'], features['DISC_PAIRS_SCALED2'] = disc_pairs_scaled
-        disc_pairs_highmapq = Features.get_number_value(info, 'DISC_PAIRS_HIGHMAPQ', [0, 0])
-        features['DISC_PAIRS_HIGHMAPQ_RATIO1'], features['DISC_PAIRS_HIGHMAPQ_RATIO2'] = [dphq/max(1, dp) for dphq, dp in zip(disc_pairs_highmapq, disc_pairs)]
-
-        features['DISC_PAIRS_MAXMAPQ1'], features['DISC_PAIRS_MAXMAPQ2'] = Features.get_number_value(info, 'DISC_PAIRS_MAXMAPQ', [0, 0])
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
@@ -372,10 +346,8 @@ class Features:
             max_size = float(record.samples[0]['MAXSIZE'])
             features['SIZE_NORM'] = Features.normalise(svlen/2, min_size, max_size)
 
-        dp1 = Features.get_number_value(record.samples[0], 'DP1', 0)
-        dp2 = Features.get_number_value(record.samples[0], 'DP2', 0)
-        dp1hq = Features.get_number_value(record.samples[0], 'DP1HQ', 0)
-        dp2hq = Features.get_number_value(record.samples[0], 'DP2HQ', 0)
+        dp1, dp2 = Features.get_number_value(record.samples[0], 'DP', 0)
+        dp1hq, dp2hq = Features.get_number_value(record.samples[0], 'DPHQ', 0)
         if svtype_str == "DEL":
             min_is_to_become_disc = int(max(0, max_is-svlen))
             min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
@@ -404,8 +376,7 @@ class Features:
         features['DP2HQ'] = dp2hq_scaled
         features['DP1_HQ_RATIO'] = dp1hq/max(1, dp1)
         features['DP2_HQ_RATIO'] = dp2hq/max(1, dp2)
-        features['DP1MQ'] = Features.get_number_value(record.samples[0], 'DP1MQ', 0)
-        features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DP2MQ', 0)
+        features['DP1MQ'], features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DPMQ', 0)
         features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', 0, read_len)
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
