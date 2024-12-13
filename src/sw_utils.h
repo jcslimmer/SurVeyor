@@ -2,7 +2,6 @@
 #define SW_UTILS_H
 
 #include <iostream>
-#include <mutex>
 
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
@@ -636,7 +635,6 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 	for (sv_t* sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
-		sv->overlap = overlap;
 
 		if (rc_consensus != NULL && lc_consensus == NULL) {
 			if (rc_consensus->is_hsr) {
