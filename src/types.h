@@ -169,8 +169,6 @@ struct sv_t {
     int l_cluster_region_disc_pairs = 0, r_cluster_region_disc_pairs = 0;
     int l_cluster_region_disc_pairs_high_mapq = 0, r_cluster_region_disc_pairs_high_mapq = 0;
 
-    int overlap = 0;
-    double mismatch_rate = 0.0;
     std::string source;
     bool imprecise = false;
 
@@ -399,8 +397,6 @@ struct breakend_t : sv_t {
 struct inversion_t : sv_t {
 
     anchor_aln_t* rbp_left_anchor_aln, * rbp_right_anchor_aln;
-    int overlap_rbp = 0;
-    double mismatch_rate_rbp = 0.0;
 
     inversion_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus,
         anchor_aln_t* lbp_left_anchor_aln, anchor_aln_t* lbp_right_anchor_aln, 

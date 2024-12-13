@@ -637,7 +637,6 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
 		sv->overlap = overlap;
-		sv->mismatch_rate = mismatch_rate;
 
 		if (rc_consensus != NULL && lc_consensus == NULL) {
 			if (rc_consensus->is_hsr) {

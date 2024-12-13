@@ -120,10 +120,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
-    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
-
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1HQ");
     const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
@@ -152,10 +148,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
-    const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
-
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2HQ");
     const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
@@ -163,6 +155,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
     const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard2_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCMQ");
+    const char* arcmq_tag = "##FORMAT=<ID=ARCMQ,Number=2,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the first and second breakpoints in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcmq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
     const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
@@ -361,27 +357,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 
 	const char* rev_sr_info_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_info_tag, &len));
-
-	const char* max_mapq_tag = "##INFO=<ID=MAX_MAPQ,Number=2,Type=Integer,Description=\"Maximum MAPQ of split reads forming the consensuss.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, max_mapq_tag, &len));
-
-	const char* overlap_tag = "##INFO=<ID=OVERLAP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the left and right contigs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_tag, &len));
-
-	const char* overlap_lbp_tag = "##INFO=<ID=OVERLAP_LBP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the contigs supporting the left breakpoint.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_lbp_tag, &len));
-
-	const char* overlap_rbp_tag = "##INFO=<ID=OVERLAP_RBP,Number=1,Type=Integer,Description=\"Overlap (in bp) between the contigs supporting the right breakpoint.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, overlap_rbp_tag, &len));
-
-	const char* mismatch_rate_tag = "##INFO=<ID=MISMATCH_RATE,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the left and right contigs.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_tag, &len));
-
-	const char* mismatch_rate_lbp_tag = "##INFO=<ID=MISMATCH_RATE_LBP,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the contigs supporting the left breakpoint.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_lbp_tag, &len));
-
-	const char* mismatch_rate_rbp_tag = "##INFO=<ID=MISMATCH_RATE_RBP,Number=1,Type=Float,Description=\"Mismatch rate of overlap between the contigs supporting the right breakpoint.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, mismatch_rate_rbp_tag, &len));
 	
 	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
@@ -561,18 +536,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_LBP", int2_conv, 2);
 			int2_conv[0] = inv->rbp_left_anchor_aln->seq_len, int2_conv[1] = inv->rbp_right_anchor_aln->seq_len;
 			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE_RBP", int2_conv, 2);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_LBP", &inv->overlap, 1);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP_RBP", &inv->overlap_rbp, 1);
-			float mismatch_rate_lbp = inv->mismatch_rate;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_LBP", &mismatch_rate_lbp, 1);
-			float mismatch_rate_rbp = inv->mismatch_rate_rbp;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE_RBP", &mismatch_rate_rbp, 1);
 		} else {
 			int2_conv[0] = sv->left_anchor_aln->seq_len, int2_conv[1] = sv->right_anchor_aln->seq_len;
 			bcf_update_info_int32(hdr, bcf_entry, "SPLIT_JUNCTION_SIZE", int2_conv, 2);
-			bcf_update_info_int32(hdr, bcf_entry, "OVERLAP", &sv->overlap, 1);
-			float mismatch_rate = sv->mismatch_rate;
-			bcf_update_info_float(hdr, bcf_entry, "MISMATCH_RATE", &mismatch_rate, 1);
 		}
 		char* split_junction_cigar = (char*) malloc(sv->left_anchor_aln->cigar.length() + sv->right_anchor_aln->cigar.length() + 2);
 		std::stringstream ss;
@@ -588,9 +554,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
 
 	if (!for_gt) {
-		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
-		bcf_update_info_int32(hdr, bcf_entry, "MAX_MAPQ", max_mapq, 2);
-
 		if (sv->rc_consensus) {
 			int ext_1sr_reads[] = { sv->rc_consensus->left_ext_reads, sv->rc_consensus->right_ext_reads };
 			bcf_update_info_int32(hdr, bcf_entry, "RCC_EXT_1SR_READS", ext_1sr_reads, 2);
@@ -609,6 +572,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 				bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
 			}
 		}
+
+		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
+		bcf_update_info_int32(hdr, bcf_entry, "ARCMQ", max_mapq, 2);
 
 		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
 		bcf_update_format_int32(hdr, bcf_entry, "MD", median_depths, 4);
@@ -823,7 +789,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_info_int32(hdr, b, "MAX_MAPQ", &data, &len);
+	bcf_get_format_int32(hdr, b, "ARCMQ", &data, &len);
 	int max_rc_mapq = 0, max_lc_mapq = 0;
 	if (len > 0) {
 		max_rc_mapq = data[0];
@@ -1031,48 +997,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "MH_LEN", &data, &len);
 	if (len > 0) {
 		sv->mh_len = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "OVERLAP", &data, &len);
-	if (len > 0) {
-		sv->overlap = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "OVERLAP_LBP", &data, &len);
-	if (len > 0) {
-		sv->overlap = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "OVERLAP_RBP", &data, &len);
-	if (len > 0) {
-		((inversion_t*) sv)->overlap_rbp = data[0];
-	}
-
-	f_data = NULL;
-	len = 0;
-	bcf_get_info_float(hdr, b, "MISMATCH_RATE", &f_data, &len);
-	if (len > 0) {
-		sv->mismatch_rate = f_data[0];
-	}
-
-	f_data = NULL;
-	len = 0;
-	bcf_get_info_float(hdr, b, "MISMATCH_RATE_LBP", &f_data, &len);
-	if (len > 0) {
-		sv->mismatch_rate = f_data[0];
-	}
-
-	f_data = NULL;
-	len = 0;
-	bcf_get_info_float(hdr, b, "MISMATCH_RATE_RBP", &f_data, &len);
-	if (len > 0) {
-		((inversion_t*) sv)->mismatch_rate_rbp = f_data[0];
 	}
 
 	data = NULL;

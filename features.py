@@ -14,21 +14,21 @@ class Features:
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
 
-    fmt_features_names = [  'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
+    fmt_features_names = [  'ARCMQ',
+                            'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
                             'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
 
     denovo_features_names = ['IMPRECISE', 'SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
-                      'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'OVERLAP', 'MISMATCH_RATE', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
+                      'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
                       'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
                       'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
-                      'MAX_MAPQ1', 'MAX_MAPQ2', 'MAX_MAPQ'
                       'B_DIFF']
 
     regt_shared_features_names = \
-            ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1MQ', 'ARC1HQ',
-             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2MQ', 'ARC2HQ',
+            ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1HQ',
+             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2HQ',
              'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
              'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
              'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
@@ -219,12 +219,10 @@ class Features:
         features['MAX_SPLIT_JUNCTION_SIZE_RATIO'] = max(features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'])
         features['MIN_SPLIT_JUNCTION_SIZE_RATIO'] = min(features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'])
 
-        features['MAX_MAPQ1'], features['MAX_MAPQ2'] = Features.get_number_value(info, 'MAX_MAPQ', [0, 0])
-        features['MAX_MAPQ'] = max(features['MAX_MAPQ1'], features['MAX_MAPQ2'])
         remap_lb = Features.get_number_value(info, 'REMAP_LB', record.pos)
         remap_ub = Features.get_number_value(info, 'REMAP_UB', record.stop)
-        features['LB_DIFF'], features['UB_DIFF'] = max(0, remap_lb-record.pos), max(0, record.stop-remap_ub)
-        features['B_DIFF'] = features['LB_DIFF'] + features['UB_DIFF']
+        lb_diff, ub_diff = max(0, remap_lb-record.pos), max(0, record.stop-remap_ub)
+        features['B_DIFF'] = lb_diff + ub_diff
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
@@ -277,7 +275,6 @@ class Features:
         features['ARCR1'] = Features.get_number_value(record.samples[0], 'ARCR1', 0, max(1, arc1))
         features['MAXARCD1'] = max(features['ARCF1'], features['ARCR1'])
         features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
-        features['ARC1MQ'] = Features.get_number_value(record.samples[0], 'ARC1MQ', 0)
         features['ARC1HQ'] = Features.get_number_value(record.samples[0], 'ARC1HQ', 0, max(1, arc1))
 
         features['AR2'] = Features.normalise(ar2, min_depth, max_depth)
@@ -286,8 +283,11 @@ class Features:
         features['ARCR2'] = Features.get_number_value(record.samples[0], 'ARCR2', 0, max(1, arc2))
         features['MAXARCD2'] = max(features['ARCF2'], features['ARCR2'])
         features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
-        features['ARC2MQ'] = Features.get_number_value(record.samples[0], 'ARC2MQ', 0)
         features['ARC2HQ'] = Features.get_number_value(record.samples[0], 'ARC2HQ', 0, max(1, arc2))
+
+        arc1 = Features.get_number_value(record.samples[0], 'ARC1MQ', 0)
+        arc2 = Features.get_number_value(record.samples[0], 'ARC2MQ', 0)
+        features['ARCMQ'] = max(arc1, arc2)
 
         features['RR1'] = Features.normalise(rr1, min_depth, max_depth)
         features['RRC1'] = Features.normalise(rrc1, min_depth, max_depth)

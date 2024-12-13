@@ -236,8 +236,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				delete bnd;
 				continue;
 			}
-			bnd->overlap = ps.spa.overlap;
-			bnd->mismatch_rate = ps.spa.mismatch_rate();
 			bnd->disc_pairs_lf = bnd->disc_pairs_rf = ps.dp_cluster->count;
 			bnd->disc_pairs_lf_high_mapq = ps.dp_cluster->la_confident_count;
 			bnd->disc_pairs_rf_high_mapq = ps.dp_cluster->ra_confident_count;
@@ -391,10 +389,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				lc_consensus->hq_right_ext_reads = bnd_lf->lc_consensus->hq_right_ext_reads;
 			}
 			inversion_t* inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
-			inv->overlap = bnd_rf->overlap;
-			inv->overlap_rbp = bnd_lf->overlap;
-			inv->mismatch_rate = bnd_rf->mismatch_rate;
-			inv->mismatch_rate_rbp = bnd_lf->mismatch_rate;
 			inv->disc_pairs_lf = bnd_rf->disc_pairs_lf;
 			inv->disc_pairs_rf = bnd_lf->disc_pairs_rf;
 			inv->disc_pairs_lf_high_mapq = bnd_rf->disc_pairs_lf_high_mapq;
