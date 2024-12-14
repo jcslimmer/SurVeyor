@@ -163,20 +163,25 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int dp[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DP", dp, 2);
 
-    int dphq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPHQ", dphq, 2);
-    
-    int dpmq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPMQ", dpmq, 2);
-
-    float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
-    bcf_update_format_float(out_hdr, sv->vcf_entry, "DPNM", &dpnm, 2);
-
     int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPS", disc_pairs_surr, 2);
     
     int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
+    
+    if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+        int dphq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPHQ", dphq, 2);
+        
+        int dpmq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPMQ", dpmq, 2);
+
+        float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "DPNM", &dpnm, 2);
+
+        int dpsp[] = {sv->disc_pairs_lf_span, sv->disc_pairs_rf_span};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSP", dpsp, 2);
+    }
 
     int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
@@ -186,11 +191,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", &(sv->regenotyping_info.alt_ext_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXRHQ", &(sv->regenotyping_info.hq_alt_ext_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->regenotyping_info.ext_alt_consensus_length), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->regenotyping_info.ext_alt_consensus_to_alt_score), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->regenotyping_info.ext_alt_consensus_to_ref_score), 1);
-    
-    int exss[] = {sv->regenotyping_info.alt_consensus_split_size1, sv->regenotyping_info.alt_consensus_split_size2};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
+    if (sv->regenotyping_info.ext_alt_consensus_length > 0) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->regenotyping_info.ext_alt_consensus_to_alt_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->regenotyping_info.ext_alt_consensus_to_ref_score), 1);
+        
+        int exss[] = {sv->regenotyping_info.alt_consensus_split_size1, sv->regenotyping_info.alt_consensus_split_size2};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
+    }
 }
 
 void reset_stats(sv_t* sv) {
@@ -470,10 +477,10 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt_aln.ref_begin);
         int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len);
-        int temp;
 
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
+        int temp;
         int lf_aln_qlen = query_prefix_len(alt_aln.cigar, lf_aln_rlen, temp);
         int rf_aln_qlen = query_suffix_len(alt_aln.cigar, rf_aln_rlen, temp);
         del->regenotyping_info.alt_consensus_split_size1 = lf_aln_qlen;
@@ -630,7 +637,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
         std::string seq;
-        
+
         if (!is_samechr(read)) continue;
         if (!bam_is_mrev(read)) {
             if (read->core.mpos < dup_start-stats.max_is) continue;
@@ -1257,6 +1264,9 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
 
     std::sort(insertions.begin(), insertions.end(), [](insertion_t* a, insertion_t* b) { return a->start < b->start; });
 
+    std::vector<hts_pos_t> dp1_start(insertions.size(), INT32_MAX), dp1_end(insertions.size(), 0);
+    std::vector<hts_pos_t> dp2_start(insertions.size(), INT32_MAX), dp2_end(insertions.size(), 0);
+
     int curr_pos = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
     bam1_t* read = bam_init1();
@@ -1291,6 +1301,10 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
                 (rc_size < config.min_clip_len || aln.ref_end >= insertions[i]->ins_seq.length()-1)) {
                 insertions[i]->disc_pairs_lf++;
+
+                if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
+                if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
+
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_lf_high_mapq++;
                 insertions[i]->disc_pairs_lf_maxmapq = std::max(insertions[i]->disc_pairs_lf_maxmapq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
@@ -1300,8 +1314,10 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             }
         }
     }
-    for (insertion_t* ins : insertions) {
+    for (int i = 0; i < insertions.size(); i++) {
+        insertion_t* ins = insertions[i];
         if (ins->disc_pairs_lf > 0) ins->disc_pairs_lf_avg_nm /= ins->disc_pairs_lf;
+        ins->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
     }
 
     for (char* region : regions) free(region);
@@ -1348,6 +1364,10 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
                 (rc_size < config.min_clip_len || aln.ref_end >= insertions[i]->ins_seq.length()-1)) {
                 insertions[i]->disc_pairs_rf++;
+
+                if (read->core.pos < dp2_start[i]) dp2_start[i] = read->core.pos;
+                if (bam_endpos(read) > dp2_end[i]) dp2_end[i] = bam_endpos(read);
+
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->disc_pairs_rf_high_mapq++;
                 insertions[i]->disc_pairs_rf_maxmapq = std::max(insertions[i]->disc_pairs_rf_maxmapq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
@@ -1357,8 +1377,10 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             }
         }
     }
-    for (insertion_t* ins : insertions) {
+    for (int i = 0; i < insertions.size(); i++) {
+        insertion_t* ins = insertions[i];
         if (ins->disc_pairs_rf > 0) ins->disc_pairs_rf_avg_nm /= ins->disc_pairs_rf;
+        ins->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
     }
 
     for (char* region : regions) free(region);

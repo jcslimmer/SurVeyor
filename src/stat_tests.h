@@ -585,6 +585,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 			qname_to_mate_nm[qname] = nm;
 		}
 
+		std::vector<hts_pos_t> dp1_start(deletions.size(), INT32_MAX), dp1_end(deletions.size(), 0);
+		std::vector<hts_pos_t> dp2_start(deletions.size(), INT32_MAX), dp2_end(deletions.size(), 0);
+
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
@@ -601,6 +604,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
 						deletions[i]->disc_pairs_lf++;
 						deletions[i]->disc_pairs_rf++;
+
+						if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
+						if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
+						if (read->core.mpos < dp2_start[i]) dp2_start[i] = read->core.mpos;
+						if (get_mate_endpos(read) > dp2_end[i]) dp2_end[i] = get_mate_endpos(read);
 
 						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
@@ -625,6 +633,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		for (int i = 0; i < deletions.size(); i++) {
 			if (deletions[i]->disc_pairs_lf > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->disc_pairs_lf;
 			if (deletions[i]->disc_pairs_rf > 0) deletions[i]->disc_pairs_rf_avg_nm /= deletions[i]->disc_pairs_rf;
+			deletions[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
+			deletions[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
 	}
 }
@@ -657,6 +667,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 			qname_to_mate_nm[qname] = nm;
 		}
 
+		std::vector<hts_pos_t> dp1_start(duplications.size(), INT32_MAX), dp1_end(duplications.size(), 0);
+		std::vector<hts_pos_t> dp2_start(duplications.size(), INT32_MAX), dp2_end(duplications.size(), 0);
+
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
@@ -671,6 +684,12 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
 					dup->disc_pairs_lf++;
 					dup->disc_pairs_rf++;
+
+					if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
+					if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
+					if (read->core.mpos < dp2_start[i]) dp2_start[i] = read->core.mpos;
+					if (get_mate_endpos(read) > dp2_end[i]) dp2_end[i] = get_mate_endpos(read);
+
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
 						dup->disc_pairs_lf_high_mapq++;
@@ -692,6 +711,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 		for (int i = 0; i < duplications.size(); i++) {
 			if (duplications[i]->disc_pairs_lf > 0) duplications[i]->disc_pairs_lf_avg_nm /= duplications[i]->disc_pairs_lf;
 			if (duplications[i]->disc_pairs_rf > 0) duplications[i]->disc_pairs_rf_avg_nm /= duplications[i]->disc_pairs_rf;
+			duplications[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
+			duplications[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
 	}
 }

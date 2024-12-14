@@ -157,6 +157,7 @@ struct sv_t {
     consensus_t* rc_consensus, * lc_consensus;
     int disc_pairs_lf = 0, disc_pairs_lf_high_mapq = 0, disc_pairs_lf_maxmapq = 0;
     int disc_pairs_rf = 0, disc_pairs_rf_high_mapq = 0, disc_pairs_rf_maxmapq = 0;
+    int disc_pairs_lf_span = 0, disc_pairs_rf_span = 0;
     int conc_pairs_lbp = 0, conc_pairs_midp = 0, conc_pairs_rbp = 0;
     int conc_pairs_lbp_high_mapq = 0, conc_pairs_midp_high_mapq = 0, conc_pairs_rbp_high_mapq = 0;
     double disc_pairs_lf_avg_nm = 0, disc_pairs_rf_avg_nm = 0;

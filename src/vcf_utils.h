@@ -99,6 +99,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSHQ");
 	const char* dpshq_tag = "##FORMAT=<ID=DPSHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpshq_tag, &len));
+	
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSP");
+	const char* dpsp_tag = "##FORMAT=<ID=DPSP,Number=2,Type=Integer,Description=\"Size of the region covered by discordant pairs supporting the left and right breakpoints of the SV, respectively.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsp_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
     const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
