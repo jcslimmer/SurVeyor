@@ -196,6 +196,7 @@ struct sv_t {
         int alt_ext_reads = 0, hq_alt_ext_reads = 0;
         int ext_alt_consensus_length = 0;
         int ext_alt_consensus_to_alt_score = 0, ext_alt_consensus_to_ref_score = 0;
+        int alt_consensus_split_size1 = 0, alt_consensus_split_size2 = 0;
         bool too_deep = false;
 
         regenotyping_info_t() : gt(new int[1]) {

@@ -23,7 +23,7 @@ class Features:
                       'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
                       'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
-                      'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'SPLIT_JUNCTION_SIZE_RATIO1', 'SPLIT_JUNCTION_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
+                      'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
                       'B_DIFF']
 
     regt_shared_features_names = \
@@ -185,8 +185,6 @@ class Features:
         rev_split_reads = Features.get_number_value(info, 'REV_SPLIT_READS', [0, 0])
         features['REV_SPLIT_READS_RATIO1'], features['REV_SPLIT_READS_RATIO2'] = rev_split_reads[0]/max(1, split_reads[0]), rev_split_reads[1]/max(1, split_reads[1])
         features['FWD_SPLIT_READS_RATIO'], features['REV_SPLIT_READS_RATIO'] = sum(fwd_split_reads)/max(1, sum(split_reads)), sum(rev_split_reads)/max(1, sum(split_reads))
-        features['OVERLAP'] = Features.get_number_value(info, 'OVERLAP', 0, read_len)
-        features['MISMATCH_RATE'] = Features.get_number_value(info, 'MISMATCH_RATE', 0)
 
         features['RCC_EXT_1SR_READS1'], features['RCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'RCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
         features['LCC_EXT_1SR_READS1'], features['LCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'LCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
@@ -215,9 +213,9 @@ class Features:
             s2 = (split_junction_size[1]-split_junction_score1[1])/max(split_junction_size[1]-split_junction_score2[1], 1)
             features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = s1, s2
             features['SPLIT_TO_SIZE_RATIO1'], features['SPLIT_TO_SIZE_RATIO2'] = split_junction_score1[0]/split_junction_size[0], split_junction_score1[1]/split_junction_size[1]
-        features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'] = split_junction_size[0]/max(1, sum(split_junction_size)), split_junction_size[1]/max(1, sum(split_junction_size))
-        features['MAX_SPLIT_JUNCTION_SIZE_RATIO'] = max(features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'])
-        features['MIN_SPLIT_JUNCTION_SIZE_RATIO'] = min(features['SPLIT_JUNCTION_SIZE_RATIO1'], features['SPLIT_JUNCTION_SIZE_RATIO2'])
+        split_junction_size_ratio1, split_junction_size_ratio2 = split_junction_size[0]/max(1, sum(split_junction_size)), split_junction_size[1]/max(1, sum(split_junction_size))
+        features['MAX_SPLIT_JUNCTION_SIZE_RATIO'] = max(split_junction_size_ratio1, split_junction_size_ratio2)
+        features['MIN_SPLIT_JUNCTION_SIZE_RATIO'] = min(split_junction_size_ratio1, split_junction_size_ratio2)
 
         remap_lb = Features.get_number_value(info, 'REMAP_LB', record.pos)
         remap_ub = Features.get_number_value(info, 'REMAP_UB', record.stop)
@@ -285,8 +283,7 @@ class Features:
         features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
         features['ARC2HQ'] = Features.get_number_value(record.samples[0], 'ARC2HQ', 0, max(1, arc2))
 
-        arc1 = Features.get_number_value(record.samples[0], 'ARC1MQ', 0)
-        arc2 = Features.get_number_value(record.samples[0], 'ARC2MQ', 0)
+        arc1, arc2 = Features.get_number_value(record.samples[0], 'ARCMQ', [0, 0])
         features['ARCMQ'] = max(arc1, arc2)
 
         features['RR1'] = Features.normalise(rr1, min_depth, max_depth)
