@@ -238,6 +238,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* exl_tag = "##FORMAT=<ID=EXL,Number=1,Type=Integer,Description=\"Length of the extended alternative allele consensus.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exl_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXL2");
+	const char* exl2_tag = "##FORMAT=<ID=EXL2,Number=1,Type=Integer,Description=\"Length of the extended alternative allele consensus for the second breakpoint (only for insertions).\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exl2_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "EXAS");
     const char* exas_tag = "##FORMAT=<ID=EXAS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the original alternative allele (the reference with the SV applied).\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas_tag, &len));
@@ -247,8 +251,12 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSS");
-	const char* exss_tag = "##FORMAT=<ID=EXSS,Number=2,Type=Integer,Description=\"How much of the extended alternative allele aligns to the left and right of the first and second breakpoint, respectively.\">";
+	const char* exss_tag = "##FORMAT=<ID=EXSS,Number=2,Type=Integer,Description=\"How much of the extended alternative allele aligns to the left and right, respectively, of the breakpoint.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exss_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSS2");
+	const char* exss2_tag = "##FORMAT=<ID=EXSS2,Number=2,Type=Integer,Description=\"How much of the extended alternative allele aligns to the left and right, respectively, of the second breakpoint (only for insertions).\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exss2_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
 	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
