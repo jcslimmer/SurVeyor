@@ -200,10 +200,18 @@ std::vector<int> compute_suffix_scores(std::vector<uint32_t> cigar, int query_le
 	return suffix_scores;
 }
 
-std::pair<int, int> find_aln_prefix_score(std::vector<uint32_t> cigar, int ref_prefix_len, int match_score, int mismatch_score,
+std::pair<int, int> find_aln_prefix_score(std::vector<uint32_t>& cigar, int ref_prefix_len, int match_score, int mismatch_score,
 						int gap_open_score, int gap_extend_score) {
-	int score = 0, query_prefix_len = 0;
-	for (int i = 0, j = 0; i < cigar.size() && j < ref_prefix_len; i++) {
+	
+	if (cigar.empty()) return {0, 0};
+
+	int score = 0, query_prefix_len = 0, i = 0;
+	if (cigar_int_to_op(cigar[0]) == 'S') {
+		query_prefix_len = cigar_int_to_len(cigar[0]);
+		i++;
+	}
+
+	for (int j = 0; i < cigar.size() && j < ref_prefix_len; i++) {
 		int op = cigar_int_to_op(cigar[i]);
 		int len = cigar_int_to_len(cigar[i]);
 		if (op == '=') {
@@ -223,6 +231,8 @@ std::pair<int, int> find_aln_prefix_score(std::vector<uint32_t> cigar, int ref_p
 			len = std::min(len, ref_prefix_len-j);
 			score += gap_open_score + (len-1)*gap_extend_score;
 			j += len;
+		} else if (op == 'S') {
+			query_prefix_len += len;
 		}
 	}
 	return {score, query_prefix_len};

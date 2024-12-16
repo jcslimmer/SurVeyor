@@ -194,14 +194,17 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     if (sv->regenotyping_info.ext_alt_consensus1_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->regenotyping_info.ext_alt_consensus_to_alt_score), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->regenotyping_info.ext_alt_consensus_to_ref_score), 1);
-        
         int exss[] = {sv->regenotyping_info.alt_consensus1_split_size1, sv->regenotyping_info.alt_consensus1_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
+        int exssc[] = {sv->regenotyping_info.alt_consensus1_split_score1, sv->regenotyping_info.alt_consensus1_split_score2};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", exssc, 2);
 
         if (sv->svtype() == "INS") {
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", &(sv->regenotyping_info.ext_alt_consensus2_length), 1);
             int exss2[] = {sv->regenotyping_info.alt_consensus2_split_size1, sv->regenotyping_info.alt_consensus2_split_size2};
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", exss2, 2);
+            int exssc2[] = {sv->regenotyping_info.alt_consensus2_split_score1, sv->regenotyping_info.alt_consensus2_split_score2};
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", exssc2, 2);
         }
     }
 }
@@ -487,10 +490,12 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         int temp;
-        int lf_aln_qlen = query_prefix_len(alt_aln.cigar, lf_aln_rlen, temp);
-        int rf_aln_qlen = query_suffix_len(alt_aln.cigar, rf_aln_rlen, temp);
-        del->regenotyping_info.alt_consensus1_split_size1 = lf_aln_qlen - get_left_clip_size(alt_aln);
-        del->regenotyping_info.alt_consensus1_split_size2 = rf_aln_qlen - get_right_clip_size(alt_aln);
+        auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
+        auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        del->regenotyping_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
+        del->regenotyping_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        del->regenotyping_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
+        del->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
         // align to ref
         hts_pos_t lbp_start = lh_start, lbp_end = del->start + alt_consensus_seq.length();
@@ -742,10 +747,12 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         int rf_aln_rlen = std::max(0, alt_aln.ref_end-rf_seq_start);
 
         int temp;
-        int lf_aln_qlen = query_prefix_len(alt_aln.cigar, lf_aln_rlen, temp);
-        int rf_aln_qlen = query_suffix_len(alt_aln.cigar, rf_aln_rlen, temp);
-        dup->regenotyping_info.alt_consensus1_split_size1 = lf_aln_qlen - get_left_clip_size(alt_aln);
-        dup->regenotyping_info.alt_consensus1_split_size2 = rf_aln_qlen - get_right_clip_size(alt_aln);
+        auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
+        auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        dup->regenotyping_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
+        dup->regenotyping_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        dup->regenotyping_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
+        dup->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
         dup->regenotyping_info.ext_alt_consensus1_length = alt_consensus_seq.length();
     }
@@ -945,10 +952,12 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         int temp;
-        int lf_aln_qlen = query_prefix_len(alt_aln.cigar, lf_aln_rlen, temp);
-        int rf_aln_qlen = query_suffix_len(alt_aln.cigar, rf_aln_rlen, temp);
-        dup->regenotyping_info.alt_consensus1_split_size1 = lf_aln_qlen - get_left_clip_size(alt_aln);
-        dup->regenotyping_info.alt_consensus1_split_size2 = rf_aln_qlen - get_right_clip_size(alt_aln);
+        auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
+        auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        dup->regenotyping_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
+        dup->regenotyping_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        dup->regenotyping_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
+        dup->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
         // align to ref
         hts_pos_t ref_bp1_start = dup->start - alt_consensus_seq.length(), ref_bp1_end = dup->start + alt_consensus_seq.length();
@@ -1217,10 +1226,12 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         int temp;
-        int lf_aln_qlen = query_prefix_len(alt1_aln.cigar, lf_aln_rlen, temp);
-        int rf_aln_qlen = query_suffix_len(alt1_aln.cigar, rf_aln_rlen, temp);
-        ins->regenotyping_info.alt_consensus1_split_size1 = lf_aln_qlen - get_left_clip_size(alt1_aln);
-        ins->regenotyping_info.alt_consensus1_split_size2 = rf_aln_qlen - get_right_clip_size(alt1_aln);
+        auto query_lh_aln_score = find_aln_prefix_score(alt1_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
+        auto query_rh_aln_score = find_aln_suffix_score(alt1_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        ins->regenotyping_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt1_aln);
+        ins->regenotyping_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt1_aln);
+        ins->regenotyping_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
+        ins->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
     }
 
     ref2_aln.Clear();
@@ -1257,10 +1268,12 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         int temp;
-        int lf_aln_qlen = query_prefix_len(alt2_aln.cigar, lf_aln_rlen, temp);
-        int rf_aln_qlen = query_suffix_len(alt2_aln.cigar, rf_aln_rlen, temp);
-        ins->regenotyping_info.alt_consensus2_split_size1 = lf_aln_qlen - get_left_clip_size(alt2_aln);
-        ins->regenotyping_info.alt_consensus2_split_size2 = rf_aln_qlen - get_right_clip_size(alt2_aln);
+        auto query_lh_aln_score = find_aln_prefix_score(alt2_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
+        auto query_rh_aln_score = find_aln_suffix_score(alt2_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        ins->regenotyping_info.alt_consensus2_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt2_aln);
+        ins->regenotyping_info.alt_consensus2_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt2_aln);
+        ins->regenotyping_info.alt_consensus2_split_score1 = query_lh_aln_score.first;
+        ins->regenotyping_info.alt_consensus2_split_score2 = query_rh_aln_score.first;
     }
 
     ins->regenotyping_info.ext_alt_consensus_to_ref_score = ref1_aln.sw_score + ref2_aln.sw_score;
