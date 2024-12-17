@@ -302,7 +302,7 @@ struct edge_t {
 	edge_t(int next, int score, int overlap) : next(next), score(score), overlap(overlap) {}
 };
 
-std::vector<int> find_rev_topological_order(int n, std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj_rev) {
+std::vector<int> find_rev_topological_order(int n, std::vector<int> out_edges, std::vector<std::vector<edge_t> >& l_adj_rev) {
 
 	std::queue<int> sinks;
 	for (int i = 0; i < n; i++) {

@@ -1,7 +1,7 @@
 #ifndef EXTEND_1SR_CONSENSUS_H_
 #define EXTEND_1SR_CONSENSUS_H_
 
-#include <chrono>
+#include <set>
 #include <unordered_map>
 #include <queue>
 #include <stack>
@@ -65,33 +65,6 @@ struct ext_read_allocator_t {
 	}
 };
 
-std::vector<bool> find_vertices_in_cycles(std::vector<std::vector<edge_t> >& l_adj) {
-
-	const int INF = 1000000;
-
-	int n = l_adj.size();
-	std::vector<std::vector<int> > dist;
-	for (int i = 0; i < n; i++) dist.push_back(std::vector<int>(n, INF));
-	for (int i = 0; i < n; i++) {
-		for (edge_t& e : l_adj[i]) dist[i][e.next] = 1;
-	}
-	for (int k = 0; k < n; k++) {
-		for (int i = 0; i < n; i++) {
-			for (int j = 0; j < n; j++) {
-				if (dist[i][j] > dist[i][k] + dist[k][j]) {
-					dist[i][j] = dist[i][k] + dist[k][j];
-				}
-			}
-		}
-	}
-
-	std::vector<bool> in_cycle(n);
-	for (int i = 0; i < n; i++) {
-		in_cycle[i] = (dist[i][i] != INF);
-	}
-	return in_cycle;
-}
-
 bool is_vertex_in_cycle(std::vector<std::vector<edge_t> >& l_adj, int i) {
 	std::stack<int> s;
 	for (edge_t& e : l_adj[i]) {
@@ -115,7 +88,7 @@ bool is_vertex_in_cycle(std::vector<std::vector<edge_t> >& l_adj, int i) {
 	return false;
 }
 
-std::vector<bool> find_vertices_in_cycles_fast(std::vector<std::vector<edge_t> >& l_adj) {
+std::vector<bool> find_vertices_in_cycles(std::vector<std::vector<edge_t> >& l_adj) {
 
 	int n = l_adj.size();
 	std::vector<bool> in_cycle(n);
@@ -138,7 +111,7 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> start
 	int n = read_seqs.size();
 	std::vector<bool> visited(n);
 
-	std::unordered_map<uint64_t, std::vector<int> > kmer_to_idx;
+	std::unordered_map<uint64_t, std::set<int> > kmer_to_idx;
 	for (int i = 0; i < n; i++) {
 		uint64_t kmer = 0;
 
@@ -148,7 +121,7 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> start
 			kmer = ((kmer << 2) | nv);
 
 			if (j >= 32) {
-				kmer_to_idx[kmer].push_back(i);
+				kmer_to_idx[kmer].insert(i);
 			}
 		}
 	}
@@ -378,7 +351,7 @@ std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consen
 
 void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev) {
 	int n = l_adj.size();
-	std::vector<bool> in_cycle = find_vertices_in_cycles_fast(l_adj);
+	std::vector<bool> in_cycle = find_vertices_in_cycles(l_adj);
 	for (int i = 0; i < n; i++) {
 		if (in_cycle[i]) {
 			l_adj[i].clear();
@@ -437,6 +410,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 			}
 		}
 	}
+
 
 	// 0 is the consensus, we start from there
 	edge_t e = best_edges[0];
