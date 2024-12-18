@@ -482,7 +482,7 @@ int main(int argc, char* argv[]) {
 
 	ctpl::thread_pool thread_pool(threads);
     std::vector<std::future<void> > futures;
-	int BLOCK_SIZE = 1000;
+	int BLOCK_SIZE = 1;
 	for (int i = 0; i < benchmark_svs.size(); i+=BLOCK_SIZE) {
 		sv_t* bsv = benchmark_svs[i];
 		std::future<void> future = thread_pool.push(find_match, i, std::min(i+BLOCK_SIZE, (int) benchmark_svs.size()));
