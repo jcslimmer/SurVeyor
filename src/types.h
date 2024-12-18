@@ -196,7 +196,8 @@ struct sv_t {
         int alt_ref_equal_reads = 0;
         int alt_ext_reads = 0, hq_alt_ext_reads = 0;
         int ext_alt_consensus1_length = 0, ext_alt_consensus2_length = 0;
-        int ext_alt_consensus_to_alt_score = 0, ext_alt_consensus_to_ref_score = 0;
+        int ext_alt_consensus1_to_alt_score = 0, ext_alt_consensus1_to_ref_score = 0;
+        int ext_alt_consensus2_to_alt_score = 0, ext_alt_consensus2_to_ref_score = 0;
         int alt_consensus1_split_size1 = 0, alt_consensus1_split_size2 = 0;
         int alt_consensus2_split_size1 = 0, alt_consensus2_split_size2 = 0;
         int alt_consensus1_split_score1 = 0, alt_consensus1_split_score2 = 0;

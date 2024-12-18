@@ -246,9 +246,17 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* exas_tag = "##FORMAT=<ID=EXAS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the original alternative allele (the reference with the SV applied).\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXAS2");
+	const char* exas2_tag = "##FORMAT=<ID=EXAS2,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus for the second breakpoint and the original alternative allele (the reference with the SV applied).\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exas2_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS");
     const char* exrs_tag = "##FORMAT=<ID=EXRS,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus and the reference.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXRS2");
+	const char* exrs2_tag = "##FORMAT=<ID=EXRS2,Number=1,Type=Integer,Description=\"Score of the alignment between the extended alternative allele consensus for the second breakpoint and the reference.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exrs2_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSS");
 	const char* exss_tag = "##FORMAT=<ID=EXSS,Number=2,Type=Integer,Description=\"How much of the extended alternative allele aligns to the left and right, respectively, of the breakpoint.\">";
