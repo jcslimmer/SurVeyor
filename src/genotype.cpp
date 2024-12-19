@@ -268,7 +268,7 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
         for (bam1_t* read : reads) {
             std::string seq = get_sequence(read, true);
             if (!bam_is_mrev(read)) rc(seq);
-            aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
+            harsh_aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
             if (!is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
                 consistent_reads.push_back(read);
                 avg_score += double(aln.sw_score)/seq.length();

@@ -781,4 +781,25 @@ breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t cont
 	}
 }
 
+bool accept(StripedSmithWaterman::Alignment& aln, int min_clip_len, double max_seq_error = 1.0, std::string qual_ascii = "", int min_avg_base_qual = 0) {
+	int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
+
+	bool lc_is_noise = false, rc_is_noise = false;
+	if (!qual_ascii.empty()) {
+		if (lc_size > min_clip_len && lc_size < qual_ascii.length()/2) {
+			std::string lc_qual = qual_ascii.substr(0, lc_size);
+			std::string not_lc_qual = qual_ascii.substr(lc_size);
+			lc_is_noise = avg_qual(lc_qual) < min_avg_base_qual && avg_qual(not_lc_qual) >= min_avg_base_qual;
+		}
+		if (rc_size > min_clip_len && rc_size < qual_ascii.length()/2) {
+			std::string not_rc_qual = qual_ascii.substr(0, qual_ascii.length()-rc_size);
+			std::string rc_qual = qual_ascii.substr(qual_ascii.length()-rc_size);
+			rc_is_noise = avg_qual(rc_qual) < min_avg_base_qual && avg_qual(not_rc_qual) >= min_avg_base_qual;
+		}
+	}
+
+	double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+	return (lc_size <= min_clip_len || lc_is_noise) && (rc_size <= min_clip_len || rc_is_noise) && mismatch_rate <= max_seq_error;
+}
+
 #endif // SW_UTILS_H
