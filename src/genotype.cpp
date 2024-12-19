@@ -110,24 +110,26 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     float arcas1 = sv->regenotyping_info.alt_bp1_better_consistent_avg_score;
     bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS1", &arcas1, 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1HQ", &(sv->regenotyping_info.alt_bp1_better_consistent_high_mq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD1", &(sv->regenotyping_info.alt_bp1_better_disc_pairs), 1);
-    
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCF2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_fwd), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCR2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_rev), 1);
-    float arcas2 = sv->regenotyping_info.alt_bp2_better_consistent_avg_score;
-    bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS2", &arcas2, 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2HQ", &(sv->regenotyping_info.alt_bp2_better_consistent_high_mq), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARD2", &(sv->regenotyping_info.alt_bp2_better_disc_pairs), 1);
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC1MQ", &(sv->regenotyping_info.alt_bp1_better_consistent_max_mq), 1);
 
-    int arcmq[] = {sv->regenotyping_info.alt_bp1_better_consistent_max_mq, sv->regenotyping_info.alt_bp2_better_consistent_max_mq};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCMQ", arcmq, 2);
+    if (sv->regenotyping_info.alt_bp2_better_reads != sv_t::regenotyping_info_t::NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR2", &(sv->regenotyping_info.alt_bp2_better_reads), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCF2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_fwd), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARCR2", &(sv->regenotyping_info.alt_bp2_better_consistent_reads_rev), 1);
+        float arcas2 = sv->regenotyping_info.alt_bp2_better_consistent_avg_score;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "ARCAS2", &arcas2, 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2HQ", &(sv->regenotyping_info.alt_bp2_better_consistent_high_mq), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "ARC2MQ", &(sv->regenotyping_info.alt_bp2_better_consistent_max_mq), 1);
+    }
 
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR1", &(sv->regenotyping_info.ref_bp1_better_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR2", &(sv->regenotyping_info.ref_bp2_better_reads), 1);
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "RRC1", &(sv->regenotyping_info.ref_bp1_better_consistent_reads), 1);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "RRC2", &(sv->regenotyping_info.ref_bp2_better_consistent_reads), 1);
+
+    if (sv->regenotyping_info.ref_bp2_better_reads != sv_t::regenotyping_info_t::NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "RR2", &(sv->regenotyping_info.ref_bp2_better_reads), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "RRC2", &(sv->regenotyping_info.ref_bp2_better_consistent_reads), 1);
+    }
 
     int er = sv->regenotyping_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
@@ -516,9 +518,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     }
 
     del->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
-    del->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
+    // del->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
     del->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
-    del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
+    // del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
     for (bam1_t* read : alt_better_reads_consistent) {
         if (bam_is_mrev(read)) {
             del->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
@@ -531,12 +533,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
             del->regenotyping_info.alt_bp1_better_consistent_high_mq++;
         }
     }
-    del->regenotyping_info.alt_bp2_better_consistent_reads_fwd = del->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
-    del->regenotyping_info.alt_bp2_better_consistent_reads_rev = del->regenotyping_info.alt_bp1_better_consistent_reads_rev;
-    del->regenotyping_info.alt_bp2_better_consistent_max_mq = del->regenotyping_info.alt_bp1_better_consistent_max_mq;
-    del->regenotyping_info.alt_bp2_better_consistent_high_mq = del->regenotyping_info.alt_bp1_better_consistent_high_mq;
     del->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
-    del->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
     del->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_seqs.size();
     del->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_seqs.size();
     del->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_seqs_consistent.size();
@@ -763,9 +760,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     }
 
     dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads[alt_with_most_reads].size();
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better_reads[alt_with_most_reads].size();
     dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
-    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
     for (bam1_t* read : alt_better_reads_consistent) {
         if (bam_is_mrev(read)) {
             dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
@@ -778,16 +773,9 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             dup->regenotyping_info.alt_bp1_better_consistent_high_mq++;
         }
     }
-    dup->regenotyping_info.alt_bp2_better_consistent_reads_fwd = dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
-    dup->regenotyping_info.alt_bp2_better_consistent_reads_rev = dup->regenotyping_info.alt_bp1_better_consistent_reads_rev;
-    dup->regenotyping_info.alt_bp2_better_consistent_max_mq = dup->regenotyping_info.alt_bp1_better_consistent_max_mq;
-    dup->regenotyping_info.alt_bp2_better_consistent_high_mq = dup->regenotyping_info.alt_bp1_better_consistent_high_mq;
     dup->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
-    dup->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
     dup->regenotyping_info.ref_bp1_better_reads = ref_better_reads.size();
-    dup->regenotyping_info.ref_bp2_better_reads = ref_better_reads.size();
     dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_better_reads_consistent.size();
-    dup->regenotyping_info.ref_bp2_better_consistent_reads = ref_better_reads_consistent.size();
     dup->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] ref_seq;
@@ -980,9 +968,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     }
 
     dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
-    dup->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
     dup->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
-    dup->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
     for (bam1_t* read : alt_better_reads_consistent) {
         if (bam_is_mrev(read)) {
             dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
@@ -995,12 +981,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             dup->regenotyping_info.alt_bp1_better_consistent_high_mq++;
         }
     }
-    dup->regenotyping_info.alt_bp2_better_consistent_reads_fwd = dup->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
-    dup->regenotyping_info.alt_bp2_better_consistent_reads_rev = dup->regenotyping_info.alt_bp1_better_consistent_reads_rev;
-    dup->regenotyping_info.alt_bp2_better_consistent_max_mq = dup->regenotyping_info.alt_bp1_better_consistent_max_mq;
-    dup->regenotyping_info.alt_bp2_better_consistent_high_mq = dup->regenotyping_info.alt_bp1_better_consistent_high_mq;
     dup->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
-    dup->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
     dup->regenotyping_info.ref_bp1_better_reads = ref_bp1_better_reads.size();
     dup->regenotyping_info.ref_bp2_better_reads = ref_bp2_better_reads.size();
     dup->regenotyping_info.ref_bp1_better_consistent_reads = ref_bp1_better_reads_consistent.size();
@@ -1621,9 +1602,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     }
 
     inv->regenotyping_info.alt_bp1_better_reads = alt_better_seqs.size();
-    inv->regenotyping_info.alt_bp2_better_reads = alt_better_seqs.size();
     inv->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
-    inv->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
     for (bam1_t* read : alt_better_reads_consistent) {
         if (!bam_is_rev(read)) {
             inv->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
@@ -1636,16 +1615,9 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
             inv->regenotyping_info.alt_bp1_better_consistent_high_mq++;
         }
     }
-    inv->regenotyping_info.alt_bp2_better_consistent_reads_fwd = inv->regenotyping_info.alt_bp1_better_consistent_reads_fwd;
-    inv->regenotyping_info.alt_bp2_better_consistent_reads_rev = inv->regenotyping_info.alt_bp1_better_consistent_reads_rev;
-    inv->regenotyping_info.alt_bp2_better_consistent_max_mq = inv->regenotyping_info.alt_bp1_better_consistent_max_mq;
-    inv->regenotyping_info.alt_bp2_better_consistent_high_mq = inv->regenotyping_info.alt_bp1_better_consistent_high_mq;
     inv->regenotyping_info.alt_bp1_better_consistent_avg_score = alt_avg_score;
-    inv->regenotyping_info.alt_bp2_better_consistent_avg_score = alt_avg_score;
     inv->regenotyping_info.ref_bp1_better_reads = ref_better_seqs.size();
-    inv->regenotyping_info.ref_bp2_better_reads = ref_better_seqs.size();
     inv->regenotyping_info.ref_bp1_better_consistent_reads = ref_better_reads_consistent.size();
-    inv->regenotyping_info.ref_bp2_better_consistent_reads = ref_better_reads_consistent.size();
     inv->regenotyping_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;

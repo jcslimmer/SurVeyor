@@ -128,9 +128,9 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD1");
-    const char* ard1_tag = "##FORMAT=<ID=ARD1,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard1_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
+    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the first breakpoint in the alternate allele.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
     const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
@@ -156,13 +156,9 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARD2");
-    const char* ard2_tag = "##FORMAT=<ID=ARD2,Number=1,Type=Integer,Description=\"Number of reads belonging to discordant pairs supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ard2_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCMQ");
-    const char* arcmq_tag = "##FORMAT=<ID=ARCMQ,Number=2,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the first and second breakpoints in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcmq_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
+	const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the second breakpoint in the alternate allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
     const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
@@ -605,8 +601,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			}
 		}
 
-		int max_mapq[] = {sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0, sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0};
-		bcf_update_info_int32(hdr, bcf_entry, "ARCMQ", max_mapq, 2);
+		int max_mapq1 = sv->rc_consensus ? (int) sv->rc_consensus->max_mapq : 0;
+		int max_mapq2 = sv->lc_consensus ? (int) sv->lc_consensus->max_mapq : 0;
+		bcf_update_info_int32(hdr, bcf_entry, "ARC1MQ", &max_mapq1, 1);
+		bcf_update_info_int32(hdr, bcf_entry, "ARC2MQ", &max_mapq2, 1);
 
 		int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
 		bcf_update_format_int32(hdr, bcf_entry, "MD", median_depths, 4);
@@ -821,11 +819,17 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	data = NULL;
 	len = 0;
-	bcf_get_format_int32(hdr, b, "ARCMQ", &data, &len);
+	bcf_get_format_int32(hdr, b, "ARC1MQ", &data, &len);
 	int max_rc_mapq = 0, max_lc_mapq = 0;
 	if (len > 0) {
 		max_rc_mapq = data[0];
-		max_lc_mapq = data[1];
+	}
+
+	data = NULL;
+	len = 0;
+	bcf_get_format_int32(hdr, b, "ARC2MQ", &data, &len);
+	if (len > 0) {
+		max_lc_mapq = data[0];
 	}
 
 	consensus_t* rc_consensus = NULL;

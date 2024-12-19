@@ -184,14 +184,16 @@ struct sv_t {
     base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
 
     struct regenotyping_info_t {
+        static const int NOT_COMPUTED = -1;
+
         int* gt, n_gt = 1;
-        int alt_bp1_better_reads = 0, alt_bp2_better_reads = 0;
+        int alt_bp1_better_reads = 0, alt_bp2_better_reads = NOT_COMPUTED;
         int alt_bp1_better_disc_pairs = 0, alt_bp2_better_disc_pairs = 0;
         int alt_bp1_better_consistent_reads = 0, alt_bp2_better_consistent_reads = 0;
         int alt_bp1_better_consistent_reads_fwd = 0, alt_bp1_better_consistent_reads_rev = 0, alt_bp2_better_consistent_reads_fwd = 0, alt_bp2_better_consistent_reads_rev = 0;
         int alt_bp1_better_consistent_max_mq = 0, alt_bp2_better_consistent_max_mq = 0, alt_bp1_better_consistent_high_mq = 0, alt_bp2_better_consistent_high_mq = 0;
         double alt_bp1_better_consistent_avg_score = 0, alt_bp2_better_consistent_avg_score = 0;
-        int ref_bp1_better_reads = 0, ref_bp2_better_reads = 0;
+        int ref_bp1_better_reads = 0, ref_bp2_better_reads = NOT_COMPUTED;
         int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
         int alt_ext_reads = 0, hq_alt_ext_reads = 0;
@@ -224,7 +226,7 @@ struct sv_t {
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
         left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {
         
-        gt = new int[1];
+        gt = (int*)malloc(sizeof(int) * 1);
         gt[0] = bcf_gt_unphased(1);
     }
 
