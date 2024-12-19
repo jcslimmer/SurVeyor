@@ -14,29 +14,37 @@ class Features:
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
 
-    fmt_features_names = [  'ARCMQ',
-                            'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
-                            'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
+    fmt_features_names = [  'AR1', 'ARC1', 'ARC1MQ', 'ARCAS1', 'ARC1HQ',
+                            'AR2', 'ARC2', 'ARC2MQ', 'ARCAS2', 'ARC2HQ', 'MAXARCD',
+                            'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
+                            'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
+                            'MEXL', 'mEXL', 'EXL',
+                            'MDLF', 'MDSP', 'MDSF', 'MDRF', 
+                            'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
+                            'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 
+                            'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
 
-    denovo_features_names = ['IMPRECISE', 'SPLIT_READS_RATIO', 'SPLIT_READS_RATIO1', 'SPLIT_READS_RATIO2', 'FWD_SPLIT_READS_RATIO1', 'FWD_SPLIT_READS_RATIO2', 'REV_SPLIT_READS_RATIO1', 'REV_SPLIT_READS_RATIO2',
-                      'FWD_SPLIT_READS_RATIO', 'REV_SPLIT_READS_RATIO', 'RCC_EXT_1SR_READS1', 'RCC_EXT_1SR_READS2', 'LCC_EXT_1SR_READS1', 'LCC_EXT_1SR_READS2',
-                      'EXT_1SR_READS1', 'EXT_1SR_READS2', 'RCC_HQ_EXT_1SR_READS1', 'RCC_HQ_EXT_1SR_READS2', 'LCC_HQ_EXT_1SR_READS1', 'LCC_HQ_EXT_1SR_READS2', 'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
-                      'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
-                      'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2', 'MAX_SPLIT_JUNCTION_SIZE_RATIO', 'MIN_SPLIT_JUNCTION_SIZE_RATIO',
-                      'B_DIFF']
+    denovo_features_names = ['IMPRECISE',
+                      'EXT_1SR_READS1', 'EXT_1SR_READS2', 
+                      'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 
+                      'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
+                      'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 
+                      'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
+                      'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2']
 
     regt_shared_features_names = \
-            ['AR1', 'ARC1', 'ARCF1', 'ARCR1', 'MAXARCD1', 'ARCAS1', 'ARC1HQ',
-             'AR2', 'ARC2', 'ARCF2', 'ARCR2', 'MAXARCD2', 'ARCAS2', 'ARC2HQ',
-             'RR1', 'RRC1', 'RR2', 'RRC2', 'ER', 
-             'AR1_RATIO', 'AR2_RATIO', 'RR1_RATIO', 'RR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO', 'RRC1_RATIO', 'RRC2_RATIO',
-             'AR1_OVER_RR1', 'RR1_OVER_AR1', 'AR2_OVER_RR2', 'RR2_OVER_AR2', 'ARC1_OVER_RRC1', 'RRC1_OVER_ARC1', 'ARC2_OVER_RRC2', 'RRC2_OVER_ARC2',
-             'AXR', 'AXRHQ', 'EXL', 'EXAS', 'EXRS', 'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']
+            ['RR1', 'RRC1', 'RR2', 'RRC2',
+             'AR1_RATIO', 'AR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO',
+             'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
+             'AXR', 'AXRHQ', 'MEXAS', 'mEXAS', 'EXAS', 'MEXRS', 'mEXRS', 'EXRS',
+             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']#,
+            #  'MAX_EXSSC1', 'MIN_EXSSC1', 'MAX_EXSSC2', 'MIN_EXSSC2']
 
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
 
-    dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+    dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', \
+                         'DPSP1', 'DPSP2', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_denovo_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
@@ -88,7 +96,8 @@ class Features:
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
             svtype_str += "_LARGE"
 
-        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0:
+        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
+           Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
             svtype_str += "_IMPRECISE"
         return svtype_str
     
@@ -177,15 +186,6 @@ class Features:
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
-        split_reads = Features.get_number_value(info, 'SPLIT_READS', [0, 0])
-        features['SPLIT_READS_RATIO1'], features['SPLIT_READS_RATIO2'] = Features.normalise(split_reads[0], min_depth, max_depth), Features.normalise(split_reads[1], min_depth, max_depth)
-        features['SPLIT_READS_RATIO'] = sum(split_reads)/median_depth
-        fwd_split_reads = Features.get_number_value(info, 'FWD_SPLIT_READS', [0, 0])
-        features['FWD_SPLIT_READS_RATIO1'], features['FWD_SPLIT_READS_RATIO2'] = fwd_split_reads[0]/max(1, split_reads[0]), fwd_split_reads[1]/max(1, split_reads[1])
-        rev_split_reads = Features.get_number_value(info, 'REV_SPLIT_READS', [0, 0])
-        features['REV_SPLIT_READS_RATIO1'], features['REV_SPLIT_READS_RATIO2'] = rev_split_reads[0]/max(1, split_reads[0]), rev_split_reads[1]/max(1, split_reads[1])
-        features['FWD_SPLIT_READS_RATIO'], features['REV_SPLIT_READS_RATIO'] = sum(fwd_split_reads)/max(1, sum(split_reads)), sum(rev_split_reads)/max(1, sum(split_reads))
-
         features['RCC_EXT_1SR_READS1'], features['RCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'RCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
         features['LCC_EXT_1SR_READS1'], features['LCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'LCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
         features['EXT_1SR_READS1'] = features['RCC_EXT_1SR_READS1'] + features['LCC_EXT_1SR_READS1']
@@ -213,14 +213,6 @@ class Features:
             s2 = (split_junction_size[1]-split_junction_score1[1])/max(split_junction_size[1]-split_junction_score2[1], 1)
             features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = s1, s2
             features['SPLIT_TO_SIZE_RATIO1'], features['SPLIT_TO_SIZE_RATIO2'] = split_junction_score1[0]/split_junction_size[0], split_junction_score1[1]/split_junction_size[1]
-        split_junction_size_ratio1, split_junction_size_ratio2 = split_junction_size[0]/max(1, sum(split_junction_size)), split_junction_size[1]/max(1, sum(split_junction_size))
-        features['MAX_SPLIT_JUNCTION_SIZE_RATIO'] = max(split_junction_size_ratio1, split_junction_size_ratio2)
-        features['MIN_SPLIT_JUNCTION_SIZE_RATIO'] = min(split_junction_size_ratio1, split_junction_size_ratio2)
-
-        remap_lb = Features.get_number_value(info, 'REMAP_LB', record.pos)
-        remap_ub = Features.get_number_value(info, 'REMAP_UB', record.stop)
-        lb_diff, ub_diff = max(0, remap_lb-record.pos), max(0, record.stop-remap_ub)
-        features['B_DIFF'] = lb_diff + ub_diff
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
@@ -259,54 +251,47 @@ class Features:
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         arc1 = Features.get_number_value(record.samples[0], 'ARC1', 0)
-        ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
-        arc2 = Features.get_number_value(record.samples[0], 'ARC2', 0)
+        ar2 = Features.get_number_value(record.samples[0], 'AR2', ar1)
+        arc2 = Features.get_number_value(record.samples[0], 'ARC2', arc1)
         rr1 = Features.get_number_value(record.samples[0], 'RR1', 0)
         rrc1 = Features.get_number_value(record.samples[0], 'RRC1', 0)
-        rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
-        rrc2 = Features.get_number_value(record.samples[0], 'RRC2', 0)
+        rr2 = Features.get_number_value(record.samples[0], 'RR2', rr1)
+        rrc2 = Features.get_number_value(record.samples[0], 'RRC2', rrc1)
         er = Features.get_number_value(record.samples[0], 'ER', 0)
 
         features['AR1'] = Features.normalise(ar1, min_depth, max_depth)
         features['ARC1'] = Features.normalise(arc1, min_depth, max_depth)
-        features['ARCF1'] = Features.get_number_value(record.samples[0], 'ARCF1', 0, max(1, arc1))
-        features['ARCR1'] = Features.get_number_value(record.samples[0], 'ARCR1', 0, max(1, arc1))
-        features['MAXARCD1'] = max(features['ARCF1'], features['ARCR1'])
-        features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
         features['ARC1HQ'] = Features.get_number_value(record.samples[0], 'ARC1HQ', 0, max(1, arc1))
+        features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
 
         features['AR2'] = Features.normalise(ar2, min_depth, max_depth)
         features['ARC2'] = Features.normalise(arc2, min_depth, max_depth)
-        features['ARCF2'] = Features.get_number_value(record.samples[0], 'ARCF2', 0, max(1, arc2))
-        features['ARCR2'] = Features.get_number_value(record.samples[0], 'ARCR2', 0, max(1, arc2))
-        features['MAXARCD2'] = max(features['ARCF2'], features['ARCR2'])
-        features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
         features['ARC2HQ'] = Features.get_number_value(record.samples[0], 'ARC2HQ', 0, max(1, arc2))
+        features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
 
-        arc1, arc2 = Features.get_number_value(record.samples[0], 'ARCMQ', [0, 0])
-        features['ARCMQ'] = max(arc1, arc2)
+        arcf1 = Features.get_number_value(record.samples[0], 'ARCF1', 0, max(1, arc1))
+        arcr1 = Features.get_number_value(record.samples[0], 'ARCR1', 0, max(1, arc1))
+        arcf2 = Features.get_number_value(record.samples[0], 'ARCF2', 0, max(1, arc2))
+        arcr2 = Features.get_number_value(record.samples[0], 'ARCR2', 0, max(1, arc2))
+        features['ARCF'] = arcf1 + arcf2
+        features['ARCR'] = arcr1 + arcr2
+        features['MAXARCD'] = max(features['ARCF'], features['ARCR'])
+
+        features['ARC1MQ'] = Features.get_number_value(record.samples[0], 'ARC1MQ', 0)
+        features['ARC2MQ'] = Features.get_number_value(record.samples[0], 'ARC2MQ', 0)
 
         features['RR1'] = Features.normalise(rr1, min_depth, max_depth)
         features['RRC1'] = Features.normalise(rrc1, min_depth, max_depth)
         features['RR2'] = Features.normalise(rr2, min_depth, max_depth)
         features['RRC2'] = Features.normalise(rrc2, min_depth, max_depth)
-        features['ER'] = Features.normalise(er, min_depth, max_depth)
         features['AR1_RATIO'] = ar1/max(1, ar1+rr1+er)
         features['ARC1_RATIO'] = arc1/max(1, arc1+rrc1+er)
         features['AR2_RATIO'] = ar2/max(1, ar2+rr2+er)
         features['ARC2_RATIO'] = arc2/max(1, arc2+rrc2+er)
-        features['RR1_RATIO'] = rr1/max(1, ar1+rr1+er)
-        features['RRC1_RATIO'] = rrc1/max(1, arc1+rrc1+er)
-        features['RR2_RATIO'] = rr2/max(1, ar2+rr2+er)
-        features['RRC2_RATIO'] = rrc2/max(1, arc2+rrc2+er)
         features['AR1_OVER_RR1'] = ar1/max(1, ar1+rr1)
         features['ARC1_OVER_RRC1'] = arc1/max(1, arc1+rrc1)
-        features['RR1_OVER_AR1'] = rr1/max(1, ar1+rr1)
-        features['RRC1_OVER_ARC1'] = rrc1/max(1, arc1+rrc1)
         features['AR2_OVER_RR2'] = ar2/max(1, ar2+rr2)
         features['ARC2_OVER_RRC2'] = arc2/max(1, arc2+rrc2)
-        features['RR2_OVER_AR2'] = rr2/max(1, ar2+rr2)
-        features['RRC2_OVER_ARC2'] = rrc2/max(1, arc2+rrc2)
 
         md = Features.get_number_value(record.samples[0], 'MD', [0, 0, 0, 0])
         features['MDLF'] = Features.normalise(md[0], min_depth, max_depth)
@@ -343,8 +328,8 @@ class Features:
             max_size = float(record.samples[0]['MAXSIZE'])
             features['SIZE_NORM'] = Features.normalise(svlen/2, min_size, max_size)
 
-        dp1, dp2 = Features.get_number_value(record.samples[0], 'DP', 0)
-        dp1hq, dp2hq = Features.get_number_value(record.samples[0], 'DPHQ', 0)
+        dp1, dp2 = Features.get_number_value(record.samples[0], 'DP', [0, 0])
+        dp1hq, dp2hq = Features.get_number_value(record.samples[0], 'DPHQ', [0, 0])
         if svtype_str == "DEL":
             min_is_to_become_disc = int(max(0, max_is-svlen))
             min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
@@ -373,10 +358,12 @@ class Features:
         features['DP2HQ'] = dp2hq_scaled
         features['DP1_HQ_RATIO'] = dp1hq/max(1, dp1)
         features['DP2_HQ_RATIO'] = dp2hq/max(1, dp2)
-        features['DP1MQ'], features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DPMQ', 0)
-        features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', 0, read_len)
+        features['DP1MQ'], features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DPMQ', [0, 0])
+        features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', [0, 0], read_len)
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
+
+        features['DPSP1'], features['DPSP2'] = Features.get_number_value(record.samples[0], 'DPSP', [0, 0], max_is)
 
         min_pairs_crossing_point, max_pairs_crossing_point = stats['min_pairs_crossing_gap']["0"], stats['max_pairs_crossing_gap']["0"]
         cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
@@ -385,14 +372,51 @@ class Features:
 
         features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
         features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
-        exl = Features.get_number_value(record.samples[0], 'EXL', 0)
-        features['EXL'] = exl/max_is
-        exas = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl))
-        features['EXAS'] = exas
-        exrs = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl))
-        features['EXRS'] = exrs
-        features['EXAS_EXRS_RATIO'] = exas/max(0.01, exrs)
-        features['EXAS_EXRS_DIFF'] = exas-exrs
+        
+        exl1 = Features.get_number_value(record.samples[0], 'EXL', 0)
+        exl2 = Features.get_number_value(record.samples[0], 'EXL2', 0)
+        features['MEXL'] = max(exl1/max_is, exl2/max_is)
+        features['mEXL'] = min(exl1/max_is, exl2/max_is)
+        features['EXL'] = features['MEXL'] + features['mEXL']
+
+        exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl1))
+        exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0, max(1, exl2))
+        features['MEXAS'] = max(exas1, exas2)
+        features['mEXAS'] = min(exas1, exas2)
+        features['EXAS'] = features['MEXAS'] + features['mEXAS']
+
+        exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl1))
+        exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0, max(1, exl2))
+        features['MEXRS'] = max(exrs1, exrs2)
+        features['mEXRS'] = min(exrs1, exrs2)
+        features['EXRS'] = features['MEXRS'] + features['mEXRS']
+
+        features['EXAS_EXRS_RATIO'] = 0 if exrs1+exrs2 == 0 else (exas1+exas2)/(exrs1+exrs2)
+        features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
+
+        exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
+        features['EXSS1_1'] = exss1_1/max_is
+        features['EXSS1_2'] = exss1_2/max_is
+        features['EXSS1_RATIO1'] = exss1_1/max(1, exl1)
+        features['EXSS1_RATIO2'] = exss1_2/max(1, exl1)
+
+        exss2_1, exss2_2 = Features.get_number_value(record.samples[0], 'EXSS2', [0, 0])
+        features['EXSS2_1'] = exss2_1/max_is
+        features['EXSS2_2'] = exss2_2/max_is
+        features['EXSS2_RATIO1'] = exss2_1/max(1, exl2)
+        features['EXSS2_RATIO2'] = exss2_2/max(1, exl2)
+
+        exssc1_1, exssc1_2 = Features.get_number_value(record.samples[0], 'EXSSC', [0, 0])
+        exssc1_1 /= max(1, exss1_1)
+        exssc1_2 /= max(1, exss1_2)
+        features['MAX_EXSSC1'] = max(exssc1_1, exssc1_2)
+        features['MIN_EXSSC1'] = min(exssc1_1, exssc1_2)
+
+        exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [0, 0])
+        exssc2_1 /= max(1, exss2_1)
+        exssc2_2 /= max(1, exss2_2)
+        features['MAX_EXSSC2'] = max(exssc2_1, exssc2_2)
+        features['MIN_EXSSC2'] = min(exssc2_1, exssc2_2)
 
         feature_values = []
         for feature_name in Features.get_feature_names(model_name, denovo):
