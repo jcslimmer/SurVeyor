@@ -3,14 +3,10 @@
 
 #include <cstdint>
 #include <cstring>
-#include <set>
 #include <cmath>
-#include <unordered_set>
-#include <random>
 #include <htslib/sam.h>
 
 #include "../libs/ks-test.h"
-#include "../libs/IntervalTree.h"
 #include "htslib/hts.h"
 #include "types.h"
 #include "utils.h"
@@ -408,8 +404,10 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 			}
 
             if (!global_crossing_isize_dist.empty()) {
-				sv->ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
-            
+				double ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
+				if (std::isfinite(ks_pval)) sv->ks_pval = ks_pval;
+				else sv->ks_pval = sv_t::KS_PVAL_NOT_COMPUTED;
+
 				if (sv->svtype() != "DEL" || !sv->imprecise || disallow_changes) continue;
 
 				int est_size = avg_is - stats.pop_avg_crossing_is;

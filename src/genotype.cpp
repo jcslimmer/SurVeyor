@@ -153,13 +153,19 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     if (sv->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", &(sv->min_conf_size), 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MINSIZE", NULL, 0);
     }
     if (sv->max_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", &(sv->max_conf_size), 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "MAXSIZE", NULL, 0);
     }
     if (sv->ks_pval != deletion_t::KS_PVAL_NOT_COMPUTED) {
         float ks_pval = sv->ks_pval;
         bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", &ks_pval, 1);
+    } else {
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", NULL, 0);
     }
 
     int dp[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
@@ -269,7 +275,8 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
             std::string seq = get_sequence(read, true);
             if (!bam_is_mrev(read)) rc(seq);
             harsh_aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
-            if (!is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+            if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
                 consistent_reads.push_back(read);
                 avg_score += double(aln.sw_score)/seq.length();
                 start_positions.push_back(aln.ref_begin);
@@ -571,7 +578,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_file, candidate_reads_for_extension);
 
     std::vector<deletion_t*> small_deletions, large_deletions;       
-    std::vector<sv_t*> small_svs;         
+    std::vector<sv_t*> small_svs;  
     for (deletion_t* del : dels) {
         genotype_del(del, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
         if (-del->svlen() >= stats.max_is) {

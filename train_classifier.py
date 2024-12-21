@@ -61,7 +61,7 @@ gts_outdir = denovo_gts_outdir if cmd_args.denovo else regt_gts_outdir
 for model_name in training_data:
     if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
         continue
-
+    
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
     classifier.fit(training_data[model_name], training_labels)
 
