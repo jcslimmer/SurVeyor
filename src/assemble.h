@@ -1,12 +1,10 @@
 #ifndef ASSEMBLE_H_
 #define ASSEMBLE_H_
 
-#include <queue>
 #include <unordered_set>
 #include <mutex>
 #include <htslib/sam.h>
 
-#include "../libs/ssw.h"
 #include "sw_utils.h"
 #include "types.h"
 #include "dc_remapper.h"
@@ -26,41 +24,6 @@ struct seq_w_pp_t {
 		clip_pair.can_end_path = can_end_path;
 	}
 };
-
-void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& alns, std::vector<int>& out_edges,
-		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, config_t& config) {
-	std::sort(alns.begin(), alns.end(),
-			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& aln1, const std::pair<std::string, StripedSmithWaterman::Alignment>& aln2) {
-		return aln1.second.ref_begin < aln2.second.ref_begin;
-	});
-
-	for (int i = 0; i < alns.size(); i++) {
-		for (int j = i+1; j < alns.size() && alns[i].second.ref_end-alns[j].second.ref_begin >= config.min_clip_len; j++) {
-			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
-			if (spa.overlap) {
-				out_edges[i]++;
-				l_adj[i].push_back({j, spa.score, spa.overlap});
-				l_adj_rev[j].push_back({i, spa.score, spa.overlap});
-			}
-		}
-	}
-
-	// two major differences with the regular assembly:
-	// 1 - by how the graph is defined, no cycle is possible here
-	// 2 - in regular assembly, we only report contigs made of at last 2 reads. Here we report even single reads
-}
-
-void add_alignment(std::string& reference, std::string& query, std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& accepted_alns,
-		std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& rejected_alns, StripedSmithWaterman::Aligner& aligner, config_t& config) {
-	StripedSmithWaterman::Filter filter;
-	StripedSmithWaterman::Alignment aln;
-	aligner.Align(query.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-	if (accept(aln, config.min_clip_len)) {
-		accepted_alns.push_back({query, aln});
-	} else {
-		rejected_alns.push_back({query, aln});
-	}
-}
 
 void correct_contig(std::string& contig, std::vector<std::string>& reads, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config) {
 	std::vector<int> As(contig.length()), Cs(contig.length()), Gs(contig.length()), Ts(contig.length());
@@ -105,6 +68,7 @@ void build_graph(std::vector<std::string>& read_seqs, std::vector<int>& order, s
 			bool spa1_homopolymer = is_homopolymer(s2.c_str(), spa1.overlap);
 			suffix_prefix_aln_t spa2 = aln_suffix_prefix(s2, s1, 1, -4, 1.0, min_overlap, max_overlap, max_mismatches);
 			bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
+
 			if (spa1.overlap && spa2.overlap) {
 				if (spa1.score >= spa2.score && order[i] <= order[j]) {
 					if (!spa1_homopolymer) {
@@ -167,7 +131,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 
 	if (rev_topological_order.size() < n) {
-		build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 0.0, config.min_clip_len);
+		build_graph(read_seqs, order, out_edges, l_adj, l_adj_rev, 0, config.min_clip_len);
 
 		int min_overlap = config.min_clip_len;
 		for (; min_overlap <= stats.read_len/2; min_overlap += 10) {
@@ -493,5 +457,65 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 	chosen_ins->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 	return chosen_ins;
 }
+
+struct base_score_t {
+    int freq = 0, qual = 0;
+    char base;
+
+    base_score_t(char base) : base(base) {}
+};
+bool operator < (const base_score_t& bs1, const base_score_t& bs2) {
+    if (bs1.freq != bs2.freq) return bs1.freq < bs2.freq;
+    return bs1.qual < bs2.qual;
+}
+
+std::string build_full_consensus_seq(std::vector<std::string>& seqs,
+    std::vector<uint8_t*>& quals, std::vector<hts_pos_t>& read_start_offsets) {
+    const int MAX_CONSENSUS_LEN = 100000;
+    char consensus[MAX_CONSENSUS_LEN];
+
+    std::vector<hts_pos_t> read_end_offsets;
+    hts_pos_t consensus_len = 0;
+    for (int i = 0; i < seqs.size(); i++) {
+        hts_pos_t start_offset = read_start_offsets[i];
+        hts_pos_t end_offset = start_offset + seqs[i].length() - 1;
+        read_end_offsets.push_back(end_offset);
+        consensus_len = std::max(consensus_len, end_offset+1);
+    }
+
+    int s = 0;
+    for (int i = 0; i < consensus_len; i++) {
+        while (s < seqs.size() && read_end_offsets[s] < i) s++;
+
+        base_score_t base_scores[4] = { base_score_t('A'), base_score_t('C'), base_score_t('G'), base_score_t('T') };
+        for (int j = s; j < seqs.size() && read_start_offsets[j] <= i; j++) {
+            if (read_end_offsets[j] < i) continue;
+
+            char nucl = seqs[j][i - read_start_offsets[j]];
+            uint8_t qual = quals[j][i - read_start_offsets[j]];
+            if (nucl == 'A') {
+                base_scores[0].freq++;
+                base_scores[0].qual += qual;
+            } else if (nucl == 'C') {
+                base_scores[1].freq++;
+                base_scores[1].qual += qual;
+            } else if (nucl == 'G') {
+                base_scores[2].freq++;
+                base_scores[2].qual += qual;
+            } else if (nucl == 'T') {
+                base_scores[3].freq++;
+                base_scores[3].qual += qual;
+            }
+        }
+
+        base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
+
+        consensus[i] = best_base_score.base;
+    }
+    consensus[consensus_len] = '\0';
+
+    return std::string(consensus);
+}
+
 
 #endif /* ASSEMBLE_H_ */

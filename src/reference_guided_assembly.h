@@ -1,33 +1,104 @@
 #ifndef GUIDED_REFERENCE_ASSEMBLE_H
 #define GUIDED_REFERENCE_ASSEMBLE_H
 
+#include <functional>
+#include <queue>
+
 #include "../libs/ssw_cpp.h"
+#include "sw_utils.h"
 #include "utils.h"
 #include "sam_utils.h"
 #include "dc_remapper.h"
 #include "assemble.h"
 #include "remapping.h"
 
-std::vector<std::string> generate_reference_guided_consensus(std::string reference, 
-		std::vector<std::string>& seqs_lf, std::vector<std::string>& seqs_is, std::vector<std::string>& seqs_rf,
-		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
-		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
+void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& alns, std::vector<int>& out_edges,
+		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, config_t& config) {
+	std::sort(alns.begin(), alns.end(),
+			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& aln1, const std::pair<std::string, StripedSmithWaterman::Alignment>& aln2) {
+		return aln1.second.ref_begin < aln2.second.ref_begin;
+	});
 
-	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > accepted_alns, _rejected_alns_lf, _rejected_alns_is, _rejected_alns_rf;
-	for (std::string& seq : seqs_lf) {
-		add_alignment(reference, seq, accepted_alns, _rejected_alns_lf, aligner, config);
+	for (int i = 0; i < alns.size(); i++) {
+		for (int j = i+1; j < alns.size() && alns[i].second.ref_end-alns[j].second.ref_begin >= config.min_clip_len; j++) {
+			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
+			if (spa.overlap) {
+				out_edges[i]++;
+				l_adj[i].push_back({j, spa.score, spa.overlap});
+				l_adj_rev[j].push_back({i, spa.score, spa.overlap});
+			}
+		}
 	}
-	for (std::string& seq : seqs_is) {
-		add_alignment(reference, seq, accepted_alns, _rejected_alns_is, aligner, config);
+
+	// two major differences with the regular assembly:
+	// 1 - by how the graph is defined, no cycle is possible here
+	// 2 - in regular assembly, we only report contigs made of at last 2 reads. Here we report even single reads
+}
+
+int calculate_score(std::vector<std::string> contigs, std::vector<std::string> read_seqs) {
+	StripedSmithWaterman::Aligner aligner;
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
+	int score = 0;
+	for (std::string& read : read_seqs) {
+		int best_score = 0;
+		for (std::string& contig : contigs) {
+			aligner.Align(read.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
+			if (accept(aln, 0) && aln.sw_score > best_score) {
+				best_score = aln.sw_score;
+			}
+		}
+		score += best_score;
 	}
-	for (std::string& seq : seqs_rf) {
-		add_alignment(reference, seq, accepted_alns, _rejected_alns_rf, aligner, config);
+	return score;
+}
+
+
+
+struct seq_pair_overlap_t {
+	int i1, i2;
+	int overlap, score;
+
+	seq_pair_overlap_t(int i1, int i2, int overlap, int score) : i1(i1), i2(i2), overlap(overlap), score(score) {}
+};
+
+// remove contigs that are fully contained within another contig
+void remove_fully_contained(std::vector<std::string>& assembled_sequences, std::string& reference, StripedSmithWaterman::Aligner& aligner) {
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
+	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > assembled_seqs_w_alns;
+	for (std::string& assembled_sequence : assembled_sequences) {
+		aligner.Align(assembled_sequence.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		assembled_seqs_w_alns.push_back({assembled_sequence, aln});
 	}
-	
-	int n = accepted_alns.size();
+	std::sort(assembled_seqs_w_alns.begin(), assembled_seqs_w_alns.end(),
+			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& p1, const std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
+		return p1.second.ref_begin < p2.second.ref_begin;
+	});
+	int max_end = 0;
+	assembled_sequences.clear();
+	for (auto& p : assembled_seqs_w_alns) {
+		if (max_end < p.second.ref_end) {
+			assembled_sequences.push_back(p.first);
+			max_end = p.second.ref_end;
+		}
+	}
+}
+
+std::vector<std::string> generate_reference_guided_contigs(std::string reference, std::vector<std::string>& read_seqs, 
+	std::vector<std::string>& discarded_seqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config) {
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
+
+	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > alns;
+	int n = read_seqs.size();
 	std::vector<int> out_edges(n);
 	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-	build_aln_guided_graph(accepted_alns, out_edges, l_adj, l_adj_rev, config);
+	for (std::string& seq : read_seqs) {
+		harsh_aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		alns.push_back({seq, aln});
+	}
+	build_aln_guided_graph(alns, out_edges, l_adj, l_adj_rev, config);
 
 	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 
@@ -56,15 +127,18 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		}
 		if (best_score == 0) break;
 
-		std::string assembled_sequence = accepted_alns[curr_vertex].first;
+		std::string assembled_sequence = alns[curr_vertex].first;
 		std::vector<std::string> used_reads; // track reads used to build this contig, so that we can use them for correction
-		used_reads.push_back(accepted_alns[curr_vertex].first);
+		std::vector<int> path;
+		used_reads.push_back(alns[curr_vertex].first);
+		path.push_back(curr_vertex);
 		while (best_edges[curr_vertex].overlap) {
 			used[curr_vertex] = true;
 			int overlap = best_edges[curr_vertex].overlap;
 			curr_vertex = best_edges[curr_vertex].next;
-			assembled_sequence += accepted_alns[curr_vertex].first.substr(overlap);
-			used_reads.push_back(accepted_alns[curr_vertex].first);
+			assembled_sequence += alns[curr_vertex].first.substr(overlap);
+			used_reads.push_back(alns[curr_vertex].first);
+			path.push_back(curr_vertex);
 		}
 		used[curr_vertex] = true;
 
@@ -73,64 +147,126 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		assembled_sequences.push_back(corrected_assembled_sequence);
 	}
 	for (int i = 0; i < n; i++) {
-		if (!used[i]) assembled_sequences.push_back(accepted_alns[i].first);
+		if (!used[i]) discarded_seqs.push_back(alns[i].first);
 	}
+	return assembled_sequences;
+}
 
-	// retain assembled sequences that align without clipping and do not overlap a higher rated sequence
+std::vector<std::string> generate_reference_guided_consensus(std::string reference, 
+		std::vector<std::string>& seqs_lf, std::vector<std::string>& seqs_is, std::vector<std::string>& seqs_rf,
+		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
+		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats,
+		bool scaffold = true) {
+
+	// align all reads to the reference, and use their positions to guide the assembly
+	// in particular, use their positions to determine the order of the reads in the contig
+
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment aln;
-	std::vector<std::string> retained_assembled_sequences;
-	for (std::string& assembled_sequence : assembled_sequences) {
-		aligner.Align(assembled_sequence.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		if (!accept(aln, config.min_clip_len)) continue;
+	std::vector<std::string> read_seqs;
+	for (std::string& seq : seqs_lf) {
+		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		read_seqs.push_back(seq);
+	}
+	for (std::string& seq : seqs_is) {
+		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		read_seqs.push_back(seq);
+	}
+	for (std::string& seq : seqs_rf) {
+		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		read_seqs.push_back(seq);
+	}
 
+	std::vector<std::string> discarded_reads;
+	std::vector<std::string> assembled_sequences = generate_reference_guided_contigs(reference, read_seqs, discarded_reads, harsh_aligner, config);
 
-		bool overlaps = false;
-		for (StripedSmithWaterman::Alignment& existing_aln : consensus_contigs_alns) {
-			if (std::max(existing_aln.ref_begin, aln.ref_begin) <= std::min(existing_aln.ref_end, aln.ref_end)) {
-				overlaps = true;
+	// try and join contigs
+	while (true) {
+		remove_fully_contained(assembled_sequences, reference, aligner);
+		std::vector<std::string> temp;
+		int prev_ass_seqs = assembled_sequences.size();
+		assembled_sequences = generate_reference_guided_contigs(reference, assembled_sequences, temp, harsh_aligner, config);
+		assembled_sequences.insert(assembled_sequences.end(), temp.begin(), temp.end());
+		if (prev_ass_seqs <= assembled_sequences.size()) break;
+	}
+
+	// score the retained contigs
+	std::vector<int> scores(assembled_sequences.size());
+	for (std::string& read_seq : read_seqs) {
+		int best_score = 0;
+		std::vector<int> read_scores(assembled_sequences.size());
+		for (int i = 0; i < assembled_sequences.size(); i++) {
+			std::string& contig = assembled_sequences[i];
+			harsh_aligner.Align(read_seq.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
+			if (accept(aln, config.min_clip_len) && aln.sw_score > best_score) {
+				best_score = aln.sw_score;
+				read_scores[i] = aln.sw_score;
+			}
+		}
+		for (int i = 0; i < assembled_sequences.size(); i++) {
+			if (read_scores[i] == best_score) {
+				scores[i] += best_score;
+			}
+		}
+	}
+
+	// sort by descending score
+	std::vector<std::tuple<int, std::string, StripedSmithWaterman::Alignment> > contigs_w_score;
+	for (int i = 0; i < assembled_sequences.size(); i++) {
+		StripedSmithWaterman::Alignment aln;
+		harsh_aligner.Align(assembled_sequences[i].c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		contigs_w_score.push_back({scores[i], assembled_sequences[i], aln});
+	}
+	std::sort(contigs_w_score.begin(), contigs_w_score.end(), 
+			[](const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p1, const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p2) {
+		return std::get<0>(p1) > std::get<0>(p2);
+	});
+
+	std::vector<bool> remove(contigs_w_score.size(), false);
+	for (int i = contigs_w_score.size()-1; i >= 0; i--) {
+		for (int j = 0; j < i; j++) {
+			int score1 = std::get<0>(contigs_w_score[i]);
+			int score2 = std::get<0>(contigs_w_score[j]);
+			StripedSmithWaterman::Alignment& aln1 = std::get<2>(contigs_w_score[i]);
+			StripedSmithWaterman::Alignment& aln2 = std::get<2>(contigs_w_score[j]);
+			if (overlap(aln1.ref_begin, aln1.ref_end, aln2.ref_begin, aln2.ref_end)) {
+				remove[i] = true;
 				break;
 			}
 		}
-		if (!overlaps) {
-			consensus_contigs_alns.push_back(aln);
-			retained_assembled_sequences.push_back(assembled_sequence);
+	}
+
+	std::vector<std::string> retained_assembled_seqs;
+	for (int i = 0; i < contigs_w_score.size(); i++) {
+		if (!remove[i]) {
+			retained_assembled_seqs.push_back(std::get<1>(contigs_w_score[i]));
+			consensus_contigs_alns.push_back(std::get<2>(contigs_w_score[i]));
 		}
 	}
 
-	if (retained_assembled_sequences.empty()) return {};
+	// we assembled as much as possible using guidance from the reference
+	// however, reads may be misaligned for in the case of an incomplete or rearranged reference
+	// we can try to "scaffold" the contigs using the reads that were rejected during the assembly
 
-	// try scaffolding using rejected reads
-	std::vector<seq_w_pp_t> rejected_alns_lf, rejected_alns_is, rejected_alns_rf;
-	for (auto& e : _rejected_alns_lf) rejected_alns_lf.push_back({e.first, true, true});
-	for (auto& e : _rejected_alns_is) rejected_alns_is.push_back({e.first, true, true});
-	for (auto& e : _rejected_alns_rf) rejected_alns_rf.push_back({e.first, true, true});
-	std::vector<char> rejected_alns_lf_clipped(rejected_alns_lf.size(), 'N'), rejected_alns_is_clipped(rejected_alns_is.size(), 'N'),
-			rejected_alns_rf_clipped(rejected_alns_rf.size(), 'N');
-	std::vector<std::string> scaffolds = assemble_reads(rejected_alns_lf, rejected_alns_is, rejected_alns_rf,
-			harsh_aligner, config, stats);
-
-
-	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > contigs_sorted_by_pos;
-	for (int i = 0; i < consensus_contigs_alns.size(); i++) {
-		contigs_sorted_by_pos.push_back({retained_assembled_sequences[i], consensus_contigs_alns[i]});
+	std::vector<seq_w_pp_t> seqs_w_pp, temp1, temp2;
+	for (std::string& seq : discarded_reads) {
+		seqs_w_pp.push_back({seq, true, true});
 	}
-	std::sort(contigs_sorted_by_pos.begin(), contigs_sorted_by_pos.end(),
-			[](std::pair<std::string, StripedSmithWaterman::Alignment>& p1, std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
-		return p1.second.ref_begin < p2.second.ref_begin;
-	});
+	std::vector<std::string> scaffolding_sequences = assemble_reads(temp1, seqs_w_pp, temp2, harsh_aligner, config, stats);
 
-	std::vector<int> linked(contigs_sorted_by_pos.size()-1, -1);
-	std::vector<std::pair<int, int> > link_overlaps(contigs_sorted_by_pos.size()-1);
-	for (int i = 0; i < scaffolds.size(); i++) {
-		std::string& scaffold = scaffolds[i];
+	if (!scaffold || retained_assembled_seqs.empty()) return retained_assembled_seqs;
+	
+	std::vector<int> linked(retained_assembled_seqs.size()-1, -1);
+	std::vector<std::pair<int, int> > link_overlaps(retained_assembled_seqs.size()-1);
+	for (int i = 0; i < scaffolding_sequences.size(); i++) {
+		std::string& scaffold = scaffolding_sequences[i];
 		int best_link = -1, best_link_w = 0;
 		std::pair<int, int> best_link_overlap;
-		for (int j = 0; j < contigs_sorted_by_pos.size()-1; j++) {
+		for (int j = 0; j < retained_assembled_seqs.size()-1; j++) {
 			if (linked[j] >= 0) continue;
 
-			suffix_prefix_aln_t spa1 = aln_suffix_prefix(contigs_sorted_by_pos[j].first, scaffold, 1, -4, config.max_seq_error, config.min_clip_len);
-			suffix_prefix_aln_t spa2 = aln_suffix_prefix(scaffold, contigs_sorted_by_pos[j+1].first, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa1 = aln_suffix_prefix(retained_assembled_seqs[j], scaffold, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa2 = aln_suffix_prefix(scaffold, retained_assembled_seqs[j+1], 1, -4, config.max_seq_error, config.min_clip_len);
 			if (spa1.overlap && spa2.overlap && best_link_w < spa1.score+spa2.score) {
 				best_link = j, best_link_w = spa1.score+spa2.score;
 				best_link_overlap = {spa1.overlap, spa2.overlap};
@@ -144,45 +280,27 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	}
 
 	std::vector<std::string> scaffolded_sequences;
-	std::string curr_seq = contigs_sorted_by_pos[0].first;
-	for (int i = 1; i < contigs_sorted_by_pos.size(); i++) {
+	std::string curr_seq = retained_assembled_seqs[0];
+	for (int i = 1; i < retained_assembled_seqs.size(); i++) {
 		if (linked[i-1] == -1) {
 			scaffolded_sequences.push_back(curr_seq);
-			curr_seq = contigs_sorted_by_pos[i].first;
+			curr_seq = retained_assembled_seqs[i];
 		} else {
-			std::string link = scaffolds[linked[i-1]];
+			std::string link = scaffolding_sequences[linked[i-1]];
 			auto& lo = link_overlaps[i-1];
 			link = link.substr(lo.first, link.length()-lo.first-lo.second);
-			curr_seq += link + contigs_sorted_by_pos[i].first;
+			curr_seq += link + retained_assembled_seqs[i];
 		}
 	}
 	scaffolded_sequences.push_back(curr_seq);
 
-	std::vector<StripedSmithWaterman::Alignment> scaffolded_seqs_alns;
-	bool scaffolding_failed = false;
-	for (std::string s : scaffolded_sequences) {
-		aligner.Align(s.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		if (!accept(aln, 0)) {
-			scaffolding_failed = true;
-			break;
-		}
-		scaffolded_seqs_alns.push_back(aln);
+	consensus_contigs_alns.clear();
+	for (std::string& seq : scaffolded_sequences) {
+		harsh_aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
+		consensus_contigs_alns.push_back(aln);
 	}
-
-	if (!scaffolding_failed)
-	for (int i = 0; i < scaffolded_seqs_alns.size(); i++) {
-		for (int j = i+1; j < scaffolded_seqs_alns.size(); j++) {
-			if (std::max(scaffolded_seqs_alns[i].ref_begin, scaffolded_seqs_alns[j].ref_begin) <= std::min(scaffolded_seqs_alns[i].ref_end, scaffolded_seqs_alns[j].ref_end)) {
-				scaffolding_failed = true;
-				break;
-			}
-		}
-		if (scaffolding_failed) break;
-	}
-
-	if (!scaffolding_failed) scaffolded_seqs_alns.swap(consensus_contigs_alns);
-	return scaffolding_failed ? retained_assembled_sequences : scaffolded_sequences;
-
+	
+	return scaffolded_sequences;
 }
 
 std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,

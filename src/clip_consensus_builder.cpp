@@ -1,16 +1,94 @@
+#include <cstdint>
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "sam_utils.h"
 #include "hsr_utils.h"
 #include "utils.h"
+#include "assemble.h"
 #include "../libs/cptl_stl.h"
 
 std::mutex mtx;
 config_t config;
 std::string workdir, workspace;
 chr_seqs_map_t contigs;
+
+struct bam_redux_t {
+    static const uint8_t IS_REV = 1, IS_MREV = 2, IS_INTER_CHR = 4, IS_MATE_LC = 8, IS_MATE_RC = 16;
+
+    hts_pos_t start, end, mstart, isize;
+    int left_clip_size, right_clip_size;
+    int nm = 0;
+    uint8_t flag = 0, mapq = 0;
+    std::vector<uint8_t> seq;
+    std::vector<uint8_t> qual;
+    std::vector<uint32_t> cigar;
+    int as = 0;
+
+    bam_redux_t() {}
+    bam_redux_t(bam1_t* read) : start(read->core.pos), end(bam_endpos(read)), mstart(read->core.mpos),
+        isize(read->core.isize), mapq(read->core.qual), left_clip_size(get_left_clip_size(read)), right_clip_size(get_right_clip_size(read)),
+		nm(bam_aux2i(bam_aux_get(read, "NM"))), as(bam_aux2i(bam_aux_get(read, "AS"))) {
+
+        if (bam_is_rev(read)) flag |= IS_REV;
+        if (bam_is_mrev(read)) flag |= IS_MREV;
+        if (!is_samechr(read) || is_unmapped(read) != is_mate_unmapped(read)) flag |= IS_INTER_CHR;
+        if (is_mate_left_clipped(read)) flag |= IS_MATE_LC;
+        if (is_mate_right_clipped(read)) flag |= IS_MATE_RC;
+
+        uint8_t* seq_array = bam_get_seq(read);
+        seq = std::vector<uint8_t>(seq_array, seq_array+(read->core.l_qseq+1)/2);
+
+        uint8_t* qual_array = bam_get_qual(read);
+        qual = std::vector<uint8_t>(qual_array, qual_array+read->core.l_qseq);
+
+        uint32_t* cigar_array = bam_get_cigar(read);
+        cigar = std::vector<uint32_t>(cigar_array, cigar_array+read->core.n_cigar);
+    }
+
+    int seq_len() {
+        return qual.size();
+    }
+
+    bool is_rev() {
+        return flag & IS_REV;
+    }
+    bool is_mrev() {
+        return flag & IS_MREV;
+    }
+    bool is_inter_chr() {
+        return flag & IS_INTER_CHR;
+    }
+    bool mate_left_clipped() {
+        return flag & IS_MATE_LC;
+    }
+    bool mate_right_clipped() {
+        return flag & IS_MATE_RC;
+    }
+
+    hts_pos_t unclipped_start() {
+        return start-left_clip_size;
+    }
+    hts_pos_t unclipped_end() {
+        return end+right_clip_size;
+    }
+
+    std::string get_sequence() {
+        std::string seq_str;
+        for (int i = 0; i < seq_len(); i++) {
+            seq_str += get_base(seq.data(), i);
+        }
+        return seq_str;
+    }
+
+    std::string cigar_string() {
+        std::stringstream ss;
+        for (uint32_t c : cigar) ss << bam_cigar_oplen(c) << bam_cigar_opchr(c);
+        return ss.str();
+    }
+};
 
 struct del_ins_t {
     int del, ins;
@@ -42,17 +120,6 @@ del_ins_t get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
         }
     }
     return del_ins;
-}
-
-struct base_score_t {
-    int freq = 0, qual = 0;
-    char base;
-
-    base_score_t(char base) : base(base) {}
-};
-bool operator < (const base_score_t& bs1, const base_score_t& bs2) {
-    if (bs1.freq != bs2.freq) return bs1.freq < bs2.freq;
-    return bs1.qual < bs2.qual;
 }
 
 hts_pos_t get_start_offset(bam_redux_t* r1, bam_redux_t* r2) {
@@ -88,52 +155,19 @@ int compute_read_score(bam_redux_t* r, int match_score, int mismatch_score, int 
 }
 
 std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped) {
-    const int MAX_CONSENSUS_LEN = 100000;
-    char consensus[MAX_CONSENSUS_LEN];
-
-    std::vector<hts_pos_t> read_start_offsets, read_end_offsets;
-    hts_pos_t consensus_len = 0;
+    std::vector<std::string> seqs;
+    std::vector<uint8_t*> quals;
+    std::vector<hts_pos_t> read_start_offsets;
     for (bam_redux_t* r : clipped) {
-        hts_pos_t start_offset = get_start_offset(clipped[0], r);
-        read_start_offsets.push_back(start_offset);
-
-        hts_pos_t end_offset = start_offset + r->seq_len() - 1;
-        read_end_offsets.push_back(end_offset);
-        consensus_len = std::max(consensus_len, end_offset+1);
-    }
-
-    int s = 0;
-    for (int i = 0; i < consensus_len; i++) {
-        while (s < clipped.size() && read_end_offsets[s] < i) s++;
-
-        base_score_t base_scores[4] = { base_score_t('A'), base_score_t('C'), base_score_t('G'), base_score_t('T') };
-        for (int j = s; j < clipped.size() && read_start_offsets[j] <= i; j++) {
-            if (read_end_offsets[j] < i) continue;
-
-            char nucl = get_base(clipped[j]->seq.data(), i - read_start_offsets[j]);
-            uint8_t qual = clipped[j]->qual[i - read_start_offsets[j]];
-            if (nucl == 'A') {
-                base_scores[0].freq++;
-                base_scores[0].qual += qual;
-            } else if (nucl == 'C') {
-                base_scores[1].freq++;
-                base_scores[1].qual += qual;
-            } else if (nucl == 'G') {
-                base_scores[2].freq++;
-                base_scores[2].qual += qual;
-            } else if (nucl == 'T') {
-                base_scores[3].freq++;
-                base_scores[3].qual += qual;
-            }
+        std::string seq(r->seq_len(), 'N');
+        for (int i = 0; i < r->seq_len(); i++) {
+            seq[i] = get_base(r->seq.data(), i);
         }
-
-        base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
-
-        consensus[i] = best_base_score.base;
+        seqs.push_back(seq);
+        quals.push_back(r->qual.data());
+        read_start_offsets.push_back(get_start_offset(clipped[0], r));
     }
-    consensus[consensus_len] = '\0';
-
-    return std::string(consensus);
+    return build_full_consensus_seq(seqs, quals, read_start_offsets);
 }
 
 std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_redux_t*> clipped, bool left_clipped) {

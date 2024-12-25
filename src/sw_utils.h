@@ -802,4 +802,46 @@ bool accept(StripedSmithWaterman::Alignment& aln, int min_clip_len, double max_s
 	return (lc_size <= min_clip_len || lc_is_noise) && (rc_size <= min_clip_len || rc_is_noise) && mismatch_rate <= max_seq_error;
 }
 
+std::pair<int, int> get_dels_ins_in_first_n_chars(StripedSmithWaterman::Alignment& aln, int n) {
+    int dels = 0, inss = 0;
+    int offset = 0;
+    for (uint32_t c : aln.cigar) {
+        int len = cigar_int_to_len(c);
+        char op = cigar_int_to_op(c);
+
+        // since we are "unrolling" soft-clipped bases, they must be accounted for
+        bool consumes_ref = op == '=' || op == 'X' || op == 'D' || op == 'S';
+        if (consumes_ref && offset + len > n) {
+            len = n-offset;
+        }
+
+        if (op == 'D') {
+            dels += len;
+        } else if (op == 'I') {
+            inss += len;
+        }
+
+        if (consumes_ref) {
+            offset += len;
+            if (offset == n) break;
+        }
+    }
+    return {dels, inss};
+}
+
+hts_pos_t get_start_offset(StripedSmithWaterman::Alignment& r1, StripedSmithWaterman::Alignment& r2) {
+	int r1_uc_start = r1.ref_begin - get_left_clip_size(r1);
+	int r2_uc_start = r2.ref_begin - get_left_clip_size(r2);
+    hts_pos_t offset = r2_uc_start - r1_uc_start;
+    /* suppose the difference in starting position between R1 and R2 is N, we may be tempted to align the start
+     * of R2 to position N+1 of R1
+     * However, if R1 has insertions or deletions in the first N bps, the difference in starting positions
+     * is no longer accurate to decide where the start of R2 aligns on R1.
+     * If R1 has I bps inserted in the first N bps, then R2 will align to position N+1+I.
+     * Conversely, if D bps are deleted, R2 will align to position N+1-D
+     */
+    std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(r1, offset);
+    return offset + del_ins.second - del_ins.first;
+}
+
 #endif // SW_UTILS_H
