@@ -16,6 +16,12 @@ int get_left_clip_size(StripedSmithWaterman::Alignment& aln) {
 int get_right_clip_size(StripedSmithWaterman::Alignment& aln) {
 	return cigar_int_to_op(aln.cigar[aln.cigar.size()-1]) == 'S' ? cigar_int_to_len(aln.cigar[aln.cigar.size()-1]) : 0;
 }
+int get_unclipped_start(StripedSmithWaterman::Alignment& aln) {
+	return aln.ref_begin - get_left_clip_size(aln);
+}
+int get_unclipped_end(StripedSmithWaterman::Alignment& aln) {
+	return aln.ref_end + get_right_clip_size(aln);
+}
 bool is_left_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
 	return get_left_clip_size(aln) >= min_clip_len;
 }

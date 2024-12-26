@@ -15,12 +15,12 @@
 void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> >& alns, std::vector<int>& out_edges,
 		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, config_t& config) {
 	std::sort(alns.begin(), alns.end(),
-			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& aln1, const std::pair<std::string, StripedSmithWaterman::Alignment>& aln2) {
-		return aln1.second.ref_begin < aln2.second.ref_begin;
+			[](std::pair<std::string, StripedSmithWaterman::Alignment>& aln1, std::pair<std::string, StripedSmithWaterman::Alignment>& aln2) {
+		return get_unclipped_start(aln1.second) < get_unclipped_start(aln2.second);
 	});
 
 	for (int i = 0; i < alns.size(); i++) {
-		for (int j = i+1; j < alns.size() && alns[i].second.ref_end-alns[j].second.ref_begin >= config.min_clip_len; j++) {
+		for (int j = i+1; j < alns.size() && get_unclipped_end(alns[i].second)-get_unclipped_start(alns[j].second) >= config.min_clip_len; j++) {
 			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
 			if (spa.overlap) {
 				out_edges[i]++;
@@ -299,7 +299,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		harsh_aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		consensus_contigs_alns.push_back(aln);
 	}
-	
+
 	return scaffolded_sequences;
 }
 
