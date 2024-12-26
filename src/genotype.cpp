@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -5,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 
+#include "assemble.h"
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
@@ -14,12 +16,12 @@
 #include "types.h"
 #include "utils.h"
 #include "sam_utils.h"
-#include "assemble.h"
 #include "extend_1sr_consensus.h"
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw_cpp.h"
 #include "vcf_utils.h"
 #include "stat_tests.h"
+#include "reference_guided_assembly.h"
 
 chr_seqs_map_t chr_seqs;
 config_t config;
@@ -254,33 +256,47 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
         seqs.push_back(seq);
     }
 
-    StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment aln;
     std::vector<bam1_t*> consistent_reads;
     avg_score = 0;
     if (!reads.empty()) {
-        std::vector<seq_w_pp_t> seqs_w_pp, temp1, temp2;
+        std::vector<std::string> temp1, temp2;
+        std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
+        
+        std::vector<std::string> consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
+        
+        std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
         for (std::string& seq : seqs) {
             seqs_w_pp.push_back({seq, true, true});
         }
-        std::vector<std::string> consensuses = assemble_reads(temp1, seqs_w_pp, temp2, harsh_aligner, config, stats);
+        std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
+        consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
 
-        if (consensuses.empty()) {
-            return consistent_reads;
-        }
-
-        consensus_seq = consensuses[0];
+        StripedSmithWaterman::Filter filter;
+        StripedSmithWaterman::Alignment aln;
         std::vector<int> start_positions, end_positions;
-        for (bam1_t* read : reads) {
-            std::string seq = get_sequence(read, true);
-            if (!bam_is_mrev(read)) rc(seq);
-            harsh_aligner.Align(seq.c_str(), consensus_seq.c_str(), consensus_seq.length(), filter, &aln, 0);
-            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-            if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
-                consistent_reads.push_back(read);
-                avg_score += double(aln.sw_score)/seq.length();
-                start_positions.push_back(aln.ref_begin);
-                end_positions.push_back(aln.ref_end);
+        for (std::string cseq : consensus_seqs) {
+            std::vector<bam1_t*> curr_consistent_reads;
+            std::vector<int> curr_start_positions, curr_end_positions;
+            double curr_avg_score = 0;
+            for (bam1_t* read : reads) {
+                std::string seq = get_sequence(read, true);
+                if (!bam_is_mrev(read)) rc(seq);
+                harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
+                double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+                if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+                    curr_consistent_reads.push_back(read);
+                    curr_avg_score += double(aln.sw_score)/seq.length();
+                    curr_start_positions.push_back(aln.ref_begin);
+                    curr_end_positions.push_back(aln.ref_end);
+                }
+            }
+
+            if (curr_avg_score > avg_score) {
+                avg_score = curr_avg_score;
+                consistent_reads = curr_consistent_reads;
+                start_positions = curr_start_positions;
+                end_positions = curr_end_positions;
+                consensus_seq = cseq;
             }
         }
         std::sort(start_positions.begin(), start_positions.end());
