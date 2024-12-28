@@ -16,6 +16,7 @@ class Features:
 
     fmt_features_names = [  'AR1', 'ARC1', 'ARC1MQ', 'ARCAS1', 'ARC1HQ',
                             'AR2', 'ARC2', 'ARC2MQ', 'ARCAS2', 'ARC2HQ', 'MAXARCD',
+                            'AXR', 'AXRHQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
                             'MEXL', 'mEXL', 'EXL',
@@ -25,9 +26,7 @@ class Features:
                             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
 
-    denovo_features_names = ['IMPRECISE',
-                      'EXT_1SR_READS1', 'EXT_1SR_READS2', 
-                      'HQ_EXT_1SR_READS1', 'HQ_EXT_1SR_READS2', 
+    denovo_features_names = ['IMPRECISE', 'RR1', 'RRC1', 'RR2', 'RRC2',
                       'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 
                       'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
@@ -37,7 +36,7 @@ class Features:
             ['RR1', 'RRC1', 'RR2', 'RRC2',
              'AR1_RATIO', 'AR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO',
              'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
-             'AXR', 'AXRHQ', 'MEXAS', 'mEXAS', 'EXAS', 'MEXRS', 'mEXRS', 'EXRS',
+             'MEXAS', 'mEXAS', 'EXAS', 'MEXRS', 'mEXRS', 'EXRS',
              'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']#,
             #  'MAX_EXSSC1', 'MIN_EXSSC1', 'MAX_EXSSC2', 'MIN_EXSSC2']
 
@@ -66,27 +65,35 @@ class Features:
         svtype_str = Features.get_svtype(record)
         source_str = Features.get_string_value(record.info, 'SOURCE', "")
         split_reads = Features.get_number_value(record.info, 'SPLIT_READS', [0, 0])
+
+        imprecise = False
+        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
+           Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
+            imprecise = True
+
         if svtype_str == "DEL":
-            if split_reads[0] > 0 and split_reads[1] > 0:
-                source_str = "2SR"
-            elif split_reads[0] > 0 or split_reads[1] > 0:
-                source_str = "1SR"
-            else:
-                source_str = "DP"
+            source_str = ""
+            if imprecise:
+                svtype_str += "_IMPRECISE"
             if abs(Features.get_svlen(record)) >= max_is:
-                source_str += "_LARGE"
+                svtype_str += "_LARGE"
         elif svtype_str == "DUP":
             if split_reads[0] > 0 and split_reads[1] > 0:
                 source_str = "2SR"
-            elif split_reads[0] > 0 or split_reads[1] > 0:
-                source_str = "1SR"
-        elif svtype_str == "INS":
-            if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
-                pass
-            elif split_reads[0] > 0 and split_reads[1] > 0:
-                source_str = "2SR"
-            elif split_reads[0] > 0 or split_reads[1] > 0:
-                source_str = "1SR"
+            if imprecise:
+                source_str += "_IMPRECISE"
+            # elif split_reads[0] > 0 or split_reads[1] > 0:
+            #     source_str = "1SR"
+        #     else:
+        #         source_str = "IMPRECISE"
+        # elif svtype_str == "INS":
+        #     pass
+        #     if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
+        #         pass
+        #     elif split_reads[0] > 0 and split_reads[1] > 0:
+        #         source_str = "2SR"
+        #     elif split_reads[0] > 0 or split_reads[1] > 0:
+        #         source_str = "1SR"
         return svtype_str + "_" + source_str
 
     def get_regt_model_name(record, max_is, read_len):
@@ -186,15 +193,6 @@ class Features:
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
-        features['RCC_EXT_1SR_READS1'], features['RCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'RCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
-        features['LCC_EXT_1SR_READS1'], features['LCC_EXT_1SR_READS2'] = Features.get_number_value(info, 'LCC_EXT_1SR_READS', [0, 0], median_depth*max_is)
-        features['EXT_1SR_READS1'] = features['RCC_EXT_1SR_READS1'] + features['LCC_EXT_1SR_READS1']
-        features['EXT_1SR_READS2'] = features['RCC_EXT_1SR_READS2'] + features['LCC_EXT_1SR_READS2']
-        features['RCC_HQ_EXT_1SR_READS1'], features['RCC_HQ_EXT_1SR_READS2'] = Features.get_number_value(info, 'RCC_HQ_EXT_1SR_READS', [0, 0], median_depth*max_is)
-        features['LCC_HQ_EXT_1SR_READS1'], features['LCC_HQ_EXT_1SR_READS2'] = Features.get_number_value(info, 'LCC_HQ_EXT_1SR_READS', [0, 0], median_depth*max_is)
-        features['HQ_EXT_1SR_READS1'] = features['RCC_HQ_EXT_1SR_READS1'] + features['LCC_HQ_EXT_1SR_READS1']
-        features['HQ_EXT_1SR_READS2'] = features['RCC_HQ_EXT_1SR_READS2'] + features['LCC_HQ_EXT_1SR_READS2']
-
         full_junction_score = Features.get_number_value(info, 'FULL_JUNCTION_SCORE', 0)
         split_junction_score1 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE', [0, 0])
         split_junction_score2 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE2', [0, 0])
@@ -251,12 +249,12 @@ class Features:
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         arc1 = Features.get_number_value(record.samples[0], 'ARC1', 0)
-        ar2 = Features.get_number_value(record.samples[0], 'AR2', ar1)
-        arc2 = Features.get_number_value(record.samples[0], 'ARC2', arc1)
+        ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
+        arc2 = Features.get_number_value(record.samples[0], 'ARC2', 0)
         rr1 = Features.get_number_value(record.samples[0], 'RR1', 0)
         rrc1 = Features.get_number_value(record.samples[0], 'RRC1', 0)
-        rr2 = Features.get_number_value(record.samples[0], 'RR2', rr1)
-        rrc2 = Features.get_number_value(record.samples[0], 'RRC2', rrc1)
+        rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
+        rrc2 = Features.get_number_value(record.samples[0], 'RRC2', 0)
         er = Features.get_number_value(record.samples[0], 'ER', 0)
 
         features['AR1'] = Features.normalise(ar1, min_depth, max_depth)
@@ -321,7 +319,7 @@ class Features:
         features['MDLCHQ'] = Features.normalise(clmdhq[0], min_depth, max_depth)
         features['MDRCHQ'] = Features.normalise(clmdhq[1], min_depth, max_depth)
 
-        features['KS_PVAL'] = max(0, Features.get_number_value(record.samples[0], 'KSPVAL', 1.0))
+        features['KS_PVAL'] = Features.get_number_value(record.samples[0], 'KSPVAL', 1.0)
         features['SIZE_NORM'] = 2
         if 'MAXSIZE' in record.samples[0]:
             min_size = float(record.samples[0]['MINSIZE'])
