@@ -9,6 +9,7 @@
 #include "../libs/IntervalTree.h"
 #include "../libs/ssw_cpp.h"
 #include "../libs/cptl_stl.h"
+#include "../libs/ssw.h"
 #include "common.h"
 #include "htslib/vcf.h"
 

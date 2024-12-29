@@ -249,6 +249,9 @@ void reset_stats(sv_t* sv) {
 }
 
 std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score) {
+
+    if (reads.empty()) return reads;
+
     std::vector<std::string> seqs;
     for (bam1_t* read : reads) {
         std::string seq = get_sequence(read, true);
@@ -258,59 +261,74 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
 
     std::vector<bam1_t*> consistent_reads;
     avg_score = 0;
-    if (!reads.empty()) {
-        std::vector<std::string> temp1, temp2;
-        std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
-        
-        std::vector<std::string> consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
-        
-        std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
-        for (std::string& seq : seqs) {
-            seqs_w_pp.push_back({seq, true, true});
-        }
-        std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
-        consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
+    std::vector<std::string> temp1, temp2;
+    std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
+    
+    std::vector<std::string> consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
+    
+    std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
+    for (std::string& seq : seqs) {
+        seqs_w_pp.push_back({seq, true, true});
+    }
+    std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
+    consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
 
-        StripedSmithWaterman::Filter filter;
-        StripedSmithWaterman::Alignment aln;
-        std::vector<int> start_positions, end_positions;
-        for (std::string cseq : consensus_seqs) {
-            std::vector<bam1_t*> curr_consistent_reads;
-            std::vector<int> curr_start_positions, curr_end_positions;
-            double curr_avg_score = 0;
-            for (bam1_t* read : reads) {
-                std::string seq = get_sequence(read, true);
-                if (!bam_is_mrev(read)) rc(seq);
-                harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
-                double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-                if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
-                    curr_consistent_reads.push_back(read);
-                    curr_avg_score += double(aln.sw_score)/seq.length();
-                    curr_start_positions.push_back(aln.ref_begin);
-                    curr_end_positions.push_back(aln.ref_end);
-                }
-            }
-
-            if (curr_avg_score > avg_score) {
-                avg_score = curr_avg_score;
-                consistent_reads = curr_consistent_reads;
-                start_positions = curr_start_positions;
-                end_positions = curr_end_positions;
-                consensus_seq = cseq;
+    StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Alignment aln;
+    std::vector<int> start_positions, end_positions;
+    std::vector<StripedSmithWaterman::Alignment> alns;
+    for (std::string cseq : consensus_seqs) {
+        std::vector<bam1_t*> curr_consistent_reads;
+        std::vector<int> curr_start_positions, curr_end_positions;
+        std::vector<StripedSmithWaterman::Alignment> curr_alns;
+        double curr_avg_score = 0;
+        for (bam1_t* read : reads) {
+            std::string seq = get_sequence(read, true);
+            if (!bam_is_mrev(read)) rc(seq);
+            
+            harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
+            curr_alns.push_back(aln);
+            
+            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
+            if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+                curr_consistent_reads.push_back(read);
+                curr_avg_score += double(aln.sw_score)/seq.length();
+                curr_start_positions.push_back(aln.ref_begin);
+                curr_end_positions.push_back(aln.ref_end);
             }
         }
-        std::sort(start_positions.begin(), start_positions.end());
-        std::sort(end_positions.begin(), end_positions.end());
-        if (!consistent_reads.empty()) avg_score /= consistent_reads.size();
 
-        if (start_positions.size() > 2) {
-            int start = start_positions[2];
-            int end = end_positions[start_positions.size()-3];
-            consensus_seq = consensus_seq.substr(start, end-start);
-        } else {
-            consensus_seq = "";
+        if (curr_avg_score > avg_score) {
+            avg_score = curr_avg_score;
+            consistent_reads = curr_consistent_reads;
+            start_positions = curr_start_positions;
+            end_positions = curr_end_positions;
+            alns = curr_alns;
+            consensus_seq = cseq;
         }
     }
+    std::sort(start_positions.begin(), start_positions.end());
+    std::sort(end_positions.begin(), end_positions.end(), std::greater<int>());
+    if (!consistent_reads.empty()) avg_score /= consistent_reads.size();
+
+    if (start_positions.size() >= 2) {
+        correct_contig(consensus_seq, seqs, alns, config, true);
+
+        consensus_seq = consensus_seq.substr(start_positions[1], end_positions[1]-start_positions[1]);
+
+        int p;
+        int window_len = 2*stats.read_len/3;
+        while ((p = find_char_in_str(consensus_seq, 'N', 0, window_len)) != -1) {
+            consensus_seq = consensus_seq.substr(p+1);
+        }
+
+        while ((p = find_char_in_str(consensus_seq, 'N', consensus_seq.length()-window_len, consensus_seq.length())) != -1) {
+            consensus_seq = consensus_seq.substr(0, p);
+        }
+    } else {
+        consensus_seq = "";
+    }
+
     return consistent_reads;
 }
 

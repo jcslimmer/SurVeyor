@@ -14,8 +14,6 @@
 #include <algorithm>
 
 #include <htslib/sam.h>
-#include "../libs/ssw.h"
-#include "../libs/ssw_cpp.h"
 #include "htslib/hts.h"
 #include "htslib/kseq.h"
 KSEQ_INIT(int, read)
@@ -288,6 +286,15 @@ void to_uppercase(char* s) {
     for (int i = 0; s[i] != '\0'; i++) {
         s[i] = toupper(s[i]);
     }
+}
+
+int find_char_in_str(std::string s, char c, int start = 0, int stop = -1) {
+    if (start < 0) start = 0;
+    if (stop == -1 || stop > s.length()) stop = s.length();
+    for (int i = start; i < stop; i++) {
+        if (s[i] == c) return i;
+    }
+    return -1;
 }
 
 int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {

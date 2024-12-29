@@ -25,19 +25,19 @@ struct seq_w_pp_t {
 	}
 };
 
-void correct_contig(std::string& contig, std::vector<std::string>& reads, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config) {
+void correct_contig(std::string& contig, std::vector<std::string>& reads, std::vector<StripedSmithWaterman::Alignment>& alns, config_t& config,
+	bool ambiguous_as_N = false) {
+
 	std::vector<int> As(contig.length()), Cs(contig.length()), Gs(contig.length()), Ts(contig.length());
-	StripedSmithWaterman::Filter filter;
-	StripedSmithWaterman::Alignment aln;
-	for (std::string& read : reads) {
-		harsh_aligner.Align(read.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
+	for (int i = 0; i < reads.size(); i++) {
+		StripedSmithWaterman::Alignment& aln = alns[i];
 		if (accept(aln, config.min_clip_len)) {
-			for (int i = aln.query_begin; i < aln.query_end; i++) {
-				char c = read[i];
-				if (c == 'A') As[i-aln.query_begin+aln.ref_begin]++;
-				else if (c == 'C') Cs[i-aln.query_begin+aln.ref_begin]++;
-				else if (c == 'G') Gs[i-aln.query_begin+aln.ref_begin]++;
-				else if (c == 'T') Ts[i-aln.query_begin+aln.ref_begin]++;
+			for (int j = aln.query_begin; j < aln.query_end; j++) {
+				char c = reads[i][j];
+				if (c == 'A') As[j-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'C') Cs[j-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'G') Gs[j-aln.query_begin+aln.ref_begin]++;
+				else if (c == 'T') Ts[j-aln.query_begin+aln.ref_begin]++;
 			}
 		}
 	}
@@ -45,11 +45,27 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, Stripe
 	for (int i = 0; i < contig.length(); i++) {
 		int max_freq = max(As[i], Cs[i], Gs[i], Ts[i]);
 		if (max_freq == 0) continue;
-		if (max_freq == As[i]) contig[i] = 'A';
+
+		int count_max = (As[i] == max_freq) + (Cs[i] == max_freq) + (Gs[i] == max_freq) + (Ts[i] == max_freq);
+		if (ambiguous_as_N && count_max > 1) contig[i] = 'N';
+		else if (max_freq == As[i]) contig[i] = 'A';
 		else if (max_freq == Cs[i]) contig[i] = 'C';
 		else if (max_freq == Gs[i]) contig[i] = 'G';
 		else if (max_freq == Ts[i]) contig[i] = 'T';
 	}
+}
+
+void correct_contig(std::string& contig, std::vector<std::string>& reads, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config,
+	bool ambiguous_as_N = false) {
+
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
+	std::vector<StripedSmithWaterman::Alignment> alns;
+	for (std::string& read : reads) {
+		harsh_aligner.Align(read.c_str(), contig.c_str(), contig.length(), filter, &aln, 0);
+		alns.push_back(aln);
+	}
+	correct_contig(contig, reads, alns, config, ambiguous_as_N);
 }
 
 void build_graph(std::vector<std::string>& read_seqs, std::vector<int>& order, std::vector<int>& out_edges,
