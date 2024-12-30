@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -250,7 +251,11 @@ void reset_stats(sv_t* sv) {
 
 std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score) {
 
-    if (reads.empty()) return reads;
+    if (reads.empty()) {
+        avg_score = 0;
+        consensus_seq = "";
+        return reads;
+    }
 
     std::vector<std::string> seqs;
     for (bam1_t* read : reads) {
@@ -277,11 +282,12 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
     StripedSmithWaterman::Alignment aln;
     std::vector<int> start_positions, end_positions;
     std::vector<StripedSmithWaterman::Alignment> alns;
+    double cum_score = 0;
     for (std::string cseq : consensus_seqs) {
         std::vector<bam1_t*> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
-        double curr_avg_score = 0;
+        double curr_cum_score = 0;
         for (bam1_t* read : reads) {
             std::string seq = get_sequence(read, true);
             if (!bam_is_mrev(read)) rc(seq);
@@ -292,14 +298,14 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
             double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
             if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
                 curr_consistent_reads.push_back(read);
-                curr_avg_score += double(aln.sw_score)/seq.length();
+                curr_cum_score += double(aln.sw_score)/seq.length();
                 curr_start_positions.push_back(aln.ref_begin);
                 curr_end_positions.push_back(aln.ref_end);
             }
         }
 
-        if (curr_avg_score > avg_score) {
-            avg_score = curr_avg_score;
+        if (curr_cum_score > cum_score) {
+            cum_score = curr_cum_score;
             consistent_reads = curr_consistent_reads;
             start_positions = curr_start_positions;
             end_positions = curr_end_positions;
@@ -309,7 +315,8 @@ std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vecto
     }
     std::sort(start_positions.begin(), start_positions.end());
     std::sort(end_positions.begin(), end_positions.end(), std::greater<int>());
-    if (!consistent_reads.empty()) avg_score /= consistent_reads.size();
+    if (!consistent_reads.empty()) avg_score = cum_score/consistent_reads.size();
+    else avg_score = 0;
 
     if (start_positions.size() >= 2) {
         correct_contig(consensus_seq, seqs, alns, config, true);
