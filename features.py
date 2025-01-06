@@ -40,25 +40,7 @@ class Features:
         return Features.info_features_names + Features.fmt_features_names + \
             Features.stat_test_features_names + Features.dp_features_names
 
-    def get_denovo_model_name(record, max_is, read_len):
-        svtype_str = Features.get_svtype(record)
-
-        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
-            svtype_str += "_LARGE"
-        elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
-            svtype_str += "_LARGE"
-        elif svtype_str == "INS":
-            source_str = Features.get_string_value(record.info, 'SOURCE', "")
-            if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
-                svtype_str += "_ASS"
-
-        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
-           Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
-            svtype_str += "_IMPRECISE"
-
-        return svtype_str
-
-    def get_regt_model_name(record, max_is, read_len):
+    def get_model_name(record, max_is, read_len):
         svtype_str = Features.get_svtype(record)
         if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
             svtype_str += "_LARGE"
@@ -69,12 +51,6 @@ class Features:
            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
             svtype_str += "_IMPRECISE"
         return svtype_str
-    
-    def get_model_name(record, max_is, read_len, denovo):
-        if denovo:
-            return Features.get_denovo_model_name(record, max_is, read_len)
-        else:
-            return Features.get_regt_model_name(record, max_is, read_len)
 
     def get_number_value(info, key, default, norm_factor = 1.0):
         if key in info:
@@ -131,13 +107,13 @@ class Features:
         else:
             return 0.25 + (value - min) / (max - min) * 0.75
 
-    def record_to_features(record, stats, denovo):
+    def record_to_features(record, stats):
         min_depth = get_stat(stats, 'min_depth', record.chrom)
         median_depth = get_stat(stats, 'median_depth', record.chrom)
         max_depth = get_stat(stats, 'max_depth', record.chrom)
         max_is = stats['max_is']['.']
         read_len = stats['read_len']['.']
-        model_name = Features.get_model_name(record, max_is, read_len, denovo)
+        model_name = Features.get_model_name(record, max_is, read_len)
 
         features = dict()
         info = record.info
@@ -415,8 +391,8 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, denovo, tolerate_no_gts = False)
         if record_svtype.startswith('INV'):
             continue
 
-        model_name = Features.get_model_name(record, stats['max_is']['.'], stats['read_len']['.'], denovo)
-        feature_values = Features.record_to_features(record, stats, denovo)
+        model_name = Features.get_model_name(record, stats['max_is']['.'], stats['read_len']['.'])
+        feature_values = Features.record_to_features(record, stats)
         if denovo or ('TD' not in record.samples[0] and gts[record.id] != "./."): # if too deep or no genotype is available, skip the record
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gts[record.id])
