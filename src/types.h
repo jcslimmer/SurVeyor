@@ -203,7 +203,9 @@ struct sv_t {
         int alt_consensus1_split_size1 = 0, alt_consensus1_split_size2 = 0;
         int alt_consensus2_split_size1 = 0, alt_consensus2_split_size2 = 0;
         int alt_consensus1_split_score1 = 0, alt_consensus1_split_score2 = 0;
+        int alt_consensus1_split_score1_ind_aln = 0, alt_consensus1_split_score2_ind_aln = 0;
         int alt_consensus2_split_score1 = 0, alt_consensus2_split_score2 = 0;
+        int alt_consensus2_split_score1_ind_aln = 0, alt_consensus2_split_score2_ind_aln = 0;
         int ins_seq_prefix_cov = 0, ins_seq_suffix_cov = 0;
         bool too_deep = false;
 

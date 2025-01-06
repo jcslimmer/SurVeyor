@@ -266,9 +266,17 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* exssc_tag = "##FORMAT=<ID=EXSSC,Number=2,Type=Integer,Description=\"Score of the left half and right half of the extended alternative allele consensus.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exssc_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSSCIA");
+	const char* exsscia_tag = "##FORMAT=<ID=EXSSCIA,Number=2,Type=Integer,Description=\"Score of the left half and right half of the extended alternative allele consensus for the first breakpoint, when allowed to map to the reference independently.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exsscia_tag, &len));
+
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSSC2");
 	const char* exssc2_tag = "##FORMAT=<ID=EXSSC2,Number=2,Type=Integer,Description=\"Score of the left half and right half of the extended alternative allele consensus for the second breakpoint (only for insertions).\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exssc2_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXSSC2IA");
+	const char* exssc2ia_tag = "##FORMAT=<ID=EXSSC2IA,Number=2,Type=Integer,Description=\"Score of the left half and right half of the extended alternative allele consensus for the second breakpoint, when allowed to map to the reference independently.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exssc2ia_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
 	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";

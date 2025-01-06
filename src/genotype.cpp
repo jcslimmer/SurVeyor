@@ -210,6 +210,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
         int exssc[] = {sv->regenotyping_info.alt_consensus1_split_score1, sv->regenotyping_info.alt_consensus1_split_score2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", exssc, 2);
+        int exsscia[] = {sv->regenotyping_info.alt_consensus1_split_score1_ind_aln, sv->regenotyping_info.alt_consensus1_split_score2_ind_aln};
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSCIA", exsscia, 2);
 
         if (sv->svtype() == "INS") {
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", &(sv->regenotyping_info.ext_alt_consensus2_to_alt_score), 1);
@@ -219,6 +221,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", exss2, 2);
             int exssc2[] = {sv->regenotyping_info.alt_consensus2_split_score1, sv->regenotyping_info.alt_consensus2_split_score2};
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", exssc2, 2);
+            int exssc2ia[] = {sv->regenotyping_info.alt_consensus2_split_score1_ind_aln, sv->regenotyping_info.alt_consensus2_split_score2_ind_aln};
+            bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", exssc2ia, 2);
         }
     }
 }
@@ -563,12 +567,20 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->regenotyping_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         del->regenotyping_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
         del->regenotyping_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
+
+        ref1_aln.Clear();
+        std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
+        aligner.Align(lh_query.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
+        del->regenotyping_info.alt_consensus1_split_score1_ind_aln = ref1_aln.sw_score;
+
+        ref2_aln.Clear();
+        std::string rh_query = alt_consensus_seq.substr(alt_consensus_seq.length()-query_rh_aln_score.second);
+        aligner.Align(rh_query.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
+        del->regenotyping_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
     }
 
     del->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
-    // del->regenotyping_info.alt_bp2_better_reads = alt_better_reads.size();
     del->regenotyping_info.alt_bp1_better_consistent_reads = alt_better_reads_consistent.size();
-    // del->regenotyping_info.alt_bp2_better_consistent_reads = alt_better_reads_consistent.size();
     for (bam1_t* read : alt_better_reads_consistent) {
         if (bam_is_mrev(read)) {
             del->regenotyping_info.alt_bp1_better_consistent_reads_fwd++;
@@ -645,6 +657,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
+    char* contig_seq = chr_seqs.get_seq(dup->chr);
 	hts_pos_t contig_len = chr_seqs.get_len(dup->chr);
 
 	hts_pos_t extend = stats.read_len + 20;
@@ -656,7 +669,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     hts_pos_t ref_start = std::max(hts_pos_t(0), dup_start-extend), ref_end = std::min(dup_end+extend, contig_len);
 	hts_pos_t ref_len = ref_end - ref_start;
 	char* ref_seq = new char[ref_len + 1];
-	strncpy(ref_seq, chr_seqs.get_seq(dup->chr)+ref_start, ref_len);
+	strncpy(ref_seq, contig_seq+ref_start, ref_len);
 	ref_seq[ref_len] = 0;
 
     std::vector<char*> alt_seqs;
@@ -665,15 +678,15 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
 		char* alt_seq = new char[alt_len+1];
 		int pos = 0;
-		strncpy(alt_seq, chr_seqs.get_seq(dup->chr)+ref_start, dup_end-ref_start);
+		strncpy(alt_seq, contig_seq+ref_start, dup_end-ref_start);
 		pos += dup_end - ref_start;
 		for (int i = 0; i < copies; i++) {
             strncpy(alt_seq+pos, dup->ins_seq.c_str(), dup->ins_seq.length());
             pos += dup->ins_seq.length();
-			strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_start, dup_end-dup_start);
+			strncpy(alt_seq+pos, contig_seq+dup_start, dup_end-dup_start);
 			pos += dup_end-dup_start;
 		}
-		strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_end, ref_end-dup_end);
+		strncpy(alt_seq+pos, contig_seq+dup_end, ref_end-dup_end);
 		pos += ref_end - dup_end;
 		alt_seq[pos] = 0;
 		alt_seqs.push_back(alt_seq);
@@ -767,28 +780,28 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (ref_start < 0) ref_start = 0;
         hts_pos_t ref_end = dup->end+alt_consensus_seq.length();
         if (ref_end > contig_len) ref_end = contig_len;
-        aligner.Align(alt_consensus_seq.c_str(), chr_seqs.get_seq(dup->chr)+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
         dup->regenotyping_info.ext_alt_consensus1_to_ref_score = ref_aln.sw_score;
 
         int n_extra_copies = alt_with_most_reads+1;
         int alt_len = ref_end - ref_start + n_extra_copies*svlen;
 		char* alt_seq = new char[alt_len+1];
 		int pos = 0;
-		strncpy(alt_seq, chr_seqs.get_seq(dup->chr)+ref_start, dup_end-ref_start);
+		strncpy(alt_seq, contig_seq+ref_start, dup_end-ref_start);
 		pos += dup_end - ref_start;
 		for (int i = 0; i < n_extra_copies; i++) {
             strncpy(alt_seq+pos, dup->ins_seq.c_str(), dup->ins_seq.length());
             pos += dup->ins_seq.length();
-			strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_start, dup_end-dup_start);
+			strncpy(alt_seq+pos, contig_seq+dup_start, dup_end-dup_start);
 			pos += dup_end-dup_start;
 		}
-		strncpy(alt_seq+pos, chr_seqs.get_seq(dup->chr)+dup_end, ref_end-dup_end);
+		strncpy(alt_seq+pos, contig_seq+dup_end, ref_end-dup_end);
 		pos += ref_end - dup_end;
 		alt_seq[pos] = 0;
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
         dup->regenotyping_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
 
-        delete[] alt_seq;
+        // delete[] alt_seq;
 
         int lf_seq_end = dup_start - ref_start;
         int lf_aln_rlen = std::max(0, lf_seq_end-alt_aln.ref_begin);
@@ -805,6 +818,16 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
         dup->regenotyping_info.ext_alt_consensus1_length = alt_consensus_seq.length();
+
+        ref_aln.Clear();
+        std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
+        aligner.Align(lh_query.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
+        dup->regenotyping_info.alt_consensus1_split_score1_ind_aln = ref_aln.sw_score;
+
+        ref_aln.Clear();
+        std::string rh_query = alt_consensus_seq.substr(alt_consensus_seq.length()-query_rh_aln_score.second);
+        aligner.Align(rh_query.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
+        dup->regenotyping_info.alt_consensus1_split_score2_ind_aln = ref_aln.sw_score;
     }
 
     dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads[alt_with_most_reads].size();
@@ -1013,6 +1036,16 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->regenotyping_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         dup->regenotyping_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
         dup->regenotyping_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
+
+        ref1_aln.Clear();
+        std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
+        aligner.Align(lh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
+        dup->regenotyping_info.alt_consensus1_split_score1_ind_aln = ref1_aln.sw_score;
+
+        ref2_aln.Clear();
+        std::string rh_query = alt_consensus_seq.substr(alt_consensus_seq.length()-query_rh_aln_score.second);
+        aligner.Align(rh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
+        dup->regenotyping_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
     }
 
     dup->regenotyping_info.alt_bp1_better_reads = alt_better_reads.size();
@@ -1266,6 +1299,18 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         ins->regenotyping_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt1_aln);
         ins->regenotyping_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         ins->regenotyping_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
+
+        StripedSmithWaterman::Alignment aln;
+
+        aln.Clear();
+        std::string lh_query = alt_bp1_consensus_seq.substr(0, query_lh_aln_score.second);
+        aligner.Align(lh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &aln, 0);
+        ins->regenotyping_info.alt_consensus1_split_score1_ind_aln = aln.sw_score;
+
+        aln.Clear();
+        std::string rh_query = alt_bp1_consensus_seq.substr(alt_bp1_consensus_seq.length()-query_rh_aln_score.second);
+        aligner.Align(rh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &aln, 0);
+        ins->regenotyping_info.alt_consensus1_split_score2_ind_aln = aln.sw_score;
     }
 
     ref2_aln.Clear();
@@ -1308,6 +1353,18 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         ins->regenotyping_info.alt_consensus2_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt2_aln);
         ins->regenotyping_info.alt_consensus2_split_score1 = query_lh_aln_score.first;
         ins->regenotyping_info.alt_consensus2_split_score2 = query_rh_aln_score.first;
+
+        StripedSmithWaterman::Alignment aln;
+
+        aln.Clear();
+        std::string lh_query = alt_bp2_consensus_seq.substr(0, query_lh_aln_score.second);
+        aligner.Align(lh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &aln, 0);
+        ins->regenotyping_info.alt_consensus2_split_score1_ind_aln = aln.sw_score;
+
+        aln.Clear();
+        std::string rh_query = alt_bp2_consensus_seq.substr(alt_bp2_consensus_seq.length()-query_rh_aln_score.second);
+        aligner.Align(rh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &aln, 0);
+        ins->regenotyping_info.alt_consensus2_split_score2_ind_aln = aln.sw_score;
     }
 
     ins->regenotyping_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score;
