@@ -14,7 +14,7 @@ class Classifier:
                 record_id = features.Features.generate_id(record)
                 if record_id in svid_to_gt:
                     record.samples[0]['GT'] = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
-                    record.samples[0]['EPR'] = svid_to_prob[record_id]
+                    record.samples[0]['EPR'] = float(svid_to_prob[record_id])
                 else:
                     record.samples[0]['GT'] = (None, None)
                 vcf_writer.write(record)
@@ -60,7 +60,7 @@ class Classifier:
             classifier = joblib.load(model_file)
             predictions = classifier.predict(positive_data)
             for i in range(len(predictions)):
-                svid_to_gt[positive_variant_ids[i]] = predictions[i]
+                svid_to_gt[positive_variant_ids[i]] = predictions[i] + 1
 
         # write the predictions to a VCF file
         vcf_reader = pysam.VariantFile(in_vcf)

@@ -65,14 +65,10 @@ for model_name in training_data:
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
     classifier.fit(training_data[model_name], training_labels)
 
-    # print feature importance to file
-    if cmd_args.denovo:
-        features_names = features.Features.get_denovo_feature_names(model_name)
-    else:
-        features_names = features.Features.get_regt_feature_names(model_name)
+    features_names = features.Features.get_feature_names(model_name)
     importances = classifier.feature_importances_
     indices = np.argsort(importances)[::-1]
-    
+
     with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
         for i in range(len(features_names)):
             f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
@@ -81,7 +77,7 @@ for model_name in training_data:
     joblib.dump(classifier, open(model_fname, 'wb'))
 
     positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
-    positive_training_labels = np.array([2 if x == "1/1" else 1 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
+    positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
     classifier.fit(positive_training_data, positive_training_labels)
 
     model_fname = os.path.join(gts_outdir, model_name + ".model")

@@ -16,9 +16,14 @@ class Features:
 
     fmt_features_names = [  'AR1', 'ARC1', 'ARC1MQ', 'ARCAS1', 'ARC1HQ',
                             'AR2', 'ARC2', 'ARC2MQ', 'ARCAS2', 'ARC2HQ', 'MAXARCD',
+                            'RR1', 'RRC1', 'RR2', 'RRC2',
+                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
                             'AXR', 'AXRHQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
+                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
+                            'EXSCC1_1_IA_RATIO', 'EXSCC1_2_IA_RATIO', 'EXSCC2_1_IA_RATIO', 'EXSCC2_2_IA_RATIO',
+                            'EXSSC1_1_IA_DIFF_RATIO', 'EXSSC1_2_IA_DIFF_RATIO', 'EXSSC2_1_IA_DIFF_RATIO', 'EXSSC2_2_IA_DIFF_RATIO',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
@@ -26,80 +31,37 @@ class Features:
                             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
                             'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
 
-    denovo_features_names = ['IMPRECISE', 'RR1', 'RRC1', 'RR2', 'RRC2',
-                      'FULL_TO_SPLIT_JUNCTION_SCORE_RATIO', 'FULL_TO_SPLIT_JUNCTION_SCORE_DIFF',
-                      'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2', 
-                      'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1', 'SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2',
-                      'SPLIT_TO_SIZE_RATIO1', 'SPLIT_TO_SIZE_RATIO2']
-
-    regt_shared_features_names = \
-            ['RR1', 'RRC1', 'RR2', 'RRC2',
-             'AR1_RATIO', 'AR2_RATIO', 'ARC1_RATIO', 'ARC2_RATIO',
-             'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
-             'MEXAS', 'mEXAS', 'EXAS', 'MEXRS', 'mEXRS', 'EXRS',
-             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF']#,
-            #  'MAX_EXSSC1', 'MIN_EXSSC1', 'MAX_EXSSC2', 'MIN_EXSSC2']
-
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
 
     dp_features_names = ['DP1', 'DP2', 'DP1HQ', 'DP2HQ', 'DP1_HQ_RATIO', 'DP2_HQ_RATIO', 'DP1MQ', 'DP2MQ', \
                          'DPSP1', 'DPSP2', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
-    def get_denovo_feature_names(model_name):
+    def get_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
-            Features.denovo_features_names + Features.stat_test_features_names + Features.dp_features_names
+            Features.stat_test_features_names + Features.dp_features_names
 
-    def get_regt_feature_names(model_name):
-        features_names = Features.info_features_names + Features.fmt_features_names + Features.regt_shared_features_names + Features.dp_features_names
-        if model_name in ["DEL", "DEL_IMPRECISE", "DUP", "DUP_IMPRECISE"]:
-            features_names += Features.stat_test_features_names
-        return features_names
-
-    def get_feature_names(model_name, denovo):
-        if denovo:
-            return Features.get_denovo_feature_names(model_name)
-        else:
-            return Features.get_regt_feature_names(model_name)
-
-    def get_denovo_model_name(record, max_is):
+    def get_denovo_model_name(record, max_is, read_len):
         svtype_str = Features.get_svtype(record)
-        source_str = Features.get_string_value(record.info, 'SOURCE', "")
-        split_reads = Features.get_number_value(record.info, 'SPLIT_READS', [0, 0])
 
-        imprecise = False
+        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
+            svtype_str += "_LARGE"
+        elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
+            svtype_str += "_LARGE"
+        elif svtype_str == "INS":
+            source_str = Features.get_string_value(record.info, 'SOURCE', "")
+            if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
+                svtype_str += "_ASS"
+
         if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
-            imprecise = True
+            svtype_str += "_IMPRECISE"
 
-        if svtype_str == "DEL":
-            source_str = ""
-            if imprecise:
-                svtype_str += "_IMPRECISE"
-            if abs(Features.get_svlen(record)) >= max_is:
-                svtype_str += "_LARGE"
-        elif svtype_str == "DUP":
-            if split_reads[0] > 0 and split_reads[1] > 0:
-                source_str = "2SR"
-            if imprecise:
-                source_str += "_IMPRECISE"
-            # elif split_reads[0] > 0 or split_reads[1] > 0:
-            #     source_str = "1SR"
-        #     else:
-        #         source_str = "IMPRECISE"
-        # elif svtype_str == "INS":
-        #     pass
-        #     if source_str == "DE_NOVO_ASSEMBLY" or source_str == "REFERENCE_GUIDED_ASSEMBLY":
-        #         pass
-        #     elif split_reads[0] > 0 and split_reads[1] > 0:
-        #         source_str = "2SR"
-        #     elif split_reads[0] > 0 or split_reads[1] > 0:
-        #         source_str = "1SR"
-        return svtype_str + "_" + source_str
+        return svtype_str
 
     def get_regt_model_name(record, max_is, read_len):
         svtype_str = Features.get_svtype(record)
         if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
-                svtype_str += "_LARGE"
+            svtype_str += "_LARGE"
         elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
             svtype_str += "_LARGE"
 
@@ -110,7 +72,7 @@ class Features:
     
     def get_model_name(record, max_is, read_len, denovo):
         if denovo:
-            return Features.get_denovo_model_name(record, max_is)
+            return Features.get_denovo_model_name(record, max_is, read_len)
         else:
             return Features.get_regt_model_name(record, max_is, read_len)
 
@@ -150,7 +112,7 @@ class Features:
             return svlen[0]
         else:
             return svlen
-        
+
     def get_svtype(record):
         if isinstance(record.info['SVTYPE'], list) or isinstance(record.info['SVTYPE'], tuple):
             return record.info['SVTYPE'][0]
@@ -160,6 +122,14 @@ class Features:
         if max == min:
             return value - min
         return (value - min) / (max - min)
+    
+    def piecewise_normalise(value, min, max):
+        if value <= min:
+            return value/min * 0.25
+        elif value >= max:
+            return value/max * 0.25 + 0.75
+        else:
+            return 0.25 + (value - min) / (max - min) * 0.75
 
     def record_to_features(record, stats, denovo):
         min_depth = get_stat(stats, 'min_depth', record.chrom)
@@ -193,24 +163,15 @@ class Features:
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
-        full_junction_score = Features.get_number_value(info, 'FULL_JUNCTION_SCORE', 0)
         split_junction_score1 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE', [0, 0])
         split_junction_score2 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE2', [0, 0])
         split_junction_size = Features.get_number_value(info, 'SPLIT_JUNCTION_SIZE', [0, 0])
         if sum(split_junction_score1) == 0:
-            features['FULL_TO_SPLIT_JUNCTION_SCORE_RATIO'] = 0
-            features['FULL_TO_SPLIT_JUNCTION_SCORE_DIFF'] = 0
-            features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2'] = 0, 0
             features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = 0, 0
-            features['SPLIT_TO_SIZE_RATIO1'], features['SPLIT_TO_SIZE_RATIO2'] = 0, 0
         else:
-            features['FULL_TO_SPLIT_JUNCTION_SCORE_RATIO'] = full_junction_score/sum(split_junction_score1)
-            features['FULL_TO_SPLIT_JUNCTION_SCORE_DIFF'] = full_junction_score-sum(split_junction_score1)
-            features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_RATIO2'] = split_junction_score2[0]/max(1, split_junction_score1[0]), split_junction_score2[1]/max(1, split_junction_score1[1])
             s1 = (split_junction_size[0]-split_junction_score1[0])/max(split_junction_size[0]-split_junction_score2[0], 1)
             s2 = (split_junction_size[1]-split_junction_score1[1])/max(split_junction_size[1]-split_junction_score2[1], 1)
             features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = s1, s2
-            features['SPLIT_TO_SIZE_RATIO1'], features['SPLIT_TO_SIZE_RATIO2'] = split_junction_score1[0]/split_junction_size[0], split_junction_score1[1]/split_junction_size[1]
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
@@ -255,9 +216,9 @@ class Features:
         rrc1 = Features.get_number_value(record.samples[0], 'RRC1', 0)
         rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
         rrc2 = Features.get_number_value(record.samples[0], 'RRC2', 0)
-        er = Features.get_number_value(record.samples[0], 'ER', 0)
 
         features['AR1'] = Features.normalise(ar1, min_depth, max_depth)
+        features['AR1_PW'] = Features.piecewise_normalise(ar1, min_depth, max_depth)
         features['ARC1'] = Features.normalise(arc1, min_depth, max_depth)
         features['ARC1HQ'] = Features.get_number_value(record.samples[0], 'ARC1HQ', 0, max(1, arc1))
         features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
@@ -282,10 +243,6 @@ class Features:
         features['RRC1'] = Features.normalise(rrc1, min_depth, max_depth)
         features['RR2'] = Features.normalise(rr2, min_depth, max_depth)
         features['RRC2'] = Features.normalise(rrc2, min_depth, max_depth)
-        features['AR1_RATIO'] = ar1/max(1, ar1+rr1+er)
-        features['ARC1_RATIO'] = arc1/max(1, arc1+rrc1+er)
-        features['AR2_RATIO'] = ar2/max(1, ar2+rr2+er)
-        features['ARC2_RATIO'] = arc2/max(1, arc2+rrc2+er)
         features['AR1_OVER_RR1'] = ar1/max(1, ar1+rr1)
         features['ARC1_OVER_RRC1'] = arc1/max(1, arc1+rrc1)
         features['AR2_OVER_RR2'] = ar2/max(1, ar2+rr2)
@@ -379,15 +336,9 @@ class Features:
 
         exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl1))
         exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0, max(1, exl2))
-        features['MEXAS'] = max(exas1, exas2)
-        features['mEXAS'] = min(exas1, exas2)
-        features['EXAS'] = features['MEXAS'] + features['mEXAS']
 
         exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl1))
         exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0, max(1, exl2))
-        features['MEXRS'] = max(exrs1, exrs2)
-        features['mEXRS'] = min(exrs1, exrs2)
-        features['EXRS'] = features['MEXRS'] + features['mEXRS']
 
         features['EXAS_EXRS_RATIO'] = 0 if exrs1+exrs2 == 0 else (exas1+exas2)/(exrs1+exrs2)
         features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
@@ -405,19 +356,16 @@ class Features:
         features['EXSS2_RATIO2'] = exss2_2/max(1, exl2)
 
         exssc1_1, exssc1_2 = Features.get_number_value(record.samples[0], 'EXSSC', [0, 0])
-        exssc1_1 /= max(1, exss1_1)
-        exssc1_2 /= max(1, exss1_2)
-        features['MAX_EXSSC1'] = max(exssc1_1, exssc1_2)
-        features['MIN_EXSSC1'] = min(exssc1_1, exssc1_2)
-
         exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [0, 0])
-        exssc2_1 /= max(1, exss2_1)
-        exssc2_2 /= max(1, exss2_2)
-        features['MAX_EXSSC2'] = max(exssc2_1, exssc2_2)
-        features['MIN_EXSSC2'] = min(exssc2_1, exssc2_2)
+        exsscia1_1, exsscia1_2 = Features.get_number_value(record.samples[0], 'EXSSCIA', [0, 0])
+        exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [0, 0])
+        features['EXSCC1_1_IA_RATIO'], features['EXSCC1_2_IA_RATIO'] = exssc1_1/max(1, exsscia1_1), exssc1_2/max(1, exsscia1_2)
+        features['EXSCC2_1_IA_RATIO'], features['EXSCC2_2_IA_RATIO'] = exssc2_1/max(1, exsscia2_1), exssc2_2/max(1, exsscia2_2)
+        features['EXSSC1_1_IA_DIFF_RATIO'], features['EXSSC1_2_IA_DIFF_RATIO'] = (exss1_1-exssc1_1)/max(1, exss1_1-exsscia1_1), (exss1_2-exssc1_2)/max(1, exss1_2-exsscia1_2)
+        features['EXSSC2_1_IA_DIFF_RATIO'], features['EXSSC2_2_IA_DIFF_RATIO'] = (exss2_1-exssc2_1)/max(1, exss2_1-exsscia2_1), (exss2_2-exssc2_2)/max(1, exss2_2-exsscia2_2)
 
         feature_values = []
-        for feature_name in Features.get_feature_names(model_name, denovo):
+        for feature_name in Features.get_feature_names(model_name):
             feature_values.append(features[feature_name])
         return feature_values
 
