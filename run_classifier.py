@@ -22,17 +22,14 @@ class Classifier:
                 vcf_writer.write(record)
         vcf_writer.close()
 
-    def run_classifier(in_vcf, out_vcf, stats_fname, model_dir, denovo):
+    def run_classifier(in_vcf, out_vcf, stats_fname, model_dir):
         test_data, _, test_variant_ids = \
-            features.parse_vcf(in_vcf, stats_fname, "XXX", denovo, tolerate_no_gts = True)
+            features.parse_vcf(in_vcf, stats_fname, "XXX", tolerate_no_gts = True)
 
         svid_to_gt = dict()
         svid_to_prob = dict()
         for model_name in test_data:
-            if denovo:
-                model_file = os.path.join(model_dir, "denovo", "yes_or_no", model_name + '.model')
-            else:
-                model_file = os.path.join(model_dir, "regt", "yes_or_no", model_name + '.model')
+            model_file = os.path.join(model_dir, "yes_or_no", model_name + '.model')
 
             if model_name.startswith("INV"):
                 continue
@@ -53,10 +50,7 @@ class Classifier:
             if len(positive_data) == 0:
                 continue
 
-            if denovo:
-                model_file = os.path.join(model_dir, "denovo", "gts", model_name + '.model')
-            else:
-                model_file = os.path.join(model_dir, "regt", "gts", model_name + '.model')
+            model_file = os.path.join(model_dir, "gts", model_name + '.model')
             classifier = joblib.load(model_file)
             predictions = classifier.predict(positive_data)
             for i in range(len(predictions)):
@@ -75,6 +69,5 @@ if __name__ == "__main__":
     cmd_parser.add_argument('out_vcf', help='Output VCF file.')
     cmd_parser.add_argument('stats', help='Stats of the test VCF file.')
     cmd_parser.add_argument('model_dir', help='Directory containing the trained model.')
-    cmd_parser.add_argument('--denovo', action='store_true', help='Use denovo models.')
     cmd_args = cmd_parser.parse_args()
-    Classifier.run_classifier(cmd_args.in_vcf, cmd_args.out_vcf, cmd_args.stats, cmd_args.model_dir, cmd_args.denovo)
+    Classifier.run_classifier(cmd_args.in_vcf, cmd_args.out_vcf, cmd_args.stats, cmd_args.model_dir)

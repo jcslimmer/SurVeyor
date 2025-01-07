@@ -29,7 +29,8 @@ class Features:
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
                             'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 
                             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
-                            'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3']
+                            'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3',
+                            'TD']
 
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
 
@@ -139,16 +140,6 @@ class Features:
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
-        split_junction_score1 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE', [0, 0])
-        split_junction_score2 = Features.get_number_value(info, 'SPLIT_JUNCTION_SCORE2', [0, 0])
-        split_junction_size = Features.get_number_value(info, 'SPLIT_JUNCTION_SIZE', [0, 0])
-        if sum(split_junction_score1) == 0:
-            features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = 0, 0
-        else:
-            s1 = (split_junction_size[0]-split_junction_score1[0])/max(split_junction_size[0]-split_junction_score2[0], 1)
-            s2 = (split_junction_size[1]-split_junction_score1[1])/max(split_junction_size[1]-split_junction_score2[1], 1)
-            features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO1'], features['SPLIT2_TO_SPLIT1_JUNCTION_SCORE_DIFF_RATIO2'] = s1, s2
-
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
         features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
 
@@ -182,7 +173,8 @@ class Features:
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
-        features['IMPRECISE'] = True if "IMPRECISE" in record.info else False
+        td = Features.get_number_value(record.samples[0], 'TD', 0)
+        features['TD'] = td
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         arc1 = Features.get_number_value(record.samples[0], 'ARC1', 0)
@@ -374,7 +366,7 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, denovo, tolerate_no_gts = False):
+def parse_vcf(vcf_fname, stats_fname, fp_fname, tolerate_no_gts = False):
     gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats_reader = open(stats_fname, 'r')
@@ -393,7 +385,7 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, denovo, tolerate_no_gts = False)
 
         model_name = Features.get_model_name(record, stats['max_is']['.'], stats['read_len']['.'])
         feature_values = Features.record_to_features(record, stats)
-        if denovo or ('TD' not in record.samples[0] and gts[record.id] != "./."): # if too deep or no genotype is available, skip the record
+        if gts[record.id] != "./.": # if too deep or no genotype is available, skip the record
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gts[record.id])
             variant_ids_by_source[model_name].append(Features.generate_id(record))

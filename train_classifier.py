@@ -13,27 +13,14 @@ cmd_parser.add_argument('outdir')
 cmd_parser.add_argument('--n-trees', type=int, default=5000, help='Number of trees in the random forest.')
 cmd_parser.add_argument('--model_name', default='ALL', help='Restrict to this model.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use for training.')
-cmd_parser.add_argument('--denovo', action='store_true', help='Build denovo model.')
 cmd_args = cmd_parser.parse_args()
-
-denovo_yes_or_no_outdir = os.path.join(cmd_args.outdir, "denovo", "yes_or_no")
-os.makedirs(denovo_yes_or_no_outdir, exist_ok=True)
-
-denovo_gts_outdir = os.path.join(cmd_args.outdir, "denovo", "gts")
-os.makedirs(denovo_gts_outdir, exist_ok=True)
-
-regt_yes_or_no_outdir = os.path.join(cmd_args.outdir, "regt", "yes_or_no")
-os.makedirs(regt_yes_or_no_outdir, exist_ok=True)
-
-regt_gts_outdir = os.path.join(cmd_args.outdir, "regt", "gts")
-os.makedirs(regt_gts_outdir, exist_ok=True)
 
 training_data, training_gts = defaultdict(list), defaultdict(list)
 
 def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
-                           cmd_args.denovo, tolerate_no_gts = False)
+                           tolerate_no_gts = False)
     return vcf_training_data, vcf_training_gts
 
 def merge_data(vcf_training_data, vcf_training_gts):
@@ -55,8 +42,11 @@ with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
 
 classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
 
-yes_or_no_outdir = denovo_yes_or_no_outdir if cmd_args.denovo else regt_yes_or_no_outdir
-gts_outdir = denovo_gts_outdir if cmd_args.denovo else regt_gts_outdir
+yes_or_no_outdir = os.path.join(cmd_args.outdir, "yes_or_no")
+os.makedirs(yes_or_no_outdir, exist_ok=True)
+
+gts_outdir = os.path.join(cmd_args.outdir, "gts")
+os.makedirs(gts_outdir, exist_ok=True)
 
 for model_name in training_data:
     if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:

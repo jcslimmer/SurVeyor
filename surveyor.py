@@ -183,7 +183,7 @@ if cmd_args.command == 'call':
         print("No model provided. Skipping filtering and genotyping.")
         exit(0)
 
-    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
@@ -205,7 +205,7 @@ elif cmd_args.command == 'genotype':
     exec(genotype_cmd)
 
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
-    Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model, False)
+    Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, cmd_args.out_vcf_file, sample_name)
     exec(reconcile_vcf_gt_cmd)
