@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) {
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sr_vcf_file, hdr, bcf_entry) == 0) {
 		sv_t* sv = bcf_to_sv(hdr, bcf_entry);
-		if (sv->svtype() == "DEL" && sv->filters.empty()) { // only use 2SR/2HSR
+		if (sv->svtype() == "DEL" && sv->is_pass()) { // only use 2SR/2HSR
 			sr_entries_by_chr[sv->chr].push_back(sv);
 		} else {
 			sr_nonpass_entries_by_chr[sv->chr].push_back(sv);

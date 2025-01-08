@@ -184,7 +184,7 @@ void select_nonoverlapping_clusters(std::vector<consensus_t*>& consensuses) {
 		std::vector<Interval<consensus_t*> > ov = rc_it.findOverlapping(c->start, c->end);
 		bool keep_consensus = true;
 		for (Interval<consensus_t*> ov_c : ov) {
-			if (ov_c.value->supp_clipped_reads() > c->supp_clipped_reads()) { // a higher count was found
+			if (ov_c.value->reads() > c->reads()) { // a higher count was found
 				keep_consensus = false;
 				break;
 			}

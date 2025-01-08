@@ -256,9 +256,9 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 
 		int sv_ploidy = 0;
 		for (sv_w_samplename_t& sv : clique_svs) {
-			if (sv_ploidy < sv.sv->ngt) sv_ploidy = sv.sv->ngt;
+			if (sv_ploidy < sv.sv->n_gt) sv_ploidy = sv.sv->n_gt;
 		}
-		for (sv_w_samplename_t& sv : clique_svs) if (sv.sv->ngt != sv_ploidy) { // all SVs being clustered must have same ploidy
+		for (sv_w_samplename_t& sv : clique_svs) if (sv.sv->n_gt != sv_ploidy) { // all SVs being clustered must have same ploidy
 			mtx.lock();
 			std::cerr << clique_svs[0].sample << "," << clique_svs[0].sv->id << " and " << sv.sample << "," << sv.sv->id << " have different ploidy." << std::endl;
 			mtx.unlock();

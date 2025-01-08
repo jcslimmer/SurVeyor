@@ -87,10 +87,10 @@ void extend_consensuses(int id, std::vector<consensus_t*>* consensuses, std::str
 		for (consensus_t* consensus : consensuses_to_consider) {
 			if (consensus->left_clipped != extend_in_clip_direction) {
 				extend_consensus_to_right(consensus, candidate_reads_for_extension_itree, consensus->right_ext_target_start(stats.max_is, stats.read_len), 
-					consensus->right_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
+					consensus->right_ext_target_end(stats.max_is, stats.read_len), chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
 			} else {
 				extend_consensus_to_left(consensus, candidate_reads_for_extension_itree, consensus->left_ext_target_start(stats.max_is, stats.read_len), 
-					consensus->left_ext_target_end(stats.max_is, stats.read_len), contig_name, chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
+					consensus->left_ext_target_end(stats.max_is, stats.read_len), chr_seqs.get_len(contig_name), config.high_confidence_mapq, stats, mateseqs_w_mapq[contig_id]);
 			}
 		}
 		for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
@@ -371,8 +371,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 			consensus_t* rc_consensus = NULL, *lc_consensus = NULL;
 			if (bnd_rf->rc_consensus != NULL) {
-				rc_consensus = new consensus_t(false, 0, 0, 0, seq, bnd_rf->rc_consensus->fwd_clipped+bnd_rf->lc_consensus->fwd_clipped, 
-					bnd_rf->rc_consensus->rev_clipped+bnd_rf->lc_consensus->rev_clipped, 0, std::max(bnd_rf->rc_consensus->max_mapq, bnd_rf->lc_consensus->max_mapq), 0, 0);
+				rc_consensus = new consensus_t(false, 0, 0, 0, seq, bnd_rf->rc_consensus->fwd_reads+bnd_rf->lc_consensus->fwd_reads, 
+					bnd_rf->rc_consensus->rev_reads+bnd_rf->lc_consensus->rev_reads, 0, std::max(bnd_rf->rc_consensus->max_mapq, bnd_rf->lc_consensus->max_mapq), 0, 0);
 				rc_consensus->max_mapq = std::max(bnd_rf->rc_consensus->max_mapq, bnd_rf->lc_consensus->max_mapq);
 				rc_consensus->left_ext_reads = bnd_rf->rc_consensus->left_ext_reads;
 				rc_consensus->right_ext_reads = bnd_rf->lc_consensus->left_ext_reads;
@@ -380,8 +380,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				rc_consensus->hq_right_ext_reads = bnd_rf->lc_consensus->hq_left_ext_reads;
 			}
 			if (bnd_lf->lc_consensus != NULL) {
-				lc_consensus = new consensus_t(true, 0, 0, 0, seq, bnd_lf->rc_consensus->fwd_clipped+bnd_lf->lc_consensus->fwd_clipped, 
-					bnd_lf->rc_consensus->rev_clipped+bnd_lf->lc_consensus->rev_clipped, 0, std::max(bnd_lf->rc_consensus->max_mapq, bnd_lf->lc_consensus->max_mapq), 0, 0);
+				lc_consensus = new consensus_t(true, 0, 0, 0, seq, bnd_lf->rc_consensus->fwd_reads+bnd_lf->lc_consensus->fwd_reads, 
+					bnd_lf->rc_consensus->rev_reads+bnd_lf->lc_consensus->rev_reads, 0, std::max(bnd_lf->rc_consensus->max_mapq, bnd_lf->lc_consensus->max_mapq), 0, 0);
 				lc_consensus->max_mapq = std::max(bnd_lf->rc_consensus->max_mapq, bnd_lf->lc_consensus->max_mapq);
 				lc_consensus->left_ext_reads = bnd_lf->rc_consensus->right_ext_reads;
 				lc_consensus->right_ext_reads = bnd_lf->lc_consensus->right_ext_reads;

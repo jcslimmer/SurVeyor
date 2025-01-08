@@ -223,11 +223,11 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cphq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
-    const char* axr_tag = "##FORMAT=<ID=AXR,Number=1,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus.\">";
+    const char* axr_tag = "##FORMAT=<ID=AXR,Number=2,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus to the left and the right, respectively.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axr_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXRHQ");
-    const char* axrhq_tag = "##FORMAT=<ID=AXRHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads used to extend the alternative allele consensus.\">";
+    const char* axrhq_tag = "##FORMAT=<ID=AXRHQ,Number=2,Type=Integer,Description=\"Number of high-quality reads used to extend the alternative allele consensus to the left and the right, respectively.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axrhq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "EXL");
@@ -385,15 +385,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
-	const char* sr_info_tag = "##INFO=<ID=SPLIT_READS,Number=2,Type=Integer,Description=\"Split reads supporting the left and right breakpoints of this SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, sr_info_tag, &len));
-
 	const char* fwd_sr_info_tag = "##INFO=<ID=FWD_SPLIT_READS,Number=2,Type=Integer,Description=\"Forward split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, fwd_sr_info_tag, &len));
 
 	const char* rev_sr_info_tag = "##INFO=<ID=REV_SPLIT_READS,Number=2,Type=Integer,Description=\"Reverse split reads supporting the left and right breakpoints of this ins.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rev_sr_info_tag, &len));
-	
+
 	const char* rcc_ext_1sr_reads_tag = "##INFO=<ID=RCC_EXT_1SR_READS,Number=2,Type=Integer,Description=\"Reads extending a the right-clipped consensus to the left and to the right, respectively.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, rcc_ext_1sr_reads_tag, &len));
 
@@ -551,8 +548,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 
 	if (!for_gt) {
 		int int2_conv[2];
-		int2_conv[0] = sv->rc_reads(), int2_conv[1] = sv->lc_reads();
-		bcf_update_info_int32(hdr, bcf_entry, "SPLIT_READS", int2_conv, 2);
 		int2_conv[0] = sv->rc_fwd_reads(), int2_conv[1] = sv->lc_fwd_reads();
 		bcf_update_info_int32(hdr, bcf_entry, "FWD_SPLIT_READS", int2_conv, 2);
 		int2_conv[0] = sv->rc_rev_reads(), int2_conv[1] = sv->lc_rev_reads();
@@ -677,14 +672,14 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
-	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->ngt);
+	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->n_gt);
 
 	if (sv->incomplete_ins_seq()) {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 	}
 
 	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->ngt);
+	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->n_gt);
 
 	if (sv->svtype() == "DEL") {
 		if (!for_gt) {
@@ -1241,9 +1236,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	}
 
 	int n = 0;
-	sv->ngt = bcf_get_genotypes(hdr, b, &(sv->gt), &n);
-	if (sv->ngt < 0) sv->ngt = 0;
-	std::sort(sv->gt, sv->gt+sv->ngt);
+	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->gt), &n);
+	if (sv->n_gt < 0) sv->n_gt = 0;
+	std::sort(sv->gt, sv->gt+sv->n_gt);
 
 	return sv;
 }

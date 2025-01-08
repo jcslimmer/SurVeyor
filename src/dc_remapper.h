@@ -45,7 +45,7 @@ struct insertion_cluster_t {
     }
     void add_clip_cluster(consensus_t* clip_consensus) {
         if (!clip_consensus) return;
-        if (!this->clip_consensus || this->clip_consensus->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
+        if (!this->clip_consensus || this->clip_consensus->reads() < clip_consensus->reads()) {
             this->clip_consensus = clip_consensus;
             if (clip_consensus->left_clipped) start = clip_consensus->anchor_start();
             else start = std::min(start, clip_consensus->anchor_start());

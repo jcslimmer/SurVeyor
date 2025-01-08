@@ -207,7 +207,7 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
                     if (read_clusters[j]->end - clip_consensus->breakpoint <= stats.max_is) {
-                        if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
+                        if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->reads() < clip_consensus->reads()) {
                             clip_consensus_per_cluster[j] = clip_consensus;
                         }
                     } else break;
@@ -223,7 +223,7 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
                     if (clip_consensus->breakpoint - read_clusters[j]->start >= 0) {
-                        if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->supp_clipped_reads() < clip_consensus->supp_clipped_reads()) {
+                        if (clip_consensus_per_cluster[j] == NULL || clip_consensus_per_cluster[j]->reads() < clip_consensus->reads()) {
                             clip_consensus_per_cluster[j] = clip_consensus;
                         }
                     } else break;

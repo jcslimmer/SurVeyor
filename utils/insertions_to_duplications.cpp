@@ -77,12 +77,12 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        sv->ngt = 0;
+        sv->n_gt = 0;
         delete[] sv->gt;
         sv->gt = NULL;
         svs.push_back(sv);
         if (new_dup != NULL) {
-            new_dup->ngt = 0;
+            new_dup->n_gt = 0;
             delete[] new_dup->gt;
             new_dup->gt = NULL;
             svs.push_back(new_dup);

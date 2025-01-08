@@ -18,7 +18,7 @@ class Features:
                             'AR2', 'ARC2', 'ARC2MQ', 'ARCAS2', 'ARC2HQ', 'MAXARCD',
                             'RR1', 'RRC1', 'RR2', 'RRC2',
                             'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
-                            'AXR', 'AXRHQ',
+                            'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
                             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
@@ -127,7 +127,7 @@ class Features:
             svinsseq = info['SVINSSEQ']
         svlen = abs(Features.get_svlen(record))
         features['SVLEN'] = svlen
-        
+
         svinslen = Features.get_number_value(info, 'SVINSLEN', 0)
         if svinslen == 0 and svinsseq:
             svinslen = len(svinsseq)
@@ -185,14 +185,13 @@ class Features:
         rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
         rrc2 = Features.get_number_value(record.samples[0], 'RRC2', 0)
 
-        features['AR1'] = Features.normalise(ar1, min_depth, max_depth)
-        features['AR1_PW'] = Features.piecewise_normalise(ar1, min_depth, max_depth)
-        features['ARC1'] = Features.normalise(arc1, min_depth, max_depth)
+        features['AR1'] = Features.piecewise_normalise(ar1, min_depth, max_depth)
+        features['ARC1'] = Features.piecewise_normalise(arc1, min_depth, max_depth)
         features['ARC1HQ'] = Features.get_number_value(record.samples[0], 'ARC1HQ', 0, max(1, arc1))
         features['ARCAS1'] = Features.get_number_value(record.samples[0], 'ARCAS1', 0)
 
-        features['AR2'] = Features.normalise(ar2, min_depth, max_depth)
-        features['ARC2'] = Features.normalise(arc2, min_depth, max_depth)
+        features['AR2'] = Features.piecewise_normalise(ar2, min_depth, max_depth)
+        features['ARC2'] = Features.piecewise_normalise(arc2, min_depth, max_depth)
         features['ARC2HQ'] = Features.get_number_value(record.samples[0], 'ARC2HQ', 0, max(1, arc2))
         features['ARCAS2'] = Features.get_number_value(record.samples[0], 'ARCAS2', 0)
 
@@ -293,8 +292,10 @@ class Features:
         features['CP1'], features['CP2'], features['CP3'] = [Features.normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
         features['PTNR1'], features['PTNR2'] = dp1/max(1, dp1+cp[0]), dp2/max(1, dp2+cp[2])
 
-        features['AXR'] = Features.get_number_value(record.samples[0], 'AXR', 0, median_depth*max_is)
-        features['AXRHQ'] = Features.get_number_value(record.samples[0], 'AXRHQ', 0, median_depth*max_is)
+        axr1, axr2 = Features.get_number_value(record.samples[0], 'AXR', [0, 0], median_depth*max_is)
+        axr1hq, axr2hq = Features.get_number_value(record.samples[0], 'AXRHQ', [0, 0], median_depth*max_is)
+        features['AXR1'], features['AXR2'] = axr1, axr2
+        features['AXR1HQ'], features['AXR2HQ'] = axr1hq, axr2hq
         
         exl1 = Features.get_number_value(record.samples[0], 'EXL', 0)
         exl2 = Features.get_number_value(record.samples[0], 'EXL2', 0)

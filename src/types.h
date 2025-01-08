@@ -6,14 +6,13 @@
 #include <vector>
 #include <string>
 #include <sstream>
-#include "htslib/sam.h"
 #include "htslib/vcf.h"
 
 struct consensus_t {
     bool left_clipped;
     hts_pos_t start, breakpoint, end;
     std::string sequence;
-    int fwd_clipped, rev_clipped;
+    int fwd_reads, rev_reads;
     uint8_t max_mapq;
     hts_pos_t remap_boundary;
     int clip_len, lowq_clip_portion;
@@ -25,17 +24,17 @@ struct consensus_t {
     static const int UNKNOWN_CLIP_LEN = INT16_MAX;
 
     consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
-                const std::string& sequence, int fwd_clipped, int rev_clipped, int clip_len, uint8_t max_mapq, 
+                const std::string& sequence, int fwd_reads, int rev_reads, int clip_len, uint8_t max_mapq, 
                 hts_pos_t remap_boundary, int lowq_clip_portion)
                 : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
-                sequence(sequence), fwd_clipped(fwd_clipped), rev_clipped(rev_clipped), clip_len(clip_len), max_mapq(max_mapq), 
+                sequence(sequence), fwd_reads(fwd_reads), rev_reads(rev_reads), clip_len(clip_len), max_mapq(max_mapq), 
                 remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
     
     consensus_t(std::string& line, bool is_hsr) : is_hsr(is_hsr) {
         std::stringstream ss(line);
         char dir;
         int max_mapq_int;
-        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_clipped >> rev_clipped >> max_mapq_int >> remap_boundary >> lowq_clip_portion;
+        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads >> max_mapq_int >> remap_boundary >> lowq_clip_portion;
         left_clipped = dir == 'L';
         max_mapq = (uint8_t) max_mapq_int;
         if (is_hsr) {
@@ -45,18 +44,14 @@ struct consensus_t {
         }
     }
 
-    std::string name() {
-        return std::to_string(start) + "_" + std::to_string(end) + "_" + (left_clipped ? "L" : "R");
-    }
-
     std::string to_string() {
         std::stringstream ss;
         ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";
-        ss << fwd_clipped << " " << rev_clipped << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
+        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
         return ss.str();
     }
 
-    int supp_clipped_reads() { return fwd_clipped + rev_clipped; }
+    int reads() { return fwd_reads + rev_reads; }
 
     hts_pos_t left_ext_target_start(int max_is, int read_len) {
     	if (!left_clipped) {
@@ -183,20 +178,22 @@ struct sv_t {
     base_frequencies_t prefix_ref_base_freqs, suffix_ref_base_freqs;
     base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
 
-    struct regenotyping_info_t {
+    struct sample_info_t {
         static const int NOT_COMPUTED = -1;
 
-        int* gt, n_gt = 1;
+        int* gt;
         int alt_bp1_better_reads = 0, alt_bp2_better_reads = NOT_COMPUTED;
-        int alt_bp1_better_disc_pairs = 0, alt_bp2_better_disc_pairs = 0;
         int alt_bp1_better_consistent_reads = 0, alt_bp2_better_consistent_reads = 0;
+
+        consensus_t* alt_bp1_consensus = NULL, * alt_bp2_consensus = NULL;
+
         int alt_bp1_better_consistent_reads_fwd = 0, alt_bp1_better_consistent_reads_rev = 0, alt_bp2_better_consistent_reads_fwd = 0, alt_bp2_better_consistent_reads_rev = 0;
         int alt_bp1_better_consistent_max_mq = 0, alt_bp2_better_consistent_max_mq = 0, alt_bp1_better_consistent_high_mq = 0, alt_bp2_better_consistent_high_mq = 0;
         double alt_bp1_better_consistent_avg_score = 0, alt_bp2_better_consistent_avg_score = 0;
         int ref_bp1_better_reads = 0, ref_bp2_better_reads = NOT_COMPUTED;
         int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
-        int alt_ext_reads = 0, hq_alt_ext_reads = 0;
+        int alt_lext_reads = 0, hq_alt_lext_reads = 0, alt_rext_reads = 0, hq_alt_rext_reads = 0;
         int ext_alt_consensus1_length = 0, ext_alt_consensus2_length = 0;
         int ext_alt_consensus1_to_alt_score = 0, ext_alt_consensus1_to_ref_score = 0;
         int ext_alt_consensus2_to_alt_score = 0, ext_alt_consensus2_to_ref_score = 0;
@@ -209,16 +206,16 @@ struct sv_t {
         int ins_seq_prefix_cov = 0, ins_seq_suffix_cov = 0;
         bool too_deep = false;
 
-        regenotyping_info_t() : gt(new int[1]) {
+        sample_info_t() : gt(new int[1]) {
             gt[0] = bcf_gt_unphased(1);
         }
 
-        ~regenotyping_info_t() {
+        ~sample_info_t() {
             delete[] gt;
         }
-    } regenotyping_info;
+    } sample_info;
 
-    int* gt = NULL, ngt = 1;
+    int* gt = NULL, n_gt = 1;
     bcf1_t* vcf_entry = NULL;
 
     std::vector<std::string> filters;
@@ -230,17 +227,20 @@ struct sv_t {
         
         gt = (int*)malloc(sizeof(int) * 1);
         gt[0] = bcf_gt_unphased(1);
+
+        sample_info.alt_bp1_consensus = rc_consensus;
+        sample_info.alt_bp2_consensus = lc_consensus;
     }
 
-    int rc_reads() { return rc_consensus ? rc_consensus->fwd_clipped + rc_consensus->rev_clipped : 0; }
-    int lc_reads() { return lc_consensus ? lc_consensus->fwd_clipped + lc_consensus->rev_clipped : 0; }
+    int rc_reads() { return rc_consensus ? rc_consensus->fwd_reads + rc_consensus->rev_reads : 0; }
+    int lc_reads() { return lc_consensus ? lc_consensus->fwd_reads + lc_consensus->rev_reads : 0; }
 
-    int rc_fwd_reads() { return rc_consensus ? rc_consensus->fwd_clipped : 0; }
-    int rc_rev_reads() { return rc_consensus ? rc_consensus->rev_clipped : 0; }
-    int lc_fwd_reads() { return lc_consensus ? lc_consensus->fwd_clipped : 0; }
-    int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_clipped : 0; }
+    int rc_fwd_reads() { return rc_consensus ? rc_consensus->fwd_reads : 0; }
+    int rc_rev_reads() { return rc_consensus ? rc_consensus->rev_reads : 0; }
+    int lc_fwd_reads() { return lc_consensus ? lc_consensus->fwd_reads : 0; }
+    int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_reads : 0; }
 
-    bool is_pass() { return filters.size() == 1 && filters[0] == "PASS"; }
+    bool is_pass() { return filters.empty() || filters[0] == "PASS"; }
     bool is_fail() { return !filters.empty() && filters[0] != "PASS"; }
 
     hts_pos_t remap_boundary_upper() {
@@ -277,7 +277,7 @@ struct sv_t {
 
     std::string print_gt() {
         std::stringstream ss;
-        for (int i = 0; i < ngt; i++) {
+        for (int i = 0; i < n_gt; i++) {
             if (i > 0) ss << "/";
             ss << (bcf_gt_is_missing(gt[i]) ? "." : std::to_string(bcf_gt_allele(gt[i])));
         }
@@ -286,7 +286,7 @@ struct sv_t {
 
     int allele_count(int allele) {
         int ac = 0;
-        for (int i = 0; i < ngt; i++) {
+        for (int i = 0; i < n_gt; i++) {
             if (!bcf_gt_is_missing(gt[i])) ac += (bcf_gt_allele(gt[i]) == allele);
         }
         return ac;
@@ -294,7 +294,7 @@ struct sv_t {
 
     int missing_alleles() {
         int ac = 0;
-        for (int i = 0; i < ngt; i++) {
+        for (int i = 0; i < n_gt; i++) {
             ac += bcf_gt_is_missing(gt[i]);
         }
         return ac;

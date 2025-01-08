@@ -365,7 +365,7 @@ void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >
 }
 
 void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
-		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
+		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len,
 		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	if (consensus->extended_to_right) return;
@@ -434,7 +434,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 }
 
 void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
-		hts_pos_t target_start, hts_pos_t target_end, std::string contig_name, hts_pos_t contig_len,
+		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len,
 		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
 	if (consensus->extended_to_left) return;
