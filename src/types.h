@@ -3,6 +3,7 @@
 
 #include "htslib/hts.h"
 #include "utils.h"
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <sstream>
@@ -148,6 +149,7 @@ struct sv_t {
     hts_pos_t start, end;
     std::string ins_seq, inferred_ins_seq;
     int mh_len = 0;
+
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
     int disc_pairs_lf = 0, disc_pairs_lf_high_mapq = 0, disc_pairs_lf_maxmapq = 0;
@@ -178,20 +180,29 @@ struct sv_t {
     base_frequencies_t prefix_ref_base_freqs, suffix_ref_base_freqs;
     base_frequencies_t ins_prefix_base_freqs, ins_suffix_base_freqs;
 
+    struct bp_consensus_info_t {
+
+        bool computed = false;
+        int reads = 0;
+        int consistent_reads_fwd = 0, consistent_reads_rev = 0;
+        int consistent_min_mq = INT32_MAX, consistent_max_mq = 0;
+        double consistent_avg_mq = 0, consistent_stddev_mq = 0;
+        int consistent_high_mq = 0;
+        double consistent_avg_score = 0;
+
+        int consistent_reads() { return consistent_reads_fwd + consistent_reads_rev; }
+    };
+
     struct sample_info_t {
         static const int NOT_COMPUTED = -1;
 
         int* gt;
-        int alt_bp1_better_reads = 0, alt_bp2_better_reads = NOT_COMPUTED;
-        int alt_bp1_better_consistent_reads = 0, alt_bp2_better_consistent_reads = 0;
 
-        consensus_t* alt_bp1_consensus = NULL, * alt_bp2_consensus = NULL;
+        bp_consensus_info_t alt_bp1, alt_bp2;
+        bp_consensus_info_t ref_bp1, ref_bp2;
 
-        int alt_bp1_better_consistent_reads_fwd = 0, alt_bp1_better_consistent_reads_rev = 0, alt_bp2_better_consistent_reads_fwd = 0, alt_bp2_better_consistent_reads_rev = 0;
-        int alt_bp1_better_consistent_max_mq = 0, alt_bp2_better_consistent_max_mq = 0, alt_bp1_better_consistent_high_mq = 0, alt_bp2_better_consistent_high_mq = 0;
-        double alt_bp1_better_consistent_avg_score = 0, alt_bp2_better_consistent_avg_score = 0;
-        int ref_bp1_better_reads = 0, ref_bp2_better_reads = NOT_COMPUTED;
-        int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
+        // int ref_bp1_better_reads = 0, ref_bp2_better_reads = NOT_COMPUTED;
+        // int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
         int alt_lext_reads = 0, hq_alt_lext_reads = 0, alt_rext_reads = 0, hq_alt_rext_reads = 0;
         int ext_alt_consensus1_length = 0, ext_alt_consensus2_length = 0;
@@ -215,7 +226,7 @@ struct sv_t {
         }
     } sample_info;
 
-    int* gt = NULL, n_gt = 1;
+    int n_gt = 1;
     bcf1_t* vcf_entry = NULL;
 
     std::vector<std::string> filters;
@@ -224,12 +235,6 @@ struct sv_t {
         anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
         left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {
-        
-        gt = (int*)malloc(sizeof(int) * 1);
-        gt[0] = bcf_gt_unphased(1);
-
-        sample_info.alt_bp1_consensus = rc_consensus;
-        sample_info.alt_bp2_consensus = lc_consensus;
     }
 
     int rc_reads() { return rc_consensus ? rc_consensus->fwd_reads + rc_consensus->rev_reads : 0; }
@@ -279,7 +284,7 @@ struct sv_t {
         std::stringstream ss;
         for (int i = 0; i < n_gt; i++) {
             if (i > 0) ss << "/";
-            ss << (bcf_gt_is_missing(gt[i]) ? "." : std::to_string(bcf_gt_allele(gt[i])));
+            ss << (bcf_gt_is_missing(sample_info.gt[i]) ? "." : std::to_string(bcf_gt_allele(sample_info.gt[i])));
         }
         return ss.str();
     }
@@ -287,7 +292,7 @@ struct sv_t {
     int allele_count(int allele) {
         int ac = 0;
         for (int i = 0; i < n_gt; i++) {
-            if (!bcf_gt_is_missing(gt[i])) ac += (bcf_gt_allele(gt[i]) == allele);
+            if (!bcf_gt_is_missing(sample_info.gt[i])) ac += (bcf_gt_allele(sample_info.gt[i]) == allele);
         }
         return ac;
     }
@@ -295,7 +300,7 @@ struct sv_t {
     int missing_alleles() {
         int ac = 0;
         for (int i = 0; i < n_gt; i++) {
-            ac += bcf_gt_is_missing(gt[i]);
+            ac += bcf_gt_is_missing(sample_info.gt[i]);
         }
         return ac;
     }

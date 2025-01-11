@@ -78,13 +78,13 @@ int main(int argc, char* argv[]) {
         }
 
         sv->n_gt = 0;
-        delete[] sv->gt;
-        sv->gt = NULL;
+        delete[] sv->sample_info.gt;
+        sv->sample_info.gt = NULL;
         svs.push_back(sv);
         if (new_dup != NULL) {
             new_dup->n_gt = 0;
-            delete[] new_dup->gt;
-            new_dup->gt = NULL;
+            delete[] new_dup->sample_info.gt;
+            new_dup->sample_info.gt = NULL;
             svs.push_back(new_dup);
         }
     }

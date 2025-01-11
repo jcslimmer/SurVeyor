@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <htslib/vcf.h>
+#include <sstream>
 #include "htslib/hts.h"
 #include "types.h"
 #include "utils.h"
@@ -23,6 +24,87 @@ bcf_hrec_t* generate_contig_hrec() {
 		throw std::runtime_error("Failed to create contig to VCF header.");
 	}
 	return contig_hrec;
+}
+
+// Define a struct to hold all properties for each format tag
+typedef struct {
+    const char* suffix;       // Tag suffix (e.g., "C", "CF", etc.)
+    const char* type;         // Data type ("Integer" or "Float")
+    const char* desc_format;  // Description format string
+} format_tag_def_t;
+
+void add_read_support_headers(bcf_hdr_t* hdr, char letter, int pos, const char* allele_type) {
+    // Array of tag definitions
+    const format_tag_def_t formats[] = {
+        {
+            "", 
+            "Integer",
+            "Number of reads supporting breakpoint %d in the %s allele."
+        },
+        {
+            "C",
+            "Integer", 
+            "Number of consistent reads supporting breakpoint %d in the %s allele."
+        },
+        {
+            "CF",
+            "Integer",
+            "Number of consistent forward reads supporting breakpoint %d in the %s allele."
+        },
+        {
+            "CR",
+            "Integer",
+            "Number of consistent reverse reads supporting breakpoint %d in the %s allele."
+        },
+        {
+            "CAS",
+            "Float",
+            "Average aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
+        },
+        {
+            "CHQ",
+            "Integer",
+            "Number of high-quality consistent reads supporting breakpoint %d in the %s allele."
+        },
+		{
+            "CmQ",
+            "Integer",
+            "Minimum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+        },
+        {
+            "CMQ",
+            "Integer",
+            "Maximum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+        },
+		{
+            "CAQ",
+            "Float",
+            "Average mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+        },
+		{
+			"CSQ",
+			"Float",
+			"Standard deviation of mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+		}
+    };
+
+    char tag_id[10];
+    char tag_str[256];
+    char desc_str[200];
+    int len;
+
+    for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+        const format_tag_def_t* fmt = &formats[i];
+
+        snprintf(tag_id, sizeof(tag_id), "%cR%d%s", letter, pos, fmt->suffix);
+        snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
+        snprintf(tag_str, sizeof(tag_str), 
+                "##FORMAT=<ID=%s,Number=1,Type=%s,Description=\"%s\">",
+                tag_id, fmt->type, desc_str);
+
+        bcf_hdr_remove(hdr, BCF_HL_FMT, tag_id);
+        bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, tag_str, &len));
+    }
 }
 
 void add_fmt_tags(bcf_hdr_t* hdr) {
@@ -104,77 +186,11 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* dpsp_tag = "##FORMAT=<ID=DPSP,Number=2,Type=Integer,Description=\"Size of the region covered by discordant pairs supporting the left and right breakpoints of the SV, respectively.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsp_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1");
-    const char* ar1_tag = "##FORMAT=<ID=AR1,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar1_tag, &len));
+	add_read_support_headers(hdr, 'A', 1, "alternate");
+	add_read_support_headers(hdr, 'A', 2, "alternate");
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1");
-    const char* arc1_tag = "##FORMAT=<ID=ARC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF1");
-    const char* arcf1_tag = "##FORMAT=<ID=ARCF1,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR1");
-    const char* arcr1_tag = "##FORMAT=<ID=ARCR1,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS1");
-    const char* arcas1_tag = "##FORMAT=<ID=ARCAS1,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the first breakpoint of the SV to the alternate allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1HQ");
-    const char* arc1hq_tag = "##FORMAT=<ID=ARC1HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 1 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1hq_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC1MQ");
-    const char* arc1mq_tag = "##FORMAT=<ID=ARC1MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the first breakpoint in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc1mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2");
-    const char* ar2_tag = "##FORMAT=<ID=AR2,Number=1,Type=Integer,Description=\"Number of reads supporting breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,ar2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2");
-    const char* arc2_tag = "##FORMAT=<ID=ARC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCF2");
-    const char* arcf2_tag = "##FORMAT=<ID=ARCF2,Number=1,Type=Integer,Description=\"Number of consistent forward reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcf2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCR2");
-    const char* arcr2_tag = "##FORMAT=<ID=ARCR2,Number=1,Type=Integer,Description=\"Number of consistent reverse reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcr2_tag, &len));
-    
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARCAS2");
-    const char* arcas2_tag = "##FORMAT=<ID=ARCAS2,Number=1,Type=Float,Description=\"Average aln score of consistent reads supporting the second breakpoint of the SV to the alternate allele consensus.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arcas2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2HQ");
-    const char* arc2hq_tag = "##FORMAT=<ID=ARC2HQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the breakpoint 2 in the alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2hq_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "ARC2MQ");
-	const char* arc2mq_tag = "##FORMAT=<ID=ARC2MQ,Number=1,Type=Integer,Description=\"Maximum mate mapping quality of consistent reads supporting the second breakpoint in the alternate allele.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,arc2mq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR1");
-    const char* rr1_tag = "##FORMAT=<ID=RR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC1");
-    const char* rrc1_tag = "##FORMAT=<ID=RRC1,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 1 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc1_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RR2");
-    const char* rr2_tag = "##FORMAT=<ID=RR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rr2_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "RRC2");
-    const char* rrc2_tag = "##FORMAT=<ID=RRC2,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the breakpoint 2 reference allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rrc2_tag, &len));
+	add_read_support_headers(hdr, 'R', 1, "reference");
+	add_read_support_headers(hdr, 'R', 2, "reference");
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
@@ -672,7 +688,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
-	bcf_update_genotypes(hdr, bcf_entry, sv->gt, sv->n_gt);
+	bcf_update_genotypes(hdr, bcf_entry, sv->sample_info.gt, sv->n_gt);
 
 	if (sv->incomplete_ins_seq()) {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
@@ -1236,9 +1252,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	}
 
 	int n = 0;
-	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->gt), &n);
+	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->sample_info.gt), &n);
 	if (sv->n_gt < 0) sv->n_gt = 0;
-	std::sort(sv->gt, sv->gt+sv->n_gt);
+	std::sort(sv->sample_info.gt, sv->sample_info.gt+sv->n_gt);
 
 	return sv;
 }

@@ -269,7 +269,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		std::fill(gts, gts+n_samples*sv_ploidy, bcf_gt_unphased(0));
 		for (sv_w_samplename_t& sv : clique_svs) {
 			for (int i = 0; i < sv_ploidy; i++) {
-				gts[sample2id[sv.sample]*sv_ploidy+i] = sv.sv->gt[i];
+				gts[sample2id[sv.sample]*sv_ploidy+i] = sv.sv->sample_info.gt[i];
 			}
 		}
 		bcf_update_genotypes(out_hdr, vcf_sv, gts, n_samples*sv_ploidy);
