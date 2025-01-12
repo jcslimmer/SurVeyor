@@ -17,10 +17,10 @@ class Features:
 
     fmt_features_names = [  'AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CAQ', 'AR1CSQ', 'AR1CAS', 'AR1CHQ',
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CAQ', 'AR2CSQ', 'AR2CAS', 'AR2CHQ', 'MAXARCD',
-                            'RR1', 'RRC1', 'RR1CmQ', 'RR1CMQ', 'RR1CAQ', 'RR1CSQ', 'RR1CAS', 'RR1CHQ',
-                            'RR2', 'RRC2', 'RR2CmQ', 'RR2CMQ', 'RR2CAQ', 'RR2CSQ', 'RR2CAS', 'RR2CHQ', 'MAXRRCD',
+                            'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CAQ', 'RR1CSQ', 'RR1CAS', 'RR1CHQ',
+                            'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CAQ', 'RR2CSQ', 'RR2CAS', 'RR2CHQ', 'MAXRRCD',
                             # 'AR1_RR1_CAQ_Z_SCORE',
-                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'ARC1_OVER_RRC1', 'ARC2_OVER_RRC2',
+                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C',
                             'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
@@ -191,23 +191,27 @@ class Features:
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         ar1c = Features.get_number_value(record.samples[0], 'AR1C', 0)
+        ar1caq = Features.get_number_value(record.samples[0], 'AR1CAQ', 0)
+        ar1csq = Features.get_number_value(record.samples[0], 'AR1CSQ', 0)
         features['AR1'] = Features.piecewise_normalise(ar1, min_depth, max_depth)
         features['AR1C'] = Features.piecewise_normalise(ar1c, min_depth, max_depth)
         features['AR1CmQ'] = Features.get_number_value(record.samples[0], 'AR1CmQ', 0)
         features['AR1CMQ'] = Features.get_number_value(record.samples[0], 'AR1CMQ', 0)
-        features['AR1CAQ'] = Features.get_number_value(record.samples[0], 'AR1CAQ', 0)
-        features['AR1CSQ'] = Features.get_number_value(record.samples[0], 'AR1CSQ', 0)
+        features['AR1CAQ'] = ar1caq
+        features['AR1CSQ'] = ar1csq
         features['AR1CHQ'] = Features.get_number_value(record.samples[0], 'AR1CHQ', 0, max(1, ar1c))
         features['AR1CAS'] = Features.get_number_value(record.samples[0], 'AR1CAS', 0)
 
         ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
         ar2c = Features.get_number_value(record.samples[0], 'AR2C', 0)
+        ar2caq = Features.get_number_value(record.samples[0], 'AR2CAQ', 0)
+        ar2csq = Features.get_number_value(record.samples[0], 'AR2CSQ', 0)
         features['AR2'] = Features.piecewise_normalise(ar2, min_depth, max_depth)
         features['AR2C'] = Features.piecewise_normalise(ar2c, min_depth, max_depth)
         features['AR2CmQ'] = Features.get_number_value(record.samples[0], 'AR2CmQ', 0)
         features['AR2CMQ'] = Features.get_number_value(record.samples[0], 'AR2CMQ', 0)
-        features['AR2CAQ'] = Features.get_number_value(record.samples[0], 'AR2CAQ', 0)
-        features['AR2CSQ'] = Features.get_number_value(record.samples[0], 'AR2CSQ', 0)
+        features['AR2CAQ'] = ar2caq
+        features['AR2CSQ'] = ar2csq
         features['AR2CHQ'] = Features.get_number_value(record.samples[0], 'AR2CHQ', 0, max(1, ar2c))
         features['AR2CAS'] = Features.get_number_value(record.samples[0], 'AR2CAS', 0)
 
@@ -220,24 +224,28 @@ class Features:
         features['MAXARCD'] = max(features['ARCF'], features['ARCR'])
 
         rr1 = Features.get_number_value(record.samples[0], 'RR1', 0)
-        rr1c = Features.get_number_value(record.samples[0], 'RRC1', 0)
+        rr1c = Features.get_number_value(record.samples[0], 'RR1C', 0)
+        rr1caq = Features.get_number_value(record.samples[0], 'RR1CAQ', 0)
+        rr1csq = Features.get_number_value(record.samples[0], 'RR1CSQ', 0)
         features['RR1'] = Features.piecewise_normalise(rr1, min_depth, max_depth)
-        features['RRC1'] = Features.piecewise_normalise(rr1c, min_depth, max_depth)
+        features['RR1C'] = Features.piecewise_normalise(rr1c, min_depth, max_depth)
         features['RR1CmQ'] = Features.get_number_value(record.samples[0], 'RR1CmQ', 0)
         features['RR1CMQ'] = Features.get_number_value(record.samples[0], 'RR1CMQ', 0)
-        features['RR1CAQ'] = Features.get_number_value(record.samples[0], 'RR1CAQ', 0)
-        features['RR1CSQ'] = Features.get_number_value(record.samples[0], 'RR1CSQ', 0)
+        features['RR1CAQ'] = rr1caq
+        features['RR1CSQ'] = rr1csq
         features['RR1CHQ'] = Features.get_number_value(record.samples[0], 'RR1CHQ', 0, max(1, rr1c))
         features['RR1CAS'] = Features.get_number_value(record.samples[0], 'RR1CAS', 0)
 
         rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
-        rr2c = Features.get_number_value(record.samples[0], 'RRC2', 0)
+        rr2c = Features.get_number_value(record.samples[0], 'RR2C', 0)
+        rr2caq = Features.get_number_value(record.samples[0], 'RR2CAQ', 0)
+        rr2csq = Features.get_number_value(record.samples[0], 'RR2CSQ', 0)
         features['RR2'] = Features.piecewise_normalise(rr2, min_depth, max_depth)
-        features['RRC2'] = Features.piecewise_normalise(rr2c, min_depth, max_depth)
+        features['RR2C'] = Features.piecewise_normalise(rr2c, min_depth, max_depth)
         features['RR2CmQ'] = Features.get_number_value(record.samples[0], 'RR2CmQ', 0)
         features['RR2CMQ'] = Features.get_number_value(record.samples[0], 'RR2CMQ', 0)
-        features['RR2CAQ'] = Features.get_number_value(record.samples[0], 'RR2CAQ', 0)
-        features['RR2CSQ'] = Features.get_number_value(record.samples[0], 'RR2CSQ', 0)
+        features['RR2CAQ'] = rr2caq
+        features['RR2CSQ'] = rr2csq
         features['RR2CHQ'] = Features.get_number_value(record.samples[0], 'RR2CHQ', 0, max(1, rr2c))
         features['RR2CAS'] = Features.get_number_value(record.samples[0], 'RR2CAS', 0)
 
@@ -249,10 +257,6 @@ class Features:
         features['RRCR'] = rr1cr + rr2cr
         features['MAXRRCD'] = max(features['RRCF'], features['RRCR'])
         
-        ar1caq = Features.get_number_value(record.samples[0], 'AR1CAQ', 0)
-        ar1csq = Features.get_number_value(record.samples[0], 'AR1CSQ', 0)
-        rr1caq = Features.get_number_value(record.samples[0], 'RR1CAQ', 0)
-        rr1csq = Features.get_number_value(record.samples[0], 'RR1CSQ', 0)
         ar1_rr1_caq_z_score = Features.calculate_z_score(ar1caq, ar1csq, ar1c, rr1caq, rr1csq, rr1c)
         features['AR1_RR1_CAQ_Z_SCORE'] = ar1_rr1_caq_z_score
 
@@ -263,9 +267,9 @@ class Features:
         #     rr2 = rr1
         #     rr2c = rr1c
         features['AR1_OVER_RR1'] = ar1/max(1, ar1+rr1)
-        features['ARC1_OVER_RRC1'] = ar1c/max(1, ar1c+rr2c)
+        features['AR1C_OVER_RR1C'] = ar1c/max(1, ar1c+rr1c)
         features['AR2_OVER_RR2'] = ar2/max(1, ar2+rr2)
-        features['ARC2_OVER_RRC2'] = ar2c/max(1, ar2c+rr2c)
+        features['AR2C_OVER_RR2C'] = ar2c/max(1, ar2c+rr2c)
 
         md = Features.get_number_value(record.samples[0], 'MD', [0, 0, 0, 0])
         features['MDLF'] = Features.normalise(md[0], min_depth, max_depth)
