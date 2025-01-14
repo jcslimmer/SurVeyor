@@ -152,8 +152,8 @@ struct sv_t {
 
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
-    int disc_pairs_lf = 0, disc_pairs_lf_high_mapq = 0, disc_pairs_lf_maxmapq = 0;
-    int disc_pairs_rf = 0, disc_pairs_rf_high_mapq = 0, disc_pairs_rf_maxmapq = 0;
+    int disc_pairs_lf_maxmapq = 0;
+    int disc_pairs_rf_maxmapq = 0;
     int disc_pairs_lf_span = 0, disc_pairs_rf_span = 0;
     int conc_pairs_lbp = 0, conc_pairs_midp = 0, conc_pairs_rbp = 0;
     int conc_pairs_lbp_high_mapq = 0, conc_pairs_midp_high_mapq = 0, conc_pairs_rbp_high_mapq = 0;
@@ -188,7 +188,9 @@ struct sv_t {
         int consistent_min_mq = INT32_MAX, consistent_max_mq = 0;
         double consistent_avg_mq = 0, consistent_stddev_mq = 0;
         int consistent_high_mq = 0;
-        double consistent_avg_score = 0;
+        double consistent_avg_score = 0, consistent_stddev_score = 0;
+
+        int supp_pairs = 0, supp_pairs_high_mapq = 0;
 
         int consistent_reads() { return consistent_reads_fwd + consistent_reads_rev; }
     };

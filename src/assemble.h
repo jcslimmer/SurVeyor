@@ -399,9 +399,9 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			chosen_ins->disc_pairs_lf++;
+			chosen_ins->sample_info.alt_bp1.supp_pairs++;
 			if (chosen_ins->disc_pairs_lf_maxmapq < read->core.qual) chosen_ins->disc_pairs_lf_maxmapq = read->core.qual;
-			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->disc_pairs_lf_high_mapq++;
+			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->sample_info.alt_bp1.supp_pairs_high_mapq++;
 			chosen_ins->disc_pairs_lf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;
@@ -410,16 +410,16 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			assembled_reads.push_back(d);
 		}
 	}
-	chosen_ins->disc_pairs_lf_avg_nm /= std::max(1, chosen_ins->disc_pairs_lf);
+	chosen_ins->disc_pairs_lf_avg_nm /= std::max(1, chosen_ins->sample_info.alt_bp1.supp_pairs);
 	for (bam1_t* read : l_cluster->cluster->reads) {
 		std::string mate_seq = get_mate_seq(read, mateseqs);
 		std::string mate_qual = get_mate_qual(read, matequals);
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			chosen_ins->disc_pairs_rf++;
+			chosen_ins->sample_info.alt_bp2.supp_pairs++;
 			if (chosen_ins->disc_pairs_rf_maxmapq < read->core.qual) chosen_ins->disc_pairs_rf_maxmapq = read->core.qual;
-			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->disc_pairs_rf_high_mapq++;
+			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->sample_info.alt_bp2.supp_pairs_high_mapq++;
 			chosen_ins->disc_pairs_rf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;
@@ -428,7 +428,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			assembled_reads.push_back(d);
 		}
 	}
-	chosen_ins->disc_pairs_rf_avg_nm /= std::max(1, chosen_ins->disc_pairs_rf);
+	chosen_ins->disc_pairs_rf_avg_nm /= std::max(1, chosen_ins->sample_info.alt_bp2.supp_pairs);
 	if (l_cluster->clip_consensus) {
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(l_cluster->clip_consensus->sequence.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
@@ -449,7 +449,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		qual_ascii = std::string(qual_ascii.rbegin(), qual_ascii.rend());
 		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
-			chosen_ins->disc_pairs_lf++;
+			chosen_ins->sample_info.alt_bp1.supp_pairs++;
 			assembled_reads.push_back(bam_dup1(read));
 		}
 	}
@@ -460,7 +460,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		std::string qual_ascii = get_qual_ascii(read, true);
 		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
-			chosen_ins->disc_pairs_rf++;
+			chosen_ins->sample_info.alt_bp2.supp_pairs++;
 			assembled_reads.push_back(bam_dup1(read));
 		}
 	}

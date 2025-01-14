@@ -459,8 +459,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
 				int homalt_idx = std::max(0, stats.max_is - est_size);
 				int het_idx = std::max(0, stats.max_is - 2*est_size);
-				int dev_if_homalt = abs((int) (sv->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
-				int dev_if_het = abs((int) (sv->disc_pairs_lf-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
+				int dev_if_homalt = abs((int) (sv->sample_info.alt_bp1.supp_pairs-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
+				int dev_if_het = abs((int) (sv->sample_info.alt_bp1.supp_pairs-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
 				if (dev_if_het <= dev_if_homalt) {
 					het_evidence++;
 				} else { // deletion is homalt
@@ -600,8 +600,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 				for (int i = curr_pos; i < deletions.size() && deletions[i]->start <= pair_end; i++) {
 					if (pair_start <= deletions[i]->start+5 && deletions[i]->end-5 <= pair_end && 
 						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
-						deletions[i]->disc_pairs_lf++;
-						deletions[i]->disc_pairs_rf++;
+						deletions[i]->sample_info.alt_bp1.supp_pairs++;
+						deletions[i]->sample_info.alt_bp2.supp_pairs++;
 
 						if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
 						if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
@@ -610,10 +610,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 
 						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
-							deletions[i]->disc_pairs_lf_high_mapq++;
+							deletions[i]->sample_info.alt_bp1.supp_pairs_high_mapq++;
 						}
 						if (mq >= config.high_confidence_mapq) {
-							deletions[i]->disc_pairs_rf_high_mapq++;
+							deletions[i]->sample_info.alt_bp2.supp_pairs_high_mapq++;
 						}
 						if (read->core.qual > deletions[i]->disc_pairs_lf_maxmapq) {
 							deletions[i]->disc_pairs_lf_maxmapq = read->core.qual;
@@ -629,8 +629,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 
 		}
 		for (int i = 0; i < deletions.size(); i++) {
-			if (deletions[i]->disc_pairs_lf > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->disc_pairs_lf;
-			if (deletions[i]->disc_pairs_rf > 0) deletions[i]->disc_pairs_rf_avg_nm /= deletions[i]->disc_pairs_rf;
+			if (deletions[i]->sample_info.alt_bp1.supp_pairs > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->sample_info.alt_bp1.supp_pairs;
+			if (deletions[i]->sample_info.alt_bp2.supp_pairs > 0) deletions[i]->disc_pairs_rf_avg_nm /= deletions[i]->sample_info.alt_bp2.supp_pairs;
 			deletions[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
 			deletions[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
@@ -680,8 +680,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				duplication_t* dup = duplications[i];
 				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
-					dup->disc_pairs_lf++;
-					dup->disc_pairs_rf++;
+					dup->sample_info.alt_bp1.supp_pairs++;
+					dup->sample_info.alt_bp2.supp_pairs++;
 
 					if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
 					if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
@@ -690,10 +690,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
-						dup->disc_pairs_lf_high_mapq++;
+						dup->sample_info.alt_bp1.supp_pairs_high_mapq++;
 					}
 					if (mq >= config.high_confidence_mapq) {
-						dup->disc_pairs_rf_high_mapq++;
+						dup->sample_info.alt_bp2.supp_pairs_high_mapq++;
 					}
 					if (read->core.qual > duplications[i]->disc_pairs_lf_maxmapq) {
 						duplications[i]->disc_pairs_lf_maxmapq = read->core.qual;
@@ -707,8 +707,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 			}
 		}
 		for (int i = 0; i < duplications.size(); i++) {
-			if (duplications[i]->disc_pairs_lf > 0) duplications[i]->disc_pairs_lf_avg_nm /= duplications[i]->disc_pairs_lf;
-			if (duplications[i]->disc_pairs_rf > 0) duplications[i]->disc_pairs_rf_avg_nm /= duplications[i]->disc_pairs_rf;
+			if (duplications[i]->sample_info.alt_bp1.supp_pairs > 0) duplications[i]->disc_pairs_lf_avg_nm /= duplications[i]->sample_info.alt_bp1.supp_pairs;
+			if (duplications[i]->sample_info.alt_bp2.supp_pairs > 0) duplications[i]->disc_pairs_rf_avg_nm /= duplications[i]->sample_info.alt_bp2.supp_pairs;
 			duplications[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
 			duplications[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
@@ -799,22 +799,22 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 
 				hts_pos_t mate_startpos = read->core.mpos, mate_endpos = get_mate_endpos(read);
 				if (!bam_is_mrev(read) && mate_startpos >= inv->end-stats.max_is && mate_startpos+stats.read_len/2 <= inv->end) {
-					inv->disc_pairs_lf++;
+					inv->sample_info.alt_bp1.supp_pairs++;
 					
 					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
 					if (qual >= config.high_confidence_mapq) {
-						inv->disc_pairs_lf_high_mapq++;
+						inv->sample_info.alt_bp1.supp_pairs_high_mapq++;
 					}
 					if (read->core.qual > qual) {
 						inv->disc_pairs_lf_maxmapq = qual;
 					}
 				}
 				if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
-					inv->disc_pairs_rf++;
+					inv->sample_info.alt_bp2.supp_pairs++;
 
 					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
 					if (qual >= config.high_confidence_mapq) {
-						inv->disc_pairs_rf_high_mapq++;
+						inv->sample_info.alt_bp2.supp_pairs_high_mapq++;
 					}	
 					if (read->core.qual > qual) {
 						inv->disc_pairs_rf_maxmapq = qual;

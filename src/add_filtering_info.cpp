@@ -234,10 +234,10 @@ int main(int argc, char* argv[]) {
                 if (del->ks_pval > 0.01) {
                     del->filters.push_back("KS_FILTER");
                 }
-                if (-del->svlen() >= stats.max_is && double(del->disc_pairs_lf)/(del->disc_pairs_lf+del->conc_pairs_midp) < 0.25) {
+                if (-del->svlen() >= stats.max_is && double(del->sample_info.alt_bp1.supp_pairs)/(del->sample_info.alt_bp1.supp_pairs+del->conc_pairs_midp) < 0.25) {
                     del->filters.push_back("LOW_PTN_RATIO");
                 }
-                if (-del->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->disc_pairs_lf || del->r_cluster_region_disc_pairs >= del->disc_pairs_lf)) {
+                if (-del->svlen() > 10000 && (del->l_cluster_region_disc_pairs >= del->sample_info.alt_bp1.supp_pairs || del->r_cluster_region_disc_pairs >= del->sample_info.alt_bp1.supp_pairs)) {
                     del->filters.push_back("AMBIGUOUS_REGION");
                 }
             }
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
             }
 
             apply_ALL_filters(dup);
-            if (dup->svlen() >= config.min_size_for_depth_filtering && dup->disc_pairs_lf < 3) {
+            if (dup->svlen() >= config.min_size_for_depth_filtering && dup->sample_info.alt_bp1.supp_pairs < 3) {
                 dup->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
             }
 
@@ -293,11 +293,11 @@ int main(int argc, char* argv[]) {
             }
 
             if (ins->source == "REFERENCE_GUIDED_ASSEMBLY" || ins->source == "DE_NOVO_ASSEMBLY") {
-                auto support = {ins->disc_pairs_rf+ins->rc_reads(), ins->disc_pairs_lf+ins->lc_reads()};
+                auto support = {ins->sample_info.alt_bp2.supp_pairs+ins->rc_reads(), ins->sample_info.alt_bp1.supp_pairs+ins->lc_reads()};
                 
-                int r_positive = ins->disc_pairs_rf + ins->rc_reads();
+                int r_positive = ins->sample_info.alt_bp2.supp_pairs + ins->rc_reads();
                 int r_negative = ins->conc_pairs_lbp;
-                int l_positive = ins->disc_pairs_lf + ins->lc_reads();
+                int l_positive = ins->sample_info.alt_bp1.supp_pairs + ins->lc_reads();
                 int l_negative = ins->conc_pairs_rbp;
                 if (r_positive < stats.get_median_depth(ins->chr)/5 && l_positive < stats.get_median_depth(ins->chr)/5) {
 		            ins->filters.push_back("LOW_SUPPORT");
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 int svinslen = ins->ins_seq.length();
-	            if (ins->disc_pairs_rf + ins->disc_pairs_lf < stats.get_min_disc_pairs_by_insertion_size(svinslen)) {
+	            if (ins->sample_info.alt_bp2.supp_pairs + ins->sample_info.alt_bp1.supp_pairs < stats.get_min_disc_pairs_by_insertion_size(svinslen)) {
                     ins->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
                 }
             }
@@ -344,12 +344,12 @@ int main(int argc, char* argv[]) {
                 inv->filters.push_back("LOW_MAPQ_DISC_PAIRS");
             }
 
-            if (inv->disc_pairs_lf < stats.get_min_disc_pairs_by_insertion_size(inv->svlen())/2) {
+            if (inv->sample_info.alt_bp1.supp_pairs < stats.get_min_disc_pairs_by_insertion_size(inv->svlen())/2) {
                 inv->filters.push_back("NOT_ENOUGH_DISC_PAIRS");
             }
 
-            double ptn_ratio_lbp = double(inv->disc_pairs_rf)/(inv->disc_pairs_rf+inv->conc_pairs_lbp);
-            double ptn_ratio_rbp = double(inv->disc_pairs_lf)/(inv->disc_pairs_lf+inv->conc_pairs_rbp);
+            double ptn_ratio_lbp = double(inv->sample_info.alt_bp2.supp_pairs)/(inv->sample_info.alt_bp2.supp_pairs+inv->conc_pairs_lbp);
+            double ptn_ratio_rbp = double(inv->sample_info.alt_bp1.supp_pairs)/(inv->sample_info.alt_bp1.supp_pairs+inv->conc_pairs_rbp);
             if (ptn_ratio_lbp < 0.25 || ptn_ratio_rbp < 0.25) {
                 inv->filters.push_back("LOW_PTN_RATIO");
             }

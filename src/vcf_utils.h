@@ -61,6 +61,11 @@ void add_read_support_headers(bcf_hdr_t* hdr, char letter, int pos, const char* 
             "Float",
             "Average aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
         },
+		{
+			"CSS",
+			"Float",
+			"Standard deviation of aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
+		},
         {
             "CHQ",
             "Integer",
@@ -640,16 +645,16 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
-		int dp[] = {sv->disc_pairs_lf, sv->disc_pairs_rf};
+		int dp[] = {sv->sample_info.alt_bp1.supp_pairs, sv->sample_info.alt_bp2.supp_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DP", dp, 2);
-		if (sv->disc_pairs_lf + sv->disc_pairs_rf > 0) {
+		if (sv->sample_info.alt_bp1.supp_pairs + sv->sample_info.alt_bp2.supp_pairs > 0) {
 			int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
 			bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
 
-			int dphq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+			int dphq[] = {sv->sample_info.alt_bp1.supp_pairs_high_mapq, sv->sample_info.alt_bp2.supp_pairs_high_mapq};
 			bcf_update_format_int32(hdr, bcf_entry, "DPHQ", dphq, 2);
 
-			int dpmq[] = {sv->disc_pairs_lf_high_mapq, sv->disc_pairs_rf_high_mapq};
+			int dpmq[] = {sv->sample_info.alt_bp1.supp_pairs_high_mapq, sv->sample_info.alt_bp2.supp_pairs_high_mapq};
 			bcf_update_format_int32(hdr, bcf_entry, "DPMQ", dpmq, 2);
 		}
 
@@ -1058,16 +1063,16 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	bcf_get_format_int32(hdr, b, "DP", &data, &len);
 	if (len > 0) {
-		sv->disc_pairs_lf = data[0];
-		sv->disc_pairs_rf = data[1];
+		sv->sample_info.alt_bp1.supp_pairs = data[0];
+		sv->sample_info.alt_bp2.supp_pairs = data[1];
 	}
 
 	data = NULL;
 	len = 0;
 	bcf_get_format_int32(hdr, b, "DPHQ", &data, &len);
 	if (len > 0) {
-		sv->disc_pairs_lf_high_mapq = data[0];
-		sv->disc_pairs_rf_high_mapq = data[1];
+		sv->sample_info.alt_bp1.supp_pairs_high_mapq = data[0];
+		sv->sample_info.alt_bp2.supp_pairs_high_mapq = data[1];
 	}
 
 	data = NULL;

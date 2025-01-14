@@ -505,8 +505,8 @@ int main(int argc, char* argv[]) {
 		int contig_id1 = bcf_hdr_name2id(out_vcf_header, i1->chr.c_str());
 		int contig_id2 = bcf_hdr_name2id(out_vcf_header, i2->chr.c_str());
 		// negative because we want descending order
-		int disc_score_mul1 = -(i1->disc_pairs_lf*i1->disc_pairs_rf), disc_score_mul2 = -(i2->disc_pairs_lf*i2->disc_pairs_rf);
-		int disc_score_sum1 = -(i1->disc_pairs_lf+i1->disc_pairs_rf), disc_score_sum2 = -(i2->disc_pairs_lf+i2->disc_pairs_rf);
+		int disc_score_mul1 = -(i1->sample_info.alt_bp1.supp_pairs*i1->sample_info.alt_bp2.supp_pairs), disc_score_mul2 = -(i2->sample_info.alt_bp1.supp_pairs*i2->sample_info.alt_bp2.supp_pairs);
+		int disc_score_sum1 = -(i1->sample_info.alt_bp1.supp_pairs+i1->sample_info.alt_bp2.supp_pairs), disc_score_sum2 = -(i2->sample_info.alt_bp1.supp_pairs+i2->sample_info.alt_bp2.supp_pairs);
 		return std::tie(contig_id1, i1->start, i1->end, i1->ins_seq, disc_score_mul1, disc_score_sum1) <
 			   std::tie(contig_id2, i2->start, i2->end, i2->ins_seq, disc_score_mul2, disc_score_sum2);
 	});

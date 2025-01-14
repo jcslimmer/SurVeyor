@@ -610,13 +610,13 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;
 	if (refined_l_cluster->clip_consensus) insertion->lc_consensus = refined_l_cluster->clip_consensus;
-	insertion->disc_pairs_lf = refined_r_cluster->cluster->reads.size();
-	insertion->disc_pairs_rf = refined_l_cluster->cluster->reads.size();
+	insertion->sample_info.alt_bp1.supp_pairs = refined_r_cluster->cluster->reads.size();
+	insertion->sample_info.alt_bp2.supp_pairs = refined_l_cluster->cluster->reads.size();
 	for (bam1_t* read : refined_r_cluster->cluster->reads) {
-		if (read->core.qual >= config.high_confidence_mapq) insertion->disc_pairs_lf_high_mapq++;
+		if (read->core.qual >= config.high_confidence_mapq) insertion->sample_info.alt_bp1.supp_pairs_high_mapq++;
 	}
 	for (bam1_t* read : refined_l_cluster->cluster->reads) {
-		if (read->core.qual >= config.high_confidence_mapq) insertion->disc_pairs_rf_high_mapq++;
+		if (read->core.qual >= config.high_confidence_mapq) insertion->sample_info.alt_bp2.supp_pairs_high_mapq++;
 	}
 	insertion->disc_pairs_lf_maxmapq = refined_r_cluster->cluster->la_max_mapq;
 	insertion->disc_pairs_rf_maxmapq = refined_l_cluster->cluster->ra_max_mapq;
