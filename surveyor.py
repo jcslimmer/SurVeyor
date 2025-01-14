@@ -60,11 +60,13 @@ cmd_args = parser.parse_args()
 def exec(cmd, error_msg=None):
     start_time = timeit.default_timer()
     print("Executing:", cmd)
-    if os.system(cmd) != 0:
+    return_code = os.system(cmd)
+    if return_code != 0:
         if error_msg:
             print(error_msg)
         else:
             print("Error executing:", cmd)
+            print("Return code:", return_code)
         exit(1)
     elapsed = timeit.default_timer() - start_time
     print(cmd, "was run in %.2f seconds" % elapsed)
@@ -169,11 +171,8 @@ if cmd_args.command == 'call':
         vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/vcf_for_genotyping.vcf.gz"
         insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s %s %s" % (cmd_args.workdir, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
         exec(insertions_to_duplications_cmd)
-    else:
-        vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz"
-
-    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-    exec(genotype_cmd)
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        exec(genotype_cmd)
 
     if cmd_args.generate_training_data:
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-raw.vcf.gz %s/training-data.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
