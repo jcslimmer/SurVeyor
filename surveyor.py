@@ -158,13 +158,10 @@ if cmd_args.command == 'call':
     concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
     exec(concat_cmd)
 
-    add_filtering_info_cmd = SURVEYOR_PATH + "/bin/add_filtering_info %s %s/intermediate_results/out.vcf.gz %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.workdir, cmd_args.reference, sample_name)
-    exec(add_filtering_info_cmd)
-
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.annotated.vcf.gz %s/intermediate_results/out.annotated.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(normalise_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.annotated.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(merge_identical_calls_cmd)
 
     if cmd_args.ml_model:

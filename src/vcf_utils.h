@@ -29,67 +29,61 @@ bcf_hrec_t* generate_contig_hrec() {
 // Define a struct to hold all properties for each format tag
 typedef struct {
     const char* suffix;       // Tag suffix (e.g., "C", "CF", etc.)
+	int n;					  // Number of values	
     const char* type;         // Data type ("Integer" or "Float")
     const char* desc_format;  // Description format string
 } format_tag_def_t;
 
-void add_read_support_headers(bcf_hdr_t* hdr, char letter, int pos, const char* allele_type) {
+void add_read_support_headers(bcf_hdr_t* hdr, const char* prefix, int pos, const char* allele_type) {
     // Array of tag definitions
     const format_tag_def_t formats[] = {
         {
-            "", 
-            "Integer",
+            "", 1, "Integer",
             "Number of reads supporting breakpoint %d in the %s allele."
         },
         {
-            "C",
-            "Integer", 
+            "C", 1, "Integer", 
             "Number of consistent reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CF",
-            "Integer",
+            "CF", 1, "Integer",
             "Number of consistent forward reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CR",
-            "Integer",
+            "CR", 1, "Integer",
             "Number of consistent reverse reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CAS",
-            "Float",
+            "CAS", 1, "Float",
             "Average aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
         },
 		{
-			"CSS",
-			"Float",
+			"CSS", 1, "Float",
 			"Standard deviation of aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
 		},
         {
-            "CHQ",
-            "Integer",
+            "CHQ", 1, "Integer",
             "Number of high-quality consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-            "CmQ",
-            "Integer",
+            "CmQ", 1, "Integer",
             "Minimum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CMQ",
-            "Integer",
+            "CMQ", 1, "Integer",
             "Maximum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-            "CAQ",
-            "Float",
+            "CAQ", 1, "Float",
             "Average mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-			"CSQ",
-			"Float",
+			"CSQ", 1, "Float",
 			"Standard deviation of mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+		},
+		{
+			"SP", 1, "Integer",
+			"Number of pairs supporting breakpoint %d in the %s allele."
 		}
     };
 
@@ -101,11 +95,11 @@ void add_read_support_headers(bcf_hdr_t* hdr, char letter, int pos, const char* 
     for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
         const format_tag_def_t* fmt = &formats[i];
 
-        snprintf(tag_id, sizeof(tag_id), "%cR%d%s", letter, pos, fmt->suffix);
+        snprintf(tag_id, sizeof(tag_id), "%s%d%s", prefix, pos, fmt->suffix);
         snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
         snprintf(tag_str, sizeof(tag_str), 
-                "##FORMAT=<ID=%s,Number=1,Type=%s,Description=\"%s\">",
-                tag_id, fmt->type, desc_str);
+                "##FORMAT=<ID=%s,Number=%d,Type=%s,Description=\"%s\">",
+                tag_id, fmt->n, fmt->type, desc_str);
 
         bcf_hdr_remove(hdr, BCF_HL_FMT, tag_id);
         bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, tag_str, &len));
@@ -191,11 +185,11 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* dpsp_tag = "##FORMAT=<ID=DPSP,Number=2,Type=Integer,Description=\"Size of the region covered by discordant pairs supporting the left and right breakpoints of the SV, respectively.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsp_tag, &len));
 
-	add_read_support_headers(hdr, 'A', 1, "alternate");
-	add_read_support_headers(hdr, 'A', 2, "alternate");
+	add_read_support_headers(hdr, "AR", 1, "alternate");
+	add_read_support_headers(hdr, "AR", 2, "alternate");
 
-	add_read_support_headers(hdr, 'R', 1, "reference");
-	add_read_support_headers(hdr, 'R', 2, "reference");
+	add_read_support_headers(hdr, "RR", 1, "reference");
+	add_read_support_headers(hdr, "RR", 2, "reference");
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
@@ -219,7 +213,7 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DP");
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "DP");
     const char* dp_tag = "##FORMAT=<ID=DP,Number=2,Type=Integer,Description=\"Number of discordant pairs supporting the first and second breakpoints of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp_tag, &len));
 
@@ -331,51 +325,20 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* anomalous_fl_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_FLANKING_DEPTH,Description=\"The insertion region has anomalous depth.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_fl_depth_flt_tag, &len));
 
-	const char* homopolymer_flt_tag = "##FILTER=<ID=HOMOPOLYMER_INSSEQ,Description=\"Inserted sequence is a homopolymer.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, homopolymer_flt_tag, &len));
-
 	const char* anomalous_sc_flt_tag = "##FILTER=<ID=ANOMALOUS_SC_NUMBER,Description=\"The number of soft-clipped reads supporting this call is too large.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anomalous_sc_flt_tag, &len));
-
-	const char* size_flt_tag = "##FILTER=<ID=SIZE_FILTER,Description=\"Size of the event is outside the predicted confidence interval.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, size_flt_tag, &len));
-
-	const char* depth_flt_tag = "##FILTER=<ID=DEPTH_FILTER,Description=\"Depth of the region is incompatible with type of the event. Only applicable to long events.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, depth_flt_tag, &len));
-
-	const char* anom_del_depth_flt_tag = "##FILTER=<ID=ANOMALOUS_DEL_DEPTH,Description=\"Depth of the deleted region is anomalous.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, anom_del_depth_flt_tag, &len));
 
 	const char* not_enough_disc_pairs_flt_tag = "##FILTER=<ID=NOT_ENOUGH_DISC_PAIRS,Description=\"Not enough discordant pairs supporting the event.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, not_enough_disc_pairs_flt_tag, &len));
 
-	const char* weak_split_aln_flt_tag = "##FILTER=<ID=WEAK_SPLIT_ALIGNMENT,Description=\"Split alignment not significantly better than full junction alignment.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_split_aln_flt_tag, &len));
-
 	const char* low_mapq_disc_pairs_flt_tag = "##FILTER=<ID=LOW_MAPQ_DISC_PAIRS,Description=\"Discordant pairs supporting the SV have low MAPQ.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_mapq_disc_pairs_flt_tag, &len));
-
-	const char* low_mapq_cons_flt_tag = "##FILTER=<ID=LOW_MAPQ_CONSENSUSES,Description=\"No high MAPQ read supports the consensus(es) used to call this SV.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_mapq_cons_flt_tag, &len));
 
 	const char* weak_support_flt_tag = "##FILTER=<ID=WEAK_SUPPORT,Description=\"Remapped breakpoint has low support from local reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_support_flt_tag, &len));
 
 	const char* low_ptn_ratio_flt_tag = "##FILTER=<ID=LOW_PTN_RATIO,Description=\"Low positive-to-negative ratio.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_ptn_ratio_flt_tag, &len));
-
-	const char* ks_filter_flt_tag = "##FILTER=<ID=KS_FILTER,Description=\"According to KS test, the local IS distribution is not "
-			"sufficiently different from the global IS distribution.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ks_filter_flt_tag, &len));
-
-	const char* ambiguous_flt_tag = "##FILTER=<ID=AMBIGUOUS_REGION,Description=\"Region containing the deletion is ambiguous.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ambiguous_flt_tag, &len));
-
-	const char* low_support_flt_tag = "##FILTER=<ID=LOW_SUPPORT,Description=\"Insertion has low support.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_support_flt_tag, &len));
-
-	const char* weak_anchor_flt_tag = "##FILTER=<ID=WEAK_ANCHOR,Description=\"Left or right split junction alignment score is too low.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, weak_anchor_flt_tag, &len));
 
 	const char* short_anchor_flt_tag = "##FILTER=<ID=SHORT_ANCHOR,Description=\"Read pairs supporting the SV are limited to a very small portion of the genome.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, short_anchor_flt_tag, &len));
@@ -538,10 +501,17 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	// add FILTERs
-	for (std::string& filter : sv->filters) {
-		int filter_id = bcf_hdr_id2int(hdr, BCF_DT_ID, filter.c_str());
-		bcf_add_filter(hdr, bcf_entry, filter_id);
+	std::string ft;
+	for (std::string& filter : sv->sample_info.filters) {
+		if (!ft.empty()) ft += ";";
+		ft += filter;
 	}
+	if (ft.empty()) {
+		ft = "PASS";
+	}
+	const char* ft_cstr[1];
+	ft_cstr[0] = (char*) ft.c_str();
+	bcf_update_format_string(hdr, bcf_entry, "FT", ft_cstr, 1);
 
 	// add INFO
 	int int_conv = sv->end+1;
@@ -698,9 +668,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	if (sv->incomplete_ins_seq()) {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 	}
-
-	const char* ft_val = sv->is_pass() ? "PASS" : "FAIL";
-	bcf_update_format_string(hdr, bcf_entry, "FT", &ft_val, sv->n_gt);
 
 	if (sv->svtype() == "DEL") {
 		if (!for_gt) {
@@ -1252,8 +1219,19 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
 
-	for (int i = 0; i < b->d.n_flt; i++) {
-		sv->filters.push_back(bcf_hdr_int2id(hdr, BCF_DT_ID, b->d.flt[i]));
+	char** ss_data = NULL;
+	len = 0;
+	bcf_get_format_string(hdr, b, "FT", &ss_data, &len);
+	std::string ft = "PASS";
+	if (len > 0) {
+		ft = ss_data[0];
+	}
+
+	std::istringstream tokenStream(ft);
+	std::string token;
+	while (std::getline(tokenStream, token, ';')) {
+		std::string filter = token;
+		if (filter != "PASS") sv->sample_info.filters.push_back(token);
 	}
 
 	int n = 0;

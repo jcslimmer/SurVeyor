@@ -824,24 +824,24 @@ int main(int argc, char* argv[]) {
 			// do some light filtering here - it helps merge_identical_calls not merge good calls with calls that will get filtered
 			if (sv->svtype() == "DEL") {
 				if (sv->remap_boundary_lower() > sv->start) {
-					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				} else if (sv->remap_boundary_upper() < sv->end) {
-					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				}
 			} else if (sv->svtype() == "DUP") {
 				if (sv->start > sv->remap_boundary_upper()) {
-					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				} else if (sv->end < sv->remap_boundary_lower()) {
-					sv->filters.push_back("REMAP_BOUNDARY_FILTER");
+					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				}
 			}
 
 			sv->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 
 			if (sv->source == "1SR_RC" || sv->source == "1HSR_RC") {
-            	if (sv->rc_consensus->right_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
+            	if (sv->rc_consensus->right_ext_reads < 3) sv->sample_info.filters.push_back("FAILED_TO_EXTEND");
             } else if (sv->source == "1SR_LC" || sv->source == "1HSR_LC") {
-            	if (sv->lc_consensus->left_ext_reads < 3) sv->filters.push_back("FAILED_TO_EXTEND");
+            	if (sv->lc_consensus->left_ext_reads < 3) sv->sample_info.filters.push_back("FAILED_TO_EXTEND");
             }
 
 			sv2bcf(out_vcf_header, bcf_entry, sv, chr_seqs.get_seq(contig_name));

@@ -57,14 +57,6 @@ int main(int argc, char* argv[]) {
 
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
-			// if this is not PASS and there is an equivalent indel already stored, ignore
-			if (sv->is_fail()) continue;
-			else if (sv_entries[unique_id]->is_fail()) {
-				// if stored indel is not PASS, but there is an equivalent PASS indel, store that instead
-				sv_entries[unique_id] = sv;
-				continue;
-			}
-
 			std::string src_prev = sv_entries[unique_id]->source;
 			std::string src_curr = sv->source;
 			if (source_priorities[src_prev] > source_priorities[src_curr]) {

@@ -2187,9 +2187,46 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
-    // print contigs in vcf order
+    // apply hard filters to inversions
     int n_seqs;
     const char** seqnames = bcf_hdr_seqnames(in_vcf_header, &n_seqs);
+    for (int i = 0; i < n_seqs; i++) {
+        std::string contig_name = seqnames[i];
+        for (inversion_t* inv : invs_by_chr[contig_name]) {
+            std::vector<std::string> filters;
+            if (inv->median_left_flanking_cov > stats.get_max_depth(inv->chr) || inv->median_right_flanking_cov > stats.get_max_depth(inv->chr) ||
+                inv->median_left_flanking_cov < stats.get_min_depth(inv->chr) || inv->median_right_flanking_cov < stats.get_min_depth(inv->chr) ||
+                inv->median_left_cluster_cov > stats.get_max_depth(inv->chr) || inv->median_right_cluster_cov > stats.get_max_depth(inv->chr)) {
+                inv->sample_info.filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+            }
+            if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {
+                inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
+            }
+            if (inv->disc_pairs_lf_maxmapq < config.high_confidence_mapq || inv->disc_pairs_rf_maxmapq < config.high_confidence_mapq) {
+                inv->sample_info.filters.push_back("LOW_MAPQ_DISC_PAIRS");
+            }
+
+            if (inv->sample_info.alt_bp1.supp_pairs < stats.get_min_disc_pairs_by_insertion_size(inv->svlen())/2) {
+                inv->sample_info.filters.push_back("NOT_ENOUGH_DISC_PAIRS");
+            }
+
+            double ptn_ratio_lbp = double(inv->sample_info.alt_bp2.supp_pairs)/(inv->sample_info.alt_bp2.supp_pairs+inv->conc_pairs_lbp);
+            double ptn_ratio_rbp = double(inv->sample_info.alt_bp1.supp_pairs)/(inv->sample_info.alt_bp1.supp_pairs+inv->conc_pairs_rbp);
+            if (ptn_ratio_lbp < 0.25 || ptn_ratio_rbp < 0.25) {
+                inv->sample_info.filters.push_back("LOW_PTN_RATIO");
+            }
+
+            if (inv->right_anchor_aln->end-inv->left_anchor_aln->start < stats.max_is/2 || inv->rbp_right_anchor_aln->end-inv->rbp_left_anchor_aln->start < stats.max_is/2) {
+                inv->sample_info.filters.push_back("SHORT_ANCHOR");
+            }
+
+            if (inv->sample_info.filters.empty()) {
+                inv->sample_info.filters.push_back("PASS");
+            }
+        }
+    }
+
+    // print contigs in vcf order
     for (int i = 0; i < n_seqs; i++) {
     	std::string contig_name = seqnames[i];
     	std::vector<sv_t*> contig_svs;

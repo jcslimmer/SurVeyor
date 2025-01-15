@@ -203,8 +203,6 @@ struct sv_t {
         bp_consensus_info_t alt_bp1, alt_bp2;
         bp_consensus_info_t ref_bp1, ref_bp2;
 
-        // int ref_bp1_better_reads = 0, ref_bp2_better_reads = NOT_COMPUTED;
-        // int ref_bp1_better_consistent_reads = 0, ref_bp2_better_consistent_reads = 0;
         int alt_ref_equal_reads = 0;
         int alt_lext_reads = 0, hq_alt_lext_reads = 0, alt_rext_reads = 0, hq_alt_rext_reads = 0;
         int ext_alt_consensus1_length = 0, ext_alt_consensus2_length = 0;
@@ -219,7 +217,10 @@ struct sv_t {
         int ins_seq_prefix_cov = 0, ins_seq_suffix_cov = 0;
         bool too_deep = false;
 
-        sample_info_t() : gt(new int[1]) {
+        std::vector<std::string> filters;
+
+        sample_info_t() {
+            gt = (int*)malloc(sizeof(int));
             gt[0] = bcf_gt_unphased(1);
         }
 
@@ -230,8 +231,6 @@ struct sv_t {
 
     int n_gt = 1;
     bcf1_t* vcf_entry = NULL;
-
-    std::vector<std::string> filters;
 
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
         anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
@@ -247,8 +246,7 @@ struct sv_t {
     int lc_fwd_reads() { return lc_consensus ? lc_consensus->fwd_reads : 0; }
     int lc_rev_reads() { return lc_consensus ? lc_consensus->rev_reads : 0; }
 
-    bool is_pass() { return filters.empty() || filters[0] == "PASS"; }
-    bool is_fail() { return !filters.empty() && filters[0] != "PASS"; }
+    bool is_pass() { return sample_info.filters.empty() || sample_info.filters[0] == "PASS"; }
 
     hts_pos_t remap_boundary_upper() {
         if (rc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;

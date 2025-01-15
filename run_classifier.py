@@ -8,7 +8,6 @@ class Classifier:
         vcf_writer = pysam.VariantFile(fname, 'w', header=vcf_header)
         for record in vcf_reader.fetch():
             if features.Features.get_svtype(record) != "INV":
-                record.info['HARD_FILTERS'] = ",".join(record.filter.keys())
                 record.filter.clear()
                 record.filter.add('PASS')
                 record_id = features.Features.generate_id(record)
@@ -59,7 +58,6 @@ class Classifier:
         # write the predictions to a VCF file
         vcf_reader = pysam.VariantFile(in_vcf)
         header = vcf_reader.header
-        header.add_line('##INFO=<ID=HARD_FILTERS,Number=.,Type=String,Description="PASS or not according to hard filters.">')
         header.add_line('##FORMAT=<ID=EPR,Number=1,Type=Float,Description="Probability of the SV existing in the sample, according to the ML model.">')
         Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_prob, out_vcf)
 
