@@ -34,68 +34,68 @@ typedef struct {
     const char* desc_format;  // Description format string
 } format_tag_def_t;
 
-void add_read_support_headers(bcf_hdr_t* hdr, const char* prefix, int pos, const char* allele_type) {
+void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type) {
     // Array of tag definitions
     const format_tag_def_t formats[] = {
         {
-            "", 1, "Integer",
+            "%cR%d", 1, "Integer",
             "Number of reads supporting breakpoint %d in the %s allele."
         },
         {
-            "C", 1, "Integer", 
+            "%cR%dC", 1, "Integer", 
             "Number of consistent reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CF", 1, "Integer",
+            "%cR%dCF", 1, "Integer",
             "Number of consistent forward reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CR", 1, "Integer",
+            "%cR%dCR", 1, "Integer",
             "Number of consistent reverse reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CAS", 1, "Float",
+            "%cR%dCAS", 1, "Float",
             "Average aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
         },
 		{
-			"CSS", 1, "Float",
+			"%cR%dCSS", 1, "Float",
 			"Standard deviation of aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
 		},
         {
-            "CHQ", 1, "Integer",
+            "%cR%dCHQ", 1, "Integer",
             "Number of high-quality consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-            "CmQ", 1, "Integer",
+            "%cR%dCmQ", 1, "Integer",
             "Minimum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
         {
-            "CMQ", 1, "Integer",
+            "%cR%dCMQ", 1, "Integer",
             "Maximum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-            "CAQ", 1, "Float",
+            "%cR%dCAQ", 1, "Float",
             "Average mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
         },
 		{
-			"CSQ", 1, "Float",
+			"%cR%dCSQ", 1, "Float",
 			"Standard deviation of mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
 		},
 		{
-			"SP", 1, "Integer",
+			"%cSP%d", 1, "Integer",
 			"Number of pairs supporting breakpoint %d in the %s allele."
 		}
     };
 
-    char tag_id[10];
-    char tag_str[256];
+    char tag_id[20];
+    char tag_str[1024];
     char desc_str[200];
     int len;
 
     for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
         const format_tag_def_t* fmt = &formats[i];
 
-        snprintf(tag_id, sizeof(tag_id), "%s%d%s", prefix, pos, fmt->suffix);
+        snprintf(tag_id, sizeof(tag_id), fmt->suffix, prefix, pos, fmt->suffix);
         snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
         snprintf(tag_str, sizeof(tag_str), 
                 "##FORMAT=<ID=%s,Number=%d,Type=%s,Description=\"%s\">",
@@ -185,11 +185,11 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* dpsp_tag = "##FORMAT=<ID=DPSP,Number=2,Type=Integer,Description=\"Size of the region covered by discordant pairs supporting the left and right breakpoints of the SV, respectively.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsp_tag, &len));
 
-	add_read_support_headers(hdr, "AR", 1, "alternate");
-	add_read_support_headers(hdr, "AR", 2, "alternate");
+	add_read_support_headers(hdr, 'A', 1, "alternate");
+	add_read_support_headers(hdr, 'A', 2, "alternate");
 
-	add_read_support_headers(hdr, "RR", 1, "reference");
-	add_read_support_headers(hdr, "RR", 2, "reference");
+	add_read_support_headers(hdr, 'R', 1, "reference");
+	add_read_support_headers(hdr, 'R', 2, "reference");
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";

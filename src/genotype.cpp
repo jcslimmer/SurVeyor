@@ -292,6 +292,8 @@ void reset_stats(sv_t* sv) {
     sv->conc_pairs_rbp = 0;
     sv->l_cluster_region_disc_pairs = 0;
     sv->r_cluster_region_disc_pairs = 0;
+    sv->l_cluster_region_disc_pairs_high_mapq = 0;
+    sv->r_cluster_region_disc_pairs_high_mapq = 0;
 }
 
 std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score, double& stddev_score) {
