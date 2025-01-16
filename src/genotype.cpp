@@ -46,12 +46,12 @@ std::vector<std::mutex> mutex_per_chr;
 
 void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_info_t bp_reads_info, std::string prefix, int bp_number) {
     if (!bp_reads_info.computed) return;
-    
-    bcf_update_format_int32(out_hdr, b, prefix.c_str(), &(bp_reads_info.reads), 1);
-    
+
     std::string bp_number_str = std::to_string(bp_number);
     std::string read_fmt_prefix = prefix + "R" + bp_number_str;
-    
+
+    bcf_update_format_int32(out_hdr, b, read_fmt_prefix.c_str(), &(bp_reads_info.reads), 1);
+
     int consistent_reads = bp_reads_info.consistent_reads();
     if (bp_reads_info.reads) {
         bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "C").c_str(), &(consistent_reads), 1);
