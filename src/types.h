@@ -195,7 +195,7 @@ struct sv_t {
 
         bp_reads_info_t reads_info;
 
-        int supp_pairs = 0, supp_pairs_high_mapq = 0;
+        int supp_pairs = 0, supp_pairs_pos_high_mapq = 0, supp_pairs_neg_high_mapq = 0;
         int supp_pairs_max_mq = 0;
     };
 

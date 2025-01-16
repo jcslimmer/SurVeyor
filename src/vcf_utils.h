@@ -213,10 +213,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DP");
-    const char* dp_tag = "##FORMAT=<ID=DP,Number=2,Type=Integer,Description=\"Number of discordant pairs supporting the first and second breakpoints of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dp_tag, &len));
-
     bcf_hdr_remove(hdr, BCF_HL_FMT, "DPHQ");
     const char* dphq_tag = "##FORMAT=<ID=DPHQ,Number=2,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first and second breakpoint of the SV.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dphq_tag, &len));

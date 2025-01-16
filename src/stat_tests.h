@@ -610,10 +610,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 
 						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_high_mapq++;
+							deletions[i]->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
 						}
 						if (mq >= config.high_confidence_mapq) {
-							deletions[i]->sample_info.alt_bp2.supp_pairs_high_mapq++;
+							deletions[i]->sample_info.alt_bp2.supp_pairs_neg_high_mapq++;
 						}
 						if (read->core.qual > deletions[i]->sample_info.alt_bp1.supp_pairs_max_mq) {
 							deletions[i]->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
@@ -690,10 +690,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
-						dup->sample_info.alt_bp1.supp_pairs_high_mapq++;
+						dup->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
 					}
 					if (mq >= config.high_confidence_mapq) {
-						dup->sample_info.alt_bp2.supp_pairs_high_mapq++;
+						dup->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
 					}
 					if (read->core.qual > duplications[i]->sample_info.alt_bp1.supp_pairs_max_mq) {
 						duplications[i]->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
@@ -801,23 +801,29 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 				if (!bam_is_mrev(read) && mate_startpos >= inv->end-stats.max_is && mate_startpos+stats.read_len/2 <= inv->end) {
 					inv->sample_info.alt_bp1.supp_pairs++;
 					
-					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
-					if (qual >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp1.supp_pairs_high_mapq++;
+					int64_t mq = get_mq(read);
+					if (read->core.qual >= config.high_confidence_mapq) {
+						inv->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
 					}
-					if (read->core.qual > qual) {
-						inv->sample_info.alt_bp1.supp_pairs_max_mq = qual;
+					if (mq >= config.high_confidence_mapq) {
+						inv->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
+					}
+					if (inv->sample_info.alt_bp1.supp_pairs_max_mq < read->core.qual) {
+						inv->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
 					}
 				}
 				if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
 					inv->sample_info.alt_bp2.supp_pairs++;
 
-					int64_t qual = std::max((int64_t) read->core.qual, get_mq(read));
-					if (qual >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp2.supp_pairs_high_mapq++;
-					}	
-					if (read->core.qual > qual) {
-						inv->sample_info.alt_bp2.supp_pairs_max_mq = qual;
+					int64_t mq = get_mq(read);
+					if (read->core.qual >= config.high_confidence_mapq) {
+						inv->sample_info.alt_bp2.supp_pairs_pos_high_mapq++;
+					}
+					if (mq >= config.high_confidence_mapq) {
+						inv->sample_info.alt_bp2.supp_pairs_neg_high_mapq++;
+					}
+					if (inv->sample_info.alt_bp2.supp_pairs_max_mq < mq) {
+						inv->sample_info.alt_bp2.supp_pairs_max_mq = mq;
 					}
 				}
 			}
