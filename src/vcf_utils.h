@@ -84,6 +84,10 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 		{
 			"%cSP%d", 1, "Integer",
 			"Number of pairs supporting breakpoint %d in the %s allele."
+		},
+		{
+			"%cSP%dHQ", 2, "Integer",
+			"Number of high-quality positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
 		}
     };
 
@@ -144,10 +148,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_INFO, "INS_SUFFIX_BASE_COUNT");
 	const char* sbc_tag = "##INFO=<ID=INS_SUFFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the suffix of the inserted sequence (for incomplete assemblies) or in the full inserted sequence. For insertion not marked with INCOMPLETE_ASSEMBLY, this will be identical to PREFIX_BASE_COUNT.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,sbc_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_INFO, "HARD_FILTERS");
-	const char* hf_tag = "##INFO=<ID=HARD_FILTERS,Number=.,Type=String,Description=\"PASS or not according to hard filters.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,hf_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "GT");
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
@@ -615,19 +615,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
-		int dp[] = {sv->sample_info.alt_bp1.supp_pairs, sv->sample_info.alt_bp2.supp_pairs};
-		bcf_update_format_int32(hdr, bcf_entry, "DP", dp, 2);
-		if (sv->sample_info.alt_bp1.supp_pairs + sv->sample_info.alt_bp2.supp_pairs > 0) {
-			int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
-			bcf_update_format_int32(hdr, bcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
-
-			int dphq[] = {sv->sample_info.alt_bp1.supp_pairs_high_mapq, sv->sample_info.alt_bp2.supp_pairs_high_mapq};
-			bcf_update_format_int32(hdr, bcf_entry, "DPHQ", dphq, 2);
-
-			int dpmq[] = {sv->sample_info.alt_bp1.supp_pairs_high_mapq, sv->sample_info.alt_bp2.supp_pairs_high_mapq};
-			bcf_update_format_int32(hdr, bcf_entry, "DPMQ", dpmq, 2);
-		}
-
 		float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
     	bcf_update_format_float(hdr, bcf_entry, "DPNM", &dpnm, 2);
 
@@ -1024,30 +1011,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "MH_LEN", &data, &len);
 	if (len > 0) {
 		sv->mh_len = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "DP", &data, &len);
-	if (len > 0) {
-		sv->sample_info.alt_bp1.supp_pairs = data[0];
-		sv->sample_info.alt_bp2.supp_pairs = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "DPHQ", &data, &len);
-	if (len > 0) {
-		sv->sample_info.alt_bp1.supp_pairs_high_mapq = data[0];
-		sv->sample_info.alt_bp2.supp_pairs_high_mapq = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "DPMQ", &data, &len);
-	if (len > 0) {
-		sv->disc_pairs_lf_maxmapq = data[0];
-		sv->disc_pairs_rf_maxmapq = data[1];
 	}
 
 	f_data = NULL;

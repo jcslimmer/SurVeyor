@@ -501,16 +501,6 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-	std::sort(insertions.begin(), insertions.end(), [&out_vcf_header](const sv_t* i1, const sv_t* i2) {
-		int contig_id1 = bcf_hdr_name2id(out_vcf_header, i1->chr.c_str());
-		int contig_id2 = bcf_hdr_name2id(out_vcf_header, i2->chr.c_str());
-		// negative because we want descending order
-		int disc_score_mul1 = -(i1->sample_info.alt_bp1.supp_pairs*i1->sample_info.alt_bp2.supp_pairs), disc_score_mul2 = -(i2->sample_info.alt_bp1.supp_pairs*i2->sample_info.alt_bp2.supp_pairs);
-		int disc_score_sum1 = -(i1->sample_info.alt_bp1.supp_pairs+i1->sample_info.alt_bp2.supp_pairs), disc_score_sum2 = -(i2->sample_info.alt_bp1.supp_pairs+i2->sample_info.alt_bp2.supp_pairs);
-		return std::tie(contig_id1, i1->start, i1->end, i1->ins_seq, disc_score_mul1, disc_score_sum1) <
-			   std::tie(contig_id2, i2->start, i2->end, i2->ins_seq, disc_score_mul2, disc_score_sum2);
-	});
-
 	int a_id = 0, t_id = 0;
 	for (sv_t* insertion : insertions) {
         if (insertion->source == "REFERENCE_GUIDED_ASSEMBLY") insertion->id = "T_INS_" + std::to_string(t_id++);

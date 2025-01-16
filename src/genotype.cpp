@@ -8,7 +8,6 @@
 #include <algorithm>
 
 #include "assemble.h"
-#include "dc_remapper.h"
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
@@ -45,29 +44,44 @@ std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mate
 std::vector<int> active_threads_per_chr;
 std::vector<std::mutex> mutex_per_chr;
 
-void update_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_consensus_info_t bp_consensus_info, std::string prefix) {
-    if (!bp_consensus_info.computed) return;
+void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_info_t bp_reads_info, std::string prefix, int bp_number) {
+    if (!bp_reads_info.computed) return;
     
-    bcf_update_format_int32(out_hdr, b, prefix.c_str(), &(bp_consensus_info.reads), 1);
-    if (!bp_consensus_info.reads) return;
+    bcf_update_format_int32(out_hdr, b, prefix.c_str(), &(bp_reads_info.reads), 1);
+    
+    std::string bp_number_str = std::to_string(bp_number);
+    std::string read_fmt_prefix = prefix + "R" + bp_number_str;
+    
+    int consistent_reads = bp_reads_info.consistent_reads();
+    if (bp_reads_info.reads) {
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "C").c_str(), &(consistent_reads), 1);
+    }
+    if (consistent_reads) {
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CF").c_str(), &(bp_reads_info.consistent_reads_fwd), 1);
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CR").c_str(), &(bp_reads_info.consistent_reads_rev), 1);
+        float rcas = bp_reads_info.consistent_avg_score;
+        bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CAS").c_str(), &rcas, 1);
+        float rcss = bp_reads_info.consistent_stddev_score;
+        bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CSS").c_str(), &rcss, 1);
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CHQ").c_str(), &(bp_reads_info.consistent_high_mq), 1);
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CmQ").c_str(), &(bp_reads_info.consistent_min_mq), 1);
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMQ").c_str(), &(bp_reads_info.consistent_max_mq), 1);
+        float rcavmq = bp_reads_info.consistent_avg_mq;
+        bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CAQ").c_str(), &rcavmq, 1);
+        float rcstdmq = bp_reads_info.consistent_stddev_mq;
+        bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CSQ").c_str(), &rcstdmq, 1);
+    }
+}
 
-    int consistent_reads = bp_consensus_info.consistent_reads();
-    bcf_update_format_int32(out_hdr, b, (prefix + "C").c_str(), &(consistent_reads), 1);
-    if (!consistent_reads) return;
+void update_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_consensus_info_t bp_consensus_info, std::string prefix, int bp_number) {
+    update_record_bp_reads_info(out_hdr, b, bp_consensus_info.reads_info, prefix, bp_number);
+    
+    std::string bp_number_str = std::to_string(bp_number);
+    std::string supp_pairs_fmt_prefix = prefix + "SP" + bp_number_str;
 
-    bcf_update_format_int32(out_hdr, b, (prefix + "CF").c_str(), &(bp_consensus_info.consistent_reads_fwd), 1);
-    bcf_update_format_int32(out_hdr, b, (prefix + "CR").c_str(), &(bp_consensus_info.consistent_reads_rev), 1);
-    float rcas = bp_consensus_info.consistent_avg_score;
-    bcf_update_format_float(out_hdr, b, (prefix + "CAS").c_str(), &rcas, 1);
-    float rcss = bp_consensus_info.consistent_stddev_score;
-    bcf_update_format_float(out_hdr, b, (prefix + "CSS").c_str(), &rcss, 1);
-    bcf_update_format_int32(out_hdr, b, (prefix + "CHQ").c_str(), &(bp_consensus_info.consistent_high_mq), 1);
-    bcf_update_format_int32(out_hdr, b, (prefix + "CmQ").c_str(), &(bp_consensus_info.consistent_min_mq), 1);
-    bcf_update_format_int32(out_hdr, b, (prefix + "CMQ").c_str(), &(bp_consensus_info.consistent_max_mq), 1);
-    float rcavmq = bp_consensus_info.consistent_avg_mq;
-    bcf_update_format_float(out_hdr, b, (prefix + "CAQ").c_str(), &rcavmq, 1);
-    float rcstdmq = bp_consensus_info.consistent_stddev_mq;
-    bcf_update_format_float(out_hdr, b, (prefix + "CSQ").c_str(), &rcstdmq, 1);
+    bcf_update_format_int32(out_hdr, b, supp_pairs_fmt_prefix.c_str(), &(bp_consensus_info.supp_pairs), 1);
+    int supp_pairs_hq[] = {bp_consensus_info.supp_pairs_high_mapq, bp_consensus_info.supp_pairs_high_mapq};
+    bcf_update_format_int32(out_hdr, b, (supp_pairs_fmt_prefix + "HQ").c_str(), supp_pairs_hq, 2);
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, hts_pos_t chr_len, int sample_idx) {
@@ -132,10 +146,10 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     // update FORMAT fields
     bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->sample_info.gt, sv->n_gt);
 
-    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp1, "AR1");
-    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "AR2");
-    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp1, "RR1");
-    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp2, "RR2");
+    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp1, "A", 1);
+    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "A", 2);
+    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp1, "R", 1);
+    update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp2, "R", 2);
 
     int er = sv->sample_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
@@ -187,7 +201,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         int dphq[] = {sv->sample_info.alt_bp1.supp_pairs_high_mapq, sv->sample_info.alt_bp2.supp_pairs_high_mapq};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPHQ", dphq, 2);
         
-        int dpmq[] = {sv->disc_pairs_lf_maxmapq, sv->disc_pairs_rf_maxmapq};
+        int dpmq[] = {sv->sample_info.alt_bp1.supp_pairs_max_mq, sv->sample_info.alt_bp2.supp_pairs_max_mq};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPMQ", dpmq, 2);
 
         float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
@@ -232,36 +246,36 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     }
 }
 
-void set_bp_consensus_info(sv_t::bp_consensus_info_t& bp_consensus_info, int n_reads, std::vector<bam1_t*>& consistent_reads, 
+void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bam1_t*>& consistent_reads, 
     double consistent_avg_score, double consistent_stddev_score) {
     
-    bp_consensus_info.computed = true;
-    bp_consensus_info.reads = n_reads;
+    bp_reads_info.computed = true;
+    bp_reads_info.reads = n_reads;
 
     std::vector<int> mqs;
 
     double sum_mq = 0;
     for (bam1_t* read : consistent_reads) {
         if (bam_is_mrev(read)) {
-            bp_consensus_info.consistent_reads_fwd++;
+            bp_reads_info.consistent_reads_fwd++;
         } else {
-            bp_consensus_info.consistent_reads_rev++;
+            bp_reads_info.consistent_reads_rev++;
         }
         int mq = get_mq(read);
-        bp_consensus_info.consistent_min_mq = std::min(bp_consensus_info.consistent_min_mq, mq);
-        bp_consensus_info.consistent_max_mq = std::max(bp_consensus_info.consistent_max_mq, mq);
+        bp_reads_info.consistent_min_mq = std::min(bp_reads_info.consistent_min_mq, mq);
+        bp_reads_info.consistent_max_mq = std::max(bp_reads_info.consistent_max_mq, mq);
         if (mq >= config.high_confidence_mapq) {
-            bp_consensus_info.consistent_high_mq++;
+            bp_reads_info.consistent_high_mq++;
         }
 
         sum_mq += mq;
         mqs.push_back(mq);
     }
-    bp_consensus_info.consistent_avg_score = consistent_avg_score;
-    bp_consensus_info.consistent_stddev_score = consistent_stddev_score;
+    bp_reads_info.consistent_avg_score = consistent_avg_score;
+    bp_reads_info.consistent_stddev_score = consistent_stddev_score;
 
-    bp_consensus_info.consistent_avg_mq = sum_mq/consistent_reads.size();
-    bp_consensus_info.consistent_stddev_mq = stddev(mqs);
+    bp_reads_info.consistent_avg_mq = sum_mq/consistent_reads.size();
+    bp_reads_info.consistent_stddev_mq = stddev(mqs);
 }
 
 void reset_stats(sv_t* sv) {
@@ -283,13 +297,16 @@ void reset_stats(sv_t* sv) {
     // sv->sample_info.alt_bp1.supp_pairs_neg_high_mapq = 0;
     // sv->sample_info.alt_bp2.supp_pairs_pos_high_mapq = 0;
     // sv->sample_info.alt_bp2.supp_pairs_neg_high_mapq = 0;
-    sv->disc_pairs_lf_maxmapq = 0;
-    sv->disc_pairs_rf_maxmapq = 0;
+    sv->sample_info.alt_bp1.supp_pairs_max_mq = 0;
+    sv->sample_info.alt_bp2.supp_pairs_max_mq = 0;
     sv->disc_pairs_lf_avg_nm = 0;
     sv->disc_pairs_rf_avg_nm = 0;
     sv->conc_pairs_lbp = 0;
     sv->conc_pairs_midp = 0;
     sv->conc_pairs_rbp = 0;
+    sv->conc_pairs_lbp_high_mapq = 0;
+    sv->conc_pairs_midp_high_mapq = 0;
+    sv->conc_pairs_rbp_high_mapq = 0;
     sv->l_cluster_region_disc_pairs = 0;
     sv->r_cluster_region_disc_pairs = 0;
     sv->l_cluster_region_disc_pairs_high_mapq = 0;
@@ -631,9 +648,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
     }
 
-    set_bp_consensus_info(del->sample_info.alt_bp1, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
-    set_bp_consensus_info(del->sample_info.ref_bp1, ref_bp1_better_seqs.size(), ref_bp1_better_seqs_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
-    set_bp_consensus_info(del->sample_info.ref_bp2, ref_bp2_better_seqs.size(), ref_bp2_better_seqs_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
+    set_bp_consensus_info(del->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
+    set_bp_consensus_info(del->sample_info.ref_bp1.reads_info, ref_bp1_better_seqs.size(), ref_bp1_better_seqs_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
+    set_bp_consensus_info(del->sample_info.ref_bp2.reads_info, ref_bp2_better_seqs.size(), ref_bp2_better_seqs_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
     
     del->sample_info.alt_ref_equal_reads = same;
 
@@ -870,8 +887,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->sample_info.alt_consensus1_split_score2_ind_aln = ref_aln.sw_score;
     }
 
-    set_bp_consensus_info(dup->sample_info.alt_bp1, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
-    set_bp_consensus_info(dup->sample_info.ref_bp1, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
+    set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
+    set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
     
     dup->sample_info.alt_ref_equal_reads = same;
 
@@ -1077,9 +1094,9 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->sample_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
     }
 
-    set_bp_consensus_info(dup->sample_info.alt_bp1, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
-    set_bp_consensus_info(dup->sample_info.ref_bp1, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
-    set_bp_consensus_info(dup->sample_info.ref_bp2, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
+    set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
+    set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
+    set_bp_consensus_info(dup->sample_info.ref_bp2.reads_info, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
     
     delete[] alt_seq;
 
@@ -1390,10 +1407,10 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     ins->sample_info.ext_alt_consensus1_to_alt_score = alt1_aln.sw_score;
     ins->sample_info.ext_alt_consensus2_to_alt_score = alt2_aln.sw_score;
 
-    set_bp_consensus_info(ins->sample_info.alt_bp1, alt_bp1_better_seqs.size(), alt_bp1_better_seqs_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
-    set_bp_consensus_info(ins->sample_info.alt_bp2, alt_bp2_better_seqs.size(), alt_bp2_better_seqs_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);
-    set_bp_consensus_info(ins->sample_info.ref_bp1, ref_bp1_better_seqs.size(), ref_bp1_better_seqs_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
-    set_bp_consensus_info(ins->sample_info.ref_bp2, ref_bp2_better_seqs.size(), ref_bp2_better_seqs_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
+    set_bp_consensus_info(ins->sample_info.alt_bp1.reads_info, alt_bp1_better_seqs.size(), alt_bp1_better_seqs_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
+    set_bp_consensus_info(ins->sample_info.alt_bp2.reads_info, alt_bp2_better_seqs.size(), alt_bp2_better_seqs_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);
+    set_bp_consensus_info(ins->sample_info.ref_bp1.reads_info, ref_bp1_better_seqs.size(), ref_bp1_better_seqs_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
+    set_bp_consensus_info(ins->sample_info.ref_bp2.reads_info, ref_bp2_better_seqs.size(), ref_bp2_better_seqs_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
     
     ins->sample_info.alt_ref_equal_reads = same;
 
@@ -1459,8 +1476,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
 
                 int mq = get_mq(read);
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->sample_info.alt_bp1.supp_pairs_high_mapq++;
-                // if (mq >= config.high_confidence_mapq) insertions[i]->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
-                insertions[i]->disc_pairs_lf_maxmapq = std::max(insertions[i]->disc_pairs_lf_maxmapq, mateseqs_w_mapq_chr[qname].second);
+                insertions[i]->sample_info.alt_bp1.supp_pairs_max_mq = std::max(insertions[i]->sample_info.alt_bp1.supp_pairs_max_mq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
             } else {
                 insertions[i]->l_cluster_region_disc_pairs++;
@@ -1525,7 +1541,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 int mq = get_mq(read);
                 // if (mq >= config.high_confidence_mapq) insertions[i]->sample_info.alt_bp2.supp_pairs_pos_high_mapq++;
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->sample_info.alt_bp2.supp_pairs_high_mapq++;
-                insertions[i]->disc_pairs_rf_maxmapq = std::max(insertions[i]->disc_pairs_rf_maxmapq, mateseqs_w_mapq_chr[qname].second);
+                insertions[i]->sample_info.alt_bp2.supp_pairs_max_mq = std::max(insertions[i]->sample_info.alt_bp2.supp_pairs_max_mq, mateseqs_w_mapq_chr[qname].second);
                 insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
             } else {
                 insertions[i]->r_cluster_region_disc_pairs++;
@@ -1702,8 +1718,8 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         inv->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
     }
 
-    set_bp_consensus_info(inv->sample_info.alt_bp1, alt_better_seqs.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
-    set_bp_consensus_info(inv->sample_info.ref_bp1, ref_better_seqs.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
+    set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_better_seqs.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
+    set_bp_consensus_info(inv->sample_info.ref_bp1.reads_info, ref_better_seqs.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
     
     inv->sample_info.alt_ref_equal_reads = same;
 
@@ -1979,10 +1995,10 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     inv->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score + ref2_aln.sw_score;
     inv->sample_info.ext_alt_consensus1_to_alt_score = alt1_aln.sw_score + alt2_aln.sw_score;
 
-    set_bp_consensus_info(inv->sample_info.alt_bp1, alt_bp1_better_reads.size(), alt_bp1_better_reads_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
-    set_bp_consensus_info(inv->sample_info.alt_bp2, alt_bp2_better_reads.size(), alt_bp2_better_reads_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);
-    set_bp_consensus_info(inv->sample_info.ref_bp1, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
-    set_bp_consensus_info(inv->sample_info.ref_bp2, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
+    set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_bp1_better_reads.size(), alt_bp1_better_reads_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
+    set_bp_consensus_info(inv->sample_info.alt_bp2.reads_info, alt_bp2_better_reads.size(), alt_bp2_better_reads_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);
+    set_bp_consensus_info(inv->sample_info.ref_bp1.reads_info, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
+    set_bp_consensus_info(inv->sample_info.ref_bp2.reads_info, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
 
     inv->sample_info.alt_ref_equal_reads = same;
 
@@ -2204,7 +2220,7 @@ int main(int argc, char* argv[]) {
             if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
             }
-            if (inv->disc_pairs_lf_maxmapq < config.high_confidence_mapq || inv->disc_pairs_rf_maxmapq < config.high_confidence_mapq) {
+            if (inv->sample_info.alt_bp1.supp_pairs_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp2.supp_pairs_max_mq < config.high_confidence_mapq) {
                 inv->sample_info.filters.push_back("LOW_MAPQ_DISC_PAIRS");
             }
 

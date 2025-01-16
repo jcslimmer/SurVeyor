@@ -237,10 +237,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				continue;
 			}
 			bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = ps.dp_cluster->count;
-			bnd->sample_info.alt_bp1.supp_pairs_high_mapq = ps.dp_cluster->la_confident_count;
-			bnd->sample_info.alt_bp2.supp_pairs_high_mapq = ps.dp_cluster->ra_confident_count;
-			bnd->disc_pairs_lf_maxmapq = ps.dp_cluster->la_max_mapq;
-			bnd->disc_pairs_rf_maxmapq = ps.dp_cluster->ra_max_mapq;
 			bnd->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
 			bnd->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
 			bnd->source = "2SR";
@@ -299,10 +295,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					continue;
 				}
 				bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = c->count;
-				bnd->sample_info.alt_bp1.supp_pairs_high_mapq = c->la_confident_count;
-				bnd->sample_info.alt_bp2.supp_pairs_high_mapq = c->ra_confident_count;
-				bnd->disc_pairs_lf_maxmapq = c->la_max_mapq;
-				bnd->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
@@ -336,10 +328,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					continue;
 				}
 				bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = c->count;
-				bnd->sample_info.alt_bp1.supp_pairs_high_mapq = c->la_confident_count;
-				bnd->sample_info.alt_bp2.supp_pairs_high_mapq = c->ra_confident_count;
-				bnd->disc_pairs_lf_maxmapq = c->la_max_mapq;
-				bnd->disc_pairs_rf_maxmapq = c->ra_max_mapq;
 				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
@@ -391,10 +379,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			inversion_t* inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
 			inv->sample_info.alt_bp1.supp_pairs = bnd_rf->sample_info.alt_bp1.supp_pairs;
 			inv->sample_info.alt_bp2.supp_pairs = bnd_lf->sample_info.alt_bp2.supp_pairs;
-			inv->sample_info.alt_bp1.supp_pairs_high_mapq = bnd_rf->sample_info.alt_bp1.supp_pairs_high_mapq;
-			inv->sample_info.alt_bp2.supp_pairs_high_mapq = bnd_lf->sample_info.alt_bp2.supp_pairs_high_mapq;
-			inv->disc_pairs_lf_maxmapq = std::max(bnd_rf->disc_pairs_lf_maxmapq, bnd_lf->disc_pairs_lf_maxmapq);
-			inv->disc_pairs_rf_maxmapq = std::max(bnd_rf->disc_pairs_rf_maxmapq, bnd_lf->disc_pairs_rf_maxmapq);
 			inv->disc_pairs_lf_avg_nm = (bnd_rf->disc_pairs_lf_avg_nm + bnd_rf->disc_pairs_rf_avg_nm)/2;
 			inv->disc_pairs_rf_avg_nm = (bnd_lf->disc_pairs_lf_avg_nm + bnd_lf->disc_pairs_rf_avg_nm)/2;
 			inv->source = bnd_rf->source + "-" + bnd_lf->source;

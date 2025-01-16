@@ -651,9 +651,6 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 	for (sv_t* sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
-		sv->sample_info.alt_bp1.computed = true;
-		sv->sample_info.alt_bp1.consistent_reads_fwd = (rc_consensus != NULL ? rc_consensus->fwd_reads : 0) + (lc_consensus != NULL ? lc_consensus->fwd_reads : 0);
-		sv->sample_info.alt_bp1.consistent_reads_rev = (rc_consensus != NULL ? rc_consensus->rev_reads : 0) + (lc_consensus != NULL ? lc_consensus->rev_reads : 0);
 
 		if (rc_consensus != NULL && lc_consensus == NULL) {
 			if (rc_consensus->is_hsr) {

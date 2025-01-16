@@ -613,14 +613,6 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	insertion->sample_info.alt_bp1.supp_pairs = refined_r_cluster->cluster->reads.size();
 	insertion->sample_info.alt_bp2.supp_pairs = refined_l_cluster->cluster->reads.size();
 	for (bam1_t* read : refined_r_cluster->cluster->reads) {
-		if (read->core.qual >= config.high_confidence_mapq) insertion->sample_info.alt_bp1.supp_pairs_high_mapq++;
-	}
-	for (bam1_t* read : refined_l_cluster->cluster->reads) {
-		if (read->core.qual >= config.high_confidence_mapq) insertion->sample_info.alt_bp2.supp_pairs_high_mapq++;
-	}
-	insertion->disc_pairs_lf_maxmapq = refined_r_cluster->cluster->la_max_mapq;
-	insertion->disc_pairs_rf_maxmapq = refined_l_cluster->cluster->ra_max_mapq;
-	for (bam1_t* read : refined_r_cluster->cluster->reads) {
 		insertion->disc_pairs_lf_avg_nm += get_nm(read);
 	}
 	insertion->disc_pairs_lf_avg_nm /= std::max(1, (int) refined_r_cluster->cluster->reads.size());

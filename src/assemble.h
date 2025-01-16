@@ -400,8 +400,6 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			chosen_ins->sample_info.alt_bp1.supp_pairs++;
-			if (chosen_ins->disc_pairs_lf_maxmapq < read->core.qual) chosen_ins->disc_pairs_lf_maxmapq = read->core.qual;
-			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->sample_info.alt_bp1.supp_pairs_high_mapq++;
 			chosen_ins->disc_pairs_lf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;
@@ -418,8 +416,7 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
 			chosen_ins->sample_info.alt_bp2.supp_pairs++;
-			if (chosen_ins->disc_pairs_rf_maxmapq < read->core.qual) chosen_ins->disc_pairs_rf_maxmapq = read->core.qual;
-			if (read->core.qual >= config.high_confidence_mapq) chosen_ins->sample_info.alt_bp2.supp_pairs_high_mapq++;
+			if (chosen_ins->sample_info.alt_bp2.supp_pairs_max_mq < read->core.qual) chosen_ins->sample_info.alt_bp2.supp_pairs_max_mq = read->core.qual;
 			chosen_ins->disc_pairs_rf_avg_nm += bam_aux2i(bam_aux_get(read, "NM"));
 			bam1_t* d = bam_dup1(read);
 			d->core.mpos = 0;
