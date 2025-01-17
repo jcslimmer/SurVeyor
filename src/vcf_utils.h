@@ -88,6 +88,10 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 		{
 			"%cSP%dHQ", 2, "Integer",
 			"Number of high-quality positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		},
+		{
+			"%cSP%dMQ", 2, "Integer",
+			"Maximum mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
 		}
     };
 

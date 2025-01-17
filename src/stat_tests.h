@@ -613,13 +613,13 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 							deletions[i]->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
 						}
 						if (mq >= config.high_confidence_mapq) {
-							deletions[i]->sample_info.alt_bp2.supp_pairs_neg_high_mapq++;
+							deletions[i]->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
 						}
-						if (read->core.qual > deletions[i]->sample_info.alt_bp1.supp_pairs_max_mq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
+						if (read->core.qual > deletions[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq) {
+							deletions[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq = read->core.qual;
 						}
-						if (mq > deletions[i]->sample_info.alt_bp2.supp_pairs_max_mq) {
-							deletions[i]->sample_info.alt_bp2.supp_pairs_max_mq = mq;
+						if (mq > deletions[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq) {
+							deletions[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq = mq;
 						}
 						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
 						deletions[i]->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
@@ -695,11 +695,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 					if (mq >= config.high_confidence_mapq) {
 						dup->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
 					}
-					if (read->core.qual > duplications[i]->sample_info.alt_bp1.supp_pairs_max_mq) {
-						duplications[i]->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
+					if (read->core.qual > duplications[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq) {
+						duplications[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq = read->core.qual;
 					}
-					if (mq > duplications[i]->sample_info.alt_bp2.supp_pairs_max_mq) {
-						duplications[i]->sample_info.alt_bp2.supp_pairs_max_mq = mq;
+					if (mq > duplications[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq) {
+						duplications[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq = mq;
 					}
 					dup->disc_pairs_lf_avg_nm += get_nm(read);
 					dup->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
@@ -808,8 +808,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 					if (mq >= config.high_confidence_mapq) {
 						inv->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
 					}
-					if (inv->sample_info.alt_bp1.supp_pairs_max_mq < read->core.qual) {
-						inv->sample_info.alt_bp1.supp_pairs_max_mq = read->core.qual;
+					if (inv->sample_info.alt_bp1.supp_pairs_pos_max_mq < read->core.qual) {
+						inv->sample_info.alt_bp1.supp_pairs_pos_max_mq = read->core.qual;
+					}
+					if (inv->sample_info.alt_bp1.supp_pairs_neg_max_mq < mq) {
+						inv->sample_info.alt_bp1.supp_pairs_neg_max_mq = mq;
 					}
 				}
 				if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
@@ -822,8 +825,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 					if (mq >= config.high_confidence_mapq) {
 						inv->sample_info.alt_bp2.supp_pairs_neg_high_mapq++;
 					}
-					if (inv->sample_info.alt_bp2.supp_pairs_max_mq < mq) {
-						inv->sample_info.alt_bp2.supp_pairs_max_mq = mq;
+					if (inv->sample_info.alt_bp2.supp_pairs_pos_max_mq < read->core.qual) {
+						inv->sample_info.alt_bp2.supp_pairs_pos_max_mq = read->core.qual;
+					}
+					if (inv->sample_info.alt_bp2.supp_pairs_neg_max_mq < mq) {
+						inv->sample_info.alt_bp2.supp_pairs_neg_max_mq = mq;
 					}
 				}
 			}
