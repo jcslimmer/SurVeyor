@@ -90,8 +90,20 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 			"Number of high-quality positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
 		},
 		{
+			"%cSP%dmQ", 2, "Integer",
+			"Minimum mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		},
+		{
 			"%cSP%dMQ", 2, "Integer",
 			"Maximum mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		},
+		{
+			"%cSP%dAQ", 2, "Float",
+			"Average mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		},
+		{
+			"%cSP%dSQ", 2, "Float",
+			"Standard deviation of mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
 		}
     };
 
@@ -216,14 +228,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPHQ");
-    const char* dphq_tag = "##FORMAT=<ID=DPHQ,Number=2,Type=Integer,Description=\"Number of high quality discordant pairs supporting the first and second breakpoint of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dphq_tag, &len));
-
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "DPMQ");
-    const char* dpmq_tag = "##FORMAT=<ID=DPMQ,Number=2,Type=Integer,Description=\"Maximum mapping quality of discordant pairs supporting the first and the second breakpoints of the SV.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpmq_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPNM");
 	const char* dpnm_tag = "##FORMAT=<ID=DPNM,Number=2,Type=Float,Description=\"Average NM value of the left and right reads in the discordant pairs supporting this SV.\">";

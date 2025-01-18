@@ -151,18 +151,20 @@ struct contig_map_t {
 };
 
 template<typename T>
-T mean(std::vector<T>& v) {
-    return std::accumulate(v.begin(), v.end(), (T)0.0)/v.size();
+double mean(std::vector<T>& v) {
+    if (v.empty()) return 0;
+    return double(std::accumulate(v.begin(), v.end(), (T)0.0))/v.size();
 }
 
 template<typename T>
-T stddev(std::vector<T>& v) {
+double stddev(std::vector<T>& v) {
+    if (v.empty()) return 0;
     T m = mean(v);
     T sum = 0;
     for (T& e : v) {
         sum += (e - m)*(e - m);
     }
-    return std::sqrt(sum/v.size());
+    return std::sqrt(double(sum)/v.size());
 }
 
 template<typename T>

@@ -30,7 +30,7 @@ std::mutex mtx;
 std::mutex* mtx_contig;
 std::vector<std::vector<std::string> > mate_seqs;
 
-std::vector<uint64_t> general_isize_dist;
+std::vector<hts_pos_t> general_isize_dist;
 std::unordered_map<std::string, int> min_depth_by_contig, max_depth_by_contig, median_depth_by_contig;
 std::vector<uint32_t> depths;
 uint64_t qual_counts[256];

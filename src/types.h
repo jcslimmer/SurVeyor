@@ -182,21 +182,28 @@ struct sv_t {
         bool computed = false;
 
         int reads = 0;
-        int consistent_reads_fwd = 0, consistent_reads_rev = 0;
+        int consistent_fwd = 0, consistent_rev = 0;
         int consistent_min_mq = INT32_MAX, consistent_max_mq = 0;
         double consistent_avg_mq = 0, consistent_stddev_mq = 0;
         int consistent_high_mq = 0;
         double consistent_avg_score = 0, consistent_stddev_score = 0;
 
-        int consistent_reads() { return consistent_reads_fwd + consistent_reads_rev; }
+        int consistent_reads() { return consistent_fwd + consistent_rev; }
+    };
+
+    struct bp_pairs_info_t {
+        bool computed = false;
+
+        int pairs = 0, pos_high_mapq = 0, neg_high_mapq = 0;
+        int pos_min_mq = INT32_MAX, pos_max_mq = 0, neg_min_mq = INT32_MAX, neg_max_mq = 0;
+        double pos_avg_mq = 0, pos_stddev_mq = 0, neg_avg_mq = 0, neg_stddev_mq = 0;
     };
 
     struct bp_consensus_info_t {
 
         bp_reads_info_t reads_info;
+        bp_pairs_info_t pairs_info;
 
-        int supp_pairs = 0, supp_pairs_pos_high_mapq = 0, supp_pairs_neg_high_mapq = 0;
-        int supp_pairs_pos_max_mq = 0, supp_pairs_neg_max_mq = 0;;
     };
 
     struct sample_info_t {

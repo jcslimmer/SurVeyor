@@ -610,8 +610,6 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;
 	if (refined_l_cluster->clip_consensus) insertion->lc_consensus = refined_l_cluster->clip_consensus;
-	insertion->sample_info.alt_bp1.supp_pairs = refined_r_cluster->cluster->reads.size();
-	insertion->sample_info.alt_bp2.supp_pairs = refined_l_cluster->cluster->reads.size();
 	for (bam1_t* read : refined_r_cluster->cluster->reads) {
 		insertion->disc_pairs_lf_avg_nm += get_nm(read);
 	}

@@ -459,8 +459,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
 				int homalt_idx = std::max(0, stats.max_is - est_size);
 				int het_idx = std::max(0, stats.max_is - 2*est_size);
-				int dev_if_homalt = abs((int) (sv->sample_info.alt_bp1.supp_pairs-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
-				int dev_if_het = abs((int) (sv->sample_info.alt_bp1.supp_pairs-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
+				int dev_if_homalt = abs((int) (sv->sample_info.alt_bp1.pairs_info.pairs-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
+				int dev_if_het = abs((int) (sv->sample_info.alt_bp1.pairs_info.pairs-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
 				if (dev_if_het <= dev_if_homalt) {
 					het_evidence++;
 				} else { // deletion is homalt
@@ -586,6 +586,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		std::vector<hts_pos_t> dp1_start(deletions.size(), INT32_MAX), dp1_end(deletions.size(), 0);
 		std::vector<hts_pos_t> dp2_start(deletions.size(), INT32_MAX), dp2_end(deletions.size(), 0);
 
+		std::vector<std::vector<int> > supp_pairs_pos_mqs(deletions.size()), supp_pairs_neg_mqs(deletions.size());
+
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
@@ -600,8 +602,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 				for (int i = curr_pos; i < deletions.size() && deletions[i]->start <= pair_end; i++) {
 					if (pair_start <= deletions[i]->start+5 && deletions[i]->end-5 <= pair_end && 
 						deletions[i]->start-pair_start + pair_end-deletions[i]->end <= stats.max_is) {
-						deletions[i]->sample_info.alt_bp1.supp_pairs++;
-						deletions[i]->sample_info.alt_bp2.supp_pairs++;
+						deletions[i]->sample_info.alt_bp1.pairs_info.pairs++;
 
 						if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
 						if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
@@ -610,17 +611,15 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 
 						int64_t mq = get_mq(read);
 						if (read->core.qual >= config.high_confidence_mapq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
+							deletions[i]->sample_info.alt_bp1.pairs_info.pos_high_mapq++;
 						}
 						if (mq >= config.high_confidence_mapq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
+							deletions[i]->sample_info.alt_bp1.pairs_info.neg_high_mapq++;
 						}
-						if (read->core.qual > deletions[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq = read->core.qual;
-						}
-						if (mq > deletions[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq) {
-							deletions[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq = mq;
-						}
+
+						supp_pairs_pos_mqs[i].push_back(read->core.qual);
+						supp_pairs_neg_mqs[i].push_back(mq);
+
 						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
 						deletions[i]->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
 					}
@@ -629,10 +628,28 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 
 		}
 		for (int i = 0; i < deletions.size(); i++) {
-			if (deletions[i]->sample_info.alt_bp1.supp_pairs > 0) deletions[i]->disc_pairs_lf_avg_nm /= deletions[i]->sample_info.alt_bp1.supp_pairs;
-			if (deletions[i]->sample_info.alt_bp2.supp_pairs > 0) deletions[i]->disc_pairs_rf_avg_nm /= deletions[i]->sample_info.alt_bp2.supp_pairs;
-			deletions[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
-			deletions[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
+			deletion_t* del = deletions[i];
+			del->sample_info.alt_bp1.pairs_info.computed = true;
+
+			if (!supp_pairs_pos_mqs[i].empty()) {
+				del->sample_info.alt_bp1.pairs_info.pos_avg_mq = mean(supp_pairs_pos_mqs[i]);
+				del->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
+				del->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+				del->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+			}
+
+			if (!supp_pairs_neg_mqs[i].empty()) {
+				del->sample_info.alt_bp1.pairs_info.neg_avg_mq = mean(supp_pairs_neg_mqs[i]);
+				del->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
+				del->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+				del->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+			}
+
+			if (del->sample_info.alt_bp1.pairs_info.pairs > 0) del->disc_pairs_lf_avg_nm /= del->sample_info.alt_bp1.pairs_info.pairs;
+			if (del->sample_info.alt_bp2.pairs_info.pairs > 0) del->disc_pairs_rf_avg_nm /= del->sample_info.alt_bp2.pairs_info.pairs;
+
+			del->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
+			del->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
 	}
 }
@@ -668,6 +685,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 		std::vector<hts_pos_t> dp1_start(duplications.size(), INT32_MAX), dp1_end(duplications.size(), 0);
 		std::vector<hts_pos_t> dp2_start(duplications.size(), INT32_MAX), dp2_end(duplications.size(), 0);
 
+		std::vector<std::vector<int> > supp_pairs_pos_mqs(duplications.size()), supp_pairs_neg_mqs(duplications.size());
+
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 		bam1_t* read = bam_init1();
@@ -680,8 +699,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				duplication_t* dup = duplications[i];
 				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
-					dup->sample_info.alt_bp1.supp_pairs++;
-					dup->sample_info.alt_bp2.supp_pairs++;
+					dup->sample_info.alt_bp1.pairs_info.pairs++;
 
 					if (read->core.pos < dp1_start[i]) dp1_start[i] = read->core.pos;
 					if (bam_endpos(read) > dp1_end[i]) dp1_end[i] = bam_endpos(read);
@@ -690,27 +708,43 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
-						dup->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
+						dup->sample_info.alt_bp1.pairs_info.neg_high_mapq++;
 					}
 					if (mq >= config.high_confidence_mapq) {
-						dup->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
+						dup->sample_info.alt_bp1.pairs_info.pos_high_mapq++;
 					}
-					if (read->core.qual > duplications[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq) {
-						duplications[i]->sample_info.alt_bp1.supp_pairs_neg_max_mq = read->core.qual;
-					}
-					if (mq > duplications[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq) {
-						duplications[i]->sample_info.alt_bp1.supp_pairs_pos_max_mq = mq;
-					}
+
+					supp_pairs_pos_mqs[i].push_back(mq);
+					supp_pairs_neg_mqs[i].push_back(read->core.qual);
+
 					dup->disc_pairs_lf_avg_nm += get_nm(read);
 					dup->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
 				}
 			}
 		}
 		for (int i = 0; i < duplications.size(); i++) {
-			if (duplications[i]->sample_info.alt_bp1.supp_pairs > 0) duplications[i]->disc_pairs_lf_avg_nm /= duplications[i]->sample_info.alt_bp1.supp_pairs;
-			if (duplications[i]->sample_info.alt_bp2.supp_pairs > 0) duplications[i]->disc_pairs_rf_avg_nm /= duplications[i]->sample_info.alt_bp2.supp_pairs;
-			duplications[i]->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
-			duplications[i]->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
+			duplication_t* dup = duplications[i];
+			dup->sample_info.alt_bp1.pairs_info.computed = true;
+
+			if (!supp_pairs_pos_mqs[i].empty()) {
+				dup->sample_info.alt_bp1.pairs_info.pos_avg_mq = mean(supp_pairs_pos_mqs[i]);
+				dup->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
+				dup->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+				dup->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+			}
+
+			if (!supp_pairs_neg_mqs[i].empty()) {
+				dup->sample_info.alt_bp1.pairs_info.neg_avg_mq = mean(supp_pairs_neg_mqs[i]);
+				dup->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
+				dup->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+				dup->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+			}
+
+			if (dup->sample_info.alt_bp1.pairs_info.pairs > 0) dup->disc_pairs_lf_avg_nm /= dup->sample_info.alt_bp1.pairs_info.pairs;
+			if (dup->sample_info.alt_bp2.pairs_info.pairs > 0) dup->disc_pairs_rf_avg_nm /= dup->sample_info.alt_bp2.pairs_info.pairs;
+
+			dup->disc_pairs_lf_span = std::max(hts_pos_t(0), dp1_end[i] - dp1_start[i]);
+			dup->disc_pairs_rf_span = std::max(hts_pos_t(0), dp2_end[i] - dp2_start[i]);
 		}
 	}
 }
@@ -782,6 +816,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 		std::sort(inversions.begin(), inversions.end(), [](const inversion_t* i1, const inversion_t* i2) {
 			return i1->start < i2->start;
 		});
+
+		std::vector<std::vector<int> > supp_pairs_bp1_pos_mqs(inversions.size()), supp_pairs_bp1_neg_mqs(inversions.size());
+		std::vector<std::vector<int> > supp_pairs_bp2_pos_mqs(inversions.size()), supp_pairs_bp2_neg_mqs(inversions.size());
 		
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -799,39 +836,67 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 
 				hts_pos_t mate_startpos = read->core.mpos, mate_endpos = get_mate_endpos(read);
 				if (!bam_is_mrev(read) && mate_startpos >= inv->end-stats.max_is && mate_startpos+stats.read_len/2 <= inv->end) {
-					inv->sample_info.alt_bp1.supp_pairs++;
+					inv->sample_info.alt_bp1.pairs_info.pairs++;
 					
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp1.supp_pairs_pos_high_mapq++;
+						inv->sample_info.alt_bp1.pairs_info.pos_high_mapq++;
 					}
 					if (mq >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp1.supp_pairs_neg_high_mapq++;
+						inv->sample_info.alt_bp1.pairs_info.neg_high_mapq++;
 					}
-					if (inv->sample_info.alt_bp1.supp_pairs_pos_max_mq < read->core.qual) {
-						inv->sample_info.alt_bp1.supp_pairs_pos_max_mq = read->core.qual;
-					}
-					if (inv->sample_info.alt_bp1.supp_pairs_neg_max_mq < mq) {
-						inv->sample_info.alt_bp1.supp_pairs_neg_max_mq = mq;
-					}
+
+					supp_pairs_bp1_pos_mqs[i].push_back(read->core.qual);
+					supp_pairs_bp1_neg_mqs[i].push_back(mq);
 				}
 				if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
-					inv->sample_info.alt_bp2.supp_pairs++;
+					inv->sample_info.alt_bp2.pairs_info.pairs++;
 
 					int64_t mq = get_mq(read);
 					if (read->core.qual >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp2.supp_pairs_pos_high_mapq++;
+						inv->sample_info.alt_bp2.pairs_info.pos_high_mapq++;
 					}
 					if (mq >= config.high_confidence_mapq) {
-						inv->sample_info.alt_bp2.supp_pairs_neg_high_mapq++;
+						inv->sample_info.alt_bp2.pairs_info.neg_high_mapq++;
 					}
-					if (inv->sample_info.alt_bp2.supp_pairs_pos_max_mq < read->core.qual) {
-						inv->sample_info.alt_bp2.supp_pairs_pos_max_mq = read->core.qual;
-					}
-					if (inv->sample_info.alt_bp2.supp_pairs_neg_max_mq < mq) {
-						inv->sample_info.alt_bp2.supp_pairs_neg_max_mq = mq;
-					}
+
+					supp_pairs_bp2_pos_mqs[i].push_back(read->core.qual);
+					supp_pairs_bp2_neg_mqs[i].push_back(mq);
 				}
+			}
+		}
+
+		for (int i = 0; i < inversions.size(); i++) {
+			inversion_t* inv = inversions[i];
+			inv->sample_info.alt_bp1.pairs_info.computed = true;
+			inv->sample_info.alt_bp2.pairs_info.computed = true;
+
+			if (!supp_pairs_bp1_pos_mqs[i].empty()) {
+				inv->sample_info.alt_bp1.pairs_info.pos_avg_mq = mean(supp_pairs_bp1_pos_mqs[i]);
+				inv->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_bp1_pos_mqs[i]);
+				inv->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_bp1_pos_mqs[i].begin(), supp_pairs_bp1_pos_mqs[i].end());
+				inv->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_bp1_pos_mqs[i].begin(), supp_pairs_bp1_pos_mqs[i].end());
+			}
+
+			if (!supp_pairs_bp1_neg_mqs[i].empty()) {
+				inv->sample_info.alt_bp1.pairs_info.neg_avg_mq = mean(supp_pairs_bp1_neg_mqs[i]);
+				inv->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_bp1_neg_mqs[i]);
+				inv->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_bp1_neg_mqs[i].begin(), supp_pairs_bp1_neg_mqs[i].end());
+				inv->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_bp1_neg_mqs[i].begin(), supp_pairs_bp1_neg_mqs[i].end());
+			}
+
+			if (!supp_pairs_bp2_pos_mqs[i].empty()) {
+				inv->sample_info.alt_bp2.pairs_info.pos_avg_mq = mean(supp_pairs_bp2_pos_mqs[i]);
+				inv->sample_info.alt_bp2.pairs_info.pos_stddev_mq = stddev(supp_pairs_bp2_pos_mqs[i]);
+				inv->sample_info.alt_bp2.pairs_info.pos_min_mq = *std::min_element(supp_pairs_bp2_pos_mqs[i].begin(), supp_pairs_bp2_pos_mqs[i].end());
+				inv->sample_info.alt_bp2.pairs_info.pos_max_mq = *std::max_element(supp_pairs_bp2_pos_mqs[i].begin(), supp_pairs_bp2_pos_mqs[i].end());
+			}
+
+			if (!supp_pairs_bp2_neg_mqs[i].empty()) {
+				inv->sample_info.alt_bp2.pairs_info.neg_avg_mq = mean(supp_pairs_bp2_neg_mqs[i]);
+				inv->sample_info.alt_bp2.pairs_info.neg_stddev_mq = stddev(supp_pairs_bp2_neg_mqs[i]);
+				inv->sample_info.alt_bp2.pairs_info.neg_min_mq = *std::min_element(supp_pairs_bp2_neg_mqs[i].begin(), supp_pairs_bp2_neg_mqs[i].end());
+				inv->sample_info.alt_bp2.pairs_info.neg_max_mq = *std::max_element(supp_pairs_bp2_neg_mqs[i].begin(), supp_pairs_bp2_neg_mqs[i].end());
 			}
 		}
 	}

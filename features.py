@@ -41,9 +41,10 @@ class Features:
 
     dp_features_names = ['ASP1', 'ASP1HQ_1', 'ASP1HQ_2', 'ASP1HQ_1_RATIO', 'ASP1HQ_2_RATIO',
                          'ASP2', 'ASP2HQ_1', 'ASP2HQ_2', 'ASP2HQ_1_RATIO', 'ASP2HQ_2_RATIO',
-                         'DP1MQ', 'DP2MQ', \
+                         'ASP1_ASP2_RATIO',
+                         'ASP1MQ_1', 'ASP1MQ_2', 'ASP2MQ_1', 'ASP2MQ_2',
                          'DPSP1', 'DPSP2', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
-    
+
     def get_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
             Features.stat_test_features_names + Features.dp_features_names
@@ -350,13 +351,15 @@ class Features:
 
         features['ASP1'] = Features.piecewise_normalise(asp1, min_disc_pairs, max_disc_pairs)
         features['ASP2'] = Features.piecewise_normalise(asp2, min_disc_pairs, max_disc_pairs)
+        features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
         features['ASP1HQ_1'] = Features.piecewise_normalise(asp1hq_1, min_disc_pairs, max_disc_pairs)
         features['ASP1HQ_2'] = Features.piecewise_normalise(asp1hq_2, min_disc_pairs, max_disc_pairs)
         features['ASP2HQ_1'] = Features.piecewise_normalise(asp2hq_1, min_disc_pairs, max_disc_pairs)
         features['ASP2HQ_2'] = Features.piecewise_normalise(asp2hq_2, min_disc_pairs, max_disc_pairs)
         features['ASP1HQ_1_RATIO'], features['ASP1HQ_2_RATIO'] = asp1hq_1/max(1, asp1), asp1hq_2/max(1, asp1)
         features['ASP2HQ_1_RATIO'], features['ASP2HQ_2_RATIO'] = asp2hq_1/max(1, asp2), asp2hq_2/max(1, asp2)
-        features['DP1MQ'], features['DP2MQ'] = Features.get_number_value(record.samples[0], 'DPMQ', [0, 0])
+        features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [0, 0])
+        features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [0, 0])
         features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', [0, 0], read_len)
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)

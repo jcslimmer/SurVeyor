@@ -111,7 +111,6 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 		}
 
 		if (del && -del->svlen() >= config.min_sv_size) {
-			del->sample_info.alt_bp1.supp_pairs = del->sample_info.alt_bp2.supp_pairs = c->count;
 			del->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 			del->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 			del->source = "DP";
@@ -164,8 +163,6 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 
 		if (compatible_dels.size() == 1) {
 			sv_t* corr_sr_del = compatible_dels[0];
-			corr_sr_del->sample_info.alt_bp1.supp_pairs = del->sample_info.alt_bp1.supp_pairs;
-			corr_sr_del->sample_info.alt_bp2.supp_pairs = del->sample_info.alt_bp2.supp_pairs;
 			corr_sr_del->disc_pairs_lf_avg_nm = del->disc_pairs_lf_avg_nm;
 			corr_sr_del->disc_pairs_rf_avg_nm = del->disc_pairs_rf_avg_nm;
 			deletions[i] = NULL;

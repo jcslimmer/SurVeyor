@@ -236,7 +236,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				delete bnd;
 				continue;
 			}
-			bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = ps.dp_cluster->count;
 			bnd->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
 			bnd->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
 			bnd->source = "2SR";
@@ -294,7 +293,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					delete bnd;
 					continue;
 				}
-				bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = c->count;
 				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
@@ -327,7 +325,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					delete bnd;
 					continue;
 				}
-				bnd->sample_info.alt_bp1.supp_pairs = bnd->sample_info.alt_bp2.supp_pairs = c->count;
 				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
 				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
@@ -377,8 +374,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				lc_consensus->hq_right_ext_reads = bnd_lf->lc_consensus->hq_right_ext_reads;
 			}
 			inversion_t* inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
-			inv->sample_info.alt_bp1.supp_pairs = bnd_rf->sample_info.alt_bp1.supp_pairs;
-			inv->sample_info.alt_bp2.supp_pairs = bnd_lf->sample_info.alt_bp2.supp_pairs;
 			inv->disc_pairs_lf_avg_nm = (bnd_rf->disc_pairs_lf_avg_nm + bnd_rf->disc_pairs_rf_avg_nm)/2;
 			inv->disc_pairs_rf_avg_nm = (bnd_lf->disc_pairs_lf_avg_nm + bnd_lf->disc_pairs_rf_avg_nm)/2;
 			inv->source = bnd_rf->source + "-" + bnd_lf->source;
