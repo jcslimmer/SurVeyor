@@ -518,6 +518,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
 	std::vector<hts_pos_t> bp1_rf_start(insertions.size(), INT32_MAX), bp1_rf_end(insertions.size(), 0);
 	
     std::vector<std::vector<int> > supp_pairs_pos_mqs(insertions.size()), supp_pairs_neg_mqs(insertions.size());
+	std::vector<std::vector<int> > supp_pairs_pos_nms(insertions.size()), supp_pairs_neg_nms(insertions.size());
 
     int curr_pos = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -570,7 +571,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 supp_pairs_pos_mqs[i].push_back(read->core.qual);
                 supp_pairs_neg_mqs[i].push_back(mq);
 
-                insertions[i]->disc_pairs_lf_avg_nm += get_nm(read);
+                supp_pairs_pos_nms[i].push_back(get_nm(read));
+				supp_pairs_neg_nms[i].push_back(get_nm(aln));
             } else {
                 insertions[i]->l_cluster_region_disc_pairs++;
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->l_cluster_region_disc_pairs_high_mapq++;
@@ -586,6 +588,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             ins->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
             ins->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
             ins->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+			ins->sample_info.alt_bp1.pairs_info.pos_avg_nm = mean(supp_pairs_pos_nms[i]);
+			ins->sample_info.alt_bp1.pairs_info.pos_stddev_nm = stddev(supp_pairs_pos_nms[i]);
         }
 
         if (!supp_pairs_neg_mqs[i].empty()) {
@@ -593,11 +597,12 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             ins->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
             ins->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
             ins->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+			ins->sample_info.alt_bp1.pairs_info.neg_avg_nm = mean(supp_pairs_neg_nms[i]);
+			ins->sample_info.alt_bp1.pairs_info.neg_stddev_nm = stddev(supp_pairs_neg_nms[i]);
         }
         
-        if (ins->sample_info.alt_bp1.pairs_info.pairs > 0) ins->disc_pairs_lf_avg_nm /= ins->sample_info.alt_bp1.pairs_info.pairs;
-        ins->sample_info.alt_bp1.lf_span = std::max(hts_pos_t(0), bp1_lf_end[i]-bp1_lf_start[i]);
-		ins->sample_info.alt_bp1.rf_span = std::max(hts_pos_t(0), bp1_rf_end[i]-bp1_rf_start[i]);
+        ins->sample_info.alt_bp1.pairs_info.lf_span = std::max(hts_pos_t(0), bp1_lf_end[i]-bp1_lf_start[i]);
+		ins->sample_info.alt_bp1.pairs_info.rf_span = std::max(hts_pos_t(0), bp1_rf_end[i]-bp1_rf_start[i]);
     }
 
     for (char* region : regions) free(region);
@@ -617,6 +622,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
 
     supp_pairs_pos_mqs = std::vector<std::vector<int> >(insertions.size());
     supp_pairs_neg_mqs = std::vector<std::vector<int> >(insertions.size());
+	supp_pairs_pos_nms = std::vector<std::vector<int> >(insertions.size());
+	supp_pairs_neg_nms = std::vector<std::vector<int> >(insertions.size());
 
     curr_pos = 0;
     iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -667,7 +674,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 supp_pairs_pos_mqs[i].push_back(mq);
                 supp_pairs_neg_mqs[i].push_back((int) read->core.qual);
 
-                insertions[i]->disc_pairs_rf_avg_nm += get_nm(read);
+				supp_pairs_pos_nms[i].push_back(get_nm(aln));
+				supp_pairs_neg_nms[i].push_back(get_nm(read));
             } else {
                 insertions[i]->r_cluster_region_disc_pairs++;
                 if (read->core.qual >= config.high_confidence_mapq) insertions[i]->r_cluster_region_disc_pairs_high_mapq++;
@@ -683,6 +691,8 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             ins->sample_info.alt_bp2.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
             ins->sample_info.alt_bp2.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
             ins->sample_info.alt_bp2.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+			insertions[i]->sample_info.alt_bp2.pairs_info.pos_avg_nm = mean(supp_pairs_pos_nms[i]);
+			insertions[i]->sample_info.alt_bp2.pairs_info.pos_stddev_nm = stddev(supp_pairs_pos_nms[i]);
         }
 
         if (!supp_pairs_neg_mqs[i].empty()) {
@@ -690,11 +700,12 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
             ins->sample_info.alt_bp2.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
             ins->sample_info.alt_bp2.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
             ins->sample_info.alt_bp2.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+			insertions[i]->sample_info.alt_bp2.pairs_info.neg_avg_nm = mean(supp_pairs_neg_nms[i]);
+			insertions[i]->sample_info.alt_bp2.pairs_info.neg_stddev_nm = stddev(supp_pairs_neg_nms[i]);
         }
 
-        if (ins->sample_info.alt_bp2.pairs_info.pairs > 0) ins->disc_pairs_rf_avg_nm /= ins->sample_info.alt_bp2.pairs_info.pairs;
-        ins->sample_info.alt_bp2.lf_span = std::max(hts_pos_t(0), bp2_lf_end[i]-bp2_lf_start[i]);
-		ins->sample_info.alt_bp2.rf_span = std::max(hts_pos_t(0), bp2_rf_end[i]-bp2_rf_start[i]);
+        ins->sample_info.alt_bp2.pairs_info.lf_span = std::max(hts_pos_t(0), bp2_lf_end[i]-bp2_lf_start[i]);
+		ins->sample_info.alt_bp2.pairs_info.rf_span = std::max(hts_pos_t(0), bp2_rf_end[i]-bp2_rf_start[i]);
     }
 
     for (char* region : regions) free(region);
@@ -708,17 +719,17 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 
 	struct conc_pairs_count_t {
 		hts_pos_t pos;
-		int* conc_pairs_ptr, *conc_pairs_highmq_ptr;
+		sv_t::bp_pairs_info_t* pairs_info;
 
-		conc_pairs_count_t(hts_pos_t pos, int* conc_pairs_ptr, int* conc_pairs_highmq_ptr) :
-			pos(pos), conc_pairs_ptr(conc_pairs_ptr), conc_pairs_highmq_ptr(conc_pairs_highmq_ptr) {}
+		conc_pairs_count_t(hts_pos_t pos, sv_t::bp_pairs_info_t* pairs_info) : pos(pos), pairs_info(pairs_info) {}
 	};
 
 	std::vector<conc_pairs_count_t> bkp_with_conc_pairs_count;
 	for (sv_t* sv : svs) {
-		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->conc_pairs_lbp), &(sv->conc_pairs_lbp_high_mapq)});
-		bkp_with_conc_pairs_count.push_back({(sv->start+sv->end)/2, &(sv->conc_pairs_midp), &(sv->conc_pairs_midp_high_mapq)});
-		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->conc_pairs_rbp), &(sv->conc_pairs_rbp_high_mapq)});
+		sv->sample_info.ref_bp1.pairs_info.computed = true;
+		sv->sample_info.ref_bp2.pairs_info.computed = true;
+		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->sample_info.ref_bp1.pairs_info)});
+		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->sample_info.ref_bp2.pairs_info)});
 	}
 
 	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const conc_pairs_count_t& p1, const conc_pairs_count_t& p2) {
@@ -746,8 +757,13 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 		hts_pos_t end = read->core.pos + read->core.isize - read->core.l_qseq/2;
 		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].pos <= end; i++) {
 			if (start <= bkp_with_conc_pairs_count[i].pos && bkp_with_conc_pairs_count[i].pos <= end) {
-				(*bkp_with_conc_pairs_count[i].conc_pairs_ptr)++;
-				if (read->core.qual >= config.high_confidence_mapq) (*bkp_with_conc_pairs_count[i].conc_pairs_highmq_ptr)++;
+				bkp_with_conc_pairs_count[i].pairs_info->pairs++;
+				if (read->core.qual >= config.high_confidence_mapq) {
+					bkp_with_conc_pairs_count[i].pairs_info->pos_high_mapq++;
+				}
+				if (get_mq(read) >= config.high_confidence_mapq) {
+					bkp_with_conc_pairs_count[i].pairs_info->neg_high_mapq++;
+				}
 			}
 		}
 	}
@@ -790,6 +806,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		std::vector<hts_pos_t> bp_rf_start(deletions.size(), INT32_MAX), bp_rf_end(deletions.size(), 0);
 
 		std::vector<std::vector<int> > supp_pairs_pos_mqs(deletions.size()), supp_pairs_neg_mqs(deletions.size());
+		std::vector<std::vector<int> > supp_pairs_pos_nms(deletions.size()), supp_pairs_neg_nms(deletions.size());
 
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -823,8 +840,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 						supp_pairs_pos_mqs[i].push_back(read->core.qual);
 						supp_pairs_neg_mqs[i].push_back(mq);
 
-						deletions[i]->disc_pairs_lf_avg_nm += get_nm(read);
-						deletions[i]->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
+						supp_pairs_pos_nms[i].push_back(get_nm(read));
+						supp_pairs_neg_nms[i].push_back(qname_to_mate_nm[std::string(bam_get_qname(read))]);
 					}
 				}
 			}
@@ -839,6 +856,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 				del->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
 				del->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
 				del->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+				del->sample_info.alt_bp1.pairs_info.pos_avg_nm = mean(supp_pairs_pos_nms[i]);
+				del->sample_info.alt_bp1.pairs_info.pos_stddev_nm = stddev(supp_pairs_pos_nms[i]);
 			}
 
 			if (!supp_pairs_neg_mqs[i].empty()) {
@@ -846,13 +865,12 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 				del->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
 				del->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
 				del->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+				del->sample_info.alt_bp1.pairs_info.neg_avg_nm = mean(supp_pairs_neg_nms[i]);
+				del->sample_info.alt_bp1.pairs_info.neg_stddev_nm = stddev(supp_pairs_neg_nms[i]);
 			}
 
-			if (del->sample_info.alt_bp1.pairs_info.pairs > 0) del->disc_pairs_lf_avg_nm /= del->sample_info.alt_bp1.pairs_info.pairs;
-			if (del->sample_info.alt_bp2.pairs_info.pairs > 0) del->disc_pairs_rf_avg_nm /= del->sample_info.alt_bp2.pairs_info.pairs;
-
-			del->sample_info.alt_bp1.lf_span = std::max(hts_pos_t(0), bp_lf_end[i] - bp_lf_start[i]);
-			del->sample_info.alt_bp1.rf_span = std::max(hts_pos_t(0), bp_rf_end[i] - bp_rf_start[i]);
+			del->sample_info.alt_bp1.pairs_info.lf_span = std::max(hts_pos_t(0), bp_lf_end[i] - bp_lf_start[i]);
+			del->sample_info.alt_bp1.pairs_info.rf_span = std::max(hts_pos_t(0), bp_rf_end[i] - bp_rf_start[i]);
 		}
 	}
 }
@@ -889,6 +907,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 		std::vector<hts_pos_t> bp_rf_start(duplications.size(), INT32_MAX), bp_rf_end(duplications.size(), 0);
 
 		std::vector<std::vector<int> > supp_pairs_pos_mqs(duplications.size()), supp_pairs_neg_mqs(duplications.size());
+		std::vector<std::vector<int> > supp_pairs_pos_nms(duplications.size()), supp_pairs_neg_nms(duplications.size());
 
 		int curr_pos = 0;
 		hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -920,8 +939,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 					supp_pairs_pos_mqs[i].push_back(mq);
 					supp_pairs_neg_mqs[i].push_back(read->core.qual);
 
-					dup->disc_pairs_lf_avg_nm += get_nm(read);
-					dup->disc_pairs_rf_avg_nm += qname_to_mate_nm[std::string(bam_get_qname(read))];
+					supp_pairs_pos_nms[i].push_back(qname_to_mate_nm[std::string(bam_get_qname(read))]);
+					supp_pairs_neg_nms[i].push_back(get_nm(read));
 				}
 			}
 		}
@@ -934,6 +953,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				dup->sample_info.alt_bp1.pairs_info.pos_stddev_mq = stddev(supp_pairs_pos_mqs[i]);
 				dup->sample_info.alt_bp1.pairs_info.pos_min_mq = *std::min_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
 				dup->sample_info.alt_bp1.pairs_info.pos_max_mq = *std::max_element(supp_pairs_pos_mqs[i].begin(), supp_pairs_pos_mqs[i].end());
+				dup->sample_info.alt_bp1.pairs_info.pos_avg_nm = mean(supp_pairs_pos_nms[i]);
+				dup->sample_info.alt_bp1.pairs_info.pos_stddev_nm = stddev(supp_pairs_pos_nms[i]);
 			}
 
 			if (!supp_pairs_neg_mqs[i].empty()) {
@@ -941,13 +962,12 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 				dup->sample_info.alt_bp1.pairs_info.neg_stddev_mq = stddev(supp_pairs_neg_mqs[i]);
 				dup->sample_info.alt_bp1.pairs_info.neg_min_mq = *std::min_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
 				dup->sample_info.alt_bp1.pairs_info.neg_max_mq = *std::max_element(supp_pairs_neg_mqs[i].begin(), supp_pairs_neg_mqs[i].end());
+				dup->sample_info.alt_bp1.pairs_info.neg_avg_nm = mean(supp_pairs_neg_nms[i]);
+				dup->sample_info.alt_bp1.pairs_info.neg_stddev_nm = stddev(supp_pairs_neg_nms[i]);
 			}
 
-			if (dup->sample_info.alt_bp1.pairs_info.pairs > 0) dup->disc_pairs_lf_avg_nm /= dup->sample_info.alt_bp1.pairs_info.pairs;
-			if (dup->sample_info.alt_bp2.pairs_info.pairs > 0) dup->disc_pairs_rf_avg_nm /= dup->sample_info.alt_bp2.pairs_info.pairs;
-
-			dup->sample_info.alt_bp1.lf_span = std::max(hts_pos_t(0), bp_lf_end[i] - bp_lf_start[i]);
-			dup->sample_info.alt_bp1.rf_span = std::max(hts_pos_t(0), bp_rf_end[i] - bp_rf_start[i]);
+			dup->sample_info.alt_bp1.pairs_info.lf_span = std::max(hts_pos_t(0), bp_lf_end[i] - bp_lf_start[i]);
+			dup->sample_info.alt_bp1.pairs_info.rf_span = std::max(hts_pos_t(0), bp_rf_end[i] - bp_rf_start[i]);
 		}
 	}
 }
@@ -993,10 +1013,24 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 				inversion_t* inv = bkp_with_conc_pairs_count[i].second;
 				if (start <= inv->start && end <= inv->end) {
 					inv->conc_pairs_lbp++;
-					if (read->core.qual >= config.high_confidence_mapq) inv->conc_pairs_lbp_high_mapq++;
+					inv->sample_info.ref_bp1.pairs_info.pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) {
+						inv->conc_pairs_lbp_high_mapq++;
+						inv->sample_info.ref_bp1.pairs_info.pos_high_mapq++;
+					}
+					if (get_mq(read) >= config.high_confidence_mapq) {
+						inv->sample_info.ref_bp1.pairs_info.neg_high_mapq++;
+					}
 				} else if (start >= inv->start && end >= inv->end) {
 					inv->conc_pairs_rbp++;
-					if (read->core.qual >= config.high_confidence_mapq) inv->conc_pairs_rbp_high_mapq++;
+					inv->sample_info.ref_bp2.pairs_info.pairs++;
+					if (read->core.qual >= config.high_confidence_mapq) {
+						inv->conc_pairs_rbp_high_mapq++;
+						inv->sample_info.ref_bp2.pairs_info.pos_high_mapq++;
+					}
+					if (get_mq(read) >= config.high_confidence_mapq) {
+						inv->sample_info.ref_bp2.pairs_info.neg_high_mapq++;
+					}
 				}
 			}
 		}

@@ -42,9 +42,9 @@ class Features:
     dp_features_names = ['ASP1', 'ASP1HQ_1', 'ASP1HQ_2', 'ASP1HQ_1_RATIO', 'ASP1HQ_2_RATIO',
                          'ASP2', 'ASP2HQ_1', 'ASP2HQ_2', 'ASP2HQ_1_RATIO', 'ASP2HQ_2_RATIO',
                          'ASP1_ASP2_RATIO',
-                         'ASP1mQ_1', 'ASP1mQ_2', 'ASP1MQ_1', 'ASP1MQ_2',
-                         'ASP2mQ_1', 'ASP2mQ_2', 'ASP2MQ_1', 'ASP2MQ_2',
-                         'DPSP1', 'DPSP2', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+                         'ASP1mQ_1', 'ASP1mQ_2', 'ASP1MQ_1', 'ASP1MQ_2', 'ASP1SPAN_1', 'ASP1SPAN_2',
+                         'ASP2mQ_1', 'ASP2mQ_2', 'ASP2MQ_1', 'ASP2MQ_2', 'ASP2SPAN_1', 'ASP2SPAN_2',
+                         'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
@@ -367,7 +367,15 @@ class Features:
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
 
-        features['DPSP1'], features['DPSP2'] = Features.get_number_value(record.samples[0], 'DPSP', [0, 0], max_is)
+        asp1span_1, asp1span_2 = Features.get_number_value(record.samples[0], 'ASP1SPAN', [0, 0])
+        asp2span_1, asp2span_2 = Features.get_number_value(record.samples[0], 'ASP2SPAN', [0, 0])
+        features['ASP1SPAN_1'], features['ASP2SPAN_2'] = asp1span_1/max_is, asp2span_2/max_is
+        if svtype_str == "INS":
+            features['ASP1SPAN_2'] = asp1span_2/max(1, max_is, svinslen)
+            features['ASP2SPAN_1'] = asp2span_1/max(1, max_is, svinslen)
+        else:
+            features['ASP1SPAN_2'] = asp1span_2/max_is
+            features['ASP2SPAN_1'] = asp2span_1/max_is
 
         cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
         features['CP1'], features['CP2'], features['CP3'] = [Features.piecewise_normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]

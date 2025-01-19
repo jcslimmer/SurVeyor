@@ -1,6 +1,7 @@
 #ifndef SW_UTILS_H
 #define SW_UTILS_H
 
+#include <cstdint>
 #include <iostream>
 
 #include "../libs/ssw.h"
@@ -30,6 +31,15 @@ bool is_right_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1
 }
 bool is_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
 	return is_left_clipped(aln, min_clip_len) || is_right_clipped(aln, min_clip_len);
+}
+
+int get_nm(StripedSmithWaterman::Alignment& aln) {
+	int nm = aln.mismatches;
+	for (uint32_t c : aln.cigar) {
+		char op = cigar_int_to_op(c);
+		if (op == 'I' || op == 'D') nm += cigar_int_to_len(c);
+	}
+	return nm - aln.mismatches;
 }
 
 size_t gcd(size_t a, size_t b) {

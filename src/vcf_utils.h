@@ -108,7 +108,15 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 		{
 			"%cSP%dSPAN", 2, "Integer",
 			"Number of base pairs to the left and right, respectively, of the breakpoint %d in the %s allele covered by reads within its supporting pairs."
-		}		
+		},
+		{
+			"%cSP%dNMA", 2, "Float",
+			"Average NM (non-matches) of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		},
+		{
+			"%cSP%dNMS", 2, "Float",
+			"Standard deviation of NM (non-matches) of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+		}
     };
 
     char tag_id[20];
@@ -201,10 +209,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* dpshq_tag = "##FORMAT=<ID=DPSHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpshq_tag, &len));
 	
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSP");
-	const char* dpsp_tag = "##FORMAT=<ID=DPSP,Number=2,Type=Integer,Description=\"Size of the region covered by discordant pairs supporting the left and right breakpoints of the SV, respectively.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpsp_tag, &len));
-
 	add_read_support_headers(hdr, 'A', 1, "alternate");
 	add_read_support_headers(hdr, 'A', 2, "alternate");
 
@@ -232,10 +236,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPNM");
-	const char* dpnm_tag = "##FORMAT=<ID=DPNM,Number=2,Type=Float,Description=\"Average NM value of the left and right reads in the discordant pairs supporting this SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpnm_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
     const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
@@ -623,9 +623,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
-		float dpnm[] = {(float) sv->disc_pairs_lf_avg_nm, (float) sv->disc_pairs_rf_avg_nm};
-    	bcf_update_format_float(hdr, bcf_entry, "DPNM", &dpnm, 2);
-
 		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
 		bcf_update_format_int32(hdr, bcf_entry, "CP", conc_pairs, 3);
 
@@ -1019,14 +1016,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "MH_LEN", &data, &len);
 	if (len > 0) {
 		sv->mh_len = data[0];
-	}
-
-	f_data = NULL;
-	len = 0;
-	bcf_get_format_float(hdr, b, "DPNM", &f_data, &len);
-	if (len > 0) {
-		sv->disc_pairs_lf_avg_nm = f_data[0];
-		sv->disc_pairs_rf_avg_nm = f_data[1];
 	}
 
 	data = NULL;

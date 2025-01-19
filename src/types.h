@@ -154,7 +154,6 @@ struct sv_t {
     consensus_t* rc_consensus, * lc_consensus;
     int conc_pairs_lbp = 0, conc_pairs_midp = 0, conc_pairs_rbp = 0;
     int conc_pairs_lbp_high_mapq = 0, conc_pairs_midp_high_mapq = 0, conc_pairs_rbp_high_mapq = 0;
-    double disc_pairs_lf_avg_nm = 0, disc_pairs_rf_avg_nm = 0;
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
     int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
@@ -196,14 +195,15 @@ struct sv_t {
         int pairs = 0, pos_high_mapq = 0, neg_high_mapq = 0;
         int pos_min_mq = INT32_MAX, pos_max_mq = 0, neg_min_mq = INT32_MAX, neg_max_mq = 0;
         double pos_avg_mq = 0, pos_stddev_mq = 0, neg_avg_mq = 0, neg_stddev_mq = 0;
+        
+        int lf_span = 0, rf_span = 0;
+        double pos_avg_nm = 0, pos_stddev_nm = 0, neg_avg_nm = 0, neg_stddev_nm = 0;
     };
 
     struct bp_consensus_info_t {
 
         bp_reads_info_t reads_info;
         bp_pairs_info_t pairs_info;
-
-        int lf_span = 0, rf_span = 0;
 
     };
 
