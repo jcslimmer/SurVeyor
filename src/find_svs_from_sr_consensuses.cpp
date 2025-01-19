@@ -236,8 +236,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				delete bnd;
 				continue;
 			}
-			bnd->disc_pairs_lf_avg_nm = double(ps.dp_cluster->la_cum_nm)/ps.dp_cluster->count;
-			bnd->disc_pairs_rf_avg_nm = double(ps.dp_cluster->ra_cum_nm)/ps.dp_cluster->count;
 			bnd->source = "2SR";
 			svs.push_back(bnd);
 			if (c1_consensus->left_clipped) {
@@ -293,8 +291,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					delete bnd;
 					continue;
 				}
-				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
-				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
 				bnd->imprecise = true;
 				bnds_lf.push_back(bnd);
@@ -325,8 +321,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 					delete bnd;
 					continue;
 				}
-				bnd->disc_pairs_lf_avg_nm = double(c->la_cum_nm)/c->count;
-				bnd->disc_pairs_rf_avg_nm = double(c->ra_cum_nm)/c->count;
 				bnd->source = "DP";
 				bnd->imprecise = true;
 				bnds_rf.push_back(bnd);
@@ -374,8 +368,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				lc_consensus->hq_right_ext_reads = bnd_lf->lc_consensus->hq_right_ext_reads;
 			}
 			inversion_t* inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
-			inv->disc_pairs_lf_avg_nm = (bnd_rf->disc_pairs_lf_avg_nm + bnd_rf->disc_pairs_rf_avg_nm)/2;
-			inv->disc_pairs_rf_avg_nm = (bnd_lf->disc_pairs_lf_avg_nm + bnd_lf->disc_pairs_rf_avg_nm)/2;
 			inv->source = bnd_rf->source + "-" + bnd_lf->source;
 			inv->imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
 			if (inv->svlen() < config.min_sv_size) {

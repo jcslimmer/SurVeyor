@@ -610,14 +610,6 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	if (refined_r_cluster->clip_consensus) insertion->rc_consensus = refined_r_cluster->clip_consensus;
 	if (refined_l_cluster->clip_consensus) insertion->lc_consensus = refined_l_cluster->clip_consensus;
-	for (bam1_t* read : refined_r_cluster->cluster->reads) {
-		insertion->disc_pairs_lf_avg_nm += get_nm(read);
-	}
-	insertion->disc_pairs_lf_avg_nm /= std::max(1, (int) refined_r_cluster->cluster->reads.size());
-	for (bam1_t* read : refined_l_cluster->cluster->reads) {
-		insertion->disc_pairs_rf_avg_nm += get_nm(read);
-	}
-	insertion->disc_pairs_rf_avg_nm /= std::max(1, (int) refined_l_cluster->cluster->reads.size());
 	insertion->imprecise = !left_bp_precise || !right_bp_precise;
 	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
 	insertion->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly

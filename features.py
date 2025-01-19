@@ -42,7 +42,8 @@ class Features:
     dp_features_names = ['ASP1', 'ASP1HQ_1', 'ASP1HQ_2', 'ASP1HQ_1_RATIO', 'ASP1HQ_2_RATIO',
                          'ASP2', 'ASP2HQ_1', 'ASP2HQ_2', 'ASP2HQ_1_RATIO', 'ASP2HQ_2_RATIO',
                          'ASP1_ASP2_RATIO',
-                         'ASP1MQ_1', 'ASP1MQ_2', 'ASP2MQ_1', 'ASP2MQ_2',
+                         'ASP1mQ_1', 'ASP1mQ_2', 'ASP1MQ_1', 'ASP1MQ_2',
+                         'ASP2mQ_1', 'ASP2mQ_2', 'ASP2MQ_1', 'ASP2MQ_2',
                          'DPSP1', 'DPSP2', 'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
 
     def get_feature_names(model_name):
@@ -358,6 +359,8 @@ class Features:
         features['ASP2HQ_2'] = Features.piecewise_normalise(asp2hq_2, min_disc_pairs, max_disc_pairs)
         features['ASP1HQ_1_RATIO'], features['ASP1HQ_2_RATIO'] = asp1hq_1/max(1, asp1), asp1hq_2/max(1, asp1)
         features['ASP2HQ_1_RATIO'], features['ASP2HQ_2_RATIO'] = asp2hq_1/max(1, asp2), asp2hq_2/max(1, asp2)
+        features['ASP1mQ_1'], features['ASP1mQ_2'] = Features.get_number_value(record.samples[0], 'ASP1mQ', [0, 0])
+        features['ASP2mQ_1'], features['ASP2mQ_2'] = Features.get_number_value(record.samples[0], 'ASP2mQ', [0, 0])
         features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [0, 0])
         features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [0, 0])
         features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', [0, 0], read_len)

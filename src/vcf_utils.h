@@ -104,7 +104,11 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 		{
 			"%cSP%dSQ", 2, "Float",
 			"Standard deviation of mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
-		}
+		},
+		{
+			"%cSP%dSPAN", 2, "Integer",
+			"Number of base pairs to the left and right, respectively, of the breakpoint %d in the %s allele covered by reads within its supporting pairs."
+		}		
     };
 
     char tag_id[20];
