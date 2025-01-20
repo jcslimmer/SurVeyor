@@ -213,11 +213,6 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
     
-    int cp[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "CP", cp, 3);
-    int cphq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "CPHQ", cphq, 3);
-
     int ext_reads[] = {sv->sample_info.alt_lext_reads, sv->sample_info.alt_rext_reads};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", ext_reads, 2);
     int hq_ext_reads[] = {sv->sample_info.hq_alt_lext_reads, sv->sample_info.hq_alt_rext_reads};
@@ -1882,7 +1877,7 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
         }
     }
 
-    calculate_ptn_ratio(contig_name, invs, bam_file, config, stats, true);
+    calculate_ptn_ratio(contig_name, invs, bam_file, config, stats);
     depth_filter_inv(contig_name, invs, bam_file, config, stats);
 
     for (inversion_t* inv : invs) {

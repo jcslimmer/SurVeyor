@@ -237,14 +237,6 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 
-    bcf_hdr_remove(hdr, BCF_HL_FMT, "CP");
-    const char* cp_tag = "##FORMAT=<ID=CP,Number=3,Type=Integer,Description=\"Number of concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cp_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "CPHQ");
-	const char* cphq_tag = "##FORMAT=<ID=CPHQ,Number=3,Type=Integer,Description=\"Number of high-quality concordant pairs crossing the left breakpoint, the mid point and the right breakpoint.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, cphq_tag, &len));
-
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
     const char* axr_tag = "##FORMAT=<ID=AXR,Number=2,Type=Integer,Description=\"Number of reads used to extend the alternative allele consensus to the left and the right, respectively.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, axr_tag, &len));
@@ -623,12 +615,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
 		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
-		int conc_pairs[] = {sv->conc_pairs_lbp, sv->conc_pairs_midp, sv->conc_pairs_rbp};
-		bcf_update_format_int32(hdr, bcf_entry, "CP", conc_pairs, 3);
-
-		int conc_pairs_hq[] = {sv->conc_pairs_lbp_high_mapq, sv->conc_pairs_midp_high_mapq, sv->conc_pairs_rbp_high_mapq};
-		bcf_update_format_int32(hdr, bcf_entry, "CPHQ", conc_pairs_hq, 3);
-
 		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 		bcf_update_info_int32(hdr, bcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
@@ -1016,24 +1002,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	bcf_get_info_int32(hdr, b, "MH_LEN", &data, &len);
 	if (len > 0) {
 		sv->mh_len = data[0];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "CP", &data, &len);
-	if (len > 0) {
-		sv->conc_pairs_lbp = data[0];
-		sv->conc_pairs_midp = data[1];
-		sv->conc_pairs_rbp = data[2];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "CPHQ", &data, &len);
-	if (len > 0) {
-		sv->conc_pairs_lbp_high_mapq = data[0];
-		sv->conc_pairs_midp_high_mapq = data[1];
-		sv->conc_pairs_rbp_high_mapq = data[2];
 	}
 
 	f_data = NULL;

@@ -34,7 +34,7 @@ class Features:
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
                             'MDLFHQ', 'MDSPHQ', 'MDSFHQ', 'MDRFHQ', 
                             'MDSP_OVER_MDLF_HQ', 'MDSF_OVER_MDRF_HQ', 'MDLF_OVER_MDSP_HQ', 'MDRF_OVER_MDSF_HQ',
-                            'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ', 'CP1', 'CP2', 'CP3',
+                            'MDLC', 'MDRC', 'MDLCHQ', 'MDRCHQ', 'DPSL', 'DPSR', 'DPSLHQ', 'DPSRHQ',
                             'TD']
 
     stat_test_features_names = ['KS_PVAL', 'SIZE_NORM']
@@ -44,7 +44,10 @@ class Features:
                          'ASP1_ASP2_RATIO',
                          'ASP1mQ_1', 'ASP1mQ_2', 'ASP1MQ_1', 'ASP1MQ_2', 'ASP1SPAN_1', 'ASP1SPAN_2',
                          'ASP2mQ_1', 'ASP2mQ_2', 'ASP2MQ_1', 'ASP2MQ_2', 'ASP2SPAN_1', 'ASP2SPAN_2',
-                         'DPLANM', 'DPRANM', 'PTNR1', 'PTNR2']
+                         'ASP1NMA_1', 'ASP1NMA_2', 'ASP2NMA_1', 'ASP2NMA_2',
+                         'RSP1', 'RSP1HQ_1', 'RSP1HQ_2', 
+                         'RSP2', 'RSP2HQ_1', 'RSP2HQ_2',
+                         'PTNR1', 'PTNR2']
 
     def get_feature_names(model_name):
         return Features.info_features_names + Features.fmt_features_names + \
@@ -334,10 +337,6 @@ class Features:
             max_size = float(record.samples[0]['MAXSIZE'])
             features['SIZE_NORM'] = Features.normalise(svlen/2, min_size, max_size)
 
-        asp1 = Features.get_number_value(record.samples[0], 'ASP1', 0)
-        asp2 = Features.get_number_value(record.samples[0], 'ASP2', 0)
-        asp1hq_1, asp1hq_2 = Features.get_number_value(record.samples[0], 'ASP1HQ', [0, 0])
-        asp2hq_1, asp2hq_2 = Features.get_number_value(record.samples[0], 'ASP2HQ', [0, 0])
         if svtype_str == "DEL":
             min_is_to_become_disc = int(max(0, max_is-svlen))
             min_disc_pairs = stats['min_pairs_crossing_gap'][str(min_is_to_become_disc)]
@@ -350,6 +349,10 @@ class Features:
             min_disc_pairs = min_pairs_crossing_point
             max_disc_pairs = max_pairs_crossing_point
 
+        asp1 = Features.get_number_value(record.samples[0], 'ASP1', 0)
+        asp2 = Features.get_number_value(record.samples[0], 'ASP2', 0)
+        asp1hq_1, asp1hq_2 = Features.get_number_value(record.samples[0], 'ASP1HQ', [0, 0])
+        asp2hq_1, asp2hq_2 = Features.get_number_value(record.samples[0], 'ASP2HQ', [0, 0])
         features['ASP1'] = Features.piecewise_normalise(asp1, min_disc_pairs, max_disc_pairs)
         features['ASP2'] = Features.piecewise_normalise(asp2, min_disc_pairs, max_disc_pairs)
         features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
@@ -363,7 +366,12 @@ class Features:
         features['ASP2mQ_1'], features['ASP2mQ_2'] = Features.get_number_value(record.samples[0], 'ASP2mQ', [0, 0])
         features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [0, 0])
         features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [0, 0])
-        features['DPLANM'], features['DPRANM'] = Features.get_number_value(record.samples[0], 'DPNM', [0, 0], read_len)
+
+        asp1nma_1, asp1nma_2 = Features.get_number_value(record.samples[0], 'ASP1NMA', [0, 0], read_len)
+        features['ASP1NMA_1'], features['ASP1NMA_2'] = asp1nma_1, asp1nma_2
+        asp2nma_1, asp2nma_2 = Features.get_number_value(record.samples[0], 'ASP2NMA', [0, 0], read_len)
+        features['ASP2NMA_1'], features['ASP2NMA_2'] = asp2nma_1, asp2nma_2
+
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
 
@@ -377,9 +385,18 @@ class Features:
             features['ASP1SPAN_2'] = asp1span_2/max_is
             features['ASP2SPAN_1'] = asp2span_1/max_is
 
-        cp = Features.get_number_value(record.samples[0], 'CP', [0, 0, 0])
-        features['CP1'], features['CP2'], features['CP3'] = [Features.piecewise_normalise(c, min_pairs_crossing_point, max_pairs_crossing_point) for c in cp]
-        features['PTNR1'], features['PTNR2'] = asp1/max(1, asp1+cp[0]), asp2/max(1, asp2+cp[2])
+        rsp1 = Features.get_number_value(record.samples[0], 'RSP1', 0)
+        rsp2 = Features.get_number_value(record.samples[0], 'RSP2', 0)
+        rsp1hq_1, rsp1hq_2 = Features.get_number_value(record.samples[0], 'RSP1HQ', [0, 0])
+        rsp2hq_1, rsp2hq_2 = Features.get_number_value(record.samples[0], 'RSP2HQ', [0, 0])
+        features['RSP1'] = Features.piecewise_normalise(rsp1, min_disc_pairs, max_disc_pairs)
+        features['RSP2'] = Features.piecewise_normalise(rsp2, min_disc_pairs, max_disc_pairs)
+        features['RSP1HQ_1']= Features.piecewise_normalise(rsp1hq_1, min_disc_pairs, max_disc_pairs)
+        features['RSP1HQ_2'] = Features.piecewise_normalise(rsp1hq_2, min_disc_pairs, max_disc_pairs)
+        features['RSP2HQ_1'] = Features.piecewise_normalise(rsp2hq_1, min_disc_pairs, max_disc_pairs)
+        features['RSP2HQ_2'] = Features.piecewise_normalise(rsp2hq_2, min_disc_pairs, max_disc_pairs)
+
+        features['PTNR1'], features['PTNR2'] = asp1/max(1, asp1+rsp1), asp2/max(1, asp2+rsp2)
 
         axr1, axr2 = Features.get_number_value(record.samples[0], 'AXR', [0, 0], median_depth*max_is)
         axr1hq, axr2hq = Features.get_number_value(record.samples[0], 'AXRHQ', [0, 0], median_depth*max_is)

@@ -152,8 +152,6 @@ struct sv_t {
 
     anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
     consensus_t* rc_consensus, * lc_consensus;
-    int conc_pairs_lbp = 0, conc_pairs_midp = 0, conc_pairs_rbp = 0;
-    int conc_pairs_lbp_high_mapq = 0, conc_pairs_midp_high_mapq = 0, conc_pairs_rbp_high_mapq = 0;
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
     int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
