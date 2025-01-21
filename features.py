@@ -16,14 +16,15 @@ class Features:
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
-
-    fmt_features_names = [  'AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
+    
+    reads_features_names = ['AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'MAXRRCD',
                             'AR1_RR1_CAQ_Z_SCORE', 'AR2_RR2_CAQ_Z_SCORE', 'AR1_RR1_CAS_Z_SCORE', 'AR2_RR2_CAS_Z_SCORE', 
-                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C',
-                            'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
+                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C']
+
+    fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
                             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
@@ -44,13 +45,16 @@ class Features:
                          'ASP1_ASP2_RATIO',
                          'ASP1mQ_1', 'ASP1mQ_2', 'ASP1MQ_1', 'ASP1MQ_2', 'ASP1SPAN_1', 'ASP1SPAN_2',
                          'ASP2mQ_1', 'ASP2mQ_2', 'ASP2MQ_1', 'ASP2MQ_2', 'ASP2SPAN_1', 'ASP2SPAN_2',
-                         'ASP1NMA_1', 'ASP1NMA_2', 'ASP2NMA_1', 'ASP2NMA_2',
-                         'RSP1', 'RSP1HQ_1', 'RSP1HQ_2', 
-                         'RSP2', 'RSP2HQ_1', 'RSP2HQ_2',
-                         'PTNR1', 'PTNR2']
+                         'RSP1', 'RSP1HQ_1', 'RSP1HQ_2', 'RSP1HQ_1_RATIO', 'RSP1HQ_2_RATIO',
+                         'RSP2', 'RSP2HQ_1', 'RSP2HQ_2', 'RSP2HQ_1_RATIO', 'RSP2HQ_2_RATIO',
+                         'RSP1mQ_1', 'RSP1mQ_2', 'RSP1MQ_1', 'RSP1MQ_2', 
+                         'RSP2mQ_1', 'RSP2mQ_2', 'RSP2MQ_1', 'RSP2MQ_2',
+                         'ASP1_OVER_RSP1', 'ASP2_OVER_RSP2',
+                         'ASP1_RSP1_1_NM_Z_SCORE', 'ASP1_RSP1_2_NM_Z_SCORE', 'ASP2_RSP2_1_NM_Z_SCORE', 'ASP2_RSP2_2_NM_Z_SCORE',
+                         'ASP1_RSP1_1_AQ_Z_SCORE', 'ASP1_RSP1_2_AQ_Z_SCORE', 'ASP2_RSP2_1_AQ_Z_SCORE', 'ASP2_RSP2_2_AQ_Z_SCORE']
 
     def get_feature_names(model_name):
-        return Features.info_features_names + Features.fmt_features_names + \
+        return Features.info_features_names + Features.fmt_features_names + Features.reads_features_names + \
             Features.stat_test_features_names + Features.dp_features_names
 
     def get_model_name(record, max_is, read_len):
@@ -270,11 +274,8 @@ class Features:
         features['RRCR'] = rr1cr + rr2cr
         features['MAXRRCD'] = max(features['RRCF'], features['RRCR'])
         
-        ar1_rr1_caq_z_score = Features.calculate_z_score(ar1caq, ar1csq, ar1c, rr1caq, rr1csq, rr1c)
-        features['AR1_RR1_CAQ_Z_SCORE'] = ar1_rr1_caq_z_score
-
-        ar1_rr1_cas_z_score = Features.calculate_z_score(ar1cas, ar1css, ar1c, rr1cas, rr1css, rr1c)
-        features['AR1_RR1_CAS_Z_SCORE'] = ar1_rr1_cas_z_score
+        features['AR1_RR1_CAQ_Z_SCORE'] = Features.calculate_z_score(ar1caq, ar1csq, ar1c, rr1caq, rr1csq, rr1c)
+        features['AR1_RR1_CAS_Z_SCORE'] = Features.calculate_z_score(ar1cas, ar1css, ar1c, rr1cas, rr1css, rr1c)
 
         if 'AR2' not in record.samples[0]:
             ar2 = ar1
@@ -291,11 +292,8 @@ class Features:
             rr2cas = rr1cas
             rr2css = rr1css
 
-        ar2_rr2_caq_z_score = Features.calculate_z_score(ar2caq, ar2csq, ar2c, rr2caq, rr2csq, rr2c)
-        features['AR2_RR2_CAQ_Z_SCORE'] = ar2_rr2_caq_z_score
-
-        ar2_rr2_cas_z_score = Features.calculate_z_score(ar2cas, ar2css, ar2c, rr2cas, rr2css, rr2c)
-        features['AR2_RR2_CAS_Z_SCORE'] = ar2_rr2_cas_z_score
+        features['AR2_RR2_CAQ_Z_SCORE'] = Features.calculate_z_score(ar2caq, ar2csq, ar2c, rr2caq, rr2csq, rr2c)
+        features['AR2_RR2_CAS_Z_SCORE'] = Features.calculate_z_score(ar2cas, ar2css, ar2c, rr2cas, rr2css, rr2c)
 
         features['AR1_OVER_RR1'] = ar1/max(1, ar1+rr1)
         features['AR1C_OVER_RR1C'] = ar1c/max(1, ar1c+rr1c)
@@ -350,27 +348,32 @@ class Features:
             max_disc_pairs = max_pairs_crossing_point
 
         asp1 = Features.get_number_value(record.samples[0], 'ASP1', 0)
-        asp2 = Features.get_number_value(record.samples[0], 'ASP2', 0)
         asp1hq_1, asp1hq_2 = Features.get_number_value(record.samples[0], 'ASP1HQ', [0, 0])
-        asp2hq_1, asp2hq_2 = Features.get_number_value(record.samples[0], 'ASP2HQ', [0, 0])
+        asp1nma_1, asp1nma_2 = Features.get_number_value(record.samples[0], 'ASP1NMA', [0, 0])
+        asp1nms_1, asp1nms_2 = Features.get_number_value(record.samples[0], 'ASP1NMS', [0, 0])
+        asp1aq_1, asp1aq_2 = Features.get_number_value(record.samples[0], 'ASP1AQ', [0, 0])
+        asp1sq_1, asp1sq_2 = Features.get_number_value(record.samples[0], 'ASP1SQ', [0, 0])
         features['ASP1'] = Features.piecewise_normalise(asp1, min_disc_pairs, max_disc_pairs)
-        features['ASP2'] = Features.piecewise_normalise(asp2, min_disc_pairs, max_disc_pairs)
-        features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
         features['ASP1HQ_1'] = Features.piecewise_normalise(asp1hq_1, min_disc_pairs, max_disc_pairs)
         features['ASP1HQ_2'] = Features.piecewise_normalise(asp1hq_2, min_disc_pairs, max_disc_pairs)
+        features['ASP1HQ_1_RATIO'], features['ASP1HQ_2_RATIO'] = asp1hq_1/max(1, asp1), asp1hq_2/max(1, asp1)
+        features['ASP1mQ_1'], features['ASP1mQ_2'] = Features.get_number_value(record.samples[0], 'ASP1mQ', [0, 0])
+        features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [0, 0])
+        
+        asp2 = Features.get_number_value(record.samples[0], 'ASP2', 0)
+        asp2hq_1, asp2hq_2 = Features.get_number_value(record.samples[0], 'ASP2HQ', [0, 0])
+        asp2nma_1, asp2nma_2 = Features.get_number_value(record.samples[0], 'ASP2NMA', [0, 0])
+        asp2nms_1, asp2nms_2 = Features.get_number_value(record.samples[0], 'ASP2NMS', [0, 0])
+        asp2aq_1, asp2aq_2 = Features.get_number_value(record.samples[0], 'ASP2AQ', [0, 0])
+        asp2sq_1, asp2sq_2 = Features.get_number_value(record.samples[0], 'ASP2SQ', [0, 0])
+        features['ASP2'] = Features.piecewise_normalise(asp2, min_disc_pairs, max_disc_pairs)
         features['ASP2HQ_1'] = Features.piecewise_normalise(asp2hq_1, min_disc_pairs, max_disc_pairs)
         features['ASP2HQ_2'] = Features.piecewise_normalise(asp2hq_2, min_disc_pairs, max_disc_pairs)
-        features['ASP1HQ_1_RATIO'], features['ASP1HQ_2_RATIO'] = asp1hq_1/max(1, asp1), asp1hq_2/max(1, asp1)
         features['ASP2HQ_1_RATIO'], features['ASP2HQ_2_RATIO'] = asp2hq_1/max(1, asp2), asp2hq_2/max(1, asp2)
-        features['ASP1mQ_1'], features['ASP1mQ_2'] = Features.get_number_value(record.samples[0], 'ASP1mQ', [0, 0])
         features['ASP2mQ_1'], features['ASP2mQ_2'] = Features.get_number_value(record.samples[0], 'ASP2mQ', [0, 0])
-        features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [0, 0])
         features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [0, 0])
-
-        asp1nma_1, asp1nma_2 = Features.get_number_value(record.samples[0], 'ASP1NMA', [0, 0], read_len)
-        features['ASP1NMA_1'], features['ASP1NMA_2'] = asp1nma_1, asp1nma_2
-        asp2nma_1, asp2nma_2 = Features.get_number_value(record.samples[0], 'ASP2NMA', [0, 0], read_len)
-        features['ASP2NMA_1'], features['ASP2NMA_2'] = asp2nma_1, asp2nma_2
+        
+        features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
 
         features['DPSL'], features['DPSR'] = Features.get_number_value(record.samples[0], 'DPS', [0, 0], median_depth)
         features['DPSLHQ'], features['DPSRHQ'] = Features.get_number_value(record.samples[0], 'DPSHQ', [0, 0], median_depth)
@@ -386,17 +389,63 @@ class Features:
             features['ASP2SPAN_1'] = asp2span_1/max_is
 
         rsp1 = Features.get_number_value(record.samples[0], 'RSP1', 0)
-        rsp2 = Features.get_number_value(record.samples[0], 'RSP2', 0)
         rsp1hq_1, rsp1hq_2 = Features.get_number_value(record.samples[0], 'RSP1HQ', [0, 0])
-        rsp2hq_1, rsp2hq_2 = Features.get_number_value(record.samples[0], 'RSP2HQ', [0, 0])
+        rsp1nma_1, rsp1nma_2 = Features.get_number_value(record.samples[0], 'RSP1NMA', [0, 0])
+        rsp1nms_1, rsp1nms_2 = Features.get_number_value(record.samples[0], 'RSP1NMS', [0, 0])
+        rsp1aq_1, rsp1aq_2 = Features.get_number_value(record.samples[0], 'RSP1AQ', [0, 0])
+        rsp1sq_1, rsp1sq_2 = Features.get_number_value(record.samples[0], 'RSP1SQ', [0, 0])
         features['RSP1'] = Features.piecewise_normalise(rsp1, min_disc_pairs, max_disc_pairs)
-        features['RSP2'] = Features.piecewise_normalise(rsp2, min_disc_pairs, max_disc_pairs)
         features['RSP1HQ_1']= Features.piecewise_normalise(rsp1hq_1, min_disc_pairs, max_disc_pairs)
         features['RSP1HQ_2'] = Features.piecewise_normalise(rsp1hq_2, min_disc_pairs, max_disc_pairs)
+        features['RSP1HQ_1_RATIO'], features['RSP1HQ_2_RATIO'] = rsp1hq_1/max(1, rsp1), rsp1hq_2/max(1, rsp1)
+        features['RSP1mQ_1'], features['RSP1mQ_2'] = Features.get_number_value(record.samples[0], 'RSP1mQ', [0, 0])
+        features['RSP1MQ_1'], features['RSP1MQ_2'] = Features.get_number_value(record.samples[0], 'RSP1MQ', [0, 0])
+
+        rsp2 = Features.get_number_value(record.samples[0], 'RSP2', 0)
+        rsp2hq_1, rsp2hq_2 = Features.get_number_value(record.samples[0], 'RSP2HQ', [0, 0])
+        rsp2nma_1, rsp2nma_2 = Features.get_number_value(record.samples[0], 'RSP2NMA', [0, 0])
+        rsp2nms_1, rsp2nms_2 = Features.get_number_value(record.samples[0], 'RSP2NMS', [0, 0])
+        rsp2aq_1, rsp2aq_2 = Features.get_number_value(record.samples[0], 'RSP2AQ', [0, 0])
+        rsp2sq_1, rsp2sq_2 = Features.get_number_value(record.samples[0], 'RSP2SQ', [0, 0])
+        features['RSP2'] = Features.piecewise_normalise(rsp2, min_disc_pairs, max_disc_pairs)
         features['RSP2HQ_1'] = Features.piecewise_normalise(rsp2hq_1, min_disc_pairs, max_disc_pairs)
         features['RSP2HQ_2'] = Features.piecewise_normalise(rsp2hq_2, min_disc_pairs, max_disc_pairs)
+        features['RSP2HQ_1_RATIO'], features['RSP2HQ_2_RATIO'] = rsp2hq_1/max(1, rsp2), rsp2hq_2/max(1, rsp2)
+        features['RSP2mQ_1'], features['RSP2mQ_2'] = Features.get_number_value(record.samples[0], 'RSP2mQ', [0, 0])
+        features['RSP2MQ_1'], features['RSP2MQ_2'] = Features.get_number_value(record.samples[0], 'RSP2MQ', [0, 0])
 
-        features['PTNR1'], features['PTNR2'] = asp1/max(1, asp1+rsp1), asp2/max(1, asp2+rsp2)
+        if 'ASP2' not in record.samples[0]:
+            asp2 = asp1
+            asp2nma_1 = asp1nma_1
+            asp2nms_1 = asp1nms_1
+            asp2nma_2 = asp1nma_2
+            asp2nms_2 = asp1nms_2
+            asp2aq_1 = asp1aq_1
+            asp2aq_2 = asp1aq_2
+            asp2sq_1 = asp1sq_1
+            asp2sq_2 = asp1sq_2
+        if 'RSP2' not in record.samples[0]:
+            rsp2 = rsp1
+            rsp2nma_1 = rsp1nma_1
+            rsp2nms_1 = rsp1nms_1
+            rsp2nma_2 = rsp1nma_2
+            rsp2nms_2 = rsp1nms_2
+            rsp2aq_1 = rsp1aq_1
+            rsp2aq_2 = rsp1aq_2
+            rsp2sq_1 = rsp1sq_1
+            rsp2sq_2 = rsp1sq_2
+
+        features['ASP1_OVER_RSP1'], features['ASP2_OVER_RSP2'] = asp1/max(1, asp1+rsp1), asp2/max(1, asp2+rsp2)
+
+        features['ASP1_RSP1_1_NM_Z_SCORE'] = Features.calculate_z_score(asp1nma_1, asp1nms_1, asp1, rsp1nma_1, rsp1nms_1, rsp1)
+        features['ASP1_RSP1_2_NM_Z_SCORE'] = Features.calculate_z_score(asp1nma_2, asp1nms_2, asp1, rsp1nma_2, rsp1nms_2, rsp1)
+        features['ASP2_RSP2_1_NM_Z_SCORE'] = Features.calculate_z_score(asp2nma_1, asp2nms_1, asp2, rsp2nma_1, rsp2nms_1, rsp2)
+        features['ASP2_RSP2_2_NM_Z_SCORE'] = Features.calculate_z_score(asp2nma_2, asp2nms_2, asp2, rsp2nma_2, rsp2nms_2, rsp2)
+
+        features['ASP1_RSP1_1_AQ_Z_SCORE'] = Features.calculate_z_score(asp1aq_1, asp1sq_1, asp1, rsp1aq_1, rsp1sq_1, rsp1)
+        features['ASP1_RSP1_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp1aq_2, asp1sq_2, asp1, rsp1aq_2, rsp1sq_2, rsp1)
+        features['ASP2_RSP2_1_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_1, asp2sq_1, asp2, rsp2aq_1, rsp2sq_1, rsp2)
+        features['ASP2_RSP2_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_2, asp2sq_2, asp2, rsp2aq_2, rsp2sq_2, rsp2)
 
         axr1, axr2 = Features.get_number_value(record.samples[0], 'AXR', [0, 0], median_depth*max_is)
         axr1hq, axr2hq = Features.get_number_value(record.samples[0], 'AXRHQ', [0, 0], median_depth*max_is)
