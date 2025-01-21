@@ -34,6 +34,26 @@ typedef struct {
     const char* desc_format;  // Description format string
 } format_tag_def_t;
 
+void add_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type, const format_tag_def_t formats[], int n_formats) {
+	char tag_id[20];
+    char tag_str[1024];
+    char desc_str[200];
+    int len;
+
+    for (size_t i = 0; i < n_formats; i++) {
+        const format_tag_def_t* fmt = &formats[i];
+
+        snprintf(tag_id, sizeof(tag_id), fmt->suffix, prefix, pos, fmt->suffix);
+        snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
+        snprintf(tag_str, sizeof(tag_str), 
+                "##FORMAT=<ID=%s,Number=%d,Type=%s,Description=\"%s\">",
+                tag_id, fmt->n, fmt->type, desc_str);
+
+        bcf_hdr_remove(hdr, BCF_HL_FMT, tag_id);
+        bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, tag_str, &len));
+    }
+}
+
 void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type) {
     // Array of tag definitions
     const format_tag_def_t formats[] = {
@@ -80,7 +100,14 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 		{
 			"%cR%dCSQ", 1, "Float",
 			"Standard deviation of mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
-		},
+		}
+    };
+
+    add_headers(hdr, prefix, pos, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
+}
+
+void add_pairs_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type) {
+	const format_tag_def_t formats[] = {
 		{
 			"%cSP%d", 1, "Integer",
 			"Number of pairs supporting breakpoint %d in the %s allele."
@@ -117,25 +144,48 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const 
 			"%cSP%dNMS", 2, "Float",
 			"Standard deviation of NM (non-matches) of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
 		}
-    };
+	};
 
-    char tag_id[20];
-    char tag_str[1024];
-    char desc_str[200];
-    int len;
+	add_headers(hdr, prefix, pos, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
+}
 
-    for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
-        const format_tag_def_t* fmt = &formats[i];
+void add_stray_pairs_headers(bcf_hdr_t* hdr, int bp_number) {
+	const format_tag_def_t formats[] = {
+		{
+			"%cSP%d", 1, "Integer",
+			"Number of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dHQ", 1, "Integer",
+			"Number of high-quality pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dmQ", 1, "Integer",
+			"Minimum mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dMQ", 1, "Integer",
+			"Maximum mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dAQ", 1, "Float",
+			"Average mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dSQ", 1, "Float",
+			"Standard deviation of mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dNMA", 1, "Float",
+			"Average NM (non-matches) of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		},
+		{
+			"%cSP%dNMS", 1, "Float",
+			"Standard deviation of NM (non-matches) of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+		}
+	};
 
-        snprintf(tag_id, sizeof(tag_id), fmt->suffix, prefix, pos, fmt->suffix);
-        snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
-        snprintf(tag_str, sizeof(tag_str), 
-                "##FORMAT=<ID=%s,Number=%d,Type=%s,Description=\"%s\">",
-                tag_id, fmt->n, fmt->type, desc_str);
-
-        bcf_hdr_remove(hdr, BCF_HL_FMT, tag_id);
-        bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, tag_str, &len));
-    }
+	add_headers(hdr, 'S', bp_number, "reference", formats, sizeof(formats)/sizeof(formats[0]));
 }
 
 void add_fmt_tags(bcf_hdr_t* hdr) {
@@ -200,20 +250,21 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "CLMDHQ");
 	const char* clmdhq_tag = "##FORMAT=<ID=CLMDHQ,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies. Only high MAPQ reads are considered.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, clmdhq_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPS");
-    const char* dps_tag = "##FORMAT=<ID=DPS,Number=2,Type=Integer,Description=\"Number of discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dps_tag, &len));
-
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "DPSHQ");
-	const char* dpshq_tag = "##FORMAT=<ID=DPSHQ,Number=1,Type=Integer,Description=\"Number of high-quality discordant pairs surrounding but not supporting the left and the right breakpoint of the SV, respectively.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, dpshq_tag, &len));
 	
 	add_read_support_headers(hdr, 'A', 1, "alternate");
+	add_pairs_support_headers(hdr, 'A', 1, "alternate");
+	
 	add_read_support_headers(hdr, 'A', 2, "alternate");
+	add_pairs_support_headers(hdr, 'A', 2, "alternate");
 
 	add_read_support_headers(hdr, 'R', 1, "reference");
+	add_pairs_support_headers(hdr, 'R', 1, "reference");
+
 	add_read_support_headers(hdr, 'R', 2, "reference");
+	add_pairs_support_headers(hdr, 'R', 2, "reference");
+
+	add_stray_pairs_headers(hdr, 1);
+	add_stray_pairs_headers(hdr, 2);
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
@@ -611,9 +662,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 
 		int cluster_depths_highmq[] = {sv->median_left_cluster_cov_highmq, sv->median_right_cluster_cov_highmq};
 		bcf_update_format_int32(hdr, bcf_entry, "CLMDHQ", cluster_depths_highmq, 2);
-
-		int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
-		bcf_update_format_int32(hdr, bcf_entry, "DPS", disc_pairs_surr, 2);
 		
 		base_frequencies_t left_anchor_base_freqs = sv->get_left_anchor_base_freqs(chr_seq);
 		int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
@@ -1059,22 +1107,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->median_left_cluster_cov_highmq = data[0];
 		sv->median_right_cluster_cov_highmq = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "DPS", &data, &len);
-	if (len > 0) {
-		sv->l_cluster_region_disc_pairs = data[0];
-		sv->r_cluster_region_disc_pairs = data[1];
-	}
-
-	data = NULL;
-	len = 0;
-	bcf_get_format_int32(hdr, b, "DPSHQ", &data, &len);
-	if (len > 0) {
-		sv->l_cluster_region_disc_pairs_high_mapq = data[0];
-		sv->r_cluster_region_disc_pairs_high_mapq = data[1];
 	}
 
 	data = NULL;

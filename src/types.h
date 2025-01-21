@@ -158,8 +158,6 @@ struct sv_t {
     int median_left_flanking_cov_highmq = 0, median_indel_left_cov_highmq = 0;
     int median_indel_right_cov_highmq = 0, median_right_flanking_cov_highmq = 0;
     int median_left_cluster_cov_highmq = 0, median_right_cluster_cov_highmq = 0;
-    int l_cluster_region_disc_pairs = 0, r_cluster_region_disc_pairs = 0;
-    int l_cluster_region_disc_pairs_high_mapq = 0, r_cluster_region_disc_pairs_high_mapq = 0;
 
     std::string source;
     bool imprecise = false;
@@ -212,6 +210,7 @@ struct sv_t {
 
         bp_consensus_info_t alt_bp1, alt_bp2;
         bp_consensus_info_t ref_bp1, ref_bp2;
+        bp_pairs_info_t bp1_stray_pairs, bp2_stray_pairs; // pairs that are discordant and yet do not support the SV
 
         int alt_ref_equal_reads = 0;
         int alt_lext_reads = 0, hq_alt_lext_reads = 0, alt_rext_reads = 0, hq_alt_rext_reads = 0;

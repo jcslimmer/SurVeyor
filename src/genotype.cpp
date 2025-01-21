@@ -73,34 +73,37 @@ void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_i
     }
 }
 
+void update_record_bp_pairs_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_pairs_info_t bp_pairs_info, std::string prefix, int bp_number) {
+    if (!bp_pairs_info.computed) return;
+
+    std::string bp_number_str = std::to_string(bp_number);
+    std::string pairs_fmt_prefix = prefix + "SP" + bp_number_str;
+
+    bcf_update_format_int32(out_hdr, b, pairs_fmt_prefix.c_str(), &(bp_pairs_info.pairs), 1);
+
+    if (bp_pairs_info.pairs) {
+        int pairs_hq[] = {bp_pairs_info.pos_high_mapq, bp_pairs_info.neg_high_mapq};
+        bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "HQ").c_str(), pairs_hq, 2);
+        int pairs_min_mq[] = {bp_pairs_info.pos_min_mq, bp_pairs_info.neg_min_mq};
+        bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "mQ").c_str(), pairs_min_mq, 2);
+        int pairs_max_mq[] = {bp_pairs_info.pos_max_mq, bp_pairs_info.neg_max_mq};
+        bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "MQ").c_str(), pairs_max_mq, 2);
+        float pairs_avg_mq[] = {(float) bp_pairs_info.pos_avg_mq, (float) bp_pairs_info.neg_avg_mq};
+        bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "AQ").c_str(), pairs_avg_mq, 2);
+        float pairs_stddev_mq[] = {(float) bp_pairs_info.pos_stddev_mq, (float) bp_pairs_info.neg_stddev_mq};
+        bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "SQ").c_str(), pairs_stddev_mq, 2);
+        int pairs_span[] = {bp_pairs_info.lf_span, bp_pairs_info.rf_span};
+        bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "SPAN").c_str(), pairs_span, 2);
+        float pairs_avg_nm[] = {(float) bp_pairs_info.pos_avg_nm, (float) bp_pairs_info.neg_avg_nm};
+        bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "NMA").c_str(), pairs_avg_nm, 2);
+        float pairs_stddev_nm[] = {(float) bp_pairs_info.pos_stddev_nm, (float) bp_pairs_info.neg_stddev_nm};
+        bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "NMS").c_str(), pairs_stddev_nm, 2);
+    }
+}
+
 void update_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_consensus_info_t bp_consensus_info, std::string prefix, int bp_number) {
     update_record_bp_reads_info(out_hdr, b, bp_consensus_info.reads_info, prefix, bp_number);
-
-    if (!bp_consensus_info.pairs_info.computed) return;
-    
-    std::string bp_number_str = std::to_string(bp_number);
-    std::string supp_pairs_fmt_prefix = prefix + "SP" + bp_number_str;
-
-    bcf_update_format_int32(out_hdr, b, supp_pairs_fmt_prefix.c_str(), &(bp_consensus_info.pairs_info.pairs), 1);
-
-    if (bp_consensus_info.pairs_info.pairs) {
-        int supp_pairs_hq[] = {bp_consensus_info.pairs_info.pos_high_mapq, bp_consensus_info.pairs_info.neg_high_mapq};
-        bcf_update_format_int32(out_hdr, b, (supp_pairs_fmt_prefix + "HQ").c_str(), supp_pairs_hq, 2);
-        int supp_pairs_min_mq[] = {bp_consensus_info.pairs_info.pos_min_mq, bp_consensus_info.pairs_info.neg_min_mq};
-        bcf_update_format_int32(out_hdr, b, (supp_pairs_fmt_prefix + "mQ").c_str(), supp_pairs_min_mq, 2);
-        int supp_pairs_max_mq[] = {bp_consensus_info.pairs_info.pos_max_mq, bp_consensus_info.pairs_info.neg_max_mq};
-        bcf_update_format_int32(out_hdr, b, (supp_pairs_fmt_prefix + "MQ").c_str(), supp_pairs_max_mq, 2);
-        float supp_pairs_avg_mq[] = {(float) bp_consensus_info.pairs_info.pos_avg_mq, (float) bp_consensus_info.pairs_info.neg_avg_mq};
-        bcf_update_format_float(out_hdr, b, (supp_pairs_fmt_prefix + "AQ").c_str(), supp_pairs_avg_mq, 2);
-        float supp_pairs_stddev_mq[] = {(float) bp_consensus_info.pairs_info.pos_stddev_mq, (float) bp_consensus_info.pairs_info.neg_stddev_mq};
-        bcf_update_format_float(out_hdr, b, (supp_pairs_fmt_prefix + "SQ").c_str(), supp_pairs_stddev_mq, 2);
-        int supp_pairs_span[] = {bp_consensus_info.pairs_info.lf_span, bp_consensus_info.pairs_info.rf_span};
-        bcf_update_format_int32(out_hdr, b, (supp_pairs_fmt_prefix + "SPAN").c_str(), supp_pairs_span, 2);
-        float supp_pairs_avg_nm[] = {(float) bp_consensus_info.pairs_info.pos_avg_nm, (float) bp_consensus_info.pairs_info.neg_avg_nm};
-        bcf_update_format_float(out_hdr, b, (supp_pairs_fmt_prefix + "NMA").c_str(), supp_pairs_avg_nm, 2);
-        float supp_pairs_stddev_nm[] = {(float) bp_consensus_info.pairs_info.pos_stddev_nm, (float) bp_consensus_info.pairs_info.neg_stddev_nm};
-        bcf_update_format_float(out_hdr, b, (supp_pairs_fmt_prefix + "NMS").c_str(), supp_pairs_stddev_nm, 2);
-    }
+    update_record_bp_pairs_info(out_hdr, b, bp_consensus_info.pairs_info, prefix, bp_number);
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, hts_pos_t chr_len, int sample_idx) {
@@ -169,6 +172,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "A", 2);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp1, "R", 1);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp2, "R", 2);
+    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp1_stray_pairs, "S", 1);
+    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp2_stray_pairs, "S", 2);
 
     int er = sv->sample_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
@@ -207,12 +212,6 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_float(out_hdr, sv->vcf_entry, "KSPVAL", NULL, 0);
     }
 
-    int disc_pairs_surr[] = {sv->l_cluster_region_disc_pairs, sv->r_cluster_region_disc_pairs};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPS", disc_pairs_surr, 2);
-    
-    int disc_pairs_surr_hq[] = {sv->l_cluster_region_disc_pairs_high_mapq, sv->r_cluster_region_disc_pairs_high_mapq};
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "DPSHQ", disc_pairs_surr_hq, 2);
-    
     int ext_reads[] = {sv->sample_info.alt_lext_reads, sv->sample_info.alt_rext_reads};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", ext_reads, 2);
     int hq_ext_reads[] = {sv->sample_info.hq_alt_lext_reads, sv->sample_info.hq_alt_rext_reads};
@@ -286,10 +285,6 @@ void reset_stats(sv_t* sv) {
     sv->median_right_flanking_cov_highmq = 0;
     sv->median_left_cluster_cov = 0;
     sv->median_right_cluster_cov = 0;
-    sv->l_cluster_region_disc_pairs = 0;
-    sv->r_cluster_region_disc_pairs = 0;
-    sv->l_cluster_region_disc_pairs_high_mapq = 0;
-    sv->r_cluster_region_disc_pairs_high_mapq = 0;
 }
 
 std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score, double& stddev_score) {
@@ -683,7 +678,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt";
     calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, true, mates_nms_file);
-    calculate_cluster_region_disc(contig_name, dels, bam_file, config);
+    count_stray_pairs(contig_name, dels, bam_file, config, stats);
 }
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
@@ -1120,7 +1115,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
     calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, true, mates_nms_file);
-    calculate_cluster_region_disc(contig_name, dups, bam_file, config, stats);
+    count_stray_pairs(contig_name, dups, bam_file, config, stats);
 }
 
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
