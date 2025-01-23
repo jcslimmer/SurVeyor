@@ -33,15 +33,6 @@ bool is_clipped(StripedSmithWaterman::Alignment& aln, int min_clip_len = 1) {
 	return is_left_clipped(aln, min_clip_len) || is_right_clipped(aln, min_clip_len);
 }
 
-int get_nm(StripedSmithWaterman::Alignment& aln) {
-	int nm = aln.mismatches;
-	for (uint32_t c : aln.cigar) {
-		char op = cigar_int_to_op(c);
-		if (op == 'I' || op == 'D') nm += cigar_int_to_len(c);
-	}
-	return nm - aln.mismatches;
-}
-
 size_t gcd(size_t a, size_t b) {
     return (b == 0) ? a : gcd(b, a % b);
 }

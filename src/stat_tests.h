@@ -633,7 +633,7 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 supp_pairs_neg_mqs[i].push_back(get_mq(read));
 
                 supp_pairs_pos_nms[i].push_back(get_nm(read));
-				supp_pairs_neg_nms[i].push_back(get_nm(aln));
+				supp_pairs_neg_nms[i].push_back(aln.mismatches);
             } else {
 				stray_pairs_pos_mqs[i].push_back(read->core.qual);
 				stray_pairs_neg_mqs[i].push_back(get_mq(read));
@@ -716,14 +716,14 @@ void find_discordant_pairs(std::string contig_name, std::vector<insertion_t*>& i
                 supp_pairs_pos_mqs[i].push_back(get_mq(read));
                 supp_pairs_neg_mqs[i].push_back((int) read->core.qual);
 
-				supp_pairs_pos_nms[i].push_back(get_nm(aln));
+				supp_pairs_pos_nms[i].push_back(aln.mismatches);
 				supp_pairs_neg_nms[i].push_back(get_nm(read));
             } else {
 				stray_pairs_pos_mqs[i].push_back(get_mq(read));
 				stray_pairs_neg_mqs[i].push_back((int) read->core.qual);
 
 				stray_pairs_pos_nms[i].push_back(0);
-				stray_pairs_neg_nms[i].push_back(get_nm(aln));
+				stray_pairs_neg_nms[i].push_back(aln.mismatches);
             }
         }
     }
