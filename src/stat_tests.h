@@ -355,7 +355,7 @@ void count_stray_pairs(std::string contig_name, std::vector<duplication_t*>& dup
 	}
 
 	std::sort(duplications.begin(), duplications.end(), [](const duplication_t* d1, const duplication_t* d2) {
-		return d1->start < d2->start;
+		return d1->end < d2->end;
 	});
 
 	pos_mqs = std::vector<std::vector<int> >(duplications.size());
