@@ -2052,7 +2052,8 @@ int main(int argc, char* argv[]) {
                 inv->median_left_cluster_cov > stats.get_max_depth(inv->chr) || inv->median_right_cluster_cov > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
-            if (inv->rc_reads() > stats.get_max_depth(inv->chr) || inv->lc_reads() > stats.get_max_depth(inv->chr)) {
+            if (inv->sample_info.alt_bp1.reads_info.consistent_reads() > stats.get_max_depth(inv->chr) 
+             || inv->sample_info.alt_bp2.reads_info.consistent_reads() > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
             }
             if (inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq

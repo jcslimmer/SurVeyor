@@ -397,13 +397,13 @@ std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std
 
 		hts_pos_t start = current_pos-1, end = (op == 'D') ? current_pos+op_length-1 : current_pos;
 		std::string ins_seq = (op == 'I') ? junction_seq.substr(junction_pos, op_length) : "";
-		sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
-		sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score, aln.sw_score_next_best, aln.cigar_string);
+		sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score);
+		sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score);
 		if (op == 'D') {
-			sv_t* sv = new deletion_t(contig_name, start, end, "", NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, NULL);
+			sv_t* sv = new deletion_t(contig_name, start, end, "", NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else if (op == 'I') {
-			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, NULL);
+			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		}
 
@@ -497,15 +497,14 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 		in the POS field), unless the event occurs at position 1 on the contig in which case it must include the base after 
 		the event"
 		However, I am not sure what the base "after the event" is in the case of a duplication. I will report 1 in the VCF (meaning 0 here) for now */
-	sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, left_part_aln.cigar_string);
-	sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, right_part_aln.cigar_string);
+	sv_t::anchor_aln_t* left_part_anchor_aln = new sv_t::anchor_aln_t(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score);
+	sv_t::anchor_aln_t* right_part_anchor_aln = new sv_t::anchor_aln_t(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score);
 
 	StripedSmithWaterman::Filter filter;
 	StripedSmithWaterman::Alignment full_aln_lh, full_aln_rh;
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_lh_start, ref_remap_lh_len, filter, &full_aln_lh, 0);
 	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_rh_start, ref_remap_rh_len, filter, &full_aln_rh, 0);
 	StripedSmithWaterman::Alignment& best_full_aln = full_aln_lh.sw_score >= full_aln_rh.sw_score ? full_aln_lh : full_aln_rh;
-	sv_t::anchor_aln_t* full_junction_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+best_full_aln.ref_begin, ref_remap_lh_start+best_full_aln.ref_end, junction_seq.length(), best_full_aln.sw_score, best_full_aln.sw_score_next_best, best_full_aln.cigar_string);
 
 	int prefix_mh_len = 0;
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
@@ -517,7 +516,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 			if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
 				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
 				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
-				duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+				duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
 				sv->precompute_base_frequencies(contig_seq);
 				return std::vector<sv_t*>({sv});
 			}
@@ -547,11 +546,11 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 
     std::vector<sv_t*> svs;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-		sv_t* sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+		sv_t* sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
 		sv->precompute_base_frequencies(contig_seq);
         svs.push_back(sv);
     } else { // length of ALT > REF, insertion
-		sv_t* sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln, full_junction_aln);
+		sv_t* sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
 		sv->precompute_base_frequencies(contig_seq);
         svs.push_back(sv);
     }
@@ -729,8 +728,8 @@ breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t cont
 		std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(contig_seq, ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, (char*) right_part.c_str(), aligner);
 		StripedSmithWaterman::Alignment left_part_aln = left_part_alns[left_part_alns.size()-1], right_part_aln = right_part_alns[0];
 
-		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, "");
-		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, "");
+		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score);
+		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score);
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_end, end = ref_remap_rh_start + right_part_aln.ref_end;
 		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '-');
@@ -780,8 +779,8 @@ breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t cont
 		std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(contig_seq, ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, (char*) right_part.c_str(), aligner);
 		StripedSmithWaterman::Alignment left_part_aln = left_part_alns[left_part_alns.size()-1], right_part_aln = right_part_alns[0];
 
-		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score, left_part_aln.sw_score_next_best, "");
-		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score, right_part_aln.sw_score_next_best, "");
+		sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(ref_remap_lh_start+left_part_aln.ref_begin, ref_remap_lh_start+left_part_aln.ref_end, left_part.length(), left_part_aln.sw_score);
+		sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score);
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_begin-1, end = ref_remap_rh_start + right_part_aln.ref_begin-1;
 		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '+');

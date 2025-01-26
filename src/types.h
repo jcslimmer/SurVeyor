@@ -131,11 +131,10 @@ struct sv_t {
     struct anchor_aln_t {
         hts_pos_t start, end;
         int seq_len;
-        int best_score, next_best_score;
-        std::string cigar;
+        int best_score;
 
-        anchor_aln_t(hts_pos_t start, hts_pos_t end, int seq_len, int best_score, int next_best_score, std::string cigar) : 
-            start(start), end(end), seq_len(seq_len), best_score(best_score), next_best_score(next_best_score), cigar(cigar) {}
+        anchor_aln_t(hts_pos_t start, hts_pos_t end, int seq_len, int best_score) : 
+            start(start), end(end), seq_len(seq_len), best_score(best_score) {}
 
         std::string to_string() {
             std::stringstream ss;
@@ -150,7 +149,7 @@ struct sv_t {
     std::string ins_seq, inferred_ins_seq;
     int mh_len = 0;
 
-    anchor_aln_t* left_anchor_aln,* right_anchor_aln,* full_junction_aln;
+    anchor_aln_t* left_anchor_aln,* right_anchor_aln;
     consensus_t* rc_consensus, * lc_consensus;
 
     int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
@@ -242,13 +241,10 @@ struct sv_t {
     bcf1_t* vcf_entry = NULL;
 
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
-        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, anchor_aln_t* full_junction_aln) : 
+        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
-        left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln), full_junction_aln(full_junction_aln) {
+        left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln) {
     }
-
-    int rc_reads() { return rc_consensus ? rc_consensus->fwd_reads + rc_consensus->rev_reads : 0; }
-    int lc_reads() { return lc_consensus ? lc_consensus->fwd_reads + lc_consensus->rev_reads : 0; }
 
     int rc_fwd_reads() { return rc_consensus ? rc_consensus->fwd_reads : 0; }
     int rc_rev_reads() { return rc_consensus ? rc_consensus->rev_reads : 0; }
@@ -281,10 +277,6 @@ struct sv_t {
     std::string right_anchor_aln_string() {
         if (right_anchor_aln == NULL) return "NA";
         return std::to_string(right_anchor_aln->start+1) + "-" + std::to_string(right_anchor_aln->end+1);
-    }
-    std::string full_junction_aln_string() {
-        if (full_junction_aln == NULL) return "NA";
-        return std::to_string(full_junction_aln->start+1) + "-" + std::to_string(full_junction_aln->end+1);
     }
 
     bool incomplete_ins_seq() { return ins_seq.find("-") != std::string::npos; }
@@ -413,7 +405,7 @@ struct breakend_t : sv_t {
     
     breakend_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
         anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, char direction) :
-    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, NULL), direction(direction) {}
+    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln), direction(direction) {}
 
     std::string svtype() { return "BND"; }
     hts_pos_t svlen() { return 0; }
@@ -426,7 +418,7 @@ struct inversion_t : sv_t {
     inversion_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus,
         anchor_aln_t* lbp_left_anchor_aln, anchor_aln_t* lbp_right_anchor_aln, 
         anchor_aln_t* rbp_left_anchor_aln, anchor_aln_t* rbp_right_anchor_aln) :
-    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, NULL),
+    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln),
     rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {}
 
     std::string svtype() { return "INV"; }
