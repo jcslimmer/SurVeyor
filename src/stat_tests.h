@@ -71,12 +71,12 @@ void depth_filter_indel(std::string contig_name, std::vector<sv_t*>& svs, open_s
 
     std::vector<region_w_median_t> regions_of_interest;
     for (sv_t* sv : svs) {
-    	regions_of_interest.emplace_back(std::max(hts_pos_t(0), sv->start - FLANKING_SIZE), sv->start, &(sv->median_left_flanking_cov), &(sv->median_left_flanking_cov_highmq));
-    	regions_of_interest.emplace_back(sv->start, std::min(sv->start + INDEL_TESTED_REGION_SIZE, sv->end), &(sv->median_indel_left_cov), &(sv->median_indel_left_cov_highmq));
-    	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->median_indel_right_cov), &(sv->median_indel_right_cov_highmq));
-    	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->median_right_flanking_cov), &(sv->median_right_flanking_cov_highmq));
-		regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->left_anchor_aln->end, &(sv->median_left_cluster_cov), &(sv->median_left_cluster_cov_highmq));
-		regions_of_interest.emplace_back(sv->right_anchor_aln->start, sv->right_anchor_aln->end, &(sv->median_right_cluster_cov), &(sv->median_right_cluster_cov_highmq));
+    	regions_of_interest.emplace_back(std::max(hts_pos_t(0), sv->start - FLANKING_SIZE), sv->start, &(sv->sample_info.left_flanking_cov), &(sv->sample_info.left_flanking_cov_highmq));
+    	regions_of_interest.emplace_back(sv->start, std::min(sv->start + INDEL_TESTED_REGION_SIZE, sv->end), &(sv->sample_info.indel_left_cov), &(sv->sample_info.indel_left_cov_highmq));
+    	regions_of_interest.emplace_back(std::max(sv->end - INDEL_TESTED_REGION_SIZE, sv->start), sv->end, &(sv->sample_info.indel_right_cov), &(sv->sample_info.indel_right_cov_highmq));
+    	regions_of_interest.emplace_back(sv->end, sv->end + FLANKING_SIZE, &(sv->sample_info.right_flanking_cov), &(sv->sample_info.right_flanking_cov_highmq));
+		regions_of_interest.emplace_back(sv->left_anchor_aln->start, sv->left_anchor_aln->end, &(sv->sample_info.left_anchor_cov), &(sv->sample_info.left_anchor_cov_highmq));
+		regions_of_interest.emplace_back(sv->right_anchor_aln->start, sv->right_anchor_aln->end, &(sv->sample_info.right_anchor_cov), &(sv->sample_info.right_anchor_cov_highmq));
 	}
     std::sort(regions_of_interest.begin(), regions_of_interest.end(), [](region_w_median_t& r1, region_w_median_t& r2) {return r1.start < r2.start;});
 
@@ -539,7 +539,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				}
 
 				// depth supports hom alt or het
-				if (sv->median_left_flanking_cov*0.25 < del_cov || sv->median_right_flanking_cov*0.25 < del_cov) {
+				if (sv->sample_info.left_flanking_cov*0.25 < del_cov || sv->sample_info.right_flanking_cov*0.25 < del_cov) {
 					het_evidence++;
 				} else {
 					homalt_evidence++;

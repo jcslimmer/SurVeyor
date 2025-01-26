@@ -152,12 +152,6 @@ struct sv_t {
     anchor_aln_t* left_anchor_aln,* right_anchor_aln;
     consensus_t* rc_consensus, * lc_consensus;
 
-    int median_left_flanking_cov = 0, median_indel_left_cov = 0, median_indel_right_cov = 0, median_right_flanking_cov = 0;
-    int median_left_cluster_cov = 0, median_right_cluster_cov = 0;
-    int median_left_flanking_cov_highmq = 0, median_indel_left_cov_highmq = 0;
-    int median_indel_right_cov_highmq = 0, median_right_flanking_cov_highmq = 0;
-    int median_left_cluster_cov_highmq = 0, median_right_cluster_cov_highmq = 0;
-
     std::string source;
     bool imprecise = false;
 
@@ -224,6 +218,12 @@ struct sv_t {
         int alt_consensus2_split_score1_ind_aln = 0, alt_consensus2_split_score2_ind_aln = 0;
         int ins_seq_prefix_cov = 0, ins_seq_suffix_cov = 0;
         bool too_deep = false;
+
+        int left_flanking_cov = 0, indel_left_cov = 0, indel_right_cov = 0, right_flanking_cov = 0;
+        int left_anchor_cov = 0, right_anchor_cov = 0;
+        int left_flanking_cov_highmq = 0, indel_left_cov_highmq = 0;
+        int indel_right_cov_highmq = 0, right_flanking_cov_highmq = 0;
+        int left_anchor_cov_highmq = 0, right_anchor_cov_highmq = 0;
 
         std::vector<std::string> filters;
 

@@ -183,16 +183,16 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);
     }
 
-    int median_depths[] = {sv->median_left_flanking_cov, sv->median_indel_left_cov, sv->median_indel_right_cov, sv->median_right_flanking_cov};
+    int median_depths[] = {sv->sample_info.left_flanking_cov, sv->sample_info.indel_left_cov, sv->sample_info.indel_right_cov, sv->sample_info.right_flanking_cov};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MD", median_depths, 4);
 
-    int median_depths_highmq[] = {sv->median_left_flanking_cov_highmq, sv->median_indel_left_cov_highmq, sv->median_indel_right_cov_highmq, sv->median_right_flanking_cov_highmq};
+    int median_depths_highmq[] = {sv->sample_info.left_flanking_cov_highmq, sv->sample_info.indel_left_cov_highmq, sv->sample_info.indel_right_cov_highmq, sv->sample_info.right_flanking_cov_highmq};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MDHQ", median_depths_highmq, 4);
 
-    int cluster_depths[] = {sv->median_left_cluster_cov, sv->median_right_cluster_cov};
+    int cluster_depths[] = {sv->sample_info.left_anchor_cov, sv->sample_info.right_anchor_cov};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "CLMD", cluster_depths, 2);
 
-    int cluster_depths_highmq[] = {sv->median_left_cluster_cov_highmq, sv->median_right_cluster_cov_highmq};
+    int cluster_depths_highmq[] = {sv->sample_info.left_anchor_cov_highmq, sv->sample_info.right_anchor_cov_highmq};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "CLMDHQ", cluster_depths_highmq, 2);
 
     if (sv->min_conf_size != deletion_t::SIZE_NOT_COMPUTED) {
@@ -272,19 +272,6 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
 
     bp_reads_info.consistent_avg_mq = sum_mq/consistent_reads.size();
     bp_reads_info.consistent_stddev_mq = stddev(mqs);
-}
-
-void reset_stats(sv_t* sv) {
-    sv->median_left_flanking_cov = 0;
-    sv->median_indel_left_cov = 0;
-    sv->median_indel_right_cov = 0;
-    sv->median_right_flanking_cov = 0;
-    sv->median_left_flanking_cov_highmq = 0;
-    sv->median_indel_left_cov_highmq = 0;
-    sv->median_indel_right_cov_highmq = 0;
-    sv->median_right_flanking_cov_highmq = 0;
-    sv->median_left_cluster_cov = 0;
-    sv->median_right_cluster_cov = 0;
 }
 
 std::vector<bam1_t*> find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score, double& stddev_score) {
@@ -1957,7 +1944,6 @@ int main(int argc, char* argv[]) {
         }
 
         sv->vcf_entry = bcf_dup(vcf_record);
-        reset_stats(sv);
         if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back((deletion_t*) sv);
         } else if (sv->svtype() == "DUP") {
@@ -2047,9 +2033,9 @@ int main(int argc, char* argv[]) {
         std::string contig_name = seqnames[i];
         for (inversion_t* inv : invs_by_chr[contig_name]) {
             std::vector<std::string> filters;
-            if (inv->median_left_flanking_cov > stats.get_max_depth(inv->chr) || inv->median_right_flanking_cov > stats.get_max_depth(inv->chr) ||
-                inv->median_left_flanking_cov < stats.get_min_depth(inv->chr) || inv->median_right_flanking_cov < stats.get_min_depth(inv->chr) ||
-                inv->median_left_cluster_cov > stats.get_max_depth(inv->chr) || inv->median_right_cluster_cov > stats.get_max_depth(inv->chr)) {
+            if (inv->sample_info.left_flanking_cov > stats.get_max_depth(inv->chr) || inv->sample_info.right_flanking_cov > stats.get_max_depth(inv->chr) ||
+                inv->sample_info.left_flanking_cov < stats.get_min_depth(inv->chr) || inv->sample_info.right_flanking_cov < stats.get_min_depth(inv->chr) ||
+                inv->sample_info.left_anchor_cov > stats.get_max_depth(inv->chr) || inv->sample_info.right_anchor_cov > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_FLANKING_DEPTH");
             }
             if (inv->sample_info.alt_bp1.reads_info.consistent_reads() > stats.get_max_depth(inv->chr) 
