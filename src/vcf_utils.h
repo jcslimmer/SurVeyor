@@ -421,9 +421,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
-	const char* splitj_maprange_tag = "##INFO=<ID=SPLIT_JUNCTION_MAPPING_RANGE,Number=1,Type=String,Description=\"Original mapping locations of the prefix and suffix of the junction sequence to the reference.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, splitj_maprange_tag, &len));
-
 	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
 
@@ -547,13 +544,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
 	}
-
-	std::string split_junction_mapping_range = sv->left_anchor_aln_string() + "," + sv->right_anchor_aln_string();
-	if (sv->svtype() == "INV") {
-		inversion_t* inv = (inversion_t*) sv;
-		split_junction_mapping_range += "," + inv->rbp_left_anchor_aln->to_string() + "," + inv->rbp_right_anchor_aln->to_string();
-	}
-	bcf_update_info_string(hdr, bcf_entry, "SPLIT_JUNCTION_MAPPING_RANGE", split_junction_mapping_range.c_str());
 
 	if (!for_gt) {
 		if (sv->rc_consensus && sv->rc_consensus->remap_boundary != consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
@@ -701,48 +691,29 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		lc_consensus = new consensus_t(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
 
-	std::string svtype = get_sv_type(hdr, b);
-
-	char* s_data = NULL;
-	len = 0;
-	bcf_get_info_string(hdr, b, "SPLIT_JUNCTION_MAPPING_RANGE", (void**) &s_data, &len);
-
-	std::vector<std::string> split_junction_mapping_ranges;
-	std::string mapping_range_str;
-	if (s_data != NULL) {
-		mapping_range_str = s_data;
-		std::string mapping_range;
-		std::istringstream tokenStream(mapping_range_str);
-		while (std::getline(tokenStream, mapping_range, ',')) {
-			split_junction_mapping_ranges.push_back(mapping_range);
-		}
-	}
-
 	data = NULL;
 	len = 0;
 	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
 
 	// if the SV does not have a SPLIT_JUNCTION_MAPPING_RANGE, set one using a 150 bp window around the SV
-	hts_pos_t left_split_mapping_start, left_split_mapping_end, right_split_mapping_start, right_split_mapping_end;
-	if (split_junction_mapping_ranges.empty()) {
-		if (svtype == "DUP") {
-			left_split_mapping_start = b->pos, left_split_mapping_end = b->pos + 150;
-			right_split_mapping_start = std::max(0, get_sv_end(hdr, b) - 150), right_split_mapping_end = get_sv_end(hdr, b);
-		} else {
-			left_split_mapping_start = std::max(hts_pos_t(0), b->pos - 150), left_split_mapping_end = b->pos;
-			right_split_mapping_start = get_sv_end(hdr, b), right_split_mapping_end = get_sv_end(hdr, b) + 150;
-		}
+	std::string svtype = get_sv_type(hdr, b);
+	hts_pos_t start = b->pos, end = get_sv_end(hdr, b);
+	hts_pos_t left_anchor_mapping_start, left_anchor_mapping_end, right_anchor_mapping_start, right_anchor_mapping_end;
+	if (svtype == "DUP") {
+		left_anchor_mapping_start = start, left_anchor_mapping_end = start + 150;
+		right_anchor_mapping_start = end - 150, right_anchor_mapping_end = end;
+	} else if (svtype == "INV") {
+		left_anchor_mapping_start = start - 150, left_anchor_mapping_end = start;
+		right_anchor_mapping_start = start, right_anchor_mapping_end = start + 150;
 	} else {
-		left_split_mapping_start = std::stoi(split_junction_mapping_ranges[0].substr(0, split_junction_mapping_ranges[0].find("-")))-1;
-		left_split_mapping_end = std::stoi(split_junction_mapping_ranges[0].substr(split_junction_mapping_ranges[0].find("-")+1))-1;
-		right_split_mapping_start = std::stoi(split_junction_mapping_ranges[1].substr(0, split_junction_mapping_ranges[1].find("-")))-1;
-		right_split_mapping_end = std::stoi(split_junction_mapping_ranges[1].substr(split_junction_mapping_ranges[1].find("-")+1))-1;
+		left_anchor_mapping_start = start - 150, left_anchor_mapping_end = start;
+		right_anchor_mapping_start = end, right_anchor_mapping_end = end + 150;
 	}
-	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(left_split_mapping_start, left_split_mapping_end, 0, 0);
-	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(right_split_mapping_start, right_split_mapping_end, 0, 0);
+
+	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), left_anchor_mapping_start), left_anchor_mapping_end, 0, 0);
+	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), right_anchor_mapping_start), right_anchor_mapping_end, 0, 0);
 
 	sv_t* sv;
-	hts_pos_t end = get_sv_end(hdr, b);
 	if (svtype == "DEL") {
 		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "DUP") {
@@ -752,18 +723,10 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	} else if (svtype == "INV") {
 		sv_t::anchor_aln_t* lbp_left_anchor_aln = left_anchor_aln, *lbp_right_anchor_aln = right_anchor_aln;
 		hts_pos_t rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_right_split_mapping_start, rbp_right_split_mapping_end;
-		if (split_junction_mapping_ranges.size() > 2){
-			rbp_left_split_mapping_start = std::stoi(split_junction_mapping_ranges[2].substr(0, split_junction_mapping_ranges[2].find("-")))-1;
-			rbp_left_split_mapping_end = std::stoi(split_junction_mapping_ranges[2].substr(split_junction_mapping_ranges[2].find("-")+1))-1;
-			rbp_right_split_mapping_start = std::stoi(split_junction_mapping_ranges[3].substr(0, split_junction_mapping_ranges[3].find("-")))-1;
-			rbp_right_split_mapping_end = std::stoi(split_junction_mapping_ranges[3].substr(split_junction_mapping_ranges[3].find("-")+1))-1;
-		} else {
-			left_split_mapping_end = b->pos, right_split_mapping_start = b->pos, right_split_mapping_end = b->pos + 150;
-			rbp_left_split_mapping_start = std::max(hts_pos_t(0), end - 150), rbp_left_split_mapping_end = end;
-			rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
-		}
-		sv_t::anchor_aln_t* rbp_left_anchor_aln = new sv_t::anchor_aln_t(rbp_left_split_mapping_start, rbp_left_split_mapping_end, 0, 0);
-		sv_t::anchor_aln_t* rbp_right_anchor_aln = new sv_t::anchor_aln_t(rbp_right_split_mapping_start, rbp_right_split_mapping_end, 0, 0);
+		rbp_left_split_mapping_start = end - 150, rbp_left_split_mapping_end = end;
+		rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
+		sv_t::anchor_aln_t* rbp_left_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
+		sv_t::anchor_aln_t* rbp_right_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
 		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];
@@ -782,7 +745,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	}
 	sv->imprecise = (imprecise == 1);
 
-	s_data = NULL;
+	char* s_data = NULL;
 	len = 0;
 	int res = bcf_get_info_string(hdr, b, "SVINSSEQ_INFERRED", (void**) &s_data, &len);
 	if (len > 0) {
