@@ -695,7 +695,6 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
 
-	// if the SV does not have a SPLIT_JUNCTION_MAPPING_RANGE, set one using a 150 bp window around the SV
 	std::string svtype = get_sv_type(hdr, b);
 	hts_pos_t start = b->pos, end = get_sv_end(hdr, b);
 	hts_pos_t left_anchor_mapping_start, left_anchor_mapping_end, right_anchor_mapping_start, right_anchor_mapping_end;

@@ -586,6 +586,13 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         del->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
+        del->left_anchor_aln->start = del->start - lf_aln_rlen;
+        del->left_anchor_aln->end = del->start;
+        del->left_anchor_aln->seq_len = lf_aln_rlen;
+        del->right_anchor_aln->start = del_end;
+        del->right_anchor_aln->end = del_end + rf_aln_rlen;
+        del->right_anchor_aln->seq_len = rf_aln_rlen;
+
         // align to ref
         hts_pos_t lbp_start = lh_start, lbp_end = del->start + alt_consensus_seq.length();
         hts_pos_t rbp_start = del->end - alt_consensus_seq.length(), rbp_end = rh_end;
@@ -835,6 +842,13 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         dup->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
+        dup->left_anchor_aln->start = dup_end - lf_aln_rlen;
+        dup->left_anchor_aln->end = dup_end;
+        dup->left_anchor_aln->seq_len = lf_aln_rlen;
+        dup->right_anchor_aln->start = dup_start;
+        dup->right_anchor_aln->end = dup_start + rf_aln_rlen;
+        dup->right_anchor_aln->seq_len = rf_aln_rlen;
+
         dup->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
 
         ref_aln.Clear();
@@ -1029,6 +1043,13 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
         dup->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         dup->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
+
+        dup->left_anchor_aln->start = dup->end - lf_aln_rlen;
+        dup->left_anchor_aln->end = dup->end;
+        dup->left_anchor_aln->seq_len = lf_aln_rlen;
+        dup->right_anchor_aln->start = dup->start;
+        dup->right_anchor_aln->end = dup->start + rf_aln_rlen;
+        dup->right_anchor_aln->seq_len = rf_aln_rlen;
 
         // align to ref
         hts_pos_t ref_bp1_start = dup->start - alt_consensus_seq.length(), ref_bp1_end = dup->start + alt_consensus_seq.length();
@@ -1296,6 +1317,10 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         ins->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         ins->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
+        ins->left_anchor_aln->start = ins->start - lf_aln_rlen;
+        ins->left_anchor_aln->end = ins->start;
+        ins->left_anchor_aln->seq_len = lf_aln_rlen;
+
         StripedSmithWaterman::Alignment aln;
 
         aln.Clear();
@@ -1349,6 +1374,10 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         ins->sample_info.alt_consensus2_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt2_aln);
         ins->sample_info.alt_consensus2_split_score1 = query_lh_aln_score.first;
         ins->sample_info.alt_consensus2_split_score2 = query_rh_aln_score.first;
+
+        ins->right_anchor_aln->start = ins->end;
+        ins->right_anchor_aln->end = ins->end + rf_aln_rlen;
+        ins->right_anchor_aln->seq_len = rf_aln_rlen;
 
         StripedSmithWaterman::Alignment aln;
 
