@@ -17,8 +17,8 @@ struct cluster_t {
 	int id = -1;
 	bool la_rev, ra_rev;
 	hts_pos_t la_start, la_end, ra_start, ra_end;
+	hts_pos_t la_start_unclipped, la_end_unclipped, ra_start_unclipped, ra_end_unclipped;
 	int count = 1, la_confident_count = 0, ra_confident_count = 0;
-	int la_cum_nm, ra_cum_nm = 0;
 	uint8_t la_max_mapq, ra_max_mapq;
 	bool used = false;
 
@@ -30,10 +30,12 @@ struct cluster_t {
 
 	cluster_t() : la_start(INT32_MAX), la_end(0), la_rev(false), ra_start(INT32_MAX), ra_end(0), ra_rev(false), la_max_mapq(0), ra_max_mapq(0) {}
 
-	cluster_t(bam1_t* read, int64_t mate_nm, int high_confidence_mapq, bool store_read = false) : 
+	cluster_t(bam1_t* read, int high_confidence_mapq, bool store_read = false) : 
 			la_start(read->core.pos), la_end(bam_endpos(read)), la_rev(bam_is_rev(read)), 
+			la_start_unclipped(get_unclipped_start(read)), la_end_unclipped(get_unclipped_end(read)),
 			ra_start(read->core.mpos), ra_end(get_mate_endpos(read)), ra_rev(bam_is_mrev(read)),
-			la_max_mapq(read->core.qual), ra_max_mapq(get_mq(read)), la_cum_nm(get_nm(read)), ra_cum_nm(mate_nm) {
+			ra_start_unclipped(get_mate_unclipped_start(read)), ra_end_unclipped(get_mate_unclipped_end(read)),
+			la_max_mapq(read->core.qual), ra_max_mapq(get_mq(read)) {
 		
 		if (read->core.qual >= high_confidence_mapq) {
 			la_confident_count = 1;
@@ -67,22 +69,26 @@ struct cluster_t {
 		merged->count = c1->count + c2->count;
 		merged->la_confident_count += c1->la_confident_count + c2->la_confident_count;
 		merged->ra_confident_count += c1->ra_confident_count + c2->ra_confident_count;
-		merged->la_cum_nm = c1->la_cum_nm + c2->la_cum_nm;
-		merged->ra_cum_nm = c1->ra_cum_nm + c2->ra_cum_nm;
 		merged->la_max_mapq = std::max(c1->la_max_mapq, c2->la_max_mapq);
 		merged->ra_max_mapq = std::max(c1->ra_max_mapq, c2->ra_max_mapq);
 
-		// set rightmost_lseq
-		if (c1->la_end > c2->la_end) merged->la_furthermost_seq = c1->la_furthermost_seq;
-		else if (c1->la_end < c2->la_end) merged->la_furthermost_seq = c2->la_furthermost_seq;
-		else if (c1->la_start >= c2->la_start) merged->la_furthermost_seq = c1->la_furthermost_seq; // both reads may be clipped at the same position, then we choose the one that starts later
-		else merged->la_furthermost_seq = c2->la_furthermost_seq;
-
 		// set leftmost_lseq
-		if (c1->ra_start < c2->ra_start) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
-		else if (c1->ra_start > c2->ra_start) merged->ra_furthermost_seq = c2->ra_furthermost_seq;
-		else if (c1->la_end < c2->la_end) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
-		else merged->ra_furthermost_seq = c2->ra_furthermost_seq;
+		if (c1->la_rev) {
+			if (c1->la_start_unclipped <= c2->la_start_unclipped) merged->la_furthermost_seq = c1->la_furthermost_seq;
+			else merged->la_furthermost_seq = c2->la_furthermost_seq;
+		} else {
+			if (c1->la_end_unclipped >= c2->la_end_unclipped) merged->la_furthermost_seq = c1->la_furthermost_seq;
+			else merged->la_furthermost_seq = c2->la_furthermost_seq;
+		}
+
+		// set rightmost_lseq
+		if (c1->ra_rev) {
+			if (c1->ra_start_unclipped <= c2->ra_start_unclipped) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
+			else merged->ra_furthermost_seq = c2->ra_furthermost_seq;
+		} else {
+			if (c1->ra_end_unclipped >= c2->ra_end_unclipped) merged->ra_furthermost_seq = c1->ra_furthermost_seq;
+			else merged->ra_furthermost_seq = c2->ra_furthermost_seq;
+		}
 
 		merged->reads.insert(merged->reads.end(), c1->reads.begin(), c1->reads.end());
 		merged->reads.insert(merged->reads.end(), c2->reads.begin(), c2->reads.end());

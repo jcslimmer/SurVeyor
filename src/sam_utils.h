@@ -2,7 +2,6 @@
 #define SAM_UTILS_H
 
 #include <iostream>
-#include <sstream>
 #include <algorithm>
 #include <mutex>
 
@@ -64,6 +63,40 @@ hts_pos_t get_unclipped_start(bam1_t* r) {
 }
 hts_pos_t get_unclipped_end(bam1_t* r) {
     return bam_endpos(r) + get_right_clip_size(r);
+}
+
+int get_mate_left_clip_size(bam1_t* r) {
+    if (is_mate_unmapped(r)) return 0;
+    const uint8_t* mc_tag = bam_aux_get(r, "MC");
+    if (!mc_tag) {
+        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+    }
+    char* mc = bam_aux2Z(mc_tag);
+    int i = 0, left_clip = 0;
+    while (mc[i] >= '0' && mc[i] <= '9') {
+        left_clip = left_clip * 10 + (mc[i] - '0');
+        i++;
+    }
+    return (mc[i] == 'S') ? left_clip : 0;
+}
+
+int get_mate_right_clip_size(bam1_t* r) {
+    if (is_mate_unmapped(r)) return 0;
+    const uint8_t* mc_tag = bam_aux_get(r, "MC");
+    if (!mc_tag) {
+        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+    }
+    char* mc = bam_aux2Z(mc_tag);
+    int len = strlen(mc), i = len - 1;
+    if (mc[i] != 'S') return 0;
+    i--;
+    int right_clip = 0, place = 1;
+    while (i >= 0 && mc[i] >= '0' && mc[i] <= '9') {
+        right_clip += (mc[i] - '0') * place;
+        place *= 10;
+        i--;
+    }
+    return right_clip;
 }
 
 bool is_mate_left_clipped(bam1_t* r) {
@@ -130,6 +163,13 @@ int get_mate_endpos(const bam1_t* r) {
         i++;
     }
     return pos-1;
+}
+
+hts_pos_t get_mate_unclipped_start(bam1_t* r) {
+    return r->core.mpos - get_mate_left_clip_size(r);
+}
+hts_pos_t get_mate_unclipped_end(bam1_t* r) {
+    return get_mate_endpos(r) + get_mate_right_clip_size(r);
 }
 
 int64_t get_mq(bam1_t* r) {

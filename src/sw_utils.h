@@ -517,7 +517,6 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
 				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
 				duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
-				sv->precompute_base_frequencies(contig_seq);
 				return std::vector<sv_t*>({sv});
 			}
 		}
@@ -547,11 +546,9 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
     std::vector<sv_t*> svs;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
 		sv_t* sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
-		sv->precompute_base_frequencies(contig_seq);
         svs.push_back(sv);
     } else { // length of ALT > REF, insertion
 		sv_t* sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
-		sv->precompute_base_frequencies(contig_seq);
         svs.push_back(sv);
     }
 	svs[0]->mh_len = prefix_mh_len;

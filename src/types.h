@@ -354,15 +354,6 @@ struct sv_t {
         return ins_suffix_base_freqs;
     }
 
-    void precompute_base_frequencies(char* chr_seq) {
-        get_left_anchor_base_freqs(chr_seq);
-        get_right_anchor_base_freqs(chr_seq);
-        get_prefix_ref_base_freqs(chr_seq);
-        get_suffix_ref_base_freqs(chr_seq);
-        get_ins_prefix_base_freqs();
-        get_ins_suffix_base_freqs();
-    }
-
     virtual ~sv_t() {}
 };
 

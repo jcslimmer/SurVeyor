@@ -19,8 +19,9 @@ config_t config;
 stats_t stats;
 chr_seqs_map_t chr_seqs;
 
-std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr;
-std::unordered_map<std::string, std::vector<sv_t*>> sr_entries_by_chr, sr_nonpass_entries_by_chr;
+std::unordered_map<std::string, std::vector<deletion_t*>> deletions_by_chr, del_sr_entries_by_chr;
+std::unordered_map<std::string, std::vector<duplication_t*>> duplications_by_chr, dup_sr_entries_by_chr;
+std::unordered_map<std::string, std::vector<sv_t*>> other_svs_entries_by_chr;
 std::mutex maps_mtx;
 
 struct cc_pair {
@@ -46,41 +47,35 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, i
 	std::sort(clusters.begin(), clusters.end());
 }
 
-void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions) {
+std::vector<cluster_t*> cluster_dps_support(int contig_id, std::string contig_name, std::string dp_dir) {
 
-	std::string dp_fname = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".bam";
-	if (!file_exists(dp_fname)) return;
-	
-	std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
-	std::ifstream mateseqs_fin(workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt");
-	std::string qname, seq;
-	int64_t nm;
-	while (mateseqs_fin >> qname >> seq >> nm) {
-		qname_to_mate_nm[qname] = nm;
-	}
+	std::string dp_fname = dp_dir + "/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(dp_fname)) return std::vector<cluster_t*>();
 
-	std::vector<cluster_t*> lp_clusters;
+	std::vector<cluster_t*> clusters;
 	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
 		std::string qname = bam_get_qname(read);
-		cluster_t* cluster = new cluster_t(read, qname_to_mate_nm[qname], config.high_confidence_mapq);
-		lp_clusters.push_back(cluster);
+		cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq);
+		clusters.push_back(cluster);
 	}
 	close_samFile(dp_bam_file);
-	qname_to_mate_nm.clear();
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
-	if (!lp_clusters.empty()) cluster_clusters(lp_clusters, min_cluster_size, max_cluster_size);
+	if (!clusters.empty()) cluster_clusters(clusters, min_cluster_size, max_cluster_size);
 
-	// set leftmost_rseq
+	// set ra_furthermost_seq
 	std::unordered_map<std::string, cluster_t*> mateseqs_to_retrieve;
-	for (cluster_t* c : lp_clusters) {
+	for (cluster_t* c : clusters) {
 		mateseqs_to_retrieve[c->ra_furthermost_seq] = c;
 	}
 
+	std::string qname, seq;
+	int64_t nm;
+	std::ifstream mateseqs_fin(dp_dir + std::to_string(contig_id) + ".txt");
 	mateseqs_fin.clear();
 	mateseqs_fin.seekg(0);
 	while (mateseqs_fin >> qname >> seq >> nm) {
@@ -89,8 +84,16 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 	}
 	mateseqs_to_retrieve.clear();
 
+	return clusters;
+}
+
+void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions) {
+
+	std::vector<cluster_t*> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/long-pairs");
+	if (clusters.empty()) return;
+
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-	for (cluster_t* c : lp_clusters) {
+	for (cluster_t* c : clusters) {
 		if (c->used) continue;
 
 		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0);
@@ -106,7 +109,6 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
 			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
 			del = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln);
-			del->precompute_base_frequencies(chr_seqs.get_seq(contig_name));
 			del->imprecise = true;
 		}
 
@@ -119,30 +121,54 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 	}
 }
 
+void cluster_ow_dps(int contig_id, std::string contig_name, std::vector<duplication_t*>& duplications) {
+
+	std::vector<cluster_t*> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/outward-pairs");
+	if (clusters.empty()) return;
+	
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+	for (cluster_t* c : clusters) {
+		if (c->used) continue;
+
+		duplication_t* dup = NULL;
+		if (c->la_start < c->ra_end) {
+			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
+			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
+			dup = new duplication_t(contig_name, c->la_start, c->ra_end, "", NULL, NULL, left_anchor_aln, right_anchor_aln);
+			dup->imprecise = true;
+		}
+		
+		if (dup && dup->svlen() >= config.min_sv_size) {
+			dup->source = "DP";
+			duplications.push_back(dup);
+		}
+	}
+}
+
 void cluster_dps(int id, int contig_id, std::string contig_name, std::string bam_fname) {
 
 	std::vector<deletion_t*> deletions;
-	std::vector<inversion_t*> inversions;	
+	std::vector<duplication_t*> duplications;
 	cluster_lp_dps(contig_id, contig_name, deletions);
+	cluster_ow_dps(contig_id, contig_name, duplications);
 
 	maps_mtx.lock();
 	deletions_by_chr[contig_name] = deletions;
+	duplications_by_chr[contig_name] = duplications;
 	maps_mtx.unlock();
 }
 
-void merge_sr_dp(int id, int contig_id, std::string contig_name) {
+void merge_sr_dp_dels(int id, int contig_id, std::string contig_name) {
 	maps_mtx.lock();
 	std::vector<deletion_t*>& deletions = deletions_by_chr[contig_name];
-	std::vector<sv_t*>& sv_sr_entries = sr_entries_by_chr[contig_name];
+	std::vector<deletion_t*>& sv_sr_entries = del_sr_entries_by_chr[contig_name];
 	maps_mtx.unlock();
 
 	if (deletions.empty() || sv_sr_entries.empty()) return;
 
-	std::vector<Interval<sv_t*> > del_intervals, dup_intervals;
+	std::vector<Interval<sv_t*> > del_intervals;
 	for (sv_t* sr_entry : sv_sr_entries) {
-		if (sr_entry->svtype() == "DEL") {
-			del_intervals.push_back(Interval<sv_t*>(sr_entry->start, sr_entry->end, sr_entry));
-		}
+		del_intervals.push_back(Interval<sv_t*>(sr_entry->start, sr_entry->end, sr_entry));
 	}
 	IntervalTree<sv_t*> del_tree = IntervalTree<sv_t*>(del_intervals);
 
@@ -163,6 +189,39 @@ void merge_sr_dp(int id, int contig_id, std::string contig_name) {
 		}
 	}
 	deletions.erase(std::remove(deletions.begin(), deletions.end(), (deletion_t*) NULL), deletions.end());
+}
+
+void merge_sr_dp_dups(int id, int contig_id, std::string contig_name) {
+	maps_mtx.lock();
+	std::vector<duplication_t*>& duplications = duplications_by_chr[contig_name];
+	std::vector<duplication_t*>& sv_sr_entries = dup_sr_entries_by_chr[contig_name];
+	maps_mtx.unlock();
+
+	if (duplications.empty() || sv_sr_entries.empty()) return;
+
+	std::vector<Interval<sv_t*> > dup_intervals;
+	for (sv_t* sr_entry : sv_sr_entries) {
+		dup_intervals.push_back(Interval<sv_t*>(sr_entry->start, sr_entry->end, sr_entry));
+	}
+	IntervalTree<sv_t*> dup_tree = IntervalTree<sv_t*>(dup_intervals);
+
+	for (int i = 0; i < duplications.size(); i++) {
+		duplication_t* dup = duplications[i];
+		std::vector<Interval<sv_t*> > ivs = dup_tree.findContained(dup->start-stats.max_is, dup->end+stats.max_is);
+
+		std::vector<sv_t*> compatible_dups;
+		for (Interval<sv_t*> iv : ivs) {
+			sv_t* corr_sr_dup = iv.value;
+			if (dup->left_anchor_aln->end-corr_sr_dup->start <= stats.max_is && corr_sr_dup->end-dup->right_anchor_aln->start <= stats.max_is &&
+				corr_sr_dup->start <= dup->start+stats.read_len/2 && corr_sr_dup->end >= dup->end-stats.read_len/2) {
+				compatible_dups.push_back(corr_sr_dup);
+			}
+		}
+		if (compatible_dups.size() == 1) {
+			duplications[i] = NULL;
+		}
+	}
+	duplications.erase(std::remove(duplications.begin(), duplications.end(), (duplication_t*) NULL), duplications.end());
 }
 
 int main(int argc, char* argv[]) {
@@ -206,9 +265,11 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(sr_vcf_file, hdr, bcf_entry) == 0) {
 		sv_t* sv = bcf_to_sv(hdr, bcf_entry);
 		if (sv->svtype() == "DEL" && sv->is_pass()) {
-			sr_entries_by_chr[sv->chr].push_back(sv);
+			del_sr_entries_by_chr[sv->chr].push_back((deletion_t*) sv);
+		} else if (sv->svtype() == "DUP" && sv->is_pass()) {
+			dup_sr_entries_by_chr[sv->chr].push_back((duplication_t*) sv);
 		} else {
-			sr_nonpass_entries_by_chr[sv->chr].push_back(sv);
+			other_svs_entries_by_chr[sv->chr].push_back(sv);
 		}
 	}
 	bcf_close(sr_vcf_file);
@@ -217,7 +278,9 @@ int main(int argc, char* argv[]) {
 	ctpl::thread_pool thread_pool2(config.threads);
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-		std::future<void> future = thread_pool2.push(merge_sr_dp, contig_id, contig_name);
+		std::future<void> future = thread_pool2.push(merge_sr_dp_dels, contig_id, contig_name);
+		futures.push_back(std::move(future));
+		future = thread_pool2.push(merge_sr_dp_dups, contig_id, contig_name);
 		futures.push_back(std::move(future));
 	}
 	thread_pool2.stop(true);
@@ -247,12 +310,15 @@ int main(int argc, char* argv[]) {
 		dp_svs_by_chr[sv->chr].push_back(sv);
 	}
 
-	int del_id = 0;
+	int del_id = 0, dup_id = 0;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
 		auto& deletions = deletions_by_chr[contig_name];
 		for (deletion_t* del : deletions) del->id = "DEL_DP_" + std::to_string(del_id++);
+		auto& duplications = duplications_by_chr[contig_name];
+		for (duplication_t* dup : duplications) dup->id = "DUP_DP_" + std::to_string(dup_id++);
 
 		dp_svs_by_chr[contig_name].insert(dp_svs_by_chr[contig_name].end(), deletions.begin(), deletions.end());
+		dp_svs_by_chr[contig_name].insert(dp_svs_by_chr[contig_name].end(), duplications.begin(), duplications.end());
 		std::sort(dp_svs_by_chr[contig_name].begin(), dp_svs_by_chr[contig_name].end(), [](sv_t* sv1, sv_t* sv2) {
 			return sv1->start < sv2->start;
 		});
@@ -277,8 +343,9 @@ int main(int argc, char* argv[]) {
 	for (std::string& contig_name : chr_seqs.ordered_contigs) {
 		std::vector<sv_t*> all_entries;
 		all_entries.insert(all_entries.end(), dp_svs_by_chr[contig_name].begin(), dp_svs_by_chr[contig_name].end());
-		all_entries.insert(all_entries.end(), sr_entries_by_chr[contig_name].begin(), sr_entries_by_chr[contig_name].end());
-		all_entries.insert(all_entries.end(), sr_nonpass_entries_by_chr[contig_name].begin(), sr_nonpass_entries_by_chr[contig_name].end());
+		all_entries.insert(all_entries.end(), del_sr_entries_by_chr[contig_name].begin(), del_sr_entries_by_chr[contig_name].end());
+		all_entries.insert(all_entries.end(), dup_sr_entries_by_chr[contig_name].begin(), dup_sr_entries_by_chr[contig_name].end());
+		all_entries.insert(all_entries.end(), other_svs_entries_by_chr[contig_name].begin(), other_svs_entries_by_chr[contig_name].end());
 		std::sort(all_entries.begin(), all_entries.end(), [](sv_t* sv1, sv_t* sv2) {
 			return sv1->start < sv2->start;
 		});
