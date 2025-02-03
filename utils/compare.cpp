@@ -19,9 +19,7 @@ double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
 std::unordered_set<std::string> bdup_ids, cdup_ids;
 
-StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
-StripedSmithWaterman::Filter filter;
-
+// StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 std::vector<sv_t*> benchmark_svs;
 std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
 std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
@@ -68,7 +66,7 @@ bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2) {
 	return is_compatible_del_del(sv1, sv2);
 }
 
-bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Alignment& alignment) {
+bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
 
 	int max_len_diff = (ins_sv->imprecise || dup_sv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
@@ -84,6 +82,7 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Alignme
 	delete[] dup_seq;
 
 	// ssw score is a uint16_t, so we cannot compare strings longer than that
+	StripedSmithWaterman::Filter filter;
 	if (ins_sv->ins_seq.length() > UINT16_MAX || ext_dup_seq.length() > UINT16_MAX) {
 		std::string ins_seq_prefix = ins_sv->ins_seq.substr(0, UINT16_MAX-10);
 		std::string ins_seq_suffix = ins_sv->ins_seq.substr(std::max(0, (int) ins_sv->ins_seq.length()-(UINT16_MAX-10)));
@@ -99,16 +98,16 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Alignme
 	aligner.Align(ins_sv->ins_seq.data(), ext_dup_seq.data(), ext_dup_seq.length(), filter, &alignment, 0);
 	return alignment.query_end-alignment.query_begin >= ins_sv->ins_seq.length()*0.8;
 }
-bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2) {
+bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
 	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_dup_seq(sv1, sv2, alignment);
+		return distance(sv1, sv2) <= max_imprec_dist && check_ins_dup_seq(sv1, sv2, aligner, alignment);
 	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_dup_seq(sv1, sv2, alignment);
+		return distance(sv1, sv2) <= max_prec_dist && check_ins_dup_seq(sv1, sv2, aligner, alignment);
 	}
 }
 
-bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Alignment& alignment) {
+bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
 	if (sv1->ins_seq.length() > UINT16_MAX || sv2->ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
 
@@ -129,28 +128,29 @@ bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Alignment& al
 
 	std::string& query = lsv_seq.length() < rsv_seq.length() ? lsv_seq : rsv_seq;
 	std::string& ref = lsv_seq.length() < rsv_seq.length() ? rsv_seq : lsv_seq;
+	StripedSmithWaterman::Filter filter;
 	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
 	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
 }
-bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2) {
+bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
 	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_ins_seq(sv1, sv2, alignment);
+		return distance(sv1, sv2) <= max_imprec_dist && check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_ins_seq(sv1, sv2, alignment);
+		return distance(sv1, sv2) <= max_prec_dist && check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	}
 }
 
-bool check_ins_seq(sv_t* sv1, sv_t* sv2) {
+bool check_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
 	if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") {
 		return true;
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "INS") {
-		return check_ins_dup_seq(sv2, sv1, alignment);
+		return check_ins_dup_seq(sv2, sv1, aligner, alignment);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "DUP") {
-		return check_ins_dup_seq(sv1, sv2, alignment);
+		return check_ins_dup_seq(sv1, sv2, aligner, alignment);
 	} else {
-		return check_ins_ins_seq(sv1, sv2, alignment);
+		return check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	}
 }
 
@@ -158,17 +158,17 @@ bool is_compatible_inv_inv(sv_t* sv1, sv_t* sv2) {
 	return is_compatible_del_del(sv1, sv2);
 }
 
-bool is_compatible(sv_t* sv1, sv_t* sv2) {
+bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") {
 		return is_compatible_del_del(sv1, sv2);
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") {
 		return is_compatible_dup_dup(sv1, sv2);
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "INS") {
-		return is_compatible_ins_dup(sv2, sv1);
+		return is_compatible_ins_dup(sv2, sv1, aligner);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "DUP") {
-		return is_compatible_ins_dup(sv1, sv2);
+		return is_compatible_ins_dup(sv1, sv2, aligner);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
-		return is_compatible_ins_ins(sv1, sv2);
+		return is_compatible_ins_ins(sv1, sv2, aligner);
 	} else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") {
 		return is_compatible_inv_inv(sv1, sv2);
 	} else {
@@ -181,7 +181,7 @@ struct sv_match_t {
 	int score = 0;
 	bool rep;
 
-	sv_match_t(sv_t* b_sv, sv_t* c_sv, bool rep) : b_sv(b_sv), c_sv(c_sv) {
+	sv_match_t(sv_t* b_sv, sv_t* c_sv, bool rep, StripedSmithWaterman::Aligner& aligner) : b_sv(b_sv), c_sv(c_sv) {
 		if (b_sv == NULL || c_sv == NULL) {
 			this->score = 0;
 			this->rep = rep;
@@ -193,11 +193,11 @@ struct sv_match_t {
 		int len_diff = 0;
 		if (b_sv->svtype() == "INS" && c_sv->svtype() == "INS") {
 			len_diff = abs(b_sv->svlen()-c_sv->svlen());
-			check_ins_ins_seq(b_sv, c_sv, alignment);
+			check_ins_ins_seq(b_sv, c_sv, aligner, alignment);
 		} else if (b_sv->svtype() == "INS" && c_sv->svtype() == "DUP") {
-			check_ins_dup_seq(b_sv, c_sv, alignment);
+			check_ins_dup_seq(b_sv, c_sv, aligner, alignment);
 		} else if (b_sv->svtype() == "DUP" && c_sv->svtype() == "INS") {
-			check_ins_dup_seq(c_sv, b_sv, alignment);
+			check_ins_dup_seq(c_sv, b_sv, aligner, alignment);
 		} else {
 			len_diff = abs(b_sv->svlen()-c_sv->svlen());
 		}
@@ -218,6 +218,8 @@ std::vector<sv_match_t> matches;
 std::mutex mtx;
 
 void find_match(int id, int start_idx, int end_idx) {
+
+	StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 
 	for (int i = start_idx; i < end_idx; i++) {
 		sv_t* bsv = benchmark_svs[i];
@@ -245,8 +247,8 @@ void find_match(int id, int start_idx, int end_idx) {
 		}
 
 		for (sv_t* csv : *called_svs_chr_type) {
-			if (is_compatible(bsv, csv)) {
-				sv_match_t match(bsv, csv, false);
+			if (is_compatible(bsv, csv, aligner)) {
+				sv_match_t match(bsv, csv, false, aligner);
 				mtx.lock();
 				matches.push_back(match);
 				mtx.unlock();
@@ -263,8 +265,8 @@ void find_match(int id, int start_idx, int end_idx) {
 					}
 				}
 
-				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv)))) {
-					sv_match_t match(bsv, csv, true);
+				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv, aligner)))) {
+					sv_match_t match(bsv, csv, true, aligner);
 					mtx.lock();
 					matches.push_back(match);
 					mtx.unlock();
@@ -522,9 +524,10 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 	for (sv_t* bsv : benchmark_svs) {
 		if (!b_tps.count(bsv->id)) {
-			accepted_matches.push_back(sv_match_t(bsv, NULL, false));
+			accepted_matches.push_back(sv_match_t(bsv, NULL, false, aligner));
 		}
 	}
 
