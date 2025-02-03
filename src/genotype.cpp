@@ -172,6 +172,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "A", 2);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp1, "R", 1);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp2, "R", 2);
+    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.pairs_crossing_midpoint, "M", 1);
     update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp1_stray_pairs, "S", 1);
     update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp2_stray_pairs, "S", 2);
 

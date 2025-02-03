@@ -34,7 +34,7 @@ typedef struct {
     const char* desc_format;  // Description format string
 } format_tag_def_t;
 
-void add_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type, const format_tag_def_t formats[], int n_formats) {
+void add_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const char* bp_name, const char* allele_type, const format_tag_def_t formats[], int n_formats) {
 	char tag_id[20];
     char tag_str[1024];
     char desc_str[200];
@@ -43,8 +43,8 @@ void add_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_
     for (size_t i = 0; i < n_formats; i++) {
         const format_tag_def_t* fmt = &formats[i];
 
-        snprintf(tag_id, sizeof(tag_id), fmt->suffix, prefix, pos, fmt->suffix);
-        snprintf(desc_str, sizeof(desc_str), fmt->desc_format, pos, allele_type);
+        snprintf(tag_id, sizeof(tag_id), fmt->suffix, prefix, bp_n, fmt->suffix);
+        snprintf(desc_str, sizeof(desc_str), fmt->desc_format, bp_name, allele_type);
         snprintf(tag_str, sizeof(tag_str), 
                 "##FORMAT=<ID=%s,Number=%d,Type=%s,Description=\"%s\">",
                 tag_id, fmt->n, fmt->type, desc_str);
@@ -54,138 +54,139 @@ void add_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_
     }
 }
 
-void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type) {
+void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const char* bp_name, const char* allele_type) {
     // Array of tag definitions
     const format_tag_def_t formats[] = {
         {
             "%cR%d", 1, "Integer",
-            "Number of reads supporting breakpoint %d in the %s allele."
+            "Number of reads supporting %s in the %s allele."
         },
         {
             "%cR%dC", 1, "Integer", 
-            "Number of consistent reads supporting breakpoint %d in the %s allele."
+            "Number of consistent reads supporting %s in the %s allele."
         },
         {
             "%cR%dCF", 1, "Integer",
-            "Number of consistent forward reads supporting breakpoint %d in the %s allele."
+            "Number of consistent forward reads supporting %s in the %s allele."
         },
         {
             "%cR%dCR", 1, "Integer",
-            "Number of consistent reverse reads supporting breakpoint %d in the %s allele."
+            "Number of consistent reverse reads supporting %s in the %s allele."
         },
         {
             "%cR%dCAS", 1, "Float",
-            "Average aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
+            "Average aln score of consistent reads supporting %s of the SV to the %s allele consensus."
         },
 		{
 			"%cR%dCSS", 1, "Float",
-			"Standard deviation of aln score of consistent reads supporting breakpoint %d of the SV to the %s allele consensus."
+			"Standard deviation of aln score of consistent reads supporting %s of the SV to the %s allele consensus."
 		},
         {
             "%cR%dCHQ", 1, "Integer",
-            "Number of high-quality consistent reads supporting breakpoint %d in the %s allele."
+            "Number of high-quality consistent reads supporting %s in the %s allele."
         },
 		{
             "%cR%dCmQ", 1, "Integer",
-            "Minimum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+            "Minimum mate mapping quality of consistent reads supporting %s in the %s allele."
         },
         {
             "%cR%dCMQ", 1, "Integer",
-            "Maximum mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+            "Maximum mate mapping quality of consistent reads supporting %s in the %s allele."
         },
 		{
             "%cR%dCAQ", 1, "Float",
-            "Average mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+            "Average mate mapping quality of consistent reads supporting %s in the %s allele."
         },
 		{
 			"%cR%dCSQ", 1, "Float",
-			"Standard deviation of mate mapping quality of consistent reads supporting breakpoint %d in the %s allele."
+			"Standard deviation of mate mapping quality of consistent reads supporting %s in the %s allele."
 		}
     };
 
-    add_headers(hdr, prefix, pos, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
+    add_headers(hdr, prefix, bp_n, bp_name, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
 }
 
-void add_pairs_support_headers(bcf_hdr_t* hdr, const char prefix, int pos, const char* allele_type) {
+void add_pairs_support_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const char* bp_name, const char* allele_type) {
 	const format_tag_def_t formats[] = {
 		{
 			"%cSP%d", 1, "Integer",
-			"Number of pairs supporting breakpoint %d in the %s allele."
+			"Number of pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dHQ", 2, "Integer",
-			"Number of high-quality positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Number of high-quality positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dmQ", 2, "Integer",
-			"Minimum mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Minimum mapping quality of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dMQ", 2, "Integer",
-			"Maximum mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Maximum mapping quality of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dAQ", 2, "Float",
-			"Average mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Average mapping quality of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dSQ", 2, "Float",
-			"Standard deviation of mapping quality of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Standard deviation of mapping quality of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dSPAN", 2, "Integer",
-			"Number of base pairs to the left and right, respectively, of the breakpoint %d in the %s allele covered by reads within its supporting pairs."
+			"Number of base pairs to the left and right, respectively, of the %s in the %s allele covered by reads within its supporting pairs."
 		},
 		{
 			"%cSP%dNMA", 2, "Float",
-			"Average NM (non-matches) of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Average NM (non-matches) of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		},
 		{
 			"%cSP%dNMS", 2, "Float",
-			"Standard deviation of NM (non-matches) of positive and negative reads, respectively, within pairs supporting breakpoint %d in the %s allele."
+			"Standard deviation of NM (non-matches) of positive and negative reads, respectively, within pairs supporting %s in the %s allele."
 		}
 	};
 
-	add_headers(hdr, prefix, pos, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
+	add_headers(hdr, prefix, bp_n, bp_name, allele_type, formats, sizeof(formats)/sizeof(formats[0]));
 }
 
 void add_stray_pairs_headers(bcf_hdr_t* hdr, int bp_number) {
 	const format_tag_def_t formats[] = {
 		{
 			"%cSP%d", 1, "Integer",
-			"Number of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Number of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dHQ", 1, "Integer",
-			"Number of high-quality pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Number of high-quality pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dmQ", 1, "Integer",
-			"Minimum mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Minimum mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dMQ", 1, "Integer",
-			"Maximum mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Maximum mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dAQ", 1, "Float",
-			"Average mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Average mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dSQ", 1, "Float",
-			"Standard deviation of mapping quality of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Standard deviation of mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dNMA", 1, "Float",
-			"Average NM (non-matches) of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Average NM (non-matches) of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
 			"%cSP%dNMS", 1, "Float",
-			"Standard deviation of NM (non-matches) of pairs around the breakpoint %d in the %s allele that are discordant and yet do not support the SV."
+			"Standard deviation of NM (non-matches) of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		}
 	};
 
-	add_headers(hdr, 'S', bp_number, "reference", formats, sizeof(formats)/sizeof(formats[0]));
+	std::string bp_name = "breakpoint " + std::to_string(bp_number);
+	add_headers(hdr, 'S', bp_number, bp_name.c_str(), "reference", formats, sizeof(formats)/sizeof(formats[0]));
 }
 
 void add_fmt_tags(bcf_hdr_t* hdr) {
@@ -255,17 +256,21 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* clmdhq_tag = "##FORMAT=<ID=CLMDHQ,Number=2,Type=Integer,Description=\"Median depth in the left and right flanking regions, considering only the regions where the SV evidence (DP and SR) lies. Only high MAPQ reads are considered.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, clmdhq_tag, &len));
 	
-	add_read_support_headers(hdr, 'A', 1, "alternate");
-	add_pairs_support_headers(hdr, 'A', 1, "alternate");
+	std::string bp1_name = "breakpoint 1";
+	std::string bp2_name = "breakpoint 2";
+	add_read_support_headers(hdr, 'A', 1, bp1_name.c_str(), "alternate");
+	add_pairs_support_headers(hdr, 'A', 1, bp1_name.c_str(), "alternate");
 	
-	add_read_support_headers(hdr, 'A', 2, "alternate");
-	add_pairs_support_headers(hdr, 'A', 2, "alternate");
+	add_read_support_headers(hdr, 'A', 2, bp2_name.c_str(), "alternate");
+	add_pairs_support_headers(hdr, 'A', 2, bp2_name.c_str(), "alternate");
 
-	add_read_support_headers(hdr, 'R', 1, "reference");
-	add_pairs_support_headers(hdr, 'R', 1, "reference");
+	add_read_support_headers(hdr, 'R', 1, bp1_name.c_str(), "reference");
+	add_pairs_support_headers(hdr, 'R', 1, bp1_name.c_str(), "reference");
 
-	add_read_support_headers(hdr, 'R', 2, "reference");
-	add_pairs_support_headers(hdr, 'R', 2, "reference");
+	add_read_support_headers(hdr, 'R', 2, bp2_name.c_str(), "reference");
+	add_pairs_support_headers(hdr, 'R', 2, bp2_name.c_str(), "reference");
+
+	add_pairs_support_headers(hdr, 'M', 1, "middle point", "reference");
 
 	add_stray_pairs_headers(hdr, 1);
 	add_stray_pairs_headers(hdr, 2);

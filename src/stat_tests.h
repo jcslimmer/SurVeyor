@@ -759,6 +759,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 	for (sv_t* sv : svs) {
 		bkp_with_conc_pairs_count.push_back({sv->start, &(sv->sample_info.ref_bp1.pairs_info)});
 		bkp_with_conc_pairs_count.push_back({sv->end, &(sv->sample_info.ref_bp2.pairs_info)});
+		bkp_with_conc_pairs_count.push_back({(sv->start+sv->end)/2, &(sv->sample_info.pairs_crossing_midpoint)});
 	}
 
 	std::sort(bkp_with_conc_pairs_count.begin(), bkp_with_conc_pairs_count.end(), [](const conc_pairs_count_t& p1, const conc_pairs_count_t& p2) {
@@ -794,15 +795,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].pos <= end; i++) {
 			if (start <= bkp_with_conc_pairs_count[i].pos && bkp_with_conc_pairs_count[i].pos <= end) {
 				if (!bam_is_rev(read)) {
-					if (read->core.qual >= config.high_confidence_mapq) {
-						bkp_with_conc_pairs_count[i].pairs_info->pos_high_mapq++;
-					}
-					if (get_mq(read) >= config.high_confidence_mapq) {
-						bkp_with_conc_pairs_count[i].pairs_info->neg_high_mapq++;
-					}
 					bkp_with_conc_pairs_count[i].supp_pairs_pos_mqs.push_back(read->core.qual);
 					bkp_with_conc_pairs_count[i].supp_pairs_pos_nms.push_back(get_nm(read));
-					
 				} else {
 					bkp_with_conc_pairs_count[i].supp_pairs_neg_mqs.push_back(read->core.qual);
 					bkp_with_conc_pairs_count[i].supp_pairs_neg_nms.push_back(get_nm(read));
