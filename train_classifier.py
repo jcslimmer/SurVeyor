@@ -1,18 +1,18 @@
-import argparse
+import argparse, time
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 import joblib
 import features
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import defaultdict
+import xgboost as xgb
 
 cmd_parser = argparse.ArgumentParser(description='Train ML model.')
 cmd_parser.add_argument('training_prefixes', help='Prefix of the training VCF and FP files.')
 cmd_parser.add_argument('outdir')
-cmd_parser.add_argument('--n-trees', type=int, default=5000, help='Number of trees in the random forest.')
 cmd_parser.add_argument('--model_name', default='ALL', help='Restrict to this model.')
 cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use for training.')
+cmd_parser.add_argument('--cross-species', action='store_true', help='Use cross-species model.')
 cmd_args = cmd_parser.parse_args()
 
 training_data, training_gts = defaultdict(list), defaultdict(list)
@@ -40,8 +40,6 @@ with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
         vcf_training_data, vcf_training_gts = future.result()
         merge_data(vcf_training_data, vcf_training_gts)
 
-classifier = RandomForestClassifier(n_estimators=cmd_args.n_trees, max_depth=15, n_jobs=cmd_args.threads, random_state=42)
-
 yes_or_no_outdir = os.path.join(cmd_args.outdir, "yes_or_no")
 os.makedirs(yes_or_no_outdir, exist_ok=True)
 
@@ -52,8 +50,16 @@ for model_name in training_data:
     if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
         continue
     
+    if cmd_args.cross_species:
+        classifier = xgb.XGBClassifier(n_estimators=50, max_depth=5, min_child_weight=3, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
+    else:
+        classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=10, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
+
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
+    start = time.time()
     classifier.fit(training_data[model_name], training_labels)
+    end = time.time()
+    print(f"Training for model {model_name} took {end - start} seconds")
 
     features_names = features.Features.get_feature_names(model_name)
     importances = classifier.feature_importances_
