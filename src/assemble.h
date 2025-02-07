@@ -33,6 +33,19 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, std::v
 		StripedSmithWaterman::Alignment& aln = alns[i];
 		if (accept(aln, config.min_clip_len)) {
 			for (int j = aln.query_begin; j < aln.query_end; j++) {
+
+				if (j-aln.query_begin+aln.ref_begin >= As.size()) {
+					// extend As, Cs, Gs, Ts
+					int old_size = As.size();
+					As.resize(j-aln.query_begin+aln.ref_begin+1);
+					Cs.resize(j-aln.query_begin+aln.ref_begin+1);
+					Gs.resize(j-aln.query_begin+aln.ref_begin+1);
+					Ts.resize(j-aln.query_begin+aln.ref_begin+1);
+					for (int k = old_size; k < As.size(); k++) {
+						As[k] = Cs[k] = Gs[k] = Ts[k] = 0;
+					}
+				}
+
 				char c = reads[i][j];
 				if (c == 'A') As[j-aln.query_begin+aln.ref_begin]++;
 				else if (c == 'C') Cs[j-aln.query_begin+aln.ref_begin]++;
@@ -41,6 +54,8 @@ void correct_contig(std::string& contig, std::vector<std::string>& reads, std::v
 			}
 		}
 	}
+
+	contig.resize(As.size());
 
 	for (int i = 0; i < contig.length(); i++) {
 		int max_freq = max(As[i], Cs[i], Gs[i], Ts[i]);
