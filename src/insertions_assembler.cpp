@@ -503,6 +503,11 @@ int main(int argc, char* argv[]) {
 
 	int a_id = 0, t_id = 0;
 	for (sv_t* insertion : insertions) {
+        if (insertion->svlen() < config.min_sv_size) {
+            delete insertion;
+            continue;
+        }
+
         if (insertion->source == "REFERENCE_GUIDED_ASSEMBLY") insertion->id = "T_INS_" + std::to_string(t_id++);
         else insertion->id = "A_INS_" + std::to_string(a_id++);
         sv2bcf(out_vcf_header, bcf_entry, insertion, contigs.get_seq(insertion->chr));
