@@ -51,7 +51,7 @@ for model_name in training_data:
         continue
     
     if cmd_args.cross_species:
-        classifier = xgb.XGBClassifier(n_estimators=50, max_depth=5, min_child_weight=3, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
+        classifier = xgb.XGBClassifier(n_estimators=50, max_depth=7, min_child_weight=42, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
     else:
         classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=10, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
 
