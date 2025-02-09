@@ -1977,6 +1977,11 @@ int main(int argc, char* argv[]) {
         if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back((deletion_t*) sv);
         } else if (sv->svtype() == "DUP") {
+            if (sv->end-sv->start <= 0) {
+                std::cout << "Discarding SV with invalid coordinates: " << sv->id << std::endl;
+                delete sv;
+                continue;
+            }
             dups_by_chr[sv->chr].push_back((duplication_t*) sv);
         } else if (sv->svtype() == "INS") {
         	inss_by_chr[sv->chr].push_back((insertion_t*) sv);
