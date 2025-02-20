@@ -53,7 +53,7 @@ for model_name in training_data:
     if cmd_args.cross_species:
         classifier = xgb.XGBClassifier(n_estimators=50, max_depth=7, min_child_weight=42, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
     else:
-        classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=10, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
+        classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=8, min_child_weight=16, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
 
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
     start = time.time()
@@ -74,6 +74,18 @@ for model_name in training_data:
 
     positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
     positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
+
+    unique_labels = np.unique(positive_training_labels)
+    if len(unique_labels) == 1:
+        print(f"Only one label present in positive training data for model {model_name}.")
+        first_entry = positive_training_data[0:1]
+        first_label = positive_training_labels[0]
+        opposite_label = 1 - first_label  
+        positive_training_data = np.concatenate([positive_training_data, first_entry], axis=0)
+        positive_training_labels = np.concatenate([positive_training_labels, np.array([opposite_label])])
+
+    unique, counts = np.unique(positive_training_labels, return_counts=True)
+
     classifier.fit(positive_training_data, positive_training_labels)
 
     model_fname = os.path.join(gts_outdir, model_name + ".model")
