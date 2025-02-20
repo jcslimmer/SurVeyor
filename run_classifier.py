@@ -9,7 +9,6 @@ class Classifier:
         for record in vcf_reader.fetch():
             if features.Features.get_svtype(record) != "INV":
                 record.filter.clear()
-                record.filter.add('PASS')
                 record_id = features.Features.generate_id(record)
                 if record_id in svid_to_gt:
                     record.samples[0]['GT'] = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)

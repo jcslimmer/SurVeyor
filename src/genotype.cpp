@@ -241,6 +241,20 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
             bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", exssc2ia, 2);
         }
     }
+
+    std::string filters;
+    for (size_t i = 0; i < sv->sample_info.filters.size(); ++i) {
+        filters += sv->sample_info.filters[i];
+        if (i + 1 < sv->sample_info.filters.size()) {
+            filters += ",";
+        }
+    }
+    if (filters.empty()) {
+        filters = "PASS";
+    }
+
+    char* filters_cstr = strdup(filters.c_str());
+    bcf_update_format_string(out_hdr, sv->vcf_entry, "FT", (const char**)&filters_cstr, 1);
 }
 
 void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bam1_t*>& consistent_reads, 
