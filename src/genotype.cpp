@@ -254,7 +254,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     }
 
     char* filters_cstr = strdup(filters.c_str());
-    bcf_update_format_string(out_hdr, sv->vcf_entry, "FT", (const char**)&filters_cstr, 1);
+    bcf_update_format_char(out_hdr, sv->vcf_entry, "FT", filters_cstr, strlen(filters_cstr));
 }
 
 void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bam1_t*>& consistent_reads, 

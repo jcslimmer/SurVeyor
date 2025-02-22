@@ -65,6 +65,11 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
         bcf_unpack(b, BCF_UN_STR);
         std::string id = b->d.id;
 
+        if (bcf_translate(out_hdr, base_hdr, b) != 0) {
+            std::cerr << "Error translating record to output header" << std::endl;
+            exit(1);
+        }
+
         auto it = gt_records.find(id);
         if (it != gt_records.end()) {
             bcf1_t* gt_record = it->second.record;
@@ -94,28 +99,26 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
                     continue;
                 }
 
+                int nvalues = 0, temp = 0;
                 if (type == BCF_HT_INT) {
                     int32_t* values = NULL;
-                    int nvalues = 0;
-                    if (bcf_get_format_int32(gt_hdr, gt_record, key, &values, &nvalues) > 0) {
+                    nvalues = bcf_get_format_int32(gt_hdr, gt_record, key, &values, &temp);
+                    if (nvalues > 0) {
                         bcf_update_format_int32(out_hdr, b, key, values, nvalues);
                     }
                     free(values);
                 } else if (type == BCF_HT_REAL) {
                     float* values = NULL;
-                    int nvalues = 0;
-                    if (bcf_get_format_float(gt_hdr, gt_record, key, &values, &nvalues) > 0) {
+                    nvalues = bcf_get_format_float(gt_hdr, gt_record, key, &values, &temp);
+                    if (nvalues > 0) {
                         bcf_update_format_float(out_hdr, b, key, values, nvalues);
                     }
                     free(values);
                 } else if (type == BCF_HT_STR) {
-                    char** values = NULL;
-                    int nvalues = 0;
-                    if (bcf_get_format_string(gt_hdr, gt_record, key, &values, &nvalues) > 0) {
-                        bcf_update_format_string(out_hdr, b, key, (const char**)values, nvalues);
-                    }
-                    for (int j = 0; j < nvalues; ++j) {
-                        free(values[j]);
+                    char* values = NULL;
+                    nvalues = bcf_get_format_char(gt_hdr, gt_record, key, &values, &temp);
+                    if (nvalues > 0) {
+                        bcf_update_format_char(out_hdr, b, key, values, nvalues);
                     }
                     free(values);
                 }
