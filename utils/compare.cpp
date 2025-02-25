@@ -14,7 +14,7 @@
 #include "htslib/vcf.h"
 
 chr_seqs_map_t chr_seqs;
-int max_prec_dist, max_imprec_dist;
+int max_prec_dist, max_imprec_dist, max_repeat_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
 std::unordered_set<std::string> bdup_ids, cdup_ids;
@@ -255,6 +255,8 @@ void find_match(int id, int start_idx, int end_idx) {
 				continue;
 			}
 
+			if (distance(bsv, csv) > max_repeat_dist) continue;
+
 			int max_len_diff = (bsv->imprecise || csv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
 			if (len_diff(bsv, csv) <= max_len_diff) {
 				bool same_tr = false;
@@ -265,7 +267,8 @@ void find_match(int id, int start_idx, int end_idx) {
 					}
 				}
 
-				if (same_tr && (bsv->svtype() == "DEL" || (bsv->svtype() != "DEL" && check_ins_seq(bsv, csv, aligner)))) {
+				if (same_tr && (bsv->svtype() == "DEL" || 
+					((bsv->svtype() == "DUP" || bsv->svtype() == "INS") && check_ins_seq(bsv, csv, aligner)))) {
 					sv_match_t match(bsv, csv, true, aligner);
 					mtx.lock();
 					matches.push_back(match);
@@ -299,6 +302,7 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<int>()->default_value("100"))
 		("S,max_len_diff_imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 				cxxopts::value<int>()->default_value("500"))
+		("max-repeat-dist", "Maximum distance between two variant in the same tandem repeat.", cxxopts::value<int>()->default_value("1000"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
 		("I,ignore-seq", "Only compare insertions by position.", cxxopts::value<bool>()->default_value("false"))
@@ -330,6 +334,7 @@ int main(int argc, char* argv[]) {
 	std::vector<sv_t*> called_svs = read_sv_list(called_fname.c_str());
 	max_prec_dist = parsed_args["max_dist_precise"].as<int>();
 	max_imprec_dist = parsed_args["max_dist_imprecise"].as<int>();
+	max_repeat_dist = parsed_args["max-repeat-dist"].as<int>();
 	min_prec_frac_overlap = parsed_args["min_overlap_precise"].as<double>();
 	min_imprec_frac_overlap = parsed_args["min_overlap_imprecise"].as<double>();
 	max_prec_len_diff = parsed_args["max_len_diff_precise"].as<int>();
@@ -536,12 +541,15 @@ int main(int argc, char* argv[]) {
 	});
 	if (!report) {
 		for (sv_match_t& match : accepted_matches) {
-			std::cout << match.b_sv->id << " " << (match.c_sv == NULL ? "NONE" : match.c_sv->id) << (match.rep ? " REP" : "") << std::endl;
+			std::cout << match.b_sv->id << " " << (match.c_sv == NULL ? "NONE" : match.c_sv->id);
+			std::cout << (match.rep ? " REP" : "") << " " << (match.rep ? std::to_string(distance(match.b_sv, match.c_sv)) : "") << std::endl;
 		}
 	}
 	if (called_to_benchmark_gts_fout.is_open()) {
 		for (sv_match_t& match : accepted_matches) {
-			if (match.c_sv != NULL) called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
+			if (match.c_sv != NULL) {
+				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
+			}
 		}
 		std::set<std::string> c_unchoosen_ids;
 		for (sv_match_t& match : matches) {
