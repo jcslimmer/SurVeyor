@@ -164,24 +164,23 @@ if cmd_args.command == 'call':
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     exec(merge_identical_calls_cmd)
 
-    if cmd_args.ml_model:
-        vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/vcf_for_genotyping.vcf.gz"
-        insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s %s %s" % (cmd_args.workdir, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
-        exec(insertions_to_duplications_cmd)
-        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (vcf_for_genotyping_fname, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-        exec(genotype_cmd)
-
+    insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
+    exec(insertions_to_duplications_cmd)
+    
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    exec(genotype_cmd)
+    
     if cmd_args.generate_training_data:
-        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-raw.vcf.gz %s/training-data.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-        exec(genotype_cmd)
+        cp_cmd = "cp %s/intermediate_results/calls-with-fmt.vcf.gz %s/training-data.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
+        exec(cp_cmd)
 
     if not cmd_args.ml_model:
         print("No model provided. Skipping filtering and genotyping.")
         exit(0)
 
-    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
-    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
+    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
 
 elif cmd_args.command == 'genotype':

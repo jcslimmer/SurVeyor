@@ -40,7 +40,11 @@ std::unordered_map<std::string, gt_record_t> load_gt_vcf(std::string gt_vcf_fnam
 
     while (bcf_read(fp, hdr, b) == 0) {
         bcf_unpack(b, BCF_UN_STR);
+        
         std::string id = b->d.id;
+        if (id.size() >= 4 && id.compare(id.size() - 4, 4, "_DUP") == 0) {
+            id = id.substr(0, id.size() - 4);
+        }
 
         float epr = get_epr(hdr, b);
         auto it = gt_records.find(id);
@@ -63,13 +67,13 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
 
     while (bcf_read(base_fp, base_hdr, b) == 0) {
         bcf_unpack(b, BCF_UN_STR);
-        std::string id = b->d.id;
-
+        
         if (bcf_translate(out_hdr, base_hdr, b) != 0) {
             std::cerr << "Error translating record to output header" << std::endl;
             exit(1);
         }
-
+        
+        std::string id = b->d.id;
         auto it = gt_records.find(id);
         if (it != gt_records.end()) {
             bcf1_t* gt_record = it->second.record;
