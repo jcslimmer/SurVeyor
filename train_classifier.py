@@ -23,22 +23,27 @@ def process_vcf(training_prefix):
                            tolerate_no_gts = False)
     return vcf_training_data, vcf_training_gts
 
-def merge_data(vcf_training_data, vcf_training_gts):
-    global training_data, training_gts
-    for source in vcf_training_data:
-        if len(training_data[source]) == 0:
-            training_data[source] = vcf_training_data[source]
-            training_gts[source] = vcf_training_gts[source]
-        else:
-            training_data[source] = np.concatenate((training_data[source], vcf_training_data[source]))
-            training_gts[source] = np.concatenate((training_gts[source], vcf_training_gts[source]))
+def merge_data(cum_training_data, cum_training_gts, add_training_data, add_training_gts):
+    # If cumulative data is empty, initialize dictionaries with lists
+    if cum_training_data is None:
+        cum_training_data = {model: [add_training_data[model]] for model in add_training_data}
+        cum_training_gts = {model: [add_training_gts[model]] for model in add_training_gts}
+    else:
+        for model in add_training_data:
+            cum_training_data.setdefault(model, []).append(add_training_data[model])
+            cum_training_gts.setdefault(model, []).append(add_training_gts[model])
+    return cum_training_data, cum_training_gts
 
 training_prefixes = cmd_args.training_prefixes.split(",")
 with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
     future_to_prefix = {executor.submit(process_vcf, prefix): prefix for prefix in training_prefixes}
     for future in as_completed(future_to_prefix):
         vcf_training_data, vcf_training_gts = future.result()
-        merge_data(vcf_training_data, vcf_training_gts)
+        training_data, training_gts = merge_data(training_data, training_gts, vcf_training_data, vcf_training_gts)
+
+for model in training_data:
+    training_data[model] = np.concatenate(training_data[model])
+    training_gts[model] = np.concatenate(training_gts[model])
 
 yes_or_no_outdir = os.path.join(cmd_args.outdir, "yes_or_no")
 os.makedirs(yes_or_no_outdir, exist_ok=True)

@@ -191,7 +191,7 @@ elif cmd_args.command == 'genotype':
     if not use_call_info():
         reads_categorizer()
 
-    vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/vcf_for_genotyping.vcf.gz"
+    vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/calls-for-genotyping.vcf.gz"
     insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s %s %s %s" % (cmd_args.in_vcf_file, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
     exec(insertions_to_duplications_cmd)
 
