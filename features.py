@@ -15,7 +15,7 @@ class Features:
                             'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
-                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'MH_LEN_RATIO']
+                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN']
     
     reads_features_names = ['AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
@@ -52,8 +52,8 @@ class Features:
                          'RSP2', 'RSP2HQ_1', 'RSP2HQ_2',
                          'RSP1mQ_1', 'RSP1mQ_2', 'RSP1MQ_1', 'RSP1MQ_2', 
                          'RSP2mQ_1', 'RSP2mQ_2', 'RSP2MQ_1', 'RSP2MQ_2',
-                         'SSP1', 'SSP1HQ_1', 'SSP1HQ_2',
-                         'SSP2', 'SSP2HQ_1', 'SSP2HQ_2',
+                         'SSP1HQ_1', 'SSP1HQ_2',
+                         'SSP2HQ_1', 'SSP2HQ_2',
                          'SSP1mQ_1', 'SSP1mQ_2', 'SSP1MQ_1', 'SSP1MQ_2',
                          'SSP2mQ_1', 'SSP2mQ_2', 'SSP2MQ_1', 'SSP2MQ_2',
                          'SSP1_RSP1_1_NM_Z_SCORE', 'SSP1_RSP1_2_NM_Z_SCORE', 'SSP2_RSP2_1_NM_Z_SCORE', 'SSP2_RSP2_2_NM_Z_SCORE',
@@ -124,12 +124,17 @@ class Features:
         return (value - min) / (max - min)
     
     def piecewise_normalise(value, minv, maxv):
+        neg = value < 0
+        value = abs(value)
         if value < minv:
-            return value/minv * 0.25
+            ret_val = value/minv * 0.25
         elif value >= maxv:
-            return value/max(1, maxv) * 0.25 + 0.75
+            ret_val = value/max(1, maxv) * 0.25 + 0.75
         else:
-            return 0.25 + (value - minv) / (maxv - minv) * 0.75
+            ret_val = 0.25 + (value - minv) / (maxv - minv) * 0.75
+        if neg:
+            return -ret_val
+        return ret_val
 
     def calculate_z_score(mean1, stddev1, n1, mean2, stddev2, n2):
         if np.isnan(mean1) or np.isnan(mean2) or n1 == 0 or n2 == 0:
@@ -160,7 +165,7 @@ class Features:
         if 'SVINSSEQ' in info:
             svinsseq = info['SVINSSEQ']
         svlen = abs(Features.get_svlen(record))
-        features['SVLEN'] = svlen
+        features['SVLEN'] = math.log1p(svlen)
 
         svinslen = Features.get_number_value(info, 'SVINSLEN', 0)
         if svinslen == 0 and svinsseq:
@@ -175,7 +180,6 @@ class Features:
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
         features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
-        features['MH_LEN_RATIO'] = features['MH_LEN']/abs(max(1, svlen))
 
         left_anchor_base_count = Features.get_number_value(info, 'LEFT_ANCHOR_BASE_COUNT', [0, 0, 0, 0])
         left_anchor_base_count_ratio = [x/max(1, sum(left_anchor_base_count)) for x in left_anchor_base_count]
@@ -319,8 +323,9 @@ class Features:
         features['MDSPHQ'] = Features.piecewise_normalise(mdhq[1], min_depth, max_depth)
         features['MDSFHQ'] = Features.piecewise_normalise(mdhq[2], min_depth, max_depth)
         features['MDRFHQ'] = Features.piecewise_normalise(mdhq[3], min_depth, max_depth)
-        features['MDSP_OVER_MDLF_HQ'] = mdhq[1]/max(1, mdhq[0])
-        features['MDSF_OVER_MDRF_HQ'] = mdhq[2]/max(1, mdhq[3])
+
+        features['MDSP_OVER_MDLF_HQ'] = Features.piecewise_normalise(mdhq[1]-mdhq[0], min_depth, max_depth)
+        features['MDSF_OVER_MDRF_HQ'] = Features.piecewise_normalise(mdhq[2]-mdhq[3], min_depth, max_depth)
         features['MDLF_OVER_MDSP_HQ'] = mdhq[0]/max(1, mdhq[1])
         features['MDRF_OVER_MDSF_HQ'] = mdhq[3]/max(1, mdhq[2])
 
@@ -496,8 +501,8 @@ class Features:
         features['AXR1'], features['AXR2'] = axr1, axr2
         features['AXR1HQ'], features['AXR2HQ'] = axr1hq, axr2hq
         
-        exl1 = Features.get_number_value(record.samples[0], 'EXL', 0)
-        exl2 = Features.get_number_value(record.samples[0], 'EXL2', 0)
+        exl1 = Features.get_number_value(record.samples[0], 'EXL', Features.NAN)
+        exl2 = Features.get_number_value(record.samples[0], 'EXL2', Features.NAN)
         features['MEXL'] = max(exl1/max_is, exl2/max_is)
         features['mEXL'] = min(exl1/max_is, exl2/max_is)
         features['EXL'] = features['MEXL'] + features['mEXL']
@@ -523,10 +528,10 @@ class Features:
         features['EXSS2_RATIO1'] = exss2_1/max(1, exl2)
         features['EXSS2_RATIO2'] = exss2_2/max(1, exl2)
 
-        exssc1_1, exssc1_2 = Features.get_number_value(record.samples[0], 'EXSSC', [0, 0])
-        exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [0, 0])
-        exsscia1_1, exsscia1_2 = Features.get_number_value(record.samples[0], 'EXSSCIA', [0, 0])
-        exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [0, 0])
+        exssc1_1, exssc1_2 = Features.get_number_value(record.samples[0], 'EXSSC', [Features.NAN, Features.NAN])
+        exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [Features.NAN, Features.NAN])
+        exsscia1_1, exsscia1_2 = Features.get_number_value(record.samples[0], 'EXSSCIA', [Features.NAN, Features.NAN])
+        exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [Features.NAN, Features.NAN])
         features['EXSCC1_1_IA_RATIO'], features['EXSCC1_2_IA_RATIO'] = exssc1_1/max(1, exsscia1_1), exssc1_2/max(1, exsscia1_2)
         features['EXSCC2_1_IA_RATIO'], features['EXSCC2_2_IA_RATIO'] = exssc2_1/max(1, exsscia2_1), exssc2_2/max(1, exsscia2_2)
         features['EXSSC1_1_IA_DIFF_RATIO'], features['EXSSC1_2_IA_DIFF_RATIO'] = (exss1_1-exssc1_1)/max(1, exss1_1-exsscia1_1), (exss1_2-exssc1_2)/max(1, exss1_2-exsscia1_2)
