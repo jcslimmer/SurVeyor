@@ -100,6 +100,14 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const
 		{
 			"%cR%dCSQ", 1, "Float",
 			"Standard deviation of mate mapping quality of consistent reads supporting %s in the %s allele."
+		},
+		{
+			"%cR%dCMSPAN", 1, "Integer",
+			"Number of base pairs to the left and right, respectively, of the %s in the %s allele covered by mates of consistent supporting reads it."
+		},
+		{
+			"%cR%dCMHQSPAN", 1, "Integer",
+			"Number of base pairs to the left and right, respectively, of the %s in the %s allele covered by high-quality mates of consistent supporting reads it."
 		}
     };
 
@@ -294,7 +302,8 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, maxsize_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "KSPVAL");
-    const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test.\">";
+    const char* kspval_tag = "##FORMAT=<ID=KSPVAL,Number=1,Type=Float,Description=\"p-value of the KS test between the insert size distibution of pairs surrounding the putative SV "
+			"and the global distribution (insert size of pairs randomly sampled). If the two are significantly different, the likelihood of the SV being real is increased. \">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, kspval_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "AXR");
