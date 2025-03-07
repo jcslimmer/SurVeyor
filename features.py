@@ -21,6 +21,11 @@ class Features:
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'MAXRRCD',
+                            'ER',
+                            'AR1CMSPAN_1', 'AR1CMSPAN_2', 'AR1CMHQSPAN_1', 'AR1CMHQSPAN_2',
+                            'AR2CMSPAN_1', 'AR2CMSPAN_2', 'AR2CMHQSPAN_1', 'AR2CMHQSPAN_2',
+                            'RR1CMSPAN_1', 'RR1CMSPAN_2', 'RR1CMHQSPAN_1', 'RR1CMHQSPAN_2',
+                            'RR2CMSPAN_1', 'RR2CMSPAN_2', 'RR2CMHQSPAN_1', 'RR2CMHQSPAN_2',
                             'AR1_RR1_CAQ_Z_SCORE', 'AR2_RR2_CAQ_Z_SCORE', 'AR1_RR1_CAS_Z_SCORE', 'AR2_RR2_CAS_Z_SCORE', 
                             'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C']
 
@@ -29,7 +34,7 @@ class Features:
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
                             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
                             'EXSCC1_1_IA_RATIO', 'EXSCC1_2_IA_RATIO', 'EXSCC2_1_IA_RATIO', 'EXSCC2_2_IA_RATIO',
-                            'EXSSC1_1_IA_DIFF_RATIO', 'EXSSC1_2_IA_DIFF_RATIO', 'EXSSC2_1_IA_DIFF_RATIO', 'EXSSC2_2_IA_DIFF_RATIO',
+                            'EXSSC1_1_IA_DIFF', 'EXSSC1_2_IA_DIFF', 'EXSSC2_1_IA_DIFF', 'EXSSC2_2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
@@ -68,7 +73,7 @@ class Features:
         svtype_str = Features.get_svtype(record)
         if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
             svtype_str += "_LARGE"
-        elif svtype_str == "DUP" and record.stop-record.start > read_len-30:
+        elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
 
         if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
@@ -227,6 +232,8 @@ class Features:
         arc1hq = Features.get_number_value(record.samples[0], 'AR1CHQ', 0)
         features['AR1CHQ'] = Features.piecewise_normalise(arc1hq, min_depth, max_depth)
         features['AR1C_HQ_RATIO'] = arc1hq/max(1, ar1c)
+        features['AR1CMSPAN_1'], features['AR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMSPAN', [0, 0], max_is)
+        features['AR1CMHQSPAN_1'], features['AR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMHQSPAN', [0, 0], max_is)
 
         ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
         ar2c = Features.get_number_value(record.samples[0], 'AR2C', 0)
@@ -241,6 +248,8 @@ class Features:
         arc2hq = Features.get_number_value(record.samples[0], 'AR2CHQ', 0)
         features['AR2CHQ'] = Features.piecewise_normalise(arc2hq, min_depth, max_depth)
         features['AR2C_HQ_RATIO'] = arc2hq/max(1, ar2c)
+        features['AR2CMSPAN_1'], features['AR2CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR2CMSPAN', [0, 0], max_is)
+        features['AR2CMHQSPAN_1'], features['AR2CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'AR2CMHQSPAN', [0, 0], max_is)
 
         ar1cf = Features.get_number_value(record.samples[0], 'AR1CF', 0, max(1, ar1c))
         ar1cr = Features.get_number_value(record.samples[0], 'AR1CR', 0, max(1, ar1c))
@@ -261,6 +270,8 @@ class Features:
         features['RR1CmQ'] = Features.get_number_value(record.samples[0], 'RR1CmQ', Features.NAN)
         features['RR1CMQ'] = Features.get_number_value(record.samples[0], 'RR1CMQ', Features.NAN)
         features['RR1CHQ'] = Features.get_number_value(record.samples[0], 'RR1CHQ', 0, max(1, rr1c))
+        features['RR1CMSPAN_1'], features['RR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMSPAN', [0, 0], max_is)
+        features['RR1CMHQSPAN_1'], features['RR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMHQSPAN', [0, 0], max_is)
 
         rr2 = Features.get_number_value(record.samples[0], 'RR2', 0)
         rr2c = Features.get_number_value(record.samples[0], 'RR2C', 0)
@@ -273,6 +284,8 @@ class Features:
         features['RR2CmQ'] = Features.get_number_value(record.samples[0], 'RR2CmQ', Features.NAN)
         features['RR2CMQ'] = Features.get_number_value(record.samples[0], 'RR2CMQ', Features.NAN)
         features['RR2CHQ'] = Features.get_number_value(record.samples[0], 'RR2CHQ', 0, max(1, rr2c))
+        features['RR2CMSPAN_1'], features['RR2CMSPAN_2'] = Features.get_number_value(record.samples[0], 'RR2CMSPAN', [0, 0], max_is)
+        features['RR2CMHQSPAN_1'], features['RR2CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'RR2CMHQSPAN', [0, 0], max_is)
 
         rr1cf = Features.get_number_value(record.samples[0], 'RR1CF', 0, max(1, rr1c))
         rr1cr = Features.get_number_value(record.samples[0], 'RR1CR', 0, max(1, rr1c))
@@ -281,6 +294,9 @@ class Features:
         features['RRCF'] = rr1cf + rr2cf
         features['RRCR'] = rr1cr + rr2cr
         features['MAXRRCD'] = max(features['RRCF'], features['RRCR'])
+
+        er = Features.get_number_value(record.samples[0], 'ER', 0)
+        features['ER'] = Features.piecewise_normalise(er, min_depth, max_depth)
         
         features['AR1_RR1_CAQ_Z_SCORE'] = Features.calculate_z_score(ar1caq, ar1csq, ar1c, rr1caq, rr1csq, rr1c)
         features['AR1_RR1_CAS_Z_SCORE'] = Features.calculate_z_score(ar1cas, ar1css, ar1c, rr1cas, rr1css, rr1c)
@@ -509,6 +525,8 @@ class Features:
 
         exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl1))
         exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0, max(1, exl2))
+        features['MEXAS'] = max(exas1, exas2)
+        features['mEXAS'] = min(exas1, exas2)
 
         exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl1))
         exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0, max(1, exl2))
@@ -534,8 +552,8 @@ class Features:
         exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [Features.NAN, Features.NAN])
         features['EXSCC1_1_IA_RATIO'], features['EXSCC1_2_IA_RATIO'] = exssc1_1/max(1, exsscia1_1), exssc1_2/max(1, exsscia1_2)
         features['EXSCC2_1_IA_RATIO'], features['EXSCC2_2_IA_RATIO'] = exssc2_1/max(1, exsscia2_1), exssc2_2/max(1, exsscia2_2)
-        features['EXSSC1_1_IA_DIFF_RATIO'], features['EXSSC1_2_IA_DIFF_RATIO'] = (exss1_1-exssc1_1)/max(1, exss1_1-exsscia1_1), (exss1_2-exssc1_2)/max(1, exss1_2-exsscia1_2)
-        features['EXSSC2_1_IA_DIFF_RATIO'], features['EXSSC2_2_IA_DIFF_RATIO'] = (exss2_1-exssc2_1)/max(1, exss2_1-exsscia2_1), (exss2_2-exssc2_2)/max(1, exss2_2-exsscia2_2)
+        features['EXSSC1_1_IA_DIFF'], features['EXSSC1_2_IA_DIFF'] = (exsscia1_1-exssc1_1)/max(1, exss1_1), (exsscia1_2-exssc1_2)/max(1, exss1_2)
+        features['EXSSC2_1_IA_DIFF'], features['EXSSC2_2_IA_DIFF'] = (exsscia2_1-exssc2_1)/max(1, exss2_1), (exsscia2_2-exssc2_2)/max(1, exss2_2)
 
         feature_values = []
         for feature_name in Features.get_feature_names(model_name):
