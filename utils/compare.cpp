@@ -81,6 +81,16 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Aligner
 	}
 	delete[] dup_seq;
 
+	if (ins_sv->start < dup_sv->start) {
+		size_t rotation = dup_sv->start - ins_sv->start;
+		rotation %= dup_sv->end-dup_sv->start;
+		ext_dup_seq = ext_dup_seq.substr(rotation) + ext_dup_seq.substr(0, rotation);
+	} else if (ins_sv->start > dup_sv->start) {
+		size_t rotation = ins_sv->start - dup_sv->start;
+		rotation %= dup_sv->end-dup_sv->start;
+		ext_dup_seq = ext_dup_seq.substr(dup_sv->end-dup_sv->start-rotation) + ext_dup_seq.substr(0, dup_sv->end-dup_sv->start-rotation);
+	}
+
 	// ssw score is a uint16_t, so we cannot compare strings longer than that
 	StripedSmithWaterman::Filter filter;
 	if (ins_sv->ins_seq.length() > UINT16_MAX || ext_dup_seq.length() > UINT16_MAX) {

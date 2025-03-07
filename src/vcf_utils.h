@@ -102,11 +102,11 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const
 			"Standard deviation of mate mapping quality of consistent reads supporting %s in the %s allele."
 		},
 		{
-			"%cR%dCMSPAN", 1, "Integer",
+			"%cR%dCMSPAN", 2, "Integer",
 			"Number of base pairs to the left and right, respectively, of the %s in the %s allele covered by mates of consistent supporting reads it."
 		},
 		{
-			"%cR%dCMHQSPAN", 1, "Integer",
+			"%cR%dCMHQSPAN", 2, "Integer",
 			"Number of base pairs to the left and right, respectively, of the %s in the %s allele covered by high-quality mates of consistent supporting reads it."
 		}
     };
@@ -278,7 +278,8 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	add_read_support_headers(hdr, 'R', 2, bp2_name.c_str(), "reference");
 	add_pairs_support_headers(hdr, 'R', 2, bp2_name.c_str(), "reference");
 
-	add_pairs_support_headers(hdr, 'M', 1, "middle point", "reference");
+	add_pairs_support_headers(hdr, 'N', 1, bp1_name.c_str(), "neutral");
+	add_pairs_support_headers(hdr, 'N', 2, bp2_name.c_str(), "neutral");
 
 	add_stray_pairs_headers(hdr, 1);
 	add_stray_pairs_headers(hdr, 2);

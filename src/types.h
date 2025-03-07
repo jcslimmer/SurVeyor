@@ -205,7 +205,7 @@ struct sv_t {
 
         bp_consensus_info_t alt_bp1, alt_bp2;
         bp_consensus_info_t ref_bp1, ref_bp2;
-        bp_pairs_info_t pairs_crossing_midpoint;
+        bp_pairs_info_t neutral_bp1_pairs, neutral_bp2_pairs;
         bp_pairs_info_t bp1_stray_pairs, bp2_stray_pairs; // pairs that are discordant and yet do not support the SV
 
         int alt_ref_equal_reads = 0;

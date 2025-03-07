@@ -176,7 +176,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "A", 2);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp1, "R", 1);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.ref_bp2, "R", 2);
-    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.pairs_crossing_midpoint, "M", 1);
+    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.neutral_bp1_pairs, "N", 1);
+    update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.neutral_bp2_pairs, "N", 2);
     update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp1_stray_pairs, "S", 1);
     update_record_bp_pairs_info(out_hdr, sv->vcf_entry, sv->sample_info.bp2_stray_pairs, "S", 2);
 
@@ -770,7 +771,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, true, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, mates_nms_file);
     count_stray_pairs(contig_name, dels, bam_file, config, stats);
 }
 
