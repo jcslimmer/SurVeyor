@@ -30,11 +30,14 @@ bool is_dc_pair(bam1_t* r) {
 bool is_outward(bam1_t* r) {
 	return is_samechr(r) && !is_samestr(r) && ((!bam_is_rev(r) && r->core.isize < 0) || (bam_is_rev(r) && r->core.isize > 0));
 }
+bool is_short(bam1_t* r, int min_is) {
+    return is_samechr(r) && !is_samestr(r) && ((!bam_is_rev(r) && r->core.isize < min_is) || (bam_is_rev(r) && r->core.isize > -min_is));
+}
 bool is_long(bam1_t* r, int max_is) {
 	return is_samechr(r) && !is_samestr(r) && ((!bam_is_rev(r) && r->core.isize > max_is) || (bam_is_rev(r) && r->core.isize < -max_is));
 }
-bool is_proper_pair(bam1_t* r, int max_is) {
-	return is_primary(r) && is_samechr(r) && !is_samestr(r) && !is_dc_pair(r) && !is_outward(r) && !is_long(r, max_is);
+bool is_proper_pair(bam1_t* r, int min_is, int max_is) {
+	return is_primary(r) && is_samechr(r) && !is_samestr(r) && !is_dc_pair(r) && !is_outward(r) && !is_short(r, min_is) && !is_long(r, max_is);
 }
 
 int get_endpoint(bam1_t* r) {

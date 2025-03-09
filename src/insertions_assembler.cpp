@@ -253,7 +253,7 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
 }
 
 bool is_semi_mapped(bam1_t* read) {
-	return is_proper_pair(read, stats.max_is) && !is_mate_clipped(read);
+	return is_proper_pair(read, stats.min_is, stats.max_is) && !is_mate_clipped(read);
 }
 
 void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector<insertion_cluster_t*>& r_clusters, std::vector<insertion_cluster_t*>& l_clusters) {

@@ -833,7 +833,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
         std::string seq;
-        
+
         if (!is_samechr(read) || is_samestr(read)) continue;
         if (!bam_is_mrev(read)) {
             if (read->core.mpos < dup_start-stats.max_is || read->core.mpos > dup_end) continue;
@@ -1226,7 +1226,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, true, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, mates_nms_file);
     count_stray_pairs(contig_name, dups, bam_file, config, stats);
 }
 
@@ -1537,8 +1537,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
-    calculate_ptn_ratio(contig_name, inss, bam_file, config, stats);
-    find_discordant_pairs(contig_name, inss, bam_file, stats, mateseqs_w_mapq[contig_id], harsh_aligner, config);
+    calculate_ptn_ratio(contig_name, inss, bam_file, config, stats, mateseqs_w_mapq[contig_id]);
 
     release_mates(contig_id);
 }
@@ -2093,19 +2092,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int* imap = new int[1];
+    int* imap = NULL;
     htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
-    bcf_hdr_t* out_vcf_header;
-    int sample_idx = find_sample_index(in_vcf_header, sample_name);
-    if (sample_idx >= 0) {
-        char** samples = new char*[1];
-        samples[0] = strdup(sample_name.c_str());
-        out_vcf_header = bcf_hdr_subset(in_vcf_header, 1, samples, imap);
-    } else {
-        out_vcf_header = bcf_hdr_subset(in_vcf_header, 0, NULL, NULL);
-        bcf_hdr_add_sample(out_vcf_header, sample_name.c_str());
-        imap[0] = -1;
-    }
+    bcf_hdr_t* out_vcf_header = bcf_subset_header(in_vcf_header, sample_name, imap);
     add_fmt_tags(out_vcf_header);
     if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
     	throw std::runtime_error("Failed to read the VCF header.");

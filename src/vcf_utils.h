@@ -801,4 +801,21 @@ int find_sample_index(bcf_hdr_t* hdr, std::string sample_name) {
     return -1;  // Sample not found
 }
 
+// returns (via parameter) the imap to be used with bcf_subset
+bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& imap) {
+	imap = new int[1];
+    bcf_hdr_t* out_hdr;
+    int sample_idx = find_sample_index(in_hdr, sample_name);
+    if (sample_idx >= 0) {
+        char** samples = new char*[1];
+        samples[0] = strdup(sample_name.c_str());
+        out_hdr = bcf_hdr_subset(in_hdr, 1, samples, imap);
+    } else {
+        out_hdr = bcf_hdr_subset(in_hdr, 0, NULL, NULL);
+        bcf_hdr_add_sample(out_hdr, sample_name.c_str());
+        imap[0] = -1;
+    }
+	return out_hdr;
+}
+
 #endif /* VCF_UTILS_H */
