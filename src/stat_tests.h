@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cmath>
 #include <htslib/sam.h>
+#include <unordered_map>
 
 #include "../libs/ssw_cpp.h"
 #include "../libs/ks-test.h"
@@ -844,8 +845,6 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 	std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
 	
 	if (insertions.empty()) return;
-	// std::vector<sv_t*> svs(insertions.begin(), insertions.end());
-	// calculate_ptn_ratio(contig_name, svs, bam_file, config, stats);
 
 	std::vector<char*> regions;
     for (insertion_t* ins : insertions) {
@@ -873,6 +872,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 	std::vector<pairs_data_t> stray_bp1_pairs_data(insertions.size()), stray_bp2_pairs_data(insertions.size());	
 
 	StripedSmithWaterman::Aligner harsh_aligner(1, 4, 100, 1, false);
+
+	std::unordered_map<std::string, std::vector<std::pair<pairs_data_t*, bam1_t*> > > pairs_waiting_for_neg_nm;
 
 	int curr_del_bystart_idx = 0, curr_del_byend_idx = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
@@ -928,18 +929,27 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 				}	
 			}
 		} else if (is_proper_pair(read, stats.min_is, stats.max_is)) {
-			hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
-			for (int i = curr_del_bystart_idx; i < insertions.size() && insertions_by_start[i]->start <= pair_end; i++) {
-				if (pair_start <= insertions_by_start[i]->start && insertions_by_start[i]->start <= pair_end) {
-					pairs_data_t& pairs_data = (read->core.isize > stats.max_is-insertions_by_start[i]->svlen() ? ref_bp1_pairs_data[i] : neutral_bp1_pairs_data[i]);
-					add_read(pairs_data, read, 0);
+			if (!bam_is_rev(read)) {
+				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
+				for (int i = curr_del_bystart_idx; i < insertions.size() && insertions_by_start[i]->start <= pair_end; i++) {
+					if (pair_start <= insertions_by_start[i]->start && insertions_by_start[i]->start <= pair_end) {
+						pairs_data_t* pairs_data = (read->core.isize > stats.max_is-insertions_by_start[i]->svlen() ? &ref_bp1_pairs_data[i] : &neutral_bp1_pairs_data[i]);
+						pairs_waiting_for_neg_nm[std::string(bam_get_qname(read))].push_back({pairs_data, bam_dup1(read)});
+					}
 				}
+			} else {
+				std::vector<std::pair<pairs_data_t*, bam1_t*> >& pairs = pairs_waiting_for_neg_nm[std::string(bam_get_qname(read))];
+				for (int i = 0; i < pairs.size(); i++) {
+					add_read(*pairs[i].first, pairs[i].second, get_nm(read));
+					bam_destroy1(pairs[i].second);
+				}
+				pairs_waiting_for_neg_nm.erase(std::string(bam_get_qname(read)));
 			}
 		}
     }
     for (int i = 0; i < insertions.size(); i++) {
         insertion_t* ins = insertions[i];
-
+		
 		set_bp_pairs_info(ins->sample_info.alt_bp1.pairs_info, alt_bp1_pairs_data[i], config);
 		set_bp_pairs_info(ins->sample_info.alt_bp2.pairs_info, alt_bp2_pairs_data[i], config);
 		set_bp_pairs_info(ins->sample_info.bp1_stray_pairs, stray_bp1_pairs_data[i], config);

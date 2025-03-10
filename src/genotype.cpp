@@ -77,6 +77,25 @@ void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_i
     }
 }
 
+void reset_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, std::string prefix, int bp_number) {
+    std::string bp_number_str = std::to_string(bp_number);
+    std::string read_fmt_prefix = prefix + "R" + bp_number_str;
+
+    bcf_update_format_int32(out_hdr, b, read_fmt_prefix.c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "C").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CF").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CR").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CAS").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CSS").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CHQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CmQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMQ").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CAQ").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CSQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMSPAN").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMHQSPAN").c_str(), NULL, 0);
+}
+
 void update_record_bp_pairs_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_pairs_info_t bp_pairs_info, std::string prefix, int bp_number) {
     if (!bp_pairs_info.computed) return;
 
@@ -105,9 +124,29 @@ void update_record_bp_pairs_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_pairs_i
     }
 }
 
+void reset_record_bp_pairs_info(bcf_hdr_t* out_hdr, bcf1_t* b, std::string prefix, int bp_number) {
+    std::string bp_number_str = std::to_string(bp_number);
+    std::string pairs_fmt_prefix = prefix + "SP" + bp_number_str;
+
+    bcf_update_format_int32(out_hdr, b, pairs_fmt_prefix.c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "HQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "mQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "MQ").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "AQ").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "SQ").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (pairs_fmt_prefix + "SPAN").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "NMA").c_str(), NULL, 0);
+    bcf_update_format_float(out_hdr, b, (pairs_fmt_prefix + "NMS").c_str(), NULL, 0);
+}
+
 void update_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_consensus_info_t bp_consensus_info, std::string prefix, int bp_number) {
     update_record_bp_reads_info(out_hdr, b, bp_consensus_info.reads_info, prefix, bp_number);
     update_record_bp_pairs_info(out_hdr, b, bp_consensus_info.pairs_info, prefix, bp_number);
+}
+
+void reset_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, std::string prefix, int bp_number) {
+    reset_record_bp_reads_info(out_hdr, b, prefix, bp_number);
+    reset_record_bp_pairs_info(out_hdr, b, prefix, bp_number);
 }
 
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, hts_pos_t chr_len, int sample_idx) {
@@ -171,6 +210,15 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     // update FORMAT fields
     bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->sample_info.gt, sv->n_gt);
+
+    reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "A", 1);
+    reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "A", 2);
+    reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "R", 1);
+    reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "R", 2);
+    reset_record_bp_pairs_info(out_hdr, sv->vcf_entry, "N", 1);
+    reset_record_bp_pairs_info(out_hdr, sv->vcf_entry, "N", 2);
+    reset_record_bp_pairs_info(out_hdr, sv->vcf_entry, "S", 1);
+    reset_record_bp_pairs_info(out_hdr, sv->vcf_entry, "S", 2);
 
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp1, "A", 1);
     update_record_bp_consensus_info(out_hdr, sv->vcf_entry, sv->sample_info.alt_bp2, "A", 2);
