@@ -8,6 +8,8 @@
 #include <vector>
 #include <algorithm>
 
+int* imap = NULL;
+
 struct gt_record_t {
     bcf1_t* record;
     float epr;
@@ -72,6 +74,7 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
             std::cerr << "Error translating record to output header" << std::endl;
             exit(1);
         }
+        bcf_subset(out_hdr, b, 1, imap);
         
         std::string id = b->d.id;
         auto it = gt_records.find(id);
@@ -145,7 +148,7 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
         }
 
         if (bcf_write(out_fp, out_hdr, b) < 0) {
-            std::cerr << "Error writing record to base VCF" << std::endl;
+            std::cerr << "Error writing record to output VCF" << std::endl;
             exit(1);
         }
     }
@@ -176,20 +179,13 @@ int main(int argc, char** argv) {
     bcf_hdr_t* base_hdr = bcf_hdr_read(base_fp);
 
     // reset samples in out header
-    bcf_hdr_t* out_hdr = bcf_hdr_dup(base_hdr);
+    bcf_hdr_t* out_hdr = bcf_subset_header(base_hdr, sample, imap);
     add_fmt_tags(out_hdr);
     bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
     int len = 0;
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";
     bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, gt_as_dup_tag, &len));
-    if (bcf_hdr_set_samples(out_hdr, NULL, 0) != 0) {
-        throw std::runtime_error("Failed to unset samples in VCF header");
-    }
-    bcf_hdr_add_sample(out_hdr, sample.c_str());
-    if (bcf_hdr_sync(out_hdr) != 0) {
-        throw std::runtime_error("Failed to sync header");
-    }
-
+    
     htsFile* out_fp = bcf_open(out_vcf_fname.c_str(), "w");
     if (!out_fp) {
         std::cerr << "Error opening " << out_vcf_fname << std::endl;

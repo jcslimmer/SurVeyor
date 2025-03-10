@@ -37,10 +37,12 @@ int main(int argc, char* argv[]) {
     std::vector<sv_t*> svs;
     while (bcf_read(in_vcf_file, hdr, b) == 0) {
         sv_t* sv = bcf_to_sv(hdr, b);
+        if (sv == NULL) continue;
+
         sv_t* new_dup = NULL;
 
         std::string ins_seq = sv->ins_seq;
-        if (sv->svtype() == "INS" && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
+        if (sv->svtype() == "INS" && !ins_seq.empty() && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
             std::string contig_name = sv->chr;
             hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
