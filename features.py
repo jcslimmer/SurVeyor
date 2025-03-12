@@ -83,8 +83,7 @@ class Features:
             svtype_str += "_LARGE"
 
         if (Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
-            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0) and \
-            svtype_str != "DUP": # note that EXL2 should be PRESENT and 0
+            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0): # note that EXL2 should be PRESENT and 0
             svtype_str += "_IMPRECISE"
         return svtype_str
 
