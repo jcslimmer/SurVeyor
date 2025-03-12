@@ -4,14 +4,21 @@ import features
 import os
 
 class Classifier:
-    def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_prob, fname):
-        vcf_writer = pysam.VariantFile(fname, 'w', header=vcf_header)
+    def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_prob, out_vcf_fname, stats_fname):
+        stats = features.load_stats(stats_fname)
+
+        vcf_writer = pysam.VariantFile(out_vcf_fname, 'w', header=vcf_header)
         for record in vcf_reader.fetch():
             if features.Features.get_svtype(record) != "INV":
                 record.filter.clear()
                 record_id = features.Features.generate_id(record)
                 if record_id in svid_to_gt:
-                    record.samples[0]['GT'] = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
+                    gt = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
+                    max_is, read_len = features.get_stat(stats, 'max_is', record.chrom), features.get_stat(stats, 'read_len', record.chrom)
+                    if features.Features.get_model_name(record, max_is, read_len) in ("DUP_LARGE", "DUP_LARGE_IMPRECISE"):
+                        if gt[1] == 1:
+                            gt = (None, 1)
+                    record.samples[0]['GT'] = gt
                     record.samples[0]['EPR'] = float(svid_to_prob[record_id])
                 else:
                     record.samples[0]['GT'] = (None, None)
@@ -58,7 +65,7 @@ class Classifier:
         vcf_reader = pysam.VariantFile(in_vcf)
         header = vcf_reader.header
         header.add_line('##FORMAT=<ID=EPR,Number=1,Type=Float,Description="Probability of the SV existing in the sample, according to the ML model.">')
-        Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_prob, out_vcf)
+        Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_prob, out_vcf, stats_fname)
 
 if __name__ == "__main__":
     cmd_parser = argparse.ArgumentParser(description='Classify SVs using a built ML model.')

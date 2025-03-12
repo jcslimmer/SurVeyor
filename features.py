@@ -57,6 +57,12 @@ class Features:
                          'RSP2', 'RSP2HQ_1', 'RSP2HQ_2',
                          'RSP1mQ_1', 'RSP1mQ_2', 'RSP1MQ_1', 'RSP1MQ_2', 
                          'RSP2mQ_1', 'RSP2mQ_2', 'RSP2MQ_1', 'RSP2MQ_2',
+                         'NSP1', 'NSP1HQ_1', 'NSP1HQ_2',
+                         'NSP2', 'NSP2HQ_1', 'NSP2HQ_2',
+                         'NSP1mQ_1', 'NSP1mQ_2', 'NSP1MQ_1', 'NSP1MQ_2',
+                         'NSP2mQ_1', 'NSP2mQ_2', 'NSP2MQ_1', 'NSP2MQ_2',
+                         'ASP1_NSP1_1_NM_Z_SCORE', 'ASP1_NSP1_2_NM_Z_SCORE', 'ASP2_NSP2_1_NM_Z_SCORE', 'ASP2_NSP2_2_NM_Z_SCORE',
+                         'ASP1_NSP1_1_AQ_Z_SCORE', 'ASP1_NSP1_2_AQ_Z_SCORE', 'ASP2_NSP2_1_AQ_Z_SCORE', 'ASP2_NSP2_2_AQ_Z_SCORE',
                          'SSP1HQ_1', 'SSP1HQ_2',
                          'SSP2HQ_1', 'SSP2HQ_2',
                          'SSP1mQ_1', 'SSP1mQ_2', 'SSP1MQ_1', 'SSP1MQ_2',
@@ -76,8 +82,9 @@ class Features:
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
 
-        if Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
-           Features.get_number_value(record.samples[0], 'EXL2', 1) == 0: # note that EXL2 should be PRESENT and 0
+        if (Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
+            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0) and \
+            svtype_str != "DUP": # note that EXL2 should be PRESENT and 0
             svtype_str += "_IMPRECISE"
         return svtype_str
 
@@ -384,7 +391,7 @@ class Features:
         features['ASP1HQ_1_RATIO'], features['ASP1HQ_2_RATIO'] = asp1hq_1/max(1, asp1), asp1hq_2/max(1, asp1)
         features['ASP1mQ_1'], features['ASP1mQ_2'] = Features.get_number_value(record.samples[0], 'ASP1mQ', [Features.NAN, Features.NAN])
         features['ASP1MQ_1'], features['ASP1MQ_2'] = Features.get_number_value(record.samples[0], 'ASP1MQ', [Features.NAN, Features.NAN])
-        
+
         asp2 = Features.get_number_value(record.samples[0], 'ASP2', 0)
         asp2hq_1, asp2hq_2 = Features.get_number_value(record.samples[0], 'ASP2HQ', [0, 0])
         asp2nma_1, asp2nma_2 = Features.get_number_value(record.samples[0], 'ASP2NMA', [Features.NAN, Features.NAN])
@@ -436,6 +443,32 @@ class Features:
         features['RSP2mQ_1'], features['RSP2mQ_2'] = Features.get_number_value(record.samples[0], 'RSP2mQ', [Features.NAN, Features.NAN])
         features['RSP2MQ_1'], features['RSP2MQ_2'] = Features.get_number_value(record.samples[0], 'RSP2MQ', [Features.NAN, Features.NAN])
 
+        nsp1 = Features.get_number_value(record.samples[0], 'NSP1', 0)
+        nsp1hq_1, nsp1hq_2 = Features.get_number_value(record.samples[0], 'NSP1HQ', [0, 0])
+        nsp1nma_1, nsp1nma_2 = Features.get_number_value(record.samples[0], 'NSP1NMA', [Features.NAN, Features.NAN])
+        nsp1nms_1, nsp1nms_2 = Features.get_number_value(record.samples[0], 'NSP1NMS', [Features.NAN, Features.NAN])
+        nsp1aq_1, nsp1aq_2 = Features.get_number_value(record.samples[0], 'NSP1AQ', [Features.NAN, Features.NAN])
+        nsp1sq_1, nsp1sq_2 = Features.get_number_value(record.samples[0], 'NSP1SQ', [Features.NAN, Features.NAN])
+        features['NSP1'] = Features.piecewise_normalise(nsp1, min_disc_pairs, max_disc_pairs)
+        features['NSP1HQ_1'] = Features.piecewise_normalise(nsp1hq_1, min_disc_pairs, max_disc_pairs)
+        features['NSP1HQ_2'] = Features.piecewise_normalise(nsp1hq_2, min_disc_pairs, max_disc_pairs)
+        features['NSP1HQ_1_RATIO'], features['NSP1HQ_2_RATIO'] = nsp1hq_1/max(1, nsp1), nsp1hq_2/max(1, nsp1)
+        features['NSP1mQ_1'], features['NSP1mQ_2'] = Features.get_number_value(record.samples[0], 'NSP1mQ', [Features.NAN, Features.NAN])
+        features['NSP1MQ_1'], features['NSP1MQ_2'] = Features.get_number_value(record.samples[0], 'NSP1MQ', [Features.NAN, Features.NAN])
+
+        nsp2 = Features.get_number_value(record.samples[0], 'NSP2', 0)
+        nsp2hq_1, nsp2hq_2 = Features.get_number_value(record.samples[0], 'NSP2HQ', [0, 0])
+        nsp2nma_1, nsp2nma_2 = Features.get_number_value(record.samples[0], 'NSP2NMA', [Features.NAN, Features.NAN])
+        nsp2nms_1, nsp2nms_2 = Features.get_number_value(record.samples[0], 'NSP2NMS', [Features.NAN, Features.NAN])
+        nsp2aq_1, nsp2aq_2 = Features.get_number_value(record.samples[0], 'NSP2AQ', [Features.NAN, Features.NAN])
+        nsp2sq_1, nsp2sq_2 = Features.get_number_value(record.samples[0], 'NSP2SQ', [Features.NAN, Features.NAN])
+        features['NSP2'] = Features.piecewise_normalise(nsp2, min_disc_pairs, max_disc_pairs)
+        features['NSP2HQ_1'] = Features.piecewise_normalise(nsp2hq_1, min_disc_pairs, max_disc_pairs)
+        features['NSP2HQ_2'] = Features.piecewise_normalise(nsp2hq_2, min_disc_pairs, max_disc_pairs)
+        features['NSP2HQ_1_RATIO'], features['NSP2HQ_2_RATIO'] = nsp2hq_1/max(1, nsp2), nsp2hq_2/max(1, nsp2)
+        features['NSP2mQ_1'], features['NSP2mQ_2'] = Features.get_number_value(record.samples[0], 'NSP2mQ', [Features.NAN, Features.NAN])
+        features['NSP2MQ_1'], features['NSP2MQ_2'] = Features.get_number_value(record.samples[0], 'NSP2MQ', [Features.NAN, Features.NAN])
+
         if 'ASP2' not in record.samples[0]:
             asp2 = asp1
             asp2nma_1 = asp1nma_1
@@ -456,6 +489,18 @@ class Features:
             rsp2aq_2 = rsp1aq_2
             rsp2sq_1 = rsp1sq_1
             rsp2sq_2 = rsp1sq_2
+        if 'NSP2' not in record.samples[0]:
+            nsp2 = nsp1
+            nsp2hq_1 = nsp1hq_1
+            nsp2hq_2 = nsp1hq_2
+            nsp2nma_1 = nsp1nma_1
+            nsp2nma_2 = nsp1nma_2
+            nsp2nms_1 = nsp1nms_1
+            nsp2nms_2 = nsp1nms_2
+            nsp2aq_1 = nsp1aq_1
+            nsp2aq_2 = nsp1aq_2
+            nsp2sq_1 = nsp1sq_1
+            nsp2sq_2 = nsp1sq_2
 
         features['ASP1_OVER_RSP1'], features['ASP2_OVER_RSP2'] = asp1/max(1, asp1+rsp1), asp2/max(1, asp2+rsp2)
 
@@ -468,6 +513,16 @@ class Features:
         features['ASP1_RSP1_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp1aq_2, asp1sq_2, asp1, rsp1aq_2, rsp1sq_2, rsp1)
         features['ASP2_RSP2_1_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_1, asp2sq_1, asp2, rsp2aq_1, rsp2sq_1, rsp2)
         features['ASP2_RSP2_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_2, asp2sq_2, asp2, rsp2aq_2, rsp2sq_2, rsp2)
+
+        features['ASP1_NSP1_1_NM_Z_SCORE'] = Features.calculate_z_score(asp1nma_1, asp1nms_1, asp1, nsp1nma_1, nsp1nms_1, nsp1)
+        features['ASP1_NSP1_2_NM_Z_SCORE'] = Features.calculate_z_score(asp1nma_2, asp1nms_2, asp1, nsp1nma_2, nsp1nms_2, nsp1)
+        features['ASP2_NSP2_1_NM_Z_SCORE'] = Features.calculate_z_score(asp2nma_1, asp2nms_1, asp2, nsp2nma_1, nsp2nms_1, nsp2)
+        features['ASP2_NSP2_2_NM_Z_SCORE'] = Features.calculate_z_score(asp2nma_2, asp2nms_2, asp2, nsp2nma_2, nsp2nms_2, nsp2)
+
+        features['ASP1_NSP1_1_AQ_Z_SCORE'] = Features.calculate_z_score(asp1aq_1, asp1sq_1, asp1, nsp1aq_1, nsp1sq_1, nsp1)
+        features['ASP1_NSP1_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp1aq_2, asp1sq_2, asp1, nsp1aq_2, nsp1sq_2, nsp1)
+        features['ASP2_NSP2_1_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_1, asp2sq_1, asp2, nsp2aq_1, nsp2sq_1, nsp2)
+        features['ASP2_NSP2_2_AQ_Z_SCORE'] = Features.calculate_z_score(asp2aq_2, asp2sq_2, asp2, nsp2aq_2, nsp2sq_2, nsp2)
 
         ssp1 = Features.get_number_value(record.samples[0], 'SSP1', 0)
         ssp1hq_1, ssp1hq_2 = Features.get_number_value(record.samples[0], 'SSP1HQ', [0, 0])
@@ -583,6 +638,14 @@ def read_gts(file_path, tolerate_no_gts = False):
                 gts[id] = select_gt(gts[id], gt)
     return gts
 
+def load_stats(stats_fname):
+    stats = defaultdict(dict)
+    with open(stats_fname, 'r') as stats_reader:
+        for line in stats_reader:
+            sl = line.strip().split()
+            stats[sl[0]][sl[1]] = int(sl[2])
+    return stats
+
 def get_stat(stats, stat_name, chrom):
     if chrom in stats[stat_name]:
         return stats[stat_name][chrom]
@@ -592,23 +655,17 @@ def get_stat(stats, stat_name, chrom):
 def parse_vcf(vcf_fname, stats_fname, fp_fname, tolerate_no_gts = False):
     gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
     vcf_reader = pysam.VariantFile(vcf_fname)
-    stats_reader = open(stats_fname, 'r')
+    stats = load_stats(stats_fname)
+
     features_by_source, gts_by_source, variant_ids_by_source = defaultdict(list), defaultdict(list), defaultdict(list)
-
-    # read the stats file and extract the relevant values
-    stats = defaultdict(dict)
-    for line in stats_reader:
-        sl = line.strip().split()
-        stats[sl[0]][sl[1]] = int(sl[2])
-
     for record in vcf_reader.fetch():
         record_svtype = Features.get_svtype(record)
         if record_svtype.startswith('INV'):
             continue
 
-        model_name = Features.get_model_name(record, stats['max_is']['.'], stats['read_len']['.'])
+        model_name = Features.get_model_name(record, get_stat(stats, 'max_is', record.chrom), get_stat(stats, 'read_len', record.chrom))
         feature_values = Features.record_to_features(record, stats)
-        if gts[record.id] != "./.": # if too deep or no genotype is available, skip the record
+        if gts[record.id] != "./.": # if no genotype is available, skip the record
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gts[record.id])
             variant_ids_by_source[model_name].append(Features.generate_id(record))
