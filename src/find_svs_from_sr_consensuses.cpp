@@ -222,7 +222,9 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	mtx.unlock();
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
-		if (used_consensus_rc[ps.c1_idx] || used_consensus_lc[ps.c2_idx]) continue;
+		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
+		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
+		if (used_c1 || used_c2) continue;
 
 		consensus_t* c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
 		consensus_t* c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
