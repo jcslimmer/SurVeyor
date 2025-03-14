@@ -1,6 +1,6 @@
 import pysam, argparse
-import joblib
 import features
+import xgboost as xgb
 import os
 
 class Classifier:
@@ -34,12 +34,13 @@ class Classifier:
         svid_to_gt = dict()
         svid_to_prob = dict()
         for model_name in test_data:
-            model_file = os.path.join(model_dir, "yes_or_no", model_name + '.model')
+            model_file = os.path.join(model_dir, "yes_or_no", model_name + '.ubj')
 
             if model_name.startswith("INV"):
                 continue
 
-            classifier = joblib.load(model_file)
+            classifier = xgb.XGBClassifier()
+            classifier.load_model(model_file)
             predictions = classifier.predict(test_data[model_name])
             probs = classifier.predict_proba(test_data[model_name])
             for i in range(len(predictions)):
@@ -55,8 +56,8 @@ class Classifier:
             if len(positive_data) == 0:
                 continue
 
-            model_file = os.path.join(model_dir, "gts", model_name + '.model')
-            classifier = joblib.load(model_file)
+            model_file = os.path.join(model_dir, "gts", model_name + '.ubj')
+            classifier.load_model(model_file)
             predictions = classifier.predict(positive_data)
             for i in range(len(predictions)):
                 svid_to_gt[positive_variant_ids[i]] = predictions[i] + 1

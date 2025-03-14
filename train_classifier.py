@@ -1,6 +1,5 @@
 import argparse, time
 import numpy as np
-import joblib
 import features
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -61,10 +60,8 @@ for model_name in training_data:
         classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=8, min_child_weight=16, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
 
     training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
-    start = time.time()
+    start_time = time.time()
     classifier.fit(training_data[model_name], training_labels)
-    end = time.time()
-    print(f"Training for model {model_name} took {end - start} seconds")
 
     features_names = features.Features.get_feature_names(model_name)
     importances = classifier.feature_importances_
@@ -74,8 +71,8 @@ for model_name in training_data:
         for i in range(len(features_names)):
             f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
 
-    model_fname = os.path.join(yes_or_no_outdir, model_name + ".model")
-    joblib.dump(classifier, open(model_fname, 'wb'))
+    model_fname = os.path.join(yes_or_no_outdir, model_name + ".ubj")
+    classifier.save_model(model_fname)
 
     positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
     positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
@@ -93,5 +90,8 @@ for model_name in training_data:
 
     classifier.fit(positive_training_data, positive_training_labels)
 
-    model_fname = os.path.join(gts_outdir, model_name + ".model")
-    joblib.dump(classifier, open(model_fname, 'wb'))
+    model_fname = os.path.join(gts_outdir, model_name + ".ubj")
+    classifier.save_model(model_fname)
+
+    end_time = time.time()
+    print(f"Training for model {model_name} took {end_time - start_time} seconds")
