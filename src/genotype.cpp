@@ -1720,6 +1720,16 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         inv->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         inv->sample_info.ext_alt_consensus1_to_ref_score = ref_aln.sw_score;
         inv->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
+
+        hts_pos_t alt_lf_len = inv->start-alt_start;
+        int lf_aln_rlen = std::max(hts_pos_t(0), alt_lf_len - alt_aln.ref_begin);
+        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - alt_lf_len);
+        inv->left_anchor_aln->start = inv->start - lf_aln_rlen;
+        inv->left_anchor_aln->end = inv->start;
+        inv->left_anchor_aln->seq_len = lf_aln_rlen;
+        inv->right_anchor_aln->start = inv->end;
+        inv->right_anchor_aln->end = inv->end + rf_aln_rlen;
+        inv->right_anchor_aln->seq_len = rf_aln_rlen;
     }
 
     set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_better_seqs.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
@@ -1962,6 +1972,12 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
         delete[] ext_inv_suffix_rc;
         delete[] alt_bp1_seq;
+
+        hts_pos_t alt_lf_len = inv->start - alt_bp1_start;
+        int lf_aln_rlen = std::max(hts_pos_t(0), alt_lf_len - alt1_aln.ref_begin);
+        inv->left_anchor_aln->start = inv->start - lf_aln_rlen;
+        inv->left_anchor_aln->end = inv->start;
+        inv->left_anchor_aln->seq_len = lf_aln_rlen;
     }
 
     ref2_aln.Clear();
@@ -1994,6 +2010,12 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
         delete[] ext_inv_prefix_rc;
         delete[] alt_bp2_seq;
+
+        hts_pos_t alt_rf_len = alt_bp2_end - inv->end;
+        int rf_aln_rlen = std::max(hts_pos_t(0), alt_rf_len - (alt_bp2_len-alt2_aln.ref_end));
+        inv->right_anchor_aln->start = inv->end;
+        inv->right_anchor_aln->end = inv->end + rf_aln_rlen;
+        inv->right_anchor_aln->seq_len = rf_aln_rlen;
     }
 
     inv->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score + ref2_aln.sw_score;
@@ -2209,36 +2231,44 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n_seqs; i++) {
         std::string contig_name = seqnames[i];
         for (inversion_t* inv : invs_by_chr[contig_name]) {
-            std::vector<std::string> filters;
+            bool fail_dp = false, fail_sr = false;
+            inv->sample_info.filters.clear();
             if (inv->sample_info.left_flanking_cov > stats.get_max_depth(inv->chr) || inv->sample_info.right_flanking_cov > stats.get_max_depth(inv->chr) ||
                 inv->sample_info.left_flanking_cov < stats.get_min_depth(inv->chr) || inv->sample_info.right_flanking_cov < stats.get_min_depth(inv->chr) ||
                 inv->sample_info.left_anchor_cov > stats.get_max_depth(inv->chr) || inv->sample_info.right_anchor_cov > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_FLANKING_DEPTH");
+                fail_dp = fail_sr = true;
             }
             if (inv->sample_info.alt_bp1.reads_info.consistent_reads() > stats.get_max_depth(inv->chr) 
              || inv->sample_info.alt_bp2.reads_info.consistent_reads() > stats.get_max_depth(inv->chr)) {
                 inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
+                fail_dp = fail_sr = true;
             }
             if (inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq
              || inv->sample_info.alt_bp2.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp2.pairs_info.neg_max_mq < config.high_confidence_mapq) {
                 inv->sample_info.filters.push_back("LOW_MAPQ_DISC_PAIRS");
+                fail_dp = true;
             }
 
             if (inv->sample_info.alt_bp1.pairs_info.pairs < stats.get_min_disc_pairs_by_insertion_size(inv->svlen())/2) {
                 inv->sample_info.filters.push_back("NOT_ENOUGH_DISC_PAIRS");
+                fail_dp = true;
             }
 
             double ptn_ratio_bp1 = double(inv->sample_info.alt_bp1.pairs_info.pairs)/(inv->sample_info.alt_bp1.pairs_info.pairs+inv->sample_info.ref_bp1.pairs_info.pairs);
             double ptn_ratio_bp2 = double(inv->sample_info.alt_bp2.pairs_info.pairs)/(inv->sample_info.alt_bp2.pairs_info.pairs+inv->sample_info.ref_bp2.pairs_info.pairs);
             if (ptn_ratio_bp1 < 0.25 || ptn_ratio_bp2 < 0.25) {
                 inv->sample_info.filters.push_back("LOW_PTN_RATIO");
+                fail_dp = true;
             }
 
-            if (inv->right_anchor_aln->end-inv->left_anchor_aln->start < stats.max_is/2 || inv->rbp_right_anchor_aln->end-inv->rbp_left_anchor_aln->start < stats.max_is/2) {
+            if (inv->left_anchor_aln->end-inv->left_anchor_aln->start < stats.max_is/2 || inv->right_anchor_aln->end-inv->right_anchor_aln->start < stats.max_is/2) {
                 inv->sample_info.filters.push_back("SHORT_ANCHOR");
+                fail_sr = true;
             }
 
-            if (inv->sample_info.filters.empty()) {
+            if (!fail_sr || !fail_dp) {
+                inv->sample_info.filters.clear();
                 inv->sample_info.filters.push_back("PASS");
             }
         }
