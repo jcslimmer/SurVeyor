@@ -124,7 +124,7 @@ bool is_mate_right_clipped(bam1_t* r) {
     return mc_tag_str[i] == 'S';
 }
 bool is_mate_clipped(bam1_t* r) {
-	return is_mate_left_clipped(r) && is_mate_right_clipped(r);
+	return is_mate_left_clipped(r) || is_mate_right_clipped(r);
 }
 
 bool is_hidden_split_read(bam1_t* r, config_t config) {
@@ -146,14 +146,15 @@ bool is_hidden_split_read(bam1_t* r, config_t config) {
 }
 
 
-int get_mate_endpos(const bam1_t* r) {
+hts_pos_t get_mate_endpos(const bam1_t* r) {
     uint8_t* mcs = bam_aux_get(r, "MC");
     if (mcs == NULL) return r->core.mpos; // if no MC, return mpos
 
     char* mc = bam_aux2Z(mcs);
     int i = 0, mclen = strlen(mc);
 
-    int len = 0, pos = r->core.mpos;
+    int len = 0;
+    hts_pos_t pos = r->core.mpos;
     while (i < mclen) {
         if (mc[i] >= '0' && mc[i] <= '9') {
             len = (len*10) + (mc[i]-'0');

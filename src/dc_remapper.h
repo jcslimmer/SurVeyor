@@ -40,8 +40,8 @@ struct insertion_cluster_t {
             }
         }
     	semi_mapped_reads.push_back(read);
-        start = std::min(start, read->core.pos);
-        end = std::max(end, bam_endpos(read));
+        start = std::min(start, read->core.mpos);
+        end = std::max(end, get_mate_endpos(read));
     }
     void add_clip_cluster(consensus_t* clip_consensus) {
         if (!clip_consensus) return;
