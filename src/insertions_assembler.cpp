@@ -165,10 +165,11 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
     std::vector<bam1_t*> reads;
     std::vector<cluster_t*> clusters;
     while (sam_itr_next(dc_file->file, iter, read) >= 0) {
-        cluster_t* cluster = new cluster_t(read, 0, config.high_confidence_mapq);
+        cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq, true);
         cluster->id = clusters.size();
         cluster->ra_start = cluster->la_start;
         cluster->ra_end = cluster->la_end;
+        cluster->ra_rev = cluster->la_rev;
 
         clusters.push_back(cluster);
         reads.push_back(bam_dup1(read));
@@ -268,7 +269,7 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(clipped_file->file, iter, read) >= 0) {
 		if (is_semi_mapped(read) && get_sequence(read).find("N") == std::string::npos) {
-			if (read->core.flag & BAM_FMREVERSE) {
+            if (read->core.flag & BAM_FMREVERSE) {
 				l_semi_mapped_pairs.push_back(bam_dup1(read));
 			} else {
 				r_semi_mapped_pairs.push_back(bam_dup1(read));
@@ -370,7 +371,6 @@ void remap(int id, int contig_id) {
             pq.push(cc_v_distance_t(r_cluster, l_cluster, r_cluster->size()*l_cluster->size()));
         }
     }
-
 
     std::unordered_set<std::string> retained_read_names;
     for (insertion_cluster_t* c : r_clusters) {
@@ -516,6 +516,5 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-    // bcf_close(assembled_out_vcf_file);
     bcf_close(out_vcf_file);
 }
