@@ -48,6 +48,7 @@ call_parser.add_argument('--generate-training-data', action='store_true', help='
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
+genotype_parser.add_argument('--dedup', action='store_true', help='Remove duplicated calls from the input VCF file.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
@@ -127,13 +128,13 @@ def reads_categorizer():
     read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
     exec(read_categorizer_cmd)
 
-def deduplicate_vcf(vcf_file):
-    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_file, vcf_file, cmd_args.reference, cmd_args.workdir) 
+def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
+    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
     exec(compare_cmd)
 
     with open(cmd_args.workdir + "/compare.txt") as compare_file:
         epr_vals, imprecise_vals = {}, {}
-        with pysam.VariantFile(vcf_file) as vcf:
+        with pysam.VariantFile(vcf_fname) as vcf:
             for record in vcf:
                 epr_vals[record.id] = record.samples[0].get('EPR', 0)
                 imprecise_vals[record.id] = record.info.get('IMPRECISE', False)
@@ -153,8 +154,8 @@ def deduplicate_vcf(vcf_file):
             elif epr_vals[id2] > epr_vals[id1]:
                 removed_ids.add(id1)
 
-        vcf_deduped = cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz"
-        with pysam.VariantFile(vcf_file) as vcf, pysam.VariantFile(vcf_deduped, 'w', header=vcf.header) as out_vcf:
+        vcf_deduped = deduped_vcf_fname
+        with pysam.VariantFile(vcf_fname) as vcf, pysam.VariantFile(vcf_deduped, 'w', header=vcf.header) as out_vcf:
             for record in vcf:
                 if record.id not in removed_ids:
                     out_vcf.write(record)
@@ -215,7 +216,7 @@ if cmd_args.command == 'call':
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
 
-    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
@@ -236,5 +237,12 @@ elif cmd_args.command == 'genotype':
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
-    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, cmd_args.out_vcf_file, sample_name)
+    reconcile_out_vcf = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reconciled.vcf.gz"
+    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, reconcile_out_vcf, sample_name)
     exec(reconcile_vcf_gt_cmd)
+
+    if cmd_args.dedup:
+        deduplicate_vcf(reconcile_out_vcf, cmd_args.out_vcf_file)
+    else:
+        cp_cmd = "cp %s %s" % (reconcile_out_vcf, cmd_args.out_vcf_file)
+        exec(cp_cmd)
