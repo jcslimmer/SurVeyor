@@ -127,6 +127,38 @@ def reads_categorizer():
     read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
     exec(read_categorizer_cmd)
 
+def deduplicate_vcf(vcf_file):
+    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_file, vcf_file, cmd_args.reference, cmd_args.workdir) 
+    exec(compare_cmd)
+
+    with open(cmd_args.workdir + "/compare.txt") as compare_file:
+        epr_vals, imprecise_vals = {}, {}
+        with pysam.VariantFile(vcf_file) as vcf:
+            for record in vcf:
+                epr_vals[record.id] = record.samples[0].get('EPR', 0)
+                imprecise_vals[record.id] = record.info.get('IMPRECISE', False)
+
+        removed_ids = set()
+        for line in compare_file:
+            id1, id2 = line.strip().split()
+            if id1 >= id2: # each pair will be output twice, e.g. A B and B A. Let us process it once
+                continue
+
+            if imprecise_vals[id1] and not imprecise_vals[id2]:
+                removed_ids.add(id2)
+            elif imprecise_vals[id2] and not imprecise_vals[id1]:
+                removed_ids.add(id1)
+            elif epr_vals[id1] > epr_vals[id2]:
+                removed_ids.add(id2)
+            elif epr_vals[id2] > epr_vals[id1]:
+                removed_ids.add(id1)
+
+        vcf_deduped = cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz"
+        with pysam.VariantFile(vcf_file) as vcf, pysam.VariantFile(vcf_deduped, 'w', header=vcf.header) as out_vcf:
+            for record in vcf:
+                if record.id not in removed_ids:
+                    out_vcf.write(record)
+
 if cmd_args.samplename:
     sample_name = cmd_args.samplename
 else:
@@ -182,6 +214,8 @@ if cmd_args.command == 'call':
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     exec(reconcile_vcf_gt_cmd)
+
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
