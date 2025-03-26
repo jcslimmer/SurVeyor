@@ -712,10 +712,11 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         hts_pos_t rh_len = rh_end-del->end;
     
         delete[] alt_seq;
-        alt_seq = new char[2*alt_consensus_seq.length() + 1];
+        alt_seq = new char[lh_len + rh_len + del->ins_seq.length() + 1];
         strncpy(alt_seq, contig_seq+lh_start, lh_len);
-        strncpy(alt_seq+lh_len, contig_seq+del_end, rh_len);
-        alt_seq[lh_len+rh_len] = 0;
+        strncpy(alt_seq+lh_len, del->ins_seq.c_str(), del->ins_seq.length());
+        strncpy(alt_seq+lh_len+del->ins_seq.length(), contig_seq+del->end, rh_len);
+        alt_seq[lh_len+rh_len+del->ins_seq.length()] = 0;
 
         // align to ref+SV
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+rh_len, filter, &alt_aln, 0);
@@ -2244,8 +2245,8 @@ int main(int argc, char* argv[]) {
                 inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
                 fail_dp = fail_sr = true;
             }
-            if (inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq
-             || inv->sample_info.alt_bp2.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp2.pairs_info.neg_max_mq < config.high_confidence_mapq) {
+            if ((inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq && inv->sample_info.alt_bp2.pairs_info.pos_max_mq < config.high_confidence_mapq) ||
+                (inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq && inv->sample_info.alt_bp2.pairs_info.neg_max_mq < config.high_confidence_mapq)) {
                 inv->sample_info.filters.push_back("LOW_MAPQ_DISC_PAIRS");
                 fail_dp = true;
             }
