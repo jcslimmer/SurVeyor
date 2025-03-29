@@ -146,9 +146,9 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
                 continue
 
             if imprecise_vals[id1] and not imprecise_vals[id2]:
-                removed_ids.add(id2)
-            elif imprecise_vals[id2] and not imprecise_vals[id1]:
                 removed_ids.add(id1)
+            elif imprecise_vals[id2] and not imprecise_vals[id1]:
+                removed_ids.add(id2)
             elif epr_vals[id1] > epr_vals[id2]:
                 removed_ids.add(id2)
             elif epr_vals[id2] > epr_vals[id1]:
