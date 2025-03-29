@@ -752,13 +752,29 @@ int main(int argc, char* argv[]) {
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Indels found from unpaired consensuses in " << elapsed_time << " seconds" << std::endl;
 
-
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+	StripedSmithWaterman::Filter filter;
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
 
 		auto& svs = svs_by_chr[contig_name];
 		for (int i = 0; i < svs.size(); i++) {
-			if (svs[i]->svtype() == "DEL" && -svs[i]->svlen() < config.min_sv_size) {
+			sv_t* sv = svs[i];
+			if (sv->end-sv->start >= config.min_sv_size && abs(sv->svlen()) < config.min_sv_size && sv->ins_seq.length() >= config.min_sv_size
+			&& (sv->svtype() == "DEL" || sv->svtype() == "INS") && double(sv->ins_seq.length())/(sv->end-sv->start) >= 0.75) {
+				char* contig_seq = chr_seqs.get_seq(contig_name);
+				std::string inv_seq = svs[i]->ins_seq;
+				rc(inv_seq);
+				StripedSmithWaterman::Alignment aln;
+				aligner.Align(inv_seq.c_str(), contig_seq+svs[i]->start, svs[i]->end-svs[i]->start, filter, &aln, 0);
+				if (aln.sw_score >= 0.9*inv_seq.length()) {
+					std::string ins_seq = sv->ins_seq;
+					if (sv->svlen() == 0 && aln.sw_score == inv_seq.length()) ins_seq = "";
+					inversion_t* inv = new inversion_t(contig_name, sv->start, sv->end, ins_seq, sv->rc_consensus, sv->lc_consensus, sv->left_anchor_aln, sv->left_anchor_aln, sv->right_anchor_aln, sv->right_anchor_aln);
+					delete sv;
+					svs[i] = inv;
+				}
+			} else if (svs[i]->svtype() == "DEL" && -svs[i]->svlen() < config.min_sv_size) {
 				delete svs[i];
 				svs[i] = NULL;
 			} else if ((svs[i]->svtype() == "DUP" || svs[i]->svtype() == "INS") && svs[i]->svlen() < config.min_sv_size) {

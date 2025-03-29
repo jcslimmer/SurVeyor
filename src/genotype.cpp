@@ -1616,11 +1616,16 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     int alt_len = alt_end - alt_start;
     char* alt_seq = new char[alt_len+1];
     strncpy(alt_seq, contig_seq+alt_start, alt_lf_len);
-    char* inv_seq = new char[inv->end-inv->start+1];
-    strncpy(inv_seq, contig_seq+inv->start, inv->end-inv->start);
-    inv_seq[inv->end-inv->start] = 0;
-    rc(inv_seq);
-    strncpy(alt_seq+alt_lf_len, inv_seq, inv->end-inv->start);
+    char* inv_seq;
+    if (inv->ins_seq.empty()) {
+        inv_seq = new char[inv->end-inv->start+1];
+        strncpy(inv_seq, contig_seq+inv->start, inv->end-inv->start);
+        inv_seq[inv->end-inv->start] = 0;
+        rc(inv_seq);
+    } else {
+        inv_seq = strdup(inv->ins_seq.c_str());
+    }
+    strncpy(alt_seq+alt_lf_len, inv_seq, strlen(inv_seq));
     strncpy(alt_seq+alt_lf_len+(inv->end-inv->start), contig_seq+inv->end, alt_rf_len);
     alt_seq[alt_len] = 0;
 
