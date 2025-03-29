@@ -646,7 +646,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 	}
 
 	for (char* region : regions) {
-		delete[] region;
+		free(region);
 	}
 
 	for (auto& b : bkp_with_conc_pairs_count) {

@@ -1613,9 +1613,6 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     hts_pos_t alt_start = std::max(hts_pos_t(0), inv_start-extend);
     hts_pos_t alt_end = std::min(inv_end+extend, contig_len);
     int alt_lf_len = inv_start-alt_start, alt_rf_len = alt_end-inv_end;
-    int alt_len = alt_end - alt_start;
-    char* alt_seq = new char[alt_len+1];
-    strncpy(alt_seq, contig_seq+alt_start, alt_lf_len);
     char* inv_seq;
     if (inv->ins_seq.empty()) {
         inv_seq = new char[inv->end-inv->start+1];
@@ -1625,8 +1622,12 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     } else {
         inv_seq = strdup(inv->ins_seq.c_str());
     }
-    strncpy(alt_seq+alt_lf_len, inv_seq, strlen(inv_seq));
-    strncpy(alt_seq+alt_lf_len+(inv->end-inv->start), contig_seq+inv->end, alt_rf_len);
+    int inv_len = strlen(inv_seq);
+    int alt_len = alt_lf_len + inv_len + alt_rf_len;
+    char* alt_seq = new char[alt_len+1];
+    strncpy(alt_seq, contig_seq+alt_start, alt_lf_len);
+    strncpy(alt_seq+alt_lf_len, inv_seq, inv_len);
+    strncpy(alt_seq+alt_lf_len+inv_len, contig_seq+inv->end, alt_rf_len);
     alt_seq[alt_len] = 0;
 
     hts_pos_t ref_start = std::max(hts_pos_t(0), inv_start-extend);
@@ -1702,15 +1703,18 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
         delete[] alt_seq;
         alt_start = std::max(hts_pos_t(0), inv->start-stats.max_is);
+        alt_lf_len = inv->start-alt_start;
         alt_end = std::min(inv->end+stats.max_is, contig_len);
-        alt_seq = new char[alt_end-alt_start+1];
-        strncpy(alt_seq, contig_seq+alt_start, inv->start-alt_start);
-        strncpy(alt_seq+(inv->start-alt_start), inv_seq, inv->end-inv->start);
-        strncpy(alt_seq+(inv->start-alt_start)+(inv->end-inv->start), contig_seq+inv->end, alt_end-inv->end);
-        alt_seq[alt_end-alt_start] = 0;
+        alt_rf_len = alt_end-inv->end;
+        alt_len = alt_lf_len + inv_len + alt_rf_len;
+        alt_seq = new char[alt_len+1];
+        strncpy(alt_seq, contig_seq+alt_start, alt_lf_len);
+        strncpy(alt_seq+alt_lf_len, inv_seq, inv_len);
+        strncpy(alt_seq+alt_lf_len+inv_len, contig_seq+inv->end, alt_rf_len);
+        alt_seq[alt_len] = 0;
 
         // align to ref+SV
-        aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_end-alt_start, filter, &alt_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
         delete[] ref_seq;
         ref_start = std::max(hts_pos_t(0), inv->start-stats.max_is);
