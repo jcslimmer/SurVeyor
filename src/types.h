@@ -238,6 +238,10 @@ struct sv_t {
         ~sample_info_t() {
             delete[] gt;
         }
+
+        bool is_pass() {
+            return filters.empty() || filters[0] == "PASS";
+        }
     } sample_info;
 
     int n_gt = 1;
@@ -283,6 +287,15 @@ struct sv_t {
     }
 
     bool incomplete_ins_seq() { return ins_seq.find("-") != std::string::npos; }
+
+    int known_seq_prefix_len() {
+        int d = ins_seq.find("-");
+        return d == std::string::npos ? ins_seq.length() : d;
+    }
+    int known_seq_suffix_len() {
+        int d = ins_seq.find("-");
+        return d == std::string::npos ? ins_seq.length() : ins_seq.length() - d - 1;
+    }
 
     std::string print_gt() {
         std::stringstream ss;
@@ -383,15 +396,6 @@ struct insertion_t : sv_t {
 
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
-
-    int known_seq_prefix_len() {
-        int d = ins_seq.find("-");
-        return d == std::string::npos ? ins_seq.length() : d;
-    }
-    int known_seq_suffix_len() {
-        int d = ins_seq.find("-");
-        return d == std::string::npos ? ins_seq.length() : ins_seq.length() - d - 1;
-    }
 };
 
 struct breakend_t : sv_t {
@@ -416,7 +420,13 @@ struct inversion_t : sv_t {
     rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {}
 
     std::string svtype() { return "INV"; }
-    hts_pos_t svlen() { return end - start; }
+    hts_pos_t svlen() { 
+        return end - start;
+        // if (!ins_seq.empty()) {
+        //     return ins_seq.length() - (end-start);
+        // }
+        // return 0;
+    }
 
     bool is_left_facing() {
         return source[source.length()-2] == 'L';

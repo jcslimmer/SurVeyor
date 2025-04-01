@@ -325,6 +325,7 @@ int main(int argc, char* argv[]) {
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("e,exclusive", "SV cannot be used in multiple matches.", cxxopts::value<bool>()->default_value("false"))
+		("ignore-ft", "Ignore the FT field, if present. Without this option, only SVs with FT=PASS or absent are considered.", cxxopts::value<bool>()->default_value("false"))
 		("t,threads", "Number of threads to use.", cxxopts::value<int>()->default_value("1"))
 		("h,help", "Print usage");
 
@@ -436,6 +437,22 @@ int main(int argc, char* argv[]) {
 			std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
 		}
 		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), called_svs.end());
+	}
+
+	// erase and count elements from benchmark_svs that are not PASS
+	if (!parsed_args["ignore-ft"].as<bool>()) {
+		auto is_not_pass = [](sv_t* sv) {return !sv->sample_info.is_pass();};
+		int n_not_pass_b = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass);
+		int n_not_pass_c = std::count_if(called_svs.begin(), called_svs.end(), is_not_pass);
+		if (n_not_pass_b > 0) {
+			std::cerr << "Warning: excluded " << n_not_pass_b << " variants in benchmark file that are not PASS." << std::endl;
+		}
+		if (n_not_pass_c > 0) {
+			std::cerr << "Warning: excluded " << n_not_pass_c << " variants in called file that are not PASS." << std::endl;
+		}
+		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass), benchmark_svs.end());
+		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_not_pass), called_svs.end());
+			
 	}
 
 	if (parsed_args["force-ids"].as<bool>()) {
