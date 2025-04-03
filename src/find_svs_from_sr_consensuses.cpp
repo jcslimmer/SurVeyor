@@ -158,7 +158,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			for (Interval<int>& ra_iv : compatible_ra_idxs) {
 				if (la_iv.value == ra_iv.value) continue;
 				consensus_t* ra_consensus = (c->la_rev ? lc_consensuses[ra_iv.value] : rc_consensuses[ra_iv.value]);
-				
+
 				consensus_t* leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
 				consensus_t* rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
 
@@ -197,6 +197,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			int min_overlap = min_overlap_f(rc_consensus, lc_consensus);
 			double max_mm_rate = max_seq_error_f(rc_consensus, lc_consensus);
 
+			// workaround because this can happen for inversions, when the right and the left clipped consensuses inside the the inverted part,
+			// i.e., the left clipped consensus at the beginning of the inverted part and the right clipped consensus at the end of the inverted part
+			// these two are often extended to the same sequence, and they form a strong (perfect) match, instead of being used to call precise inversions
+			if (rc_consensus->sequence == lc_consensus->sequence) continue; 
+
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
 			if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
 				consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
@@ -220,6 +225,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	std::vector<breakend_t*> bnds_lf, bnds_rf;
 	mtx.unlock();
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
+
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
@@ -250,6 +256,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
 				aligner, min_overlap, config.min_clip_len, max_mm_rate);
 		}
+
+
 		if (svs.empty()) continue;
 
 		if (ps.c1_lc) used_consensus_lc[ps.c1_idx] = true;
@@ -758,7 +766,7 @@ int main(int argc, char* argv[]) {
 		auto& svs = svs_by_chr[contig_name];
 		for (int i = 0; i < svs.size(); i++) {
 			sv_t* sv = svs[i];
-			if (sv->end-sv->start >= config.min_sv_size && abs(sv->svlen()) < config.min_sv_size && sv->ins_seq.length() >= config.min_sv_size
+			if (!sv->imprecise && sv->end-sv->start >= config.min_sv_size && abs(sv->svlen()) < config.min_sv_size && sv->ins_seq.length() >= config.min_sv_size
 			&& (sv->svtype() == "DEL" || sv->svtype() == "INS") && double(sv->ins_seq.length())/(sv->end-sv->start) >= 0.75) {
 				char* contig_seq = chr_seqs.get_seq(contig_name);
 				std::string inv_seq = svs[i]->ins_seq;
@@ -769,6 +777,7 @@ int main(int argc, char* argv[]) {
 					std::string ins_seq = sv->ins_seq;
 					if (sv->svlen() == 0 && aln.sw_score == inv_seq.length()) ins_seq = "";
 					inversion_t* inv = new inversion_t(contig_name, sv->start, sv->end, ins_seq, sv->rc_consensus, sv->lc_consensus, sv->left_anchor_aln, sv->left_anchor_aln, sv->right_anchor_aln, sv->right_anchor_aln);
+					inv->source = sv->source;
 					delete sv;
 					svs[i] = inv;
 				}
