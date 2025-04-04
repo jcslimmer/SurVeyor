@@ -1615,9 +1615,9 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     int alt_lf_len = inv_start-alt_start, alt_rf_len = alt_end-inv_end;
     char* inv_seq;
     if (inv->ins_seq.empty()) {
-        inv_seq = new char[inv->end-inv->start+1];
-        strncpy(inv_seq, contig_seq+inv->start, inv->end-inv->start);
-        inv_seq[inv->end-inv->start] = 0;
+        inv_seq = new char[inv->inv_end-inv->inv_start+1];
+        strncpy(inv_seq, contig_seq+inv->inv_start, inv->inv_end-inv->inv_start);
+        inv_seq[inv->inv_end-inv->inv_start] = 0;
         rc(inv_seq);
     } else {
         inv_seq = strdup(inv->ins_seq.c_str());
@@ -1693,7 +1693,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, inv->start-stats.max_is, inv->start, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
-        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, inv->start, inv->start+stats.max_is, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, inv->end, inv->end+stats.max_is, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         inv->sample_info.alt_lext_reads = alt_consensus->left_ext_reads;
         inv->sample_info.alt_rext_reads = alt_consensus->right_ext_reads;
         inv->sample_info.hq_alt_lext_reads = alt_consensus->hq_left_ext_reads;
@@ -1744,7 +1744,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_better_seqs.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(inv->sample_info.ref_bp1.reads_info, ref_better_seqs.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
-    
+
     inv->sample_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;
@@ -2077,9 +2077,18 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_inv(contig_name, invs, bam_file, config, stats);
 
     for (inversion_t* inv : invs) {
-        double ptn1 = inv->sample_info.alt_bp1.pairs_info.pairs/double(inv->sample_info.ref_bp1.pairs_info.pairs);
-        double ptn2 = inv->sample_info.alt_bp2.pairs_info.pairs/double(inv->sample_info.ref_bp2.pairs_info.pairs);
-        double ptn = std::min(ptn1, ptn2);
+        double pairs_ptn1 = inv->sample_info.alt_bp1.pairs_info.pairs/double(inv->sample_info.alt_bp1.pairs_info.pairs+inv->sample_info.ref_bp1.pairs_info.pairs);
+        double pairs_ptn2 = inv->sample_info.alt_bp2.pairs_info.pairs/double(inv->sample_info.alt_bp2.pairs_info.pairs+inv->sample_info.ref_bp2.pairs_info.pairs);
+        double pairs_ptn = std::min(pairs_ptn1, pairs_ptn2);
+        
+        double reads_ptn1 = inv->sample_info.alt_bp1.reads_info.consistent_reads()/double(inv->sample_info.alt_bp1.reads_info.consistent_reads()+inv->sample_info.ref_bp1.reads_info.consistent_reads());
+        double reads_ptn2 = reads_ptn1;
+        if (inv->sample_info.alt_bp2.reads_info.computed) {
+            reads_ptn2 = inv->sample_info.alt_bp2.reads_info.consistent_reads()/double(inv->sample_info.alt_bp2.reads_info.consistent_reads()+inv->sample_info.ref_bp2.reads_info.consistent_reads());
+        }
+        double reads_ptn = std::min(reads_ptn1, reads_ptn2);
+
+        double ptn = std::max(pairs_ptn, reads_ptn);
         inv->n_gt = 2;
         inv->sample_info.gt = new int[2];
         if (ptn >= 0.75) {

@@ -420,6 +420,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* end_tag = "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the variant described in this record.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, end_tag, &len));
 
+	const char* invpos_tag = "##INFO=<ID=INVPOS,Number=2,Type=Integer,Description=\"The start and end positions of the inverted sequence. This is only relevant for inversions.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, invpos_tag, &len));
+
 	const char* svlen_tag = "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Difference in length between REF and ALT alleles.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svlen_tag, &len));
 
@@ -586,6 +589,12 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 				bcf_update_info_int32(hdr, bcf_entry, "EST_SIZE", &(del->estimated_size), 1);
 			}
 		}
+	} else if (sv->svtype() == "INV") {
+		inversion_t* inv = (inversion_t*) sv;
+		if (inv->inv_start != inv->start || inv->inv_end != inv->end) {
+			int invpos[2] = {(int) inv->inv_start, (int) inv->inv_end};
+			bcf_update_info_int32(hdr, bcf_entry, "INVPOS", invpos, 2);
+		}
 	}
 }
 
@@ -742,6 +751,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		sv_t::anchor_aln_t* rbp_left_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
 		sv_t::anchor_aln_t* rbp_right_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
 		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
+
+		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
+		inversion_t* inv = (inversion_t*) sv;
+		if (len > 0) {
+			inv->inv_start = data[0];
+			inv->inv_end = data[1];
+		}
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];
 		size_t colon_pos = alt.find(':');

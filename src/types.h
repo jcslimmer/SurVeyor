@@ -413,11 +413,16 @@ struct inversion_t : sv_t {
 
     anchor_aln_t* rbp_left_anchor_aln, * rbp_right_anchor_aln;
 
+    hts_pos_t inv_start = 0, inv_end = 0;
+
     inversion_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus,
         anchor_aln_t* lbp_left_anchor_aln, anchor_aln_t* lbp_right_anchor_aln, 
         anchor_aln_t* rbp_left_anchor_aln, anchor_aln_t* rbp_right_anchor_aln) :
     sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln),
-    rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {}
+    rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {
+        inv_start = start;
+        inv_end = end;
+    }
 
     std::string svtype() { return "INV"; }
     hts_pos_t svlen() { 

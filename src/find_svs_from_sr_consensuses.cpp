@@ -375,7 +375,16 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			lc_consensus->hq_left_ext_reads = bnd_lf->rc_consensus->hq_right_ext_reads;
 			lc_consensus->hq_right_ext_reads = bnd_lf->lc_consensus->hq_right_ext_reads;
 		}
-		inversion_t* inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+
+		bool imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
+		inversion_t* inv = NULL;
+		if (!imprecise && (bnd_rf->start+10 <= bnd_lf->start || bnd_rf->end+10 <= bnd_lf->end)) {
+			inv = new inversion_t(contig_name, bnd_rf->start, bnd_lf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+			inv->inv_start = bnd_lf->start;
+			inv->inv_end = bnd_rf->end;
+		} else {
+			inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+		}
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
 		if (inv->svlen() < config.min_sv_size) {
