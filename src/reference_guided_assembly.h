@@ -2,9 +2,11 @@
 #define GUIDED_REFERENCE_ASSEMBLE_H
 
 #include <functional>
+#include <memory>
 #include <queue>
 
 #include "../libs/ssw_cpp.h"
+#include "htslib/sam.h"
 #include "sw_utils.h"
 #include "utils.h"
 #include "sam_utils.h"
@@ -158,22 +160,14 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats,
 		bool scaffold = true) {
 
-	// align all reads to the reference, and use their positions to guide the assembly
-	// in particular, use their positions to determine the order of the reads in the contig
-
-	StripedSmithWaterman::Filter filter;
-	StripedSmithWaterman::Alignment aln;
 	std::vector<std::string> read_seqs;
 	for (std::string& seq : seqs_lf) {
-		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		read_seqs.push_back(seq);
 	}
 	for (std::string& seq : seqs_is) {
-		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		read_seqs.push_back(seq);
 	}
 	for (std::string& seq : seqs_rf) {
-		aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		read_seqs.push_back(seq);
 	}
 
@@ -191,6 +185,8 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	}
 
 	// score the retained contigs
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
 	std::vector<int> scores(assembled_sequences.size());
 	for (std::string& read_seq : read_seqs) {
 		int best_score = 0;
@@ -303,7 +299,8 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	return scaffolded_sequences;
 }
 
-std::vector<std::string> generate_reference_guided_consensus(std::string reference, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+std::vector<std::string> generate_reference_guided_consensus(std::string reference, 
+		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner,
 		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
 
@@ -331,7 +328,8 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	return generate_reference_guided_consensus(reference, seqs_lf, seqs_is, seqs_rf, aligner, harsh_aligner, consensus_contigs_alns, config, stats);
 }
 
-std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t& contigs, contig_map_t& contig_map, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, 
+std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t& contigs, contig_map_t& contig_map, 
+		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, 
         std::vector<remap_info_t>& rc_remap_infos, std::vector<remap_info_t>& lc_remap_infos, region_t& best_region, bool is_rc, 
 		bool& left_bp_precise, bool& right_bp_precise, std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
@@ -340,8 +338,8 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 
 	if (best_region.score.remap_start >= best_region.score.remap_end) return "";
 
-	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(new cluster_t());
-	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(new cluster_t());
+	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
+	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
 		if (rc_remap_infos[i].accepted) {
 			refined_r_cluster->add_stable_read(r_cluster->cluster->reads[i]);
@@ -450,11 +448,7 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 
 	StripedSmithWaterman::Alignment aln;
 	StripedSmithWaterman::Filter filter;
-	if (r_cluster->clip_consensus) {
-		harsh_aligner.Align(r_cluster->clip_consensus->sequence.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
-		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error);
-		rc_remap_infos.back() = remap_info_t(aln, accepted, config.min_clip_len);
-	}
+	rc_remap_infos.clear();
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
 		bam1_t* read = r_cluster->cluster->reads[i];
 		std::string read_seq = get_sequence(read);
@@ -463,13 +457,20 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 		std::string matequal = get_mate_qual(read, matequals);
 		rc(mateseq);
 		matequal = std::string(matequal.rbegin(), matequal.rend());
-
+		
 		harsh_aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error, read_qual, stats.min_avg_base_qual);
 		harsh_aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		accepted &= accept(aln, config.min_clip_len, config.max_seq_error, matequal, stats.min_avg_base_qual);
-		rc_remap_infos[i] = remap_info_t(aln, accepted, config.min_clip_len);
+		rc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
 	}
+	if (r_cluster->clip_consensus) {
+		harsh_aligner.Align(r_cluster->clip_consensus->sequence.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
+		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error);
+		rc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
+	}
+
+	lc_remap_infos.clear();
 	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
 		bam1_t* read = l_cluster->cluster->reads[i];
 		std::string read_seq = get_sequence(read);
@@ -481,12 +482,12 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error, read_qual, stats.min_avg_base_qual);
 		harsh_aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		accepted &= accept(aln, config.min_clip_len, config.max_seq_error, matequal, stats.min_avg_base_qual);
-		lc_remap_infos[i] = remap_info_t(aln, accepted, config.min_clip_len);
+		lc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
 	}
 	if (l_cluster->clip_consensus) {
 		harsh_aligner.Align(l_cluster->clip_consensus->sequence.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error);
-		lc_remap_infos.back() = remap_info_t(aln, accepted, config.min_clip_len);
+		lc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
 	}
 
 	return corrected_junction_seq;
@@ -508,8 +509,10 @@ void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info
 }
 
 insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::string& junction_seq,
-		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
-		region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, StripedSmithWaterman::Aligner& aligner, config_t& config) {
+		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, 
+		std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
+		region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, 
+		StripedSmithWaterman::Aligner& aligner, config_t& config) {
 
 	int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
 	int remap_end = std::min(l_cluster->end+50, contig_len-1);
@@ -522,7 +525,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	insertion_t* insertion = (insertion_t*) insertions[0];
 
-	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(new cluster_t());
+	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
     for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
         bam1_t* r = r_cluster->cluster->reads[i];
         if (ro_remap_infos[i].accepted) {
@@ -533,7 +536,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
         refined_r_cluster->add_clip_cluster(r_cluster->clip_consensus);
     }
 
-	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(new cluster_t());
+	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
     for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
         bam1_t* r = l_cluster->cluster->reads[i];
         if (lo_remap_infos[i].accepted) {
@@ -614,16 +617,16 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
 	insertion->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 
-	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-		bam1_t* r = r_cluster->cluster->reads[i];
-		update_read(r, best_region, ro_remap_infos[i], is_rc);
-		kept.push_back(r);
-	}
-	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-		bam1_t* r = l_cluster->cluster->reads[i];
-		update_read(r, best_region, lo_remap_infos[i], is_rc);
-		kept.push_back(r);
-	}
+	// for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+	// 	bam1_t* r = bam_dup1(r_cluster->cluster->reads[i]);
+	// 	update_read(r, best_region, ro_remap_infos[i], is_rc);
+	// 	kept.push_back(r);
+	// }
+	// for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+	// 	bam1_t* r = bam_dup1(l_cluster->cluster->reads[i]);
+	// 	update_read(r, best_region, lo_remap_infos[i], is_rc);
+	// 	kept.push_back(r);
+	// }
 
 	delete refined_r_cluster;
 	delete refined_l_cluster;

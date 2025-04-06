@@ -35,7 +35,7 @@ std::unordered_map<std::string, std::vector<sv_t*> > svs_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<consensus_t*> > unpaired_consensuses_by_chr;
 
-std::unordered_map<std::string, std::vector<cluster_t*> > ss_clusters_by_chr;
+std::unordered_map<std::string, std::vector<std::shared_ptr<cluster_t>> > ss_clusters_by_chr;
 std::unordered_map<std::string, std::vector<breakend_t*> > dp_bnds_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
@@ -49,9 +49,9 @@ struct pair_w_score_t {
     int c1_idx, c2_idx;
 	bool c1_lc, c2_lc;
 	suffix_prefix_aln_t spa;
-	cluster_t* dp_cluster;
+	std::shared_ptr<cluster_t> dp_cluster;
 
-    pair_w_score_t(int c1_idx, bool c1_lc, int c2_idx, bool c2_lc, suffix_prefix_aln_t spa, cluster_t* dp_cluster) : 
+    pair_w_score_t(int c1_idx, bool c1_lc, int c2_idx, bool c2_lc, suffix_prefix_aln_t spa, std::shared_ptr<cluster_t> dp_cluster) : 
 		c1_idx(c1_idx), c1_lc(c1_lc), c2_idx(c2_idx), c2_lc(c2_lc), spa(spa), dp_cluster(dp_cluster) {}
 };
 
@@ -140,10 +140,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 	std::vector<pair_w_score_t> consensuses_scored_pairs;
 	mtx.lock();
-	std::vector<cluster_t*>& ss_clusters = ss_clusters_by_chr[contig_name];
+	std::vector<std::shared_ptr<cluster_t>>& ss_clusters = ss_clusters_by_chr[contig_name];
 	mtx.unlock();
 	// find viable pairs of consensuses that form BND, and push them to consensuses_scored_pairs
-	for (cluster_t* c : ss_clusters) {
+	for (std::shared_ptr<cluster_t> c : ss_clusters) {
 		std::vector<Interval<int>> compatible_la_idxs, compatible_ra_idxs;
 		if (c->la_rev) {
 			compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_end-stats.max_is, c->la_start+stats.read_len/2);
@@ -269,8 +269,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	}
 
 	// detect inversions from ss clusters
-	std::vector<cluster_t*> lf_ss_clusters, rf_ss_clusters;
-	for (cluster_t* c : ss_clusters) {
+	std::vector<std::shared_ptr<cluster_t>> lf_ss_clusters, rf_ss_clusters;
+	for (std::shared_ptr<cluster_t> c : ss_clusters) {
 		if (c->la_rev) {
 			lf_ss_clusters.push_back(c);
 		} else {
@@ -280,7 +280,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 	int bnd_idx = 0;
 	std::sort(bnds_lf.begin(), bnds_lf.end(), [](const breakend_t* i1, const breakend_t* i2) { return i1->start < i2->start; });
-	for (cluster_t* c : lf_ss_clusters) {	
+	for (std::shared_ptr<cluster_t> c : lf_ss_clusters) {	
 		while (bnd_idx < bnds_lf.size() && bnds_lf[bnd_idx]->start < c->la_end-stats.max_is) bnd_idx++;
 
 		bool has_bnd = false;
@@ -307,7 +307,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 	std::sort(bnds_rf.begin(), bnds_rf.end(), [](const breakend_t* i1, const breakend_t* i2) { return i1->start < i2->start; });
 	bnd_idx = 0;
-	for (cluster_t* c : rf_ss_clusters) {
+	for (std::shared_ptr<cluster_t> c : rf_ss_clusters) {
 		while (bnd_idx < bnds_rf.size() && bnds_rf[bnd_idx]->start < c->la_start) bnd_idx++;
 
 		bool has_bnd = false;
@@ -574,13 +574,13 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 		qname_to_mate_nm[qname] = nm;
 	}
 
-	std::vector<cluster_t*> ss_clusters;
+	std::vector<std::shared_ptr<cluster_t>> ss_clusters;
 	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
 		std::string qname = bam_get_qname(read);
-		cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq);
+		std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
 		ss_clusters.push_back(cluster);
 	}
 	close_samFile(dp_bam_file);
@@ -589,7 +589,7 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
 	std::vector<bam1_t*> reads;
 	if (!ss_clusters.empty()) cluster_clusters(ss_clusters, reads, stats.max_is, max_cluster_size);
-	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](cluster_t* c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
+	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
 
 	mtx.lock();
 	ss_clusters_by_chr[contig_name] = ss_clusters;

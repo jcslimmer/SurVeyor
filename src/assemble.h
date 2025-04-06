@@ -1,6 +1,7 @@
 #ifndef ASSEMBLE_H_
 #define ASSEMBLE_H_
 
+#include <memory>
 #include <unordered_set>
 #include <mutex>
 #include <htslib/sam.h>
@@ -229,7 +230,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 	return assembled_sequences;
 }
 
-std::vector<std::string> assemble_sequences(std::string contig_name, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+std::vector<std::string> assemble_sequences(std::string contig_name, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
@@ -277,7 +278,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, insertion_c
 		}
 	}
 
-	const int TOO_MANY_READS = 1000;
+	const int TOO_MANY_READS = stats.get_max_depth(contig_name) * stats.max_is / stats.read_len;
 	if (unstable_read_seqs.size() + left_stable_read_seqs.size() + right_stable_read_seqs.size() >= TOO_MANY_READS) return {"TOO_MANY_READS"};
 
 	std::vector<std::string> assembled_sequences = assemble_reads(left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs,
@@ -287,7 +288,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, insertion_c
 }
 
 sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
-		insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		std::ofstream& assembly_failed_no_seq, std::ofstream& assembly_failed_cycle_writer, std::ofstream& assembly_failed_too_many_reads_writer,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,

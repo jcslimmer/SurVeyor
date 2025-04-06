@@ -1,6 +1,7 @@
 #ifndef REMAPPING_H
 #define REMAPPING_H
 
+#include <memory>
 #include <vector>
 #include <string>
 #include <random>
@@ -230,7 +231,7 @@ int get_strict_region_end(std::vector<remap_info_t>& rc_remap_infos, std::vector
 }
 
 
-region_score_t compute_score_supp(region_t& region, char* contig_seq, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+region_score_t compute_score_supp(region_t& region, char* contig_seq, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
                        std::unordered_map<std::string, std::string>& mateseqs,
                        std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
                        StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
@@ -407,7 +408,7 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, insertion_
     return score;
 }
 
-void compute_score(region_t& region, char* contig_seq, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster,
+void compute_score(region_t& region, char* contig_seq, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
                    std::unordered_map<std::string, std::string>& mateseqs,
                    std::vector<remap_info_t>* ro_remap_infos, std::vector<remap_info_t>* lo_remap_infos,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
@@ -432,19 +433,19 @@ void compute_score(region_t& region, char* contig_seq, insertion_cluster_t* r_cl
 }
 
 
-insertion_cluster_t* subsample_cluster(insertion_cluster_t* reads_cluster, int size, std::default_random_engine& rng) {
+std::shared_ptr<insertion_cluster_t> subsample_cluster(std::shared_ptr<insertion_cluster_t> reads_cluster, int size, std::default_random_engine& rng) {
     std::vector<bam1_t*> subset(reads_cluster->cluster->reads);
     if (subset.size() > size) {
         std::shuffle(subset.begin(), subset.end(), rng);
         subset.erase(subset.begin() + size, subset.end());
     }
-    insertion_cluster_t* subsampled_cluster = new insertion_cluster_t(new cluster_t());
+    auto subsampled_cluster = std::make_shared<insertion_cluster_t>(std::make_shared<cluster_t>());
     for (bam1_t* read : subset) subsampled_cluster->add_stable_read(read);
     subsampled_cluster->add_clip_cluster(reads_cluster->clip_consensus);
     return subsampled_cluster;
 }
 
-std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<region_t>& regions,
+std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, std::vector<region_t>& regions,
                                                             std::unordered_map<std::string, std::string>& mateseqs, chr_seqs_map_t& contigs, contig_map_t& contig_map, 
                                                             StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner, StripedSmithWaterman::Aligner& aligner_to_base,
                                                             config_t& config, stats_t& stats) {
@@ -455,10 +456,10 @@ std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, inser
     bool is_rc;
 
     // if too many regions and too many reads, subsample
-    if (r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size() > 2*SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
+    if (r_cluster->cluster->count + l_cluster->cluster->count > 2*SMALL_SAMPLE_SIZE && regions.size() > CLUSTER_CANDIDATES) {
     	std::default_random_engine rng(config.seed);
-        insertion_cluster_t* subsampled_lc = subsample_cluster(l_cluster, SMALL_SAMPLE_SIZE, rng);
-        insertion_cluster_t* subsampled_rc = subsample_cluster(r_cluster, SMALL_SAMPLE_SIZE, rng);
+        std::shared_ptr<insertion_cluster_t> subsampled_lc = subsample_cluster(l_cluster, SMALL_SAMPLE_SIZE, rng);
+        std::shared_ptr<insertion_cluster_t> subsampled_rc = subsample_cluster(r_cluster, SMALL_SAMPLE_SIZE, rng);
 
         // compute best score
         for (int i = 0; i < regions.size(); i++) {
@@ -469,8 +470,6 @@ std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, inser
         std::sort(regions.begin(), regions.end(), std::greater<region_t>());
 
         regions.erase(regions.begin()+CLUSTER_CANDIDATES, regions.end());
-        delete subsampled_lc;
-        delete subsampled_rc;
     }
 
     // compute best score

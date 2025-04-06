@@ -5,13 +5,12 @@
 #include "sam_utils.h"
 #include "types.h"
 #include <cstdint>
+#include <iostream>
+#include <memory>
 #include <tuple>
 #include <list>
 #include <queue>
 #include <map>
-
-// IMPORTANT: All of these functions do not consider contig and direction, because they assume that we are trying to cluster pairs 
-// from the same contig and compatible direction
 
 struct cluster_t {
 	int id = -1;
@@ -28,9 +27,12 @@ struct cluster_t {
 	
 	std::vector<bam1_t*> reads; // reads that are part of this cluster
 
-	cluster_t() : la_start(INT32_MAX), la_end(0), la_rev(false), ra_start(INT32_MAX), ra_end(0), ra_rev(false), la_max_mapq(0), ra_max_mapq(0) {}
+	cluster_t() : 
+		la_start(INT32_MAX), la_end(0), la_rev(false), la_start_unclipped(INT32_MAX), la_end_unclipped(0),
+		ra_start(INT32_MAX), ra_end(0), ra_rev(false), ra_start_unclipped(INT32_MAX), ra_end_unclipped(0),
+		la_max_mapq(0), ra_max_mapq(0) {}
 
-	cluster_t(bam1_t* read, int high_confidence_mapq, bool store_read = false) : 
+	cluster_t(bam1_t* read, int high_confidence_mapq) : 
 			la_start(read->core.pos), la_end(bam_endpos(read)), la_rev(bam_is_rev(read)), 
 			la_start_unclipped(get_unclipped_start(read)), la_end_unclipped(get_unclipped_end(read)),
 			ra_start(read->core.mpos), ra_end(get_mate_endpos(read)), ra_rev(bam_is_mrev(read)),
@@ -45,21 +47,20 @@ struct cluster_t {
 		}
 		la_furthermost_seq = get_sequence(read);
 		ra_furthermost_seq = bam_get_qname(read);
-		if (store_read) reads.push_back(bam_dup1(read));
 	}
 
-	static hts_pos_t distance(cluster_t* c1, cluster_t* c2) {
+	static hts_pos_t distance(std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2) {
 		hts_pos_t la_dist = std::max(c1->la_end, c2->la_end) - std::min(c1->la_start, c2->la_start);
 		hts_pos_t ra_dist = std::max(c1->ra_end, c2->ra_end) - std::min(c1->ra_start, c2->ra_start);
 		return std::max(la_dist, ra_dist);
 	}
 
-	static bool can_merge(cluster_t* c1, cluster_t* c2, int max_distance) {
+	static bool can_merge(std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2, int max_distance) {
 		return c1->la_rev == c2->la_rev && c1->ra_rev == c2->ra_rev && distance(c1, c2) <= max_distance;
 	}
 
-	static cluster_t* merge(cluster_t* c1, cluster_t* c2) {
-		cluster_t* merged = new cluster_t;
+	static std::shared_ptr<cluster_t> merge(std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2) {
+		std::shared_ptr<cluster_t> merged = std::make_shared<cluster_t>();
 		merged->la_start = std::min(c1->la_start, c2->la_start);
 		merged->la_end = std::max(c1->la_end, c2->la_end);
 		merged->la_rev = c1->la_rev;
@@ -90,16 +91,15 @@ struct cluster_t {
 			else merged->ra_furthermost_seq = c2->ra_furthermost_seq;
 		}
 
-		merged->reads.insert(merged->reads.end(), c1->reads.begin(), c1->reads.end());
-		merged->reads.insert(merged->reads.end(), c2->reads.begin(), c2->reads.end());
 		return merged;
 	}
 
-	~cluster_t() {
-		// for (bam1_t* read : reads) {
-			// bam_destroy1(read);
-		// }
-	}
+	// ~cluster_t() {
+	// 	for (bam1_t* read : reads) {
+	// 		bam_destroy1(read);
+	// 	}
+	// 	reads.clear();
+	// }
 };
 
 bool operator < (const cluster_t& c1, const cluster_t& c2) {
@@ -114,9 +114,9 @@ bool operator != (const cluster_t& c1, const cluster_t& c2) {
 
 struct cc_distance_t {
     int distance;
-    cluster_t* c1,* c2;
+    std::shared_ptr<cluster_t> c1, c2;
 
-    cc_distance_t(cluster_t *c1, cluster_t *c2) : distance(cluster_t::distance(c1, c2)), c1(c1), c2(c2) {}
+    cc_distance_t(std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2) : distance(cluster_t::distance(c1, c2)), c1(c1), c2(c2) {}
 };
 bool operator < (const cc_distance_t& ccd1, const cc_distance_t& ccd2) { // reverse op for priority queue
     return ccd1.distance > ccd2.distance;
@@ -173,7 +173,7 @@ struct union_find_t {
 	}
 };
 
-void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c, int pos) {
+void remove_cluster_from_mm(std::multimap<int, std::shared_ptr<cluster_t>>& mm, std::shared_ptr<cluster_t> c, int pos) {
     auto bounds = mm.equal_range(pos);
     for (auto it = bounds.first; it != bounds.second; it++) {
         if (it->second == c) {
@@ -182,12 +182,12 @@ void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c, in
         }
     }
 }
-void remove_cluster_from_mm(std::multimap<int, cluster_t*>& mm, cluster_t* c) {
+void remove_cluster_from_mm(std::multimap<int, std::shared_ptr<cluster_t>>& mm, std::shared_ptr<cluster_t> c) {
     remove_cluster_from_mm(mm, c, c->la_start);
     remove_cluster_from_mm(mm, c, c->la_end);
 }
 
-void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& reads, int max_distance, int max_cluster_size,
+void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::vector<bam1_t*>& reads, int max_distance, int max_cluster_size,
 	 bool assign_reads_to_clusters = false) {
 
 	if (clusters.empty()) return;
@@ -197,11 +197,11 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 			throw std::runtime_error("Error: number of clusters and reads do not match");
 		}
 
-		std::vector<std::pair<cluster_t*, bam1_t*>> cluster_reads;
+		std::vector<std::pair<std::shared_ptr<cluster_t>, bam1_t*>> cluster_reads;
 		for (int i = 0; i < clusters.size(); i++) {
 			cluster_reads.push_back(std::make_pair(clusters[i], reads[i]));
 		}
-		std::sort(cluster_reads.begin(), cluster_reads.end(), [](std::pair<cluster_t*, bam1_t*>& cr1, std::pair<cluster_t*, bam1_t*>& cr2) {
+		std::sort(cluster_reads.begin(), cluster_reads.end(), [](std::pair<std::shared_ptr<cluster_t>, bam1_t*>& cr1, std::pair<std::shared_ptr<cluster_t>, bam1_t*>& cr2) {
 			return  std::make_tuple(cr1.first->la_start, cr1.first->la_end, cr1.first->ra_start, cr1.first->ra_end) < 
 					std::make_tuple(cr2.first->la_start, cr2.first->la_end, cr2.first->ra_start, cr2.first->ra_end);
 		});
@@ -212,7 +212,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 		}
 		for (int i = 0; i < clusters.size(); i++) clusters[i]->id = i;
 	} else {
-		std::sort(clusters.begin(), clusters.end(), [](cluster_t* c1, cluster_t* c2) {
+		std::sort(clusters.begin(), clusters.end(), [](std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2) {
 			return  std::make_tuple(c1->la_start, c1->la_end, c1->ra_start, c1->ra_end) < 
 					std::make_tuple(c2->la_start, c2->la_end, c2->ra_start, c2->ra_end);
 		});
@@ -225,11 +225,9 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 	int curr = 0;
     for (int i = 1; i < clusters.size(); i++) {
         if (*clusters[curr] == *clusters[i]) {
-            cluster_t* merged = cluster_t::merge(clusters[curr], clusters[i]);
+            std::shared_ptr<cluster_t> merged = cluster_t::merge(clusters[curr], clusters[i]);
             int parent_id = uf->merge(curr, i);
             merged->id = parent_id;
-            delete clusters[curr];
-            delete clusters[i];
             clusters[parent_id] = merged;
             clusters[curr+i-parent_id] = NULL;
         } else {
@@ -259,9 +257,9 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 		}
 	}
 
-	std::list<cluster_t*> clusters_created_all; // keep track of clusters so we delete them all
-	std::multimap<int, cluster_t*> clusters_map;
-    for (cluster_t* c : clusters) {
+	std::list<std::shared_ptr<cluster_t>> clusters_created_all; // keep track of clusters so we delete them all
+	std::multimap<int, std::shared_ptr<cluster_t>> clusters_map;
+    for (std::shared_ptr<cluster_t> c : clusters) {
         if (c == NULL || c->used) continue;
         clusters_created_all.push_back(c);
         clusters_map.insert(std::make_pair(c->la_start, c));
@@ -274,7 +272,7 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 
         if (ccd.c1->used || ccd.c2->used) continue;
 
-        cluster_t* new_cluster = cluster_t::merge(ccd.c1, ccd.c2);
+        auto new_cluster = std::shared_ptr<cluster_t>(cluster_t::merge(ccd.c1, ccd.c2));
         int parent_id = uf->merge(ccd.c1->id, ccd.c2->id);
         new_cluster->id = parent_id;
         clusters[parent_id] = new_cluster;
@@ -299,7 +297,6 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 
 	for (int i = 0; i < clusters.size(); i++) {
 		if (clusters[i] != NULL && clusters[i]->used) {
-			delete clusters[i];
 			clusters[i] = NULL;
 		}
 	}
@@ -313,8 +310,6 @@ void cluster_clusters(std::vector<cluster_t*>& clusters, std::vector<bam1_t*>& r
 			}
 		}
 	}
-
-	for (cluster_t* c : clusters_created_all) if (c->used) delete c;
 }
 
 #endif // CLUSTERING_UTILS_H

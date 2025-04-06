@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <map>
 #include <algorithm>
-#include <queue>
+#include <memory>
 #include <unistd.h>
 
 #include <htslib/sam.h>
@@ -16,6 +16,7 @@
 #include "../libs/ssw_cpp.h"
 #include "../libs/IntervalTree.h"
 #include "dc_remapper.h"
+#include "htslib/vcf.h"
 #include "sam_utils.h"
 #include "clustering_utils.h"
 #include "remapping.h"
@@ -40,23 +41,23 @@ const double BASE_ACCEPTANCE_THRESHOLD = 0.95;
 const int TOO_MANY_READS = 1000;
 
 struct cc_v_distance_t {
-    insertion_cluster_t* c1, * c2;
+    std::shared_ptr<insertion_cluster_t> c1, c2;
     int distance;
 
-    cc_v_distance_t(insertion_cluster_t* c1, insertion_cluster_t* c2, int distance) : c1(c1), c2(c2), distance(distance) {}
+    cc_v_distance_t(std::shared_ptr<insertion_cluster_t> c1, std::shared_ptr<insertion_cluster_t> c2, int distance) : c1(c1), c2(c2), distance(distance) {}
 };
 bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // reverse op for priority queue
     return ccd1.distance < ccd2.distance;
 }
 
-bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_cluster_t* l_cluster, std::vector<bam1_t*>& kept,
+bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, std::vector<bam1_t*>& kept,
                    int contig_id, bam_hdr_t* header, std::unordered_map<std::string, std::string>& mateseqs,
 				   std::unordered_map<std::string, std::string>& matequals,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
                    StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
                    stats_t& stats) {
 
-	if (l_cluster->cluster->reads.size() + r_cluster->cluster->reads.size() > TOO_MANY_READS) return false;
+	if (l_cluster->cluster->count + r_cluster->cluster->count > TOO_MANY_READS) return false;
 
     std::vector<region_t> regions;
 
@@ -104,14 +105,6 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
     region_t best_region = best_and_base_region.first;
     region_t base_region = best_and_base_region.second;
 
-    if (base_region.score.total_score >= best_region.score.total_score*BASE_ACCEPTANCE_THRESHOLD) {
-    	int accepted_reads = base_region.score.ro_accepted + base_region.score.lo_accepted;
-		int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
-		if (double(accepted_reads)/tot_reads >= 0.5) {
-			return false;
-		}
-    }
-
     std::vector<remap_info_t> ro_remap_infos, lo_remap_infos;
     char* contig_seq = contigs.get_seq(contig_map.get_name(best_region.contig_id));
     bool is_rc;
@@ -127,7 +120,7 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
 	int rc_accepted_reads = 0, lc_accepted_reads = 0;
 	for (remap_info_t& remap_info : ro_remap_infos) rc_accepted_reads += remap_info.accepted;
 	for (remap_info_t& remap_info : lo_remap_infos) lc_accepted_reads += remap_info.accepted;
-	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
+	int tot_reads = r_cluster->cluster->count + l_cluster->cluster->count;
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
@@ -143,7 +136,8 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
 	if (corrected_consensus_sequence.empty()) return false;
 
     bool success = false;
-    insertion_t* insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
+    insertion_t* insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
+        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
     if (insertion != NULL) {
         mtx.lock();
         insertions.push_back(insertion);
@@ -156,16 +150,16 @@ bool find_insertion_from_cluster_pair(insertion_cluster_t* r_cluster, insertion_
     return success;
 }
 
-std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int contig_id, std::vector<consensus_t*>& clip_consensuses) {
+std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t* dc_file, int contig_id, std::vector<consensus_t*>& clip_consensuses) {
 
 	std::string contig_name = contig_map.get_name(contig_id);
     hts_itr_t* iter = sam_itr_querys(dc_file->idx, dc_file->header, contig_name.c_str());
     bam1_t* read = bam_init1();
 
     std::vector<bam1_t*> reads;
-    std::vector<cluster_t*> clusters;
+    std::vector<std::shared_ptr<cluster_t>> clusters;
     while (sam_itr_next(dc_file->file, iter, read) >= 0) {
-        cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq, true);
+        std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
         cluster->id = clusters.size();
         cluster->ra_start = cluster->la_start;
         cluster->ra_end = cluster->la_end;
@@ -177,16 +171,16 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
     sam_itr_destroy(iter);
     bam_destroy1(read);
 
-    if (clusters.empty()) return std::vector<insertion_cluster_t*>();
+    if (clusters.empty()) return std::vector<std::shared_ptr<insertion_cluster_t> >();
 
     // union-find data structure
     int n_reads = clusters.size();    
     int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
     cluster_clusters(clusters, reads, stats.max_is, max_cluster_size, true);
 
-    std::vector<insertion_cluster_t*> read_clusters;
+    std::vector<std::shared_ptr<insertion_cluster_t> > read_clusters;
     for (int i = 0; i < n_reads; i++) {
-        if (clusters[i] != NULL) read_clusters.push_back(new insertion_cluster_t(clusters[i]));
+        if (clusters[i] != NULL) read_clusters.push_back(std::make_shared<insertion_cluster_t>(clusters[i]));
     }
 
     if (!clip_consensuses.empty()) { // TODO: temporary, enhance logic
@@ -199,7 +193,7 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
 
         bool left_facing = clip_consensuses[0]->left_clipped;
         if (left_facing) {
-            std::sort(read_clusters.begin(), read_clusters.end(), [](insertion_cluster_t* rc1, insertion_cluster_t* rc2) {
+            std::sort(read_clusters.begin(), read_clusters.end(), [](std::shared_ptr<insertion_cluster_t> rc1, std::shared_ptr<insertion_cluster_t> rc2) {
                 return rc1->end < rc2->end;
             });
 
@@ -215,7 +209,7 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
                 }
             }
         } else {
-            std::sort(read_clusters.begin(), read_clusters.end(), [](insertion_cluster_t* rc1, insertion_cluster_t* rc2) {
+            std::sort(read_clusters.begin(), read_clusters.end(), [](std::shared_ptr<insertion_cluster_t> rc1, std::shared_ptr<insertion_cluster_t> rc2) {
                 return rc1->start < rc2->start;
             });
 
@@ -237,17 +231,16 @@ std::vector<insertion_cluster_t*> cluster_reads(open_samFile_t* dc_file, int con
         }
     }
 
-    for (int i = 0; i < read_clusters.size(); i++) {
-        if (read_clusters[i]->cluster->reads.size() <= 1) {
-            read_clusters[i]->deallocate_reads();
-            delete read_clusters[i];
-            read_clusters[i] = nullptr;
-        }
-    }
-    read_clusters.erase(std::remove(read_clusters.begin(), read_clusters.end(), nullptr), read_clusters.end());
+    // for (int i = 0; i < read_clusters.size(); i++) {
+    //     if (read_clusters[i]->cluster->reads.size() <= 2) {
+    //         read_clusters[i]->deallocate_reads();
+    //         read_clusters[i] = nullptr;
+    //     }
+    // }
+    // read_clusters.erase(std::remove(read_clusters.begin(), read_clusters.end(), nullptr), read_clusters.end());
 
-    std::sort(read_clusters.begin(), read_clusters.end(), [](const insertion_cluster_t* rc1, const insertion_cluster_t* rc2) {
-    	return rc1->cluster->reads.size() > rc2->cluster->reads.size();
+    std::sort(read_clusters.begin(), read_clusters.end(), [](const std::shared_ptr<insertion_cluster_t> rc1, const std::shared_ptr<insertion_cluster_t> rc2) {
+    	return rc1->cluster->count > rc2->cluster->count;
     });
 
     return read_clusters;
@@ -257,7 +250,7 @@ bool is_semi_mapped(bam1_t* read) {
 	return is_proper_pair(read, stats.min_is, stats.max_is) && !is_mate_clipped(read);
 }
 
-void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector<insertion_cluster_t*>& r_clusters, std::vector<insertion_cluster_t*>& l_clusters) {
+void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector<std::shared_ptr<insertion_cluster_t> >& r_clusters, std::vector<std::shared_ptr<insertion_cluster_t> >& l_clusters) {
 
 	if (!file_exists(clipped_fname)) return;
 
@@ -288,7 +281,7 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 	}
 	IntervalTree<bam1_t*> r_it(r_iv), l_it(l_iv);
 	std::unordered_set<bam1_t*> used_sm_reads;
-	for (insertion_cluster_t* rc : r_clusters) {
+	for (std::shared_ptr<insertion_cluster_t> rc : r_clusters) {
 		int end = rc->end, start = end - stats.max_is;
 		auto sm_reads = r_it.findContained(start, end);
 		for (auto i : sm_reads) {
@@ -299,7 +292,7 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 			}
 		}
 	}
-	for (insertion_cluster_t* rc : l_clusters) {
+	for (std::shared_ptr<insertion_cluster_t> rc : l_clusters) {
 		int start, end;
 		start = rc->start; end = start + stats.max_is;
 		auto sm_reads = l_it.findContained(start, end);
@@ -319,8 +312,53 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 	}
 }
 
-void remap(int id, int contig_id) {
+int dfs(int curr_idx, std::vector<std::vector<int> >& dependencies, std::vector<int>& dfs_label, int& label) {
+    dfs_label[curr_idx] = label;
+    for (int next_idx : dependencies[curr_idx]) {
+        if (dfs_label[next_idx] == -1) {
+            dfs(next_idx, dependencies, dfs_label, label);
+        }
+    }
+    return 0;
+}
 
+void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distance_t> cc_v_distances, bam_hdr_t* hdr,
+                     std::unordered_map<std::string, std::string>& mateseqs,
+                     std::unordered_map<std::string, std::string>& matequals) {
+
+    StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+    StripedSmithWaterman::Aligner permissive_aligner(2, 2, 4, 1, false);
+    StripedSmithWaterman::Aligner aligner_to_base(1, 4, 6, 1, true);
+    StripedSmithWaterman::Aligner harsh_aligner(1, 4, 100, 1, true);
+
+    for (cc_v_distance_t& cc_v_distance : cc_v_distances) {
+
+        std::shared_ptr<insertion_cluster_t> c1 = cc_v_distance.c1;
+        std::shared_ptr<insertion_cluster_t> c2 = cc_v_distance.c2;
+        if (c1->cluster->used || c2->cluster->used) continue;
+
+        // remap clusters
+        std::vector<bam1_t*> to_write;
+		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, hdr, mateseqs, matequals, 
+                                aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
+        if (!success) continue;
+
+        for (bam1_t* r : to_write) {
+            bam_destroy1(r);
+        }
+        c1->cluster->used = true; c2->cluster->used = true;
+    }
+    std::unordered_set<std::shared_ptr<insertion_cluster_t> > clusters;
+    for (cc_v_distance_t& cc_v_distance : cc_v_distances) {
+        cc_v_distance.c1->deallocate_reads();
+        cc_v_distance.c2->deallocate_reads();
+        clusters.insert(cc_v_distance.c1);
+        clusters.insert(cc_v_distance.c2);
+    }
+}
+
+void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::vector<std::future<void> >& futures) {
+    
     std::string r_dc_fname = workdir + "/workspace/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam";
     std::string l_dc_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
@@ -349,31 +387,34 @@ void remap(int id, int contig_id) {
         }
     }
 
-	std::vector<insertion_cluster_t*> r_clusters = cluster_reads(r_dc_file, contig_id, rc_consensuses);
-	std::vector<insertion_cluster_t*> l_clusters = cluster_reads(l_dc_file, contig_id, lc_consensuses);
+	std::vector<std::shared_ptr<insertion_cluster_t> > r_clusters = cluster_reads(r_dc_file, contig_id, rc_consensuses);
+	std::vector<std::shared_ptr<insertion_cluster_t> > l_clusters = cluster_reads(l_dc_file, contig_id, lc_consensuses);
 
 	std::string clipped_fname = workdir + "/workspace/clipped/" + std::to_string(contig_id) + ".bam";
 	add_semi_mapped_pairs(clipped_fname, contig_id, r_clusters, l_clusters);
 
-    std::priority_queue<cc_v_distance_t> pq;
-    std::multimap<int, insertion_cluster_t*> l_clusters_map;
-    for (insertion_cluster_t* l_cluster : l_clusters) {
+    std::vector<cc_v_distance_t> pq;
+    std::multimap<int, std::shared_ptr<insertion_cluster_t> > l_clusters_map;
+    for (std::shared_ptr<insertion_cluster_t> l_cluster : l_clusters) {
         hts_pos_t cl_start = l_cluster->start;
         l_clusters_map.insert({cl_start, l_cluster});
     }
-    for (insertion_cluster_t* r_cluster : r_clusters) {
+    for (std::shared_ptr<insertion_cluster_t> r_cluster : r_clusters) {
         hts_pos_t cl_end = r_cluster->end;
         auto begin = l_clusters_map.lower_bound(cl_end - stats.max_is);
         auto end = l_clusters_map.upper_bound(cl_end + stats.max_is);
 
         for (auto it = begin; it != end; it++) {
-            insertion_cluster_t* l_cluster = it->second;
-            pq.push(cc_v_distance_t(r_cluster, l_cluster, r_cluster->size()*l_cluster->size()));
+            std::shared_ptr<insertion_cluster_t> l_cluster = it->second;
+            pq.push_back(cc_v_distance_t(r_cluster, l_cluster, r_cluster->size()*l_cluster->size()));
         }
     }
+    std::sort(pq.begin(), pq.end(), [](const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) {
+        return ccd1.distance > ccd2.distance;
+    });
 
     std::unordered_set<std::string> retained_read_names;
-    for (insertion_cluster_t* c : r_clusters) {
+    for (std::shared_ptr<insertion_cluster_t> c : r_clusters) {
         for (bam1_t* r : c->cluster->reads) {
             std::string qname = bam_get_qname(r);
             if (is_samechr(r)) {
@@ -384,7 +425,7 @@ void remap(int id, int contig_id) {
             }
         }
     }
-    for (insertion_cluster_t* c : l_clusters) {
+    for (std::shared_ptr<insertion_cluster_t> c : l_clusters) {
         for (bam1_t* r : c->cluster->reads) {
             std::string qname = bam_get_qname(r);
             if (is_samechr(r)) {
@@ -408,47 +449,63 @@ void remap(int id, int contig_id) {
     }
     mateseqs_fin.close();
 
-    StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-    StripedSmithWaterman::Aligner permissive_aligner(2, 2, 4, 1, false);
-    StripedSmithWaterman::Aligner aligner_to_base(1, 4, 6, 1, true);
-    StripedSmithWaterman::Aligner harsh_aligner(1, 4, 100, 1, true);
-    std::vector<bam1_t*> r_reads_to_write, l_reads_to_write;
-    while (!pq.empty()) {
-        cc_v_distance_t cc_v_distance = pq.top();
-        pq.pop();
-
-        insertion_cluster_t* c1 = cc_v_distance.c1;
-        insertion_cluster_t* c2 = cc_v_distance.c2;
-        if (c1->cluster->used || c2->cluster->used) continue;
-
-        // remap clusters
-        std::vector<bam1_t*> to_write;
-		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, r_dc_file->header, mateseqs, matequals, 
-                                aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
-        if (!success) continue;
-
-        for (bam1_t* r : to_write) {
-            if (bam_is_rev(r)) {
-                l_reads_to_write.push_back(bam_dup1(r));
-            } else {
-                r_reads_to_write.push_back(bam_dup1(r));
-            }
-        };
-        c1->cluster->used = true; c2->cluster->used = true;
-        c1->deallocate_reads();
-        c2->deallocate_reads();
+    // create dependencies graph for pq
+    std::vector<std::vector<int> > dependencies(pq.size());
+    std::unordered_map<std::shared_ptr<insertion_cluster_t>, std::vector<int> > observed_pos_in_pq_for_clusters;
+    for (int curr_idx = 0; curr_idx < pq.size(); curr_idx++) {
+        cc_v_distance_t cc_v_distance = pq[curr_idx];
+        std::shared_ptr<insertion_cluster_t> c1 = cc_v_distance.c1;
+        std::shared_ptr<insertion_cluster_t> c2 = cc_v_distance.c2;
+        for (int prev_idx : observed_pos_in_pq_for_clusters[c1]) {
+            dependencies[curr_idx].push_back(prev_idx);
+            dependencies[prev_idx].push_back(curr_idx);
+        }
+        for (int prev_idx : observed_pos_in_pq_for_clusters[c2]) {
+            dependencies[curr_idx].push_back(prev_idx);
+            dependencies[prev_idx].push_back(curr_idx);
+        }
+        observed_pos_in_pq_for_clusters[c1].push_back(curr_idx);
+        observed_pos_in_pq_for_clusters[c2].push_back(curr_idx);
     }
 
-    std::string r_dc_remapped_fname = workdir + "/workspace/fwd-stable/" + std::to_string(contig_id) + ".remap.bam";
-    write_and_index_file(r_reads_to_write, r_dc_remapped_fname, r_dc_file->header);
-    for (bam1_t* r : r_reads_to_write) bam_destroy1(r);
+    // find connected components
+    std::vector<int> dfs_labels(pq.size(), -1);
+    int curr_label = 0;
+    for (int i = 0; i < pq.size(); i++) {
+        if (dfs_labels[i] == -1) {
+            dfs(i, dependencies, dfs_labels, curr_label);
+            curr_label++;
+        }
+    }
+    
+    std::vector<std::vector<cc_v_distance_t> > cc_v_distances_components(curr_label);
+    for (int i = 0; i < pq.size(); i++) {
+        cc_v_distance_t cc_v_distance = pq[i];
+        int label = dfs_labels[i];
+        cc_v_distances_components[label].push_back(cc_v_distance);
+    }
+    pq.clear();
 
-    std::string l_dc_remapped_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".remap.bam";
-    write_and_index_file(l_reads_to_write, l_dc_remapped_fname, l_dc_file->header);
-    for (bam1_t* r : l_reads_to_write) bam_destroy1(r);
+    bam_hdr_t* header = bam_hdr_dup(l_dc_file->header);
 
-    for (insertion_cluster_t* c : r_clusters) c->deallocate_reads();
-    for (insertion_cluster_t* c : l_clusters) c->deallocate_reads();
+    int MIN_COMP_SIZE = 1000;
+    std::vector<std::vector<cc_v_distance_t> > batches(1);
+    for (int comp_id = 0; comp_id < cc_v_distances_components.size(); comp_id++) {
+        std::vector<cc_v_distance_t>& cc_v_distances_component = cc_v_distances_components[comp_id];
+        std::sort(cc_v_distances_component.begin(), cc_v_distances_component.end(), [](const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) {
+            return ccd1.distance > ccd2.distance;
+        });
+
+        std::vector<cc_v_distance_t>& curr_batch = batches.back();
+        if (curr_batch.size() > MIN_COMP_SIZE || comp_id == cc_v_distances_components.size()-1) {
+            std::future<void> future = thread_pool.push(find_insertions, contig_id, comp_id, curr_batch, header,
+                mateseqs, matequals);
+            futures.push_back(std::move(future));
+            batches.push_back(std::vector<cc_v_distance_t>());
+        } else {
+            curr_batch.insert(curr_batch.end(), cc_v_distances_component.begin(), cc_v_distances_component.end());
+        }
+    }
 
     close_samFile(l_dc_file);
     close_samFile(r_dc_file);
@@ -477,11 +534,10 @@ int main(int argc, char* argv[]) {
     assembly_failed_too_many_reads_writer.open(workdir + "/intermediate_results/assembly_failed.too_many_reads.sv");
 
     ctpl::thread_pool thread_pool(config.threads);
-
     std::vector<std::future<void> > futures;
+
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-        std::future<void> future = thread_pool.push(remap, contig_id);
-        futures.push_back(std::move(future));
+        find_contig_insertions(contig_id, thread_pool, futures);
     }
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
@@ -500,6 +556,12 @@ int main(int argc, char* argv[]) {
 	if (bcf_hdr_write(out_vcf_file, out_vcf_header) != 0) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
+
+    std::sort(insertions.begin(), insertions.end(), [](sv_t* sv1, sv_t* sv2) {
+        int chr1 = contig_map.get_id(sv1->chr);
+        int chr2 = contig_map.get_id(sv2->chr);
+        return (chr1 < chr2) || (chr1 == chr2 && sv1->start < sv2->start);
+    });
 
 	int a_id = 0, t_id = 0;
 	for (sv_t* insertion : insertions) {

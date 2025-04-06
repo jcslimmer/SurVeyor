@@ -10,11 +10,11 @@
 struct insertion_cluster_t {
 
     hts_pos_t start, end;
-    cluster_t* cluster = NULL;
+    std::shared_ptr<cluster_t> cluster = NULL;
     std::vector<bam1_t*> semi_mapped_reads;
     consensus_t* clip_consensus = NULL;
 
-    insertion_cluster_t(cluster_t* cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {
+    insertion_cluster_t(std::shared_ptr<cluster_t> cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {
         std::vector<bam1_t*> reads;
         reads.swap(cluster->reads);
         for (bam1_t* read : reads) {

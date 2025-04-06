@@ -1,4 +1,5 @@
 #include <fstream>
+#include <memory>
 #include <string>
 #include <mutex>
 #include <htslib/sam.h>
@@ -25,10 +26,10 @@ std::unordered_map<std::string, std::vector<sv_t*>> other_svs_entries_by_chr;
 std::mutex maps_mtx;
 
 struct cc_pair {
-	cluster_t* c1, * c2;
+	std::shared_ptr<cluster_t> c1, c2;
 	hts_pos_t dist;
 
-	cc_pair(cluster_t* c1, cluster_t* c2) : c1(c1), c2(c2), dist(cluster_t::distance(c1, c2)) {}
+	cc_pair(std::shared_ptr<cluster_t> c1, std::shared_ptr<cluster_t> c2) : c1(c1), c2(c2), dist(cluster_t::distance(c1, c2)) {}
 
 	bool compatible() {
 		return dist <= stats.max_is;
@@ -36,29 +37,29 @@ struct cc_pair {
 };
 bool operator < (const cc_pair& cc1, const cc_pair& cc2) { return cc1.dist > cc2.dist; }
 
-void cluster_clusters(std::vector<cluster_t*>& clusters, int min_cluster_size, int max_cluster_size) {
+void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, int min_cluster_size, int max_cluster_size) {
 	std::vector<bam1_t*> reads;
 	cluster_clusters(clusters, reads, stats.max_is, max_cluster_size, false);
 
-	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](cluster_t* c) {
+	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) {
 		return c == NULL || c->count < min_cluster_size;
 	}), clusters.end());
 
 	std::sort(clusters.begin(), clusters.end());
 }
 
-std::vector<cluster_t*> cluster_dps_support(int contig_id, std::string contig_name, std::string dp_dir) {
+std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::string contig_name, std::string dp_dir) {
 
 	std::string dp_fname = dp_dir + "/" + std::to_string(contig_id) + ".bam";
-	if (!file_exists(dp_fname)) return std::vector<cluster_t*>();
+	if (!file_exists(dp_fname)) return std::vector<std::shared_ptr<cluster_t>>();
 
-	std::vector<cluster_t*> clusters;
+	std::vector<std::shared_ptr<cluster_t>> clusters;
 	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
 		std::string qname = bam_get_qname(read);
-		cluster_t* cluster = new cluster_t(read, config.high_confidence_mapq);
+		std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
 		clusters.push_back(cluster);
 	}
 	close_samFile(dp_bam_file);
@@ -68,8 +69,8 @@ std::vector<cluster_t*> cluster_dps_support(int contig_id, std::string contig_na
 	if (!clusters.empty()) cluster_clusters(clusters, min_cluster_size, max_cluster_size);
 
 	// set ra_furthermost_seq
-	std::unordered_map<std::string, cluster_t*> mateseqs_to_retrieve;
-	for (cluster_t* c : clusters) {
+	std::unordered_map<std::string, std::shared_ptr<cluster_t>> mateseqs_to_retrieve;
+	for (std::shared_ptr<cluster_t> c : clusters) {
 		mateseqs_to_retrieve[c->ra_furthermost_seq] = c;
 	}
 
@@ -89,11 +90,11 @@ std::vector<cluster_t*> cluster_dps_support(int contig_id, std::string contig_na
 
 void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion_t*>& deletions) {
 
-	std::vector<cluster_t*> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/long-pairs");
+	std::vector<std::shared_ptr<cluster_t>> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/long-pairs");
 	if (clusters.empty()) return;
 
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-	for (cluster_t* c : clusters) {
+	for (std::shared_ptr<cluster_t> c : clusters) {
 		if (c->used) continue;
 
 		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0);
@@ -116,18 +117,16 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 			del->source = "DP";
 			deletions.push_back(del);
 		}
-
-		delete c;
 	}
 }
 
 void cluster_ow_dps(int contig_id, std::string contig_name, std::vector<duplication_t*>& duplications) {
 
-	std::vector<cluster_t*> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/outward-pairs");
+	std::vector<std::shared_ptr<cluster_t>> clusters = cluster_dps_support(contig_id, contig_name, workdir + "/workspace/outward-pairs");
 	if (clusters.empty()) return;
 	
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
-	for (cluster_t* c : clusters) {
+	for (std::shared_ptr<cluster_t> c : clusters) {
 		if (c->used) continue;
 
 		duplication_t* dup = NULL;
