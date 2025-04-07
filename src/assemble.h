@@ -235,12 +235,12 @@ std::vector<std::string> assemble_sequences(std::string contig_name, std::shared
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
 	if (r_cluster->clip_consensus) left_stable_read_seqs.push_back({r_cluster->clip_consensus->sequence, true, false});
-	for (bam1_t* read : r_cluster->cluster->reads) {
-		std::string seq = get_sequence(read);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
+	for (std::shared_ptr<bam1_t> read : r_cluster->cluster->reads) {
+		std::string seq = get_sequence(read.get());
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
 		rc(mate_seq);
 		if (!used_ls.count(seq)) {
-			left_stable_read_seqs.push_back({seq, !is_left_clipped(read, 1), true});
+			left_stable_read_seqs.push_back({seq, !is_left_clipped(read.get(), 1), true});
 			used_ls.insert(seq);
 		}
 		if (!used_us.count(mate_seq)) {
@@ -248,11 +248,11 @@ std::vector<std::string> assemble_sequences(std::string contig_name, std::shared
 			used_us.insert(mate_seq);
 		}
 	}
-	for (bam1_t* read : l_cluster->cluster->reads) {
-		std::string seq = get_sequence(read);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
+	for (std::shared_ptr<bam1_t> read : l_cluster->cluster->reads) {
+		std::string seq = get_sequence(read.get());
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
 		if (!used_rs.count(seq)) {
-			right_stable_read_seqs.push_back({seq, true, !is_right_clipped(read, 1)});
+			right_stable_read_seqs.push_back({seq, true, !is_right_clipped(read.get(), 1)});
 			used_rs.insert(seq);
 		}
 		if (!used_us.count(mate_seq)) {
@@ -407,28 +407,28 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			chosen_ins->rc_consensus = r_cluster->clip_consensus;
 		}
 	}
-	for (bam1_t* read : r_cluster->cluster->reads) {
-		std::string mate_seq = get_mate_seq(read, mateseqs);
-		std::string mate_qual = get_mate_qual(read, matequals);
+	for (std::shared_ptr<bam1_t> read : r_cluster->cluster->reads) {
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
+		std::string mate_qual = get_mate_qual(read.get(), matequals);
 		rc(mate_seq);
 		mate_qual = std::string(mate_qual.rbegin(), mate_qual.rend());
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			bam1_t* d = bam_dup1(read);
+			bam1_t* d = bam_dup1(read.get());
 			d->core.mpos = 0;
 			d->core.mtid = d->core.tid;
 			d->core.flag |= BAM_FMUNMAP;
 			assembled_reads.push_back(d);
 		}
 	}
-	for (bam1_t* read : l_cluster->cluster->reads) {
-		std::string mate_seq = get_mate_seq(read, mateseqs);
-		std::string mate_qual = get_mate_qual(read, matequals);
+	for (std::shared_ptr<bam1_t> read : l_cluster->cluster->reads) {
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
+		std::string mate_qual = get_mate_qual(read.get(), matequals);
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			bam1_t* d = bam_dup1(read);
+			bam1_t* d = bam_dup1(read.get());
 			d->core.mpos = 0;
 			d->core.mtid = d->core.tid;
 			d->core.flag |= BAM_FMUNMAP;

@@ -15,17 +15,17 @@ struct insertion_cluster_t {
     consensus_t* clip_consensus = NULL;
 
     insertion_cluster_t(std::shared_ptr<cluster_t> cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {
-        std::vector<bam1_t*> reads;
+        std::vector<std::shared_ptr<bam1_t>> reads;
         reads.swap(cluster->reads);
-        for (bam1_t* read : reads) {
+        for (std::shared_ptr<bam1_t> read : reads) {
             add_stable_read(read);
         }
     }
 
-    void add_stable_read(bam1_t* read) {
+    void add_stable_read(std::shared_ptr<bam1_t> read) {
         cluster->reads.push_back(read);
         start = std::min(start, read->core.pos);
-        end = std::max(end, bam_endpos(read));
+        end = std::max(end, bam_endpos(read.get()));
         cluster->la_max_mapq = std::max(cluster->la_max_mapq, read->core.qual);
         cluster->ra_max_mapq = std::max(cluster->ra_max_mapq, read->core.qual);
     }
@@ -55,9 +55,6 @@ struct insertion_cluster_t {
     }
 
     void deallocate_reads() {
-        for (bam1_t* read : cluster->reads) {
-            bam_destroy1(read);
-        }
         cluster->reads.clear();
         for (bam1_t* read : semi_mapped_reads) {
         	bam_destroy1(read);

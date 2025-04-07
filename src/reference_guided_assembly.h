@@ -305,17 +305,17 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		std::vector<StripedSmithWaterman::Alignment>& consensus_contigs_alns, config_t& config, stats_t& stats) {
 
 	std::vector<std::string> seqs_lf, seqs_is, seqs_rf;
-	for (bam1_t* read : r_cluster->cluster->reads) {
-		std::string read_seq = get_sequence(read);
+	for (std::shared_ptr<bam1_t> read : r_cluster->cluster->reads) {
+		std::string read_seq = get_sequence(read.get());
 		seqs_lf.push_back(read_seq);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
 		rc(mate_seq);
 		seqs_is.push_back(mate_seq);
 	}
-	for (bam1_t* read : l_cluster->cluster->reads) {
-		std::string read_seq = get_sequence(read);
+	for (std::shared_ptr<bam1_t> read : l_cluster->cluster->reads) {
+		std::string read_seq = get_sequence(read.get());
 		seqs_rf.push_back(read_seq);
-		std::string mate_seq = get_mate_seq(read, mateseqs);
+		std::string mate_seq = get_mate_seq(read.get(), mateseqs);
 		seqs_is.push_back(mate_seq);
 	}
 	if (r_cluster->clip_consensus) {
@@ -450,11 +450,11 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 	StripedSmithWaterman::Filter filter;
 	rc_remap_infos.clear();
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-		bam1_t* read = r_cluster->cluster->reads[i];
-		std::string read_seq = get_sequence(read);
-		std::string read_qual = get_qual_ascii(read);
-		std::string mateseq = get_mate_seq(read, mateseqs);
-		std::string matequal = get_mate_qual(read, matequals);
+		std::shared_ptr<bam1_t> read = r_cluster->cluster->reads[i];
+		std::string read_seq = get_sequence(read.get());
+		std::string read_qual = get_qual_ascii(read.get());
+		std::string mateseq = get_mate_seq(read.get(), mateseqs);
+		std::string matequal = get_mate_qual(read.get(), matequals);
 		rc(mateseq);
 		matequal = std::string(matequal.rbegin(), matequal.rend());
 		
@@ -472,11 +472,11 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 
 	lc_remap_infos.clear();
 	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-		bam1_t* read = l_cluster->cluster->reads[i];
-		std::string read_seq = get_sequence(read);
-		std::string read_qual = get_qual_ascii(read);
-		std::string mateseq = get_mate_seq(read, mateseqs);
-		std::string matequal = get_mate_qual(read, matequals);
+		std::shared_ptr<bam1_t> read = l_cluster->cluster->reads[i];
+		std::string read_seq = get_sequence(read.get());
+		std::string read_qual = get_qual_ascii(read.get());
+		std::string mateseq = get_mate_seq(read.get(), mateseqs);
+		std::string matequal = get_mate_qual(read.get(), matequals);
 
 		harsh_aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error, read_qual, stats.min_avg_base_qual);
@@ -527,7 +527,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
     for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-        bam1_t* r = r_cluster->cluster->reads[i];
+        std::shared_ptr<bam1_t> r = r_cluster->cluster->reads[i];
         if (ro_remap_infos[i].accepted) {
             refined_r_cluster->add_stable_read(r);
         }
@@ -538,7 +538,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
     for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-        bam1_t* r = l_cluster->cluster->reads[i];
+        std::shared_ptr<bam1_t> r = l_cluster->cluster->reads[i];
         if (lo_remap_infos[i].accepted) {
             refined_l_cluster->add_stable_read(r);
         }

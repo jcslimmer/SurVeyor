@@ -62,23 +62,23 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
     std::vector<region_t> regions;
 
     /* == Find candidate regions for remapping == */
-    std::vector<bam1_t*> full_cluster;
+    std::vector<std::shared_ptr<bam1_t>> full_cluster;
     full_cluster.insert(full_cluster.end(), l_cluster->cluster->reads.begin(), l_cluster->cluster->reads.end());
     full_cluster.insert(full_cluster.end(), r_cluster->cluster->reads.begin(), r_cluster->cluster->reads.end());
-    std::sort(full_cluster.begin(), full_cluster.end(), [] (bam1_t* r1, bam1_t* r2) {
+    std::sort(full_cluster.begin(), full_cluster.end(), [] (std::shared_ptr<bam1_t> r1, std::shared_ptr<bam1_t> r2) {
         if (r1->core.mtid != r2->core.mtid) return r1->core.mtid < r2->core.mtid;
         else return r1->core.mpos < r2->core.mpos;
     });
 
-    std::vector<bam1_t*> subcluster;
-    for (bam1_t* r : full_cluster) {
+    std::vector<std::shared_ptr<bam1_t>> subcluster;
+    for (std::shared_ptr<bam1_t> r : full_cluster) {
         if (!subcluster.empty() && (subcluster[0]->core.mtid != r->core.mtid ||
                 r->core.mpos-subcluster[0]->core.mpos > stats.max_is)) {
             std::string m_contig_name = header->target_name[subcluster[0]->core.mtid];
             regions.push_back(get_candidate_region(subcluster, m_contig_name, contig_map.get_id(m_contig_name), contigs.get_len(m_contig_name), stats.max_is, config.max_trans_size));
             subcluster.clear();
         }
-        if (!is_mate_unmapped(r)) subcluster.push_back(r);
+        if (!is_mate_unmapped(r.get())) subcluster.push_back(r);
     }
     if (!subcluster.empty()) {
         std::string m_contig_name = header->target_name[subcluster[0]->core.mtid];
@@ -156,7 +156,7 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
     hts_itr_t* iter = sam_itr_querys(dc_file->idx, dc_file->header, contig_name.c_str());
     bam1_t* read = bam_init1();
 
-    std::vector<bam1_t*> reads;
+    std::vector<std::shared_ptr<bam1_t>> reads;
     std::vector<std::shared_ptr<cluster_t>> clusters;
     while (sam_itr_next(dc_file->file, iter, read) >= 0) {
         std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
@@ -166,7 +166,7 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
         cluster->ra_rev = cluster->la_rev;
 
         clusters.push_back(cluster);
-        reads.push_back(bam_dup1(read));
+        reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
     }
     sam_itr_destroy(iter);
     bam_destroy1(read);
@@ -230,14 +230,6 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
             read_clusters[j]->add_clip_cluster(clip_consensus_per_cluster[j]);
         }
     }
-
-    // for (int i = 0; i < read_clusters.size(); i++) {
-    //     if (read_clusters[i]->cluster->reads.size() <= 2) {
-    //         read_clusters[i]->deallocate_reads();
-    //         read_clusters[i] = nullptr;
-    //     }
-    // }
-    // read_clusters.erase(std::remove(read_clusters.begin(), read_clusters.end(), nullptr), read_clusters.end());
 
     std::sort(read_clusters.begin(), read_clusters.end(), [](const std::shared_ptr<insertion_cluster_t> rc1, const std::shared_ptr<insertion_cluster_t> rc2) {
     	return rc1->cluster->count > rc2->cluster->count;
@@ -323,8 +315,8 @@ int dfs(int curr_idx, std::vector<std::vector<int> >& dependencies, std::vector<
 }
 
 void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distance_t> cc_v_distances, bam_hdr_t* hdr,
-                     std::unordered_map<std::string, std::string>& mateseqs,
-                     std::unordered_map<std::string, std::string>& matequals) {
+                     std::shared_ptr<std::unordered_map<std::string, std::string>> mateseqs,
+                     std::shared_ptr<std::unordered_map<std::string, std::string>> matequals) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
     StripedSmithWaterman::Aligner permissive_aligner(2, 2, 4, 1, false);
@@ -339,7 +331,7 @@ void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distan
 
         // remap clusters
         std::vector<bam1_t*> to_write;
-		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, hdr, mateseqs, matequals, 
+		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, hdr, *mateseqs.get(), *matequals.get(), 
                                 aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
         if (!success) continue;
 
@@ -415,9 +407,9 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
 
     std::unordered_set<std::string> retained_read_names;
     for (std::shared_ptr<insertion_cluster_t> c : r_clusters) {
-        for (bam1_t* r : c->cluster->reads) {
+        for (std::shared_ptr<bam1_t> r : c->cluster->reads) {
             std::string qname = bam_get_qname(r);
-            if (is_samechr(r)) {
+            if (is_samechr(r.get())) {
                 retained_read_names.insert(qname + "_1");
                 retained_read_names.insert(qname + "_2");
             } else {
@@ -426,9 +418,9 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         }
     }
     for (std::shared_ptr<insertion_cluster_t> c : l_clusters) {
-        for (bam1_t* r : c->cluster->reads) {
+        for (std::shared_ptr<bam1_t> r : c->cluster->reads) {
             std::string qname = bam_get_qname(r);
-            if (is_samechr(r)) {
+            if (is_samechr(r.get())) {
                 retained_read_names.insert(qname + "_1");
                 retained_read_names.insert(qname + "_2");
             } else {
@@ -437,14 +429,14 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         }
     }
 
-    std::unordered_map<std::string, std::string> mateseqs;
-    std::unordered_map<std::string, std::string> matequals;
+    auto mateseqs = std::make_shared<std::unordered_map<std::string, std::string> >();
+    auto matequals = std::make_shared<std::unordered_map<std::string, std::string> >();
     std::ifstream mateseqs_fin(workdir + "/workspace/mateseqs/" + std::to_string(contig_id) + ".txt");
     std::string qname, seq, qual; int mapq;
     while (mateseqs_fin >> qname >> seq >> qual >> mapq) {
         if (retained_read_names.count(qname)) {
-            mateseqs[qname] = seq;
-            matequals[qname] = qual;
+            (*mateseqs)[qname] = seq;
+            (*matequals)[qname] = qual;
         }
     }
     mateseqs_fin.close();

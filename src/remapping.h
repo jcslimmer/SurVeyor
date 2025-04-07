@@ -59,14 +59,14 @@ struct remap_info_t {
     }
 };
 
-region_t get_candidate_region(std::vector<bam1_t*> subcluster, std::string& m_contig_name, int m_contig_id, hts_pos_t m_contig_len, int max_is, int max_trans_size) {
-    bam1_t* leftmost_reverse_mate = NULL, * rightmost_reverse_mate = NULL;
-    bam1_t* leftmost_forward_mate = NULL, * rightmost_forward_mate = NULL;
+region_t get_candidate_region(std::vector<std::shared_ptr<bam1_t>> subcluster, std::string& m_contig_name, int m_contig_id, hts_pos_t m_contig_len, int max_is, int max_trans_size) {
+    std::shared_ptr<bam1_t> leftmost_reverse_mate = NULL, rightmost_reverse_mate = NULL;
+    std::shared_ptr<bam1_t> leftmost_forward_mate = NULL, rightmost_forward_mate = NULL;
     /* gets two regions
      * 1. from reverse mates, max_is to the left of right-most read and max_insertion_size to the right of the left-most
      * 2. from right-most forward read, max_is to the right and max_insertion_size to the left
      */
-    for (bam1_t* r : subcluster) { // get leftmost reverse read
+    for (std::shared_ptr<bam1_t> r : subcluster) { // get leftmost reverse read
         if (bam_is_mrev(r)) {
             if (leftmost_reverse_mate == NULL || leftmost_reverse_mate->core.mpos > r->core.mpos) {
                 leftmost_reverse_mate = r;
@@ -76,7 +76,7 @@ region_t get_candidate_region(std::vector<bam1_t*> subcluster, std::string& m_co
             }
         }
     }
-    for (bam1_t* r : subcluster) { // get rightmost forward read
+    for (std::shared_ptr<bam1_t> r : subcluster) { // get rightmost forward read
         if (!bam_is_mrev(r)) {
             if (leftmost_forward_mate == NULL || leftmost_forward_mate->core.mpos > r->core.mpos) {
                 leftmost_forward_mate = r;
@@ -241,13 +241,13 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
 
     // mateseqs contains seqs are stored as in fasta/q file
     std::vector<std::string> r_mates, l_mates;
-    for (bam1_t* read : r_cluster->cluster->reads) {
-        std::string s = get_mate_seq(read, mateseqs);
+    for (std::shared_ptr<bam1_t> read : r_cluster->cluster->reads) {
+        std::string s = get_mate_seq(read.get(), mateseqs);
         if (!do_rc) rc(s);   // by default, we map mates of fwd reads on the rev strand
         r_mates.push_back(s);
     }
-    for (bam1_t* read : l_cluster->cluster->reads) {
-        std::string s = get_mate_seq(read, mateseqs);
+    for (std::shared_ptr<bam1_t> read : l_cluster->cluster->reads) {
+        std::string s = get_mate_seq(read.get(), mateseqs);
         if (do_rc) rc(s);   // by default, we map mates of rev reads on the fwd strand
         l_mates.push_back(s);
     }
@@ -434,13 +434,13 @@ void compute_score(region_t& region, char* contig_seq, std::shared_ptr<insertion
 
 
 std::shared_ptr<insertion_cluster_t> subsample_cluster(std::shared_ptr<insertion_cluster_t> reads_cluster, int size, std::default_random_engine& rng) {
-    std::vector<bam1_t*> subset(reads_cluster->cluster->reads);
+    std::vector<std::shared_ptr<bam1_t>> subset(reads_cluster->cluster->reads);
     if (subset.size() > size) {
         std::shuffle(subset.begin(), subset.end(), rng);
         subset.erase(subset.begin() + size, subset.end());
     }
     auto subsampled_cluster = std::make_shared<insertion_cluster_t>(std::make_shared<cluster_t>());
-    for (bam1_t* read : subset) subsampled_cluster->add_stable_read(read);
+    for (std::shared_ptr<bam1_t> read : subset) subsampled_cluster->add_stable_read(read);
     subsampled_cluster->add_clip_cluster(reads_cluster->clip_consensus);
     return subsampled_cluster;
 }

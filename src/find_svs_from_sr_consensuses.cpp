@@ -587,7 +587,7 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
-	std::vector<bam1_t*> reads;
+	std::vector<std::shared_ptr<bam1_t>> reads;
 	if (!ss_clusters.empty()) cluster_clusters(ss_clusters, reads, stats.max_is, max_cluster_size);
 	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
 

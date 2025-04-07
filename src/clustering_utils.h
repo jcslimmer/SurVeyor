@@ -25,7 +25,7 @@ struct cluster_t {
 	// meaning, if l/ra_rev is true, then it is the leftmost sequence, otherwise it is the rightmost sequence
 	std::string la_furthermost_seq, ra_furthermost_seq;
 	
-	std::vector<bam1_t*> reads; // reads that are part of this cluster
+	std::vector<std::shared_ptr<bam1_t>> reads; // reads that are part of this cluster
 
 	cluster_t() : 
 		la_start(INT32_MAX), la_end(0), la_rev(false), la_start_unclipped(INT32_MAX), la_end_unclipped(0),
@@ -93,13 +93,6 @@ struct cluster_t {
 
 		return merged;
 	}
-
-	// ~cluster_t() {
-	// 	for (bam1_t* read : reads) {
-	// 		bam_destroy1(read);
-	// 	}
-	// 	reads.clear();
-	// }
 };
 
 bool operator < (const cluster_t& c1, const cluster_t& c2) {
@@ -187,7 +180,7 @@ void remove_cluster_from_mm(std::multimap<int, std::shared_ptr<cluster_t>>& mm, 
     remove_cluster_from_mm(mm, c, c->la_end);
 }
 
-void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::vector<bam1_t*>& reads, int max_distance, int max_cluster_size,
+void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::vector<std::shared_ptr<bam1_t>>& reads, int max_distance, int max_cluster_size,
 	 bool assign_reads_to_clusters = false) {
 
 	if (clusters.empty()) return;
@@ -197,11 +190,11 @@ void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::ve
 			throw std::runtime_error("Error: number of clusters and reads do not match");
 		}
 
-		std::vector<std::pair<std::shared_ptr<cluster_t>, bam1_t*>> cluster_reads;
+		std::vector<std::pair<std::shared_ptr<cluster_t>, std::shared_ptr<bam1_t>>> cluster_reads;
 		for (int i = 0; i < clusters.size(); i++) {
 			cluster_reads.push_back(std::make_pair(clusters[i], reads[i]));
 		}
-		std::sort(cluster_reads.begin(), cluster_reads.end(), [](std::pair<std::shared_ptr<cluster_t>, bam1_t*>& cr1, std::pair<std::shared_ptr<cluster_t>, bam1_t*>& cr2) {
+		std::sort(cluster_reads.begin(), cluster_reads.end(), [](std::pair<std::shared_ptr<cluster_t>, std::shared_ptr<bam1_t>>& cr1, std::pair<std::shared_ptr<cluster_t>, std::shared_ptr<bam1_t>>& cr2) {
 			return  std::make_tuple(cr1.first->la_start, cr1.first->la_end, cr1.first->ra_start, cr1.first->ra_end) < 
 					std::make_tuple(cr2.first->la_start, cr2.first->la_end, cr2.first->ra_start, cr2.first->ra_end);
 		});

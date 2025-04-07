@@ -38,7 +38,7 @@ struct cc_pair {
 bool operator < (const cc_pair& cc1, const cc_pair& cc2) { return cc1.dist > cc2.dist; }
 
 void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, int min_cluster_size, int max_cluster_size) {
-	std::vector<bam1_t*> reads;
+	std::vector<std::shared_ptr<bam1_t>> reads;
 	cluster_clusters(clusters, reads, stats.max_is, max_cluster_size, false);
 
 	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) {
