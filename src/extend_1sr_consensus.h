@@ -7,6 +7,7 @@
 #include <stack>
 
 #include "../libs/IntervalTree.h"
+#include "htslib/sam.h"
 #include "utils.h"
 #include "sw_utils.h"
 #include "sam_utils.h"
@@ -268,20 +269,6 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 
 		if (read_seqs.size() > max_reads) return;
 	}
-
-	// TODO : results very slightly change when sorting, investigate
-//	std::vector<std::pair<std::string, int>> temp;
-//	for (int i = 1; i < read_seqs.size(); i++) {
-//		temp.push_back({read_seqs[i], read_mapqs[i]});
-//	}
-//	std::sort(temp.begin(), temp.end());
-//
-//	read_seqs = std::vector<std::string>(1, read_seqs[0]);
-//	read_mapqs = std::vector<int>(1, read_mapqs[0]);
-//	for (int i = 0; i < temp.size(); i++) {
-//		read_seqs.push_back(temp[i].first);
-//		read_mapqs.push_back(temp[i].second);
-//	}
 }
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
 		stats_t& stats, open_samFile_t* bam_file) {
@@ -315,7 +302,31 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 			if (is_unmapped(read) || !is_primary(read)) continue;
 
-			region_reads.push_back(ext_read_allocator.get(read));
+			ext_read_t* ext_read = ext_read_allocator.get(read);
+			
+			// for same strand pairs that may be due to inversions, add a copy of the unstable end in the the correct orientation
+			// same strand is not always due to inversions (transpositions may also cause this), and we do not know which case we are dealing with
+			// therefore, when there is no clear stable end, and the read may either be the unstable end of an inversion or the stable end of a transposition,
+			// we add a copy of the read in both orientations, and let the extension algorithm decide which one to use
+			if (is_samechr(read) && read->core.qual <= get_mq(read)) {
+				bool was_rced = false;
+				if (!bam_is_rev(read) && !bam_is_mrev(read) && read->core.mpos < read->core.pos) {
+					rc(ext_read->sequence);
+					ext_read->rev = true;
+					was_rced = true;
+				} else if (bam_is_rev(read) && bam_is_mrev(read) && read->core.mpos > read->core.pos) {
+					rc(ext_read->sequence);
+					ext_read->rev = false;
+					was_rced = true;
+				}
+
+				if (was_rced && read->core.qual == get_mq(read)) {
+					ext_read_t* ext_read_orig = ext_read_allocator.get(read);	
+					region_reads.push_back(ext_read_orig);
+				}
+			}
+			region_reads.push_back(ext_read);
+
 			if (region_reads.size() > target_ival.end-target_ival.beg) { // too many reads
 				for (ext_read_t* r : region_reads) ext_read_allocator.release(r);
 				region_reads.clear();
