@@ -872,6 +872,12 @@ s_align* ssw_align (const s_profile* prof,
 	refLen = r->ref_end1 - r->ref_begin1 + 1;
 	readLen = r->read_end1 - r->read_begin1 + 1;
 	band_width = abs(refLen - readLen) + 1;
+	if (r->ref_begin1 < 0) {
+		r->cigar = (uint32_t*)malloc(1 * sizeof(uint32_t));
+		r->cigar[0] = to_cigar_int(1, 'S');
+		r->cigarLen = 1;
+		goto end;
+	}
 	path = banded_sw(ref + r->ref_begin1, prof->read + r->read_begin1, refLen, readLen, r->score1, weight_gapO, weight_gapE, band_width, prof->mat, prof->n);
 	if (path == 0) {
 		free(r);

@@ -396,7 +396,8 @@ bool Aligner::Align(const char* query, const char* ref, const int& ref_len,
 
   alignment->Clear();
   ConvertAlignment(*s_al, query_len, alignment);
-  alignment->mismatches = CalculateNumberMismatch(&*alignment, translated_ref, translated_query, query_len);
+  // for some reason, when the alignment is empty, ref_begin is -1 but cigar is 1M. This causes an out of bound access in CalculateNumberMismatch
+  alignment->mismatches = alignment->ref_begin < 0 ? 0 : CalculateNumberMismatch(&*alignment, translated_ref, translated_query, query_len);
 
   // Free memory
   delete [] translated_query;

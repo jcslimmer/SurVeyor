@@ -199,6 +199,8 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> start
 		visited[i] = true;
 
 		std::string& s1 = read_seqs[i];
+		if (s1.length() < 32) continue;
+
 		uint64_t kmer = 0;
 		for (int j = 0; j < 32; j++) {
 			uint64_t nv = nucl_bm[s1[j]];

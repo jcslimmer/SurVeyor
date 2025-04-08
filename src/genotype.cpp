@@ -690,7 +690,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     std::vector<bam1_t*> ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     std::vector<bam1_t*> ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (!alt_consensus_seq.empty()) {
+    if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, del->start-stats.max_is, del->start, chr_seqs.get_len(del->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
@@ -702,7 +702,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.hq_alt_rext_reads = alt_consensus->hq_right_ext_reads;
         alt_consensus_seq = alt_consensus->sequence;
         delete alt_consensus;
-
 
         hts_pos_t lh_start = del->start-alt_consensus_seq.length();
         if (lh_start < 0) lh_start = 0;
@@ -939,7 +938,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_reads[alt_with_most_reads], alt_consensus_seq, alt_avg_score, alt_stddev_score);
     std::vector<bam1_t*> ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_reads, ref_consensus_seq, ref_avg_score, ref_stddev_score);
 
-    if (!alt_consensus_seq.empty()) {
+    if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->start-stats.max_is, dup->start, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
@@ -1153,7 +1152,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     std::vector<bam1_t*> ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     std::vector<bam1_t*> ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (!alt_consensus_seq.empty()) {
+    if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, dup->end-stats.max_is, dup->end, chr_seqs.get_len(dup->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
@@ -1402,7 +1401,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     std::vector<bam1_t*> ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
-    if (!alt_bp1_consensus_seq.empty()) {
+    if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         consensus_t* alt_bp1_consensus = new consensus_t(false, 0, 0, 0, alt_bp1_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_bp1_consensus, candidate_reads_for_extension_itree, ins->start-stats.max_is, ins->start, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
@@ -1414,7 +1413,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         alt_bp1_consensus_seq = alt_bp1_consensus->sequence;
         delete alt_bp1_consensus;
     }
-    if (!alt_bp2_consensus_seq.empty()) {
+    if (alt_bp2_consensus_seq.length() >= 2*config.min_clip_len) {
         consensus_t* alt_bp2_consensus = new consensus_t(false, 0, 0, 0, alt_bp2_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_bp2_consensus, candidate_reads_for_extension_itree, ins->end-stats.max_is, ins->end, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         extend_consensus_to_right(alt_bp2_consensus, candidate_reads_for_extension_itree, ins->end, ins->end+stats.max_is, chr_seqs.get_len(ins->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
@@ -1431,7 +1430,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
     ref1_aln.Clear();
     alt1_aln.Clear();
-    if (!alt_bp1_consensus_seq.empty()) {
+    if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         hts_pos_t ref_bp1_start = ins->start-alt_bp1_consensus_seq.length();
         if (ref_bp1_start < 0) ref_bp1_start = 0;
         hts_pos_t ref_bp1_end = ins->start+alt_bp1_consensus_seq.length();
@@ -1489,7 +1488,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
     ref2_aln.Clear();
     alt2_aln.Clear();
-    if (!alt_bp2_consensus_seq.empty()) {
+    if (alt_bp2_consensus_seq.length() >= 2*config.min_clip_len) {
         hts_pos_t ref_bp2_start = ins->end-alt_bp2_consensus_seq.length();
         if (ref_bp2_start < 0) ref_bp2_start = 0;
         hts_pos_t ref_bp2_end = ins->end+alt_bp2_consensus_seq.length();
@@ -1689,7 +1688,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq, alt_avg_score, alt_stddev_score);
     std::vector<bam1_t*> ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_seqs, ref_consensus_seq, ref_avg_score, ref_stddev_score);
 
-    if (!alt_consensus_seq.empty()) {
+    if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         consensus_t* alt_consensus = new consensus_t(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, inv->start-stats.max_is, inv->start, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
@@ -1926,7 +1925,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::vector<bam1_t*> ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
-    if (!alt_bp1_consensus_seq.empty()) {
+    if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         consensus_t* alt_bp1_consensus = new consensus_t(false, 0, 0, 0, alt_bp1_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_bp1_consensus, candidate_reads_for_extension_itree, inv->start-stats.max_is, inv->start, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
@@ -1938,7 +1937,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         alt_bp1_consensus_seq = alt_bp1_consensus->sequence;
         delete alt_bp1_consensus;
     }
-    if (!alt_bp2_consensus_seq.empty()) {
+    if (alt_bp2_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         consensus_t* alt_bp2_consensus = new consensus_t(false, 0, 0, 0, alt_bp2_consensus_seq, 0, 0, 0, 0, 0, 0);
         extend_consensus_to_left(alt_bp2_consensus, candidate_reads_for_extension_itree, inv->end-stats.max_is, inv->end, chr_seqs.get_len(inv->chr), config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
@@ -1954,7 +1953,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     ref1_aln.Clear();
     alt1_aln.Clear();
-    if (!alt_bp1_consensus_seq.empty()) {
+    if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         hts_pos_t ref_bp1_start = inv->start-alt_bp1_consensus_seq.length();
         if (ref_bp1_start < 0) ref_bp1_start = 0;
         hts_pos_t ref_bp1_end = inv->start+alt_bp1_consensus_seq.length();
@@ -1992,7 +1991,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     ref2_aln.Clear();
     alt2_aln.Clear();
-    if (!alt_bp2_consensus_seq.empty()) {
+    if (alt_bp2_consensus_seq.length() >= 2*config.min_clip_len) {
         hts_pos_t ref_bp2_start = inv->end-alt_bp2_consensus_seq.length();
         if (ref_bp2_start < 0) ref_bp2_start = 0;
         hts_pos_t ref_bp2_end = inv->end+alt_bp2_consensus_seq.length();
