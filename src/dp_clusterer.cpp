@@ -107,8 +107,8 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 			del->original_range = std::to_string(c->la_end) + "-" + std::to_string(c->ra_start);
 			del->remapped = true;
 		} else if (c->la_end < c->ra_start) {
-			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
-			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
+			auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
+			auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
 			del = new deletion_t(contig_name, c->la_end, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln);
 			del->imprecise = true;
 		}
@@ -131,8 +131,8 @@ void cluster_ow_dps(int contig_id, std::string contig_name, std::vector<duplicat
 
 		duplication_t* dup = NULL;
 		if (c->la_start < c->ra_end) {
-			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
-			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
+			auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
+			auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
 			dup = new duplication_t(contig_name, c->la_start, c->ra_end, "", NULL, NULL, left_anchor_aln, right_anchor_aln);
 			dup->imprecise = true;
 		}

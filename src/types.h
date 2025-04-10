@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <memory>
 #include "htslib/vcf.h"
 
 struct consensus_t {
@@ -149,7 +150,7 @@ struct sv_t {
     std::string ins_seq, inferred_ins_seq;
     int mh_len = 0;
 
-    anchor_aln_t* left_anchor_aln,* right_anchor_aln;
+    std::shared_ptr<anchor_aln_t> left_anchor_aln, right_anchor_aln;
     consensus_t* rc_consensus, * lc_consensus;
 
     std::string source;
@@ -236,7 +237,7 @@ struct sv_t {
         }
 
         ~sample_info_t() {
-            delete[] gt;
+            free(gt);
         }
 
         bool is_pass() {
@@ -248,7 +249,7 @@ struct sv_t {
     bcf1_t* vcf_entry = NULL;
 
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
-        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln) : 
+        std::shared_ptr<anchor_aln_t> left_anchor_aln, std::shared_ptr<anchor_aln_t> right_anchor_aln) : 
         chr(chr), start(start), end(end), ins_seq(ins_seq), rc_consensus(rc_consensus), lc_consensus(lc_consensus),
         left_anchor_aln(left_anchor_aln), right_anchor_aln(right_anchor_aln) {
     }
@@ -370,7 +371,9 @@ struct sv_t {
         return ins_suffix_base_freqs;
     }
 
-    virtual ~sv_t() {}
+    virtual ~sv_t() {
+        bcf_destroy1(vcf_entry);
+    }
 };
 
 struct deletion_t : sv_t {
@@ -402,7 +405,7 @@ struct breakend_t : sv_t {
     char direction;
     
     breakend_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus, 
-        anchor_aln_t* left_anchor_aln, anchor_aln_t* right_anchor_aln, char direction) :
+        std::shared_ptr<anchor_aln_t> left_anchor_aln, std::shared_ptr<anchor_aln_t> right_anchor_aln, char direction) :
     sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln), direction(direction) {}
 
     std::string svtype() { return "BND"; }
@@ -411,13 +414,13 @@ struct breakend_t : sv_t {
 
 struct inversion_t : sv_t {
 
-    anchor_aln_t* rbp_left_anchor_aln, * rbp_right_anchor_aln;
+    std::shared_ptr<anchor_aln_t> rbp_left_anchor_aln, rbp_right_anchor_aln;
 
     hts_pos_t inv_start = 0, inv_end = 0;
 
     inversion_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, consensus_t* rc_consensus, consensus_t* lc_consensus,
-        anchor_aln_t* lbp_left_anchor_aln, anchor_aln_t* lbp_right_anchor_aln, 
-        anchor_aln_t* rbp_left_anchor_aln, anchor_aln_t* rbp_right_anchor_aln) :
+        std::shared_ptr<anchor_aln_t> lbp_left_anchor_aln, std::shared_ptr<anchor_aln_t> lbp_right_anchor_aln, 
+        std::shared_ptr<anchor_aln_t> rbp_left_anchor_aln, std::shared_ptr<anchor_aln_t> rbp_right_anchor_aln) :
     sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln),
     rbp_left_anchor_aln(rbp_left_anchor_aln), rbp_right_anchor_aln(rbp_right_anchor_aln) {
         inv_start = start;

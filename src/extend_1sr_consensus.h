@@ -64,6 +64,14 @@ struct ext_read_allocator_t {
 	void release(ext_read_t* read) {
 		reads.push(read);
 	}
+
+	~ext_read_allocator_t() {
+		while (!reads.empty()) {
+			ext_read_t* r = reads.front();
+			reads.pop();
+			delete r;
+		}
+	}
 };
 
 bool is_vertex_in_cycle(std::vector<std::vector<edge_t> >& l_adj, int i) {

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -168,11 +169,15 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_info_int32(out_hdr, sv->vcf_entry, "SVLEN", &svlen, 1);
     }
 
-    base_frequencies_t left_anchor_base_freqs = get_base_frequencies(chr_seq+sv->left_anchor_aln->start, sv->left_anchor_aln->end-sv->left_anchor_aln->start);
+    hts_pos_t la_aln_start = bring_within_range(sv->left_anchor_aln->start, hts_pos_t(0), chr_len);
+    hts_pos_t la_aln_end = bring_within_range(sv->left_anchor_aln->end, hts_pos_t(0), chr_len);
+    hts_pos_t ra_aln_start = bring_within_range(sv->right_anchor_aln->start, hts_pos_t(0), chr_len);
+    hts_pos_t ra_aln_end = bring_within_range(sv->right_anchor_aln->end, hts_pos_t(0), chr_len);
+    base_frequencies_t left_anchor_base_freqs = get_base_frequencies(chr_seq+la_aln_start, la_aln_end-la_aln_start);
 	int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
 
-	base_frequencies_t right_anchor_base_freqs = get_base_frequencies(chr_seq+sv->right_anchor_aln->start, sv->right_anchor_aln->end-sv->right_anchor_aln->start);
+	base_frequencies_t right_anchor_base_freqs = get_base_frequencies(chr_seq+ra_aln_start, ra_aln_end-ra_aln_start);
 	int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
 
@@ -337,7 +342,7 @@ hts_pos_t get_covered_bps(std::vector<hts_pair_pos_t>& pos_pairs) {
     return total;
 }
 
-void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bam1_t*>& consistent_reads, 
+void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads, 
     double consistent_avg_score, double consistent_stddev_score) {
     
     bp_reads_info.computed = true;
@@ -348,19 +353,19 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     std::vector<hts_pair_pos_t> fwd_hq_mate_positions, rev_hq_mate_positions;
 
     double sum_mq = 0;
-    for (bam1_t* read : consistent_reads) {
-        int mq = get_mq(read);
+    for (std::shared_ptr<bam1_t> read : consistent_reads) {
+        int mq = get_mq(read.get());
         if (bam_is_mrev(read)) {
             bp_reads_info.consistent_fwd++;
-            rev_mate_positions.push_back({read->core.mpos, get_mate_endpos(read)});
+            rev_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             if (mq >= config.high_confidence_mapq) {
-                rev_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read)});
+                rev_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             }
         } else {
             bp_reads_info.consistent_rev++;
-            fwd_mate_positions.push_back({read->core.mpos, get_mate_endpos(read)});
+            fwd_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             if (mq >= config.high_confidence_mapq) {
-                fwd_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read)});
+                fwd_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             }
         }
         bp_reads_info.consistent_min_mq = std::min(bp_reads_info.consistent_min_mq, mq);
@@ -384,7 +389,7 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     bp_reads_info.rev_hq_mate_cov_bps = get_covered_bps(rev_hq_mate_positions);
 }
 
-std::vector<bam1_t*> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, std::vector<bam1_t*>& reads, std::string& consensus_seq, double& avg_score, double& stddev_score) {
+std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, std::string& consensus_seq, double& avg_score, double& stddev_score) {
 
     if (reads.empty()) {
         avg_score = 0;
@@ -394,13 +399,13 @@ std::vector<bam1_t*> gen_consensus_and_find_consistent_seqs_subset(std::string r
     }
 
     std::vector<std::string> seqs;
-    for (bam1_t* read : reads) {
-        std::string seq = get_sequence(read, true);
+    for (std::shared_ptr<bam1_t> read : reads) {
+        std::string seq = get_sequence(read.get(), true);
         if (!bam_is_mrev(read)) rc(seq);
         seqs.push_back(seq);
     }
 
-    std::vector<bam1_t*> consistent_reads;
+    std::vector<std::shared_ptr<bam1_t>> consistent_reads;
     avg_score = 0;
     std::vector<std::string> temp1, temp2;
     std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
@@ -423,13 +428,13 @@ std::vector<bam1_t*> gen_consensus_and_find_consistent_seqs_subset(std::string r
     double cum_score = 0;
     std::vector<double> aln_scores;
     for (std::string cseq : consensus_seqs) {
-        std::vector<bam1_t*> curr_consistent_reads;
+        std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
         double curr_cum_score = 0;
         std::vector<double> curr_aln_scores;
-        for (bam1_t* read : reads) {
-            std::string seq = get_sequence(read, true);
+        for (std::shared_ptr<bam1_t> read : reads) {
+            std::string seq = get_sequence(read.get(), true);
             if (!bam_is_mrev(read)) rc(seq);
             
             harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
@@ -482,7 +487,7 @@ std::vector<bam1_t*> gen_consensus_and_find_consistent_seqs_subset(std::string r
     return consistent_reads;
 }
 
-std::vector<bam1_t*> find_seqs_consistent_with_ref_seq(std::string ref_seq, std::vector<bam1_t*>& reads, double& avg_score, double& stddev_score) {
+std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, double& avg_score, double& stddev_score) {
 
     if (reads.empty()) {
         avg_score = 0;
@@ -490,15 +495,15 @@ std::vector<bam1_t*> find_seqs_consistent_with_ref_seq(std::string ref_seq, std:
         return reads;
     }
 
-    std::vector<bam1_t*> consistent_reads;
+    std::vector<std::shared_ptr<bam1_t>> consistent_reads;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln;
     std::vector<StripedSmithWaterman::Alignment> alns;
     double cum_score = 0;
     std::vector<double> aln_scores;
-    for (bam1_t* read : reads) {
-        std::string seq = get_sequence(read, true);
+    for (std::shared_ptr<bam1_t> read : reads) {
+        std::string seq = get_sequence(read.get(), true);
         if (!bam_is_mrev(read)) rc(seq);
         
         harsh_aligner.Align(seq.c_str(), ref_seq.c_str(), ref_seq.length(), filter, &aln, 0);
@@ -608,7 +613,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     bam1_t* read = bam_init1();
 
     int same = 0;
-    std::vector<bam1_t*> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -661,13 +666,13 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better_reads.push_back(bam_dup1(read));
+            alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
-                ref_bp1_better_seqs.push_back(bam_dup1(read));
+                ref_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
             if (increase_ref_bp2_better) {
-                ref_bp2_better_seqs.push_back(bam_dup1(read));
+                ref_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {
             same++;
@@ -686,9 +691,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
-    std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score, alt_stddev_score);
-    std::vector<bam1_t*> ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
-    std::vector<bam1_t*> ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+    auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score, alt_stddev_score);
+    auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
+    auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
@@ -776,10 +781,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
     free(regions[0]);
     free(regions[1]);
-
-    for (bam1_t* read : alt_better_reads) bam_destroy1(read);
-    for (bam1_t* read : ref_bp1_better_seqs) bam_destroy1(read);
-    for (bam1_t* read : ref_bp2_better_seqs) bam_destroy1(read);
     bam_destroy1(read);
     hts_itr_destroy(iter);
 }
@@ -869,8 +870,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 	
     bam1_t* read = bam_init1();
 
-    std::vector<bam1_t*> ref_better_reads;
-    std::vector<std::vector<bam1_t*>> alt_better_reads(alt_seqs.size());
+    std::vector<std::shared_ptr<bam1_t>> ref_better_reads;
+    std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_better_reads(alt_seqs.size());
     int same = 0;
 
     StripedSmithWaterman::Filter filter;
@@ -908,11 +909,11 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (best_aln_score > ref_aln.sw_score) {
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
-                    alt_better_reads[i].push_back(bam_dup1(read));
+                    alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
                 }
             }
         } else if (best_aln_score < ref_aln.sw_score) {
-            ref_better_reads.push_back(bam_dup1(read));
+            ref_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else {
             same++;
         }
@@ -935,8 +936,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     std::string alt_consensus_seq, ref_consensus_seq;
     double alt_avg_score, ref_avg_score;
     double alt_stddev_score, ref_stddev_score;
-    std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_reads[alt_with_most_reads], alt_consensus_seq, alt_avg_score, alt_stddev_score);
-    std::vector<bam1_t*> ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_reads, ref_consensus_seq, ref_avg_score, ref_stddev_score);
+    auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_reads[alt_with_most_reads], alt_consensus_seq, alt_avg_score, alt_stddev_score);
+    auto ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_reads, ref_consensus_seq, ref_avg_score, ref_stddev_score);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
@@ -1069,7 +1070,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     bam1_t* read = bam_init1();
 
-    std::vector<bam1_t*> alt_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
+    std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -1118,13 +1119,13 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            alt_better_reads.push_back(bam_dup1(read));
+            alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else {
             if (increase_ref_bp1_better) {
-                ref_bp1_better_reads.push_back(bam_dup1(read));
+                ref_bp1_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
             if (increase_ref_bp2_better) {
-                ref_bp2_better_reads.push_back(bam_dup1(read));
+                ref_bp2_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         }
 
@@ -1148,9 +1149,9 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
-    std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score, alt_stddev_score);
-    std::vector<bam1_t*> ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
-    std::vector<bam1_t*> ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+    auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, alt_consensus_seq, alt_avg_score, alt_stddev_score);
+    auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
+    auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
@@ -1331,7 +1332,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     bam1_t* read = bam_init1();
 
     int same = 0;
-    std::vector<bam1_t*> alt_bp1_better_seqs, alt_bp2_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<std::shared_ptr<bam1_t>> alt_bp1_better_seqs, alt_bp2_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
@@ -1354,17 +1355,17 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
-                alt_bp1_better_seqs.push_back(bam_dup1(read));
+                alt_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             } 
             if (alt1_aln.sw_score <= alt2_aln.sw_score) {
-                alt_bp2_better_seqs.push_back(bam_dup1(read));
+                alt_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
             if (ref1_aln.sw_score >= ref2_aln.sw_score) {
-                ref_bp1_better_seqs.push_back(bam_dup1(read));
+                ref_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             } 
             if (ref1_aln.sw_score <= ref2_aln.sw_score) {
-                ref_bp2_better_seqs.push_back(bam_dup1(read));
+                ref_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {
             same++;
@@ -1384,21 +1385,21 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     std::string alt_bp1_consensus_seq, alt_bp2_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_bp1_avg_score, alt_bp2_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_bp1_stddev_score, alt_bp2_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
-    std::vector<bam1_t*> alt_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp1_seq, alt_bp1_better_seqs, alt_bp1_consensus_seq, alt_bp1_avg_score, alt_bp1_stddev_score);
+    auto alt_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp1_seq, alt_bp1_better_seqs, alt_bp1_consensus_seq, alt_bp1_avg_score, alt_bp1_stddev_score);
     delete[] alt_bp1_seq;
-    std::vector<bam1_t*> alt_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
+    auto alt_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
     delete[] alt_bp2_seq;
 
     char* ref_bp1_seq = new char[ref_bp1_len+1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
     ref_bp1_seq[ref_bp1_len] = 0;
-    std::vector<bam1_t*> ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
+    auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     delete[] ref_bp1_seq;
 
     char* ref_bp2_seq = new char[ref_bp2_len+1];
     strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
     ref_bp2_seq[ref_bp2_len] = 0;
-    std::vector<bam1_t*> ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+    auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
@@ -1646,7 +1647,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     bam1_t* read = bam_init1();
 
     int same = 0;
-    std::vector<bam1_t*> alt_better_seqs, ref_better_seqs;
+    std::vector<std::shared_ptr<bam1_t>> alt_better_seqs, ref_better_seqs;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref_aln;
@@ -1666,9 +1667,9 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
 
         if (alt_aln.sw_score > ref_aln.sw_score) {
-            alt_better_seqs.push_back(bam_dup1(read));
+            alt_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
-            ref_better_seqs.push_back(bam_dup1(read));
+            ref_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else {
             same++;
         }
@@ -1685,8 +1686,8 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::string alt_consensus_seq, ref_consensus_seq;
     double alt_avg_score, ref_avg_score;
     double alt_stddev_score, ref_stddev_score;
-    std::vector<bam1_t*> alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq, alt_avg_score, alt_stddev_score);
-    std::vector<bam1_t*> ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_seqs, ref_consensus_seq, ref_avg_score, ref_stddev_score);
+    auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_seqs, alt_consensus_seq, alt_avg_score, alt_stddev_score);
+    auto ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_seqs, ref_consensus_seq, ref_avg_score, ref_stddev_score);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
@@ -1751,9 +1752,6 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     delete[] inv_seq;
     
     free(regions[0]);
-    
-    for (bam1_t* read : alt_better_seqs) bam_destroy1(read);
-    for (bam1_t* read : ref_better_seqs) bam_destroy1(read);
     bam_destroy1(read);
     hts_itr_destroy(iter);
 }
@@ -1826,7 +1824,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     bam1_t* read = bam_init1();
 
     int same = 0;
-    std::vector<bam1_t*> alt_bp1_better_reads, alt_bp2_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
+    std::vector<std::shared_ptr<bam1_t>> alt_bp1_better_reads, alt_bp2_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
@@ -1878,17 +1876,17 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
-                alt_bp1_better_reads.push_back(bam_dup1(read));
+                alt_bp1_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             } 
             if (alt1_aln.sw_score <= alt2_aln.sw_score) {
-                alt_bp2_better_reads.push_back(bam_dup1(read));
+                alt_bp2_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
             if (ref1_aln.sw_score >= ref2_aln.sw_score) {
-                ref_bp1_better_reads.push_back(bam_dup1(read));
+                ref_bp1_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             } 
             if (ref1_aln.sw_score <= ref2_aln.sw_score) {
-                ref_bp2_better_reads.push_back(bam_dup1(read));
+                ref_bp2_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {
             same++;
@@ -1908,21 +1906,21 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::string alt_bp1_consensus_seq, alt_bp2_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_bp1_avg_score, alt_bp2_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_bp1_stddev_score, alt_bp2_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
-    std::vector<bam1_t*> alt_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp1_seq, alt_bp1_better_reads, alt_bp1_consensus_seq, alt_bp1_avg_score, alt_bp1_stddev_score);
+    auto alt_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp1_seq, alt_bp1_better_reads, alt_bp1_consensus_seq, alt_bp1_avg_score, alt_bp1_stddev_score);
     delete[] alt_bp1_seq;
-    std::vector<bam1_t*> alt_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_reads, alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
+    auto alt_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_reads, alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
     delete[] alt_bp2_seq;
 
     char* ref_bp1_seq = new char[ref_bp1_len+1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
     ref_bp1_seq[ref_bp1_len] = 0;
-    std::vector<bam1_t*> ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
+    auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     delete[] ref_bp1_seq;
 
     char* ref_bp2_seq = new char[ref_bp2_len+1];
     strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
     ref_bp2_seq[ref_bp2_len] = 0;
-    std::vector<bam1_t*> ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+    auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
@@ -2040,11 +2038,6 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     free(regions[0]);
     free(regions[1]);
 
-    for (bam1_t* read : alt_bp1_better_reads) bam_destroy1(read);
-    for (bam1_t* read : alt_bp2_better_reads) bam_destroy1(read);
-    for (bam1_t* read : ref_bp1_better_reads) bam_destroy1(read);
-    for (bam1_t* read : ref_bp2_better_reads) bam_destroy1(read);
-
     bam_destroy1(read);
     hts_itr_destroy(iter);
 }
@@ -2071,6 +2064,8 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
             genotype_large_inv(inv, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
         }
     }
+
+    for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     calculate_ptn_ratio(contig_name, invs, bam_file, config, stats);
     depth_filter_inv(contig_name, invs, bam_file, config, stats);
@@ -2115,11 +2110,6 @@ int main(int argc, char* argv[]) {
     contig_map.load(workdir);
     config.parse(workdir + "/config.txt");
     stats.parse(workdir + "/stats.txt", config.per_contig_stats);
-
-    open_samFile_t* bam_file = open_samFile(bam_fname);
-	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
-		throw "Failed to read reference " + reference_fname;
-	}
 
     chr_seqs.read_fasta_into_map(reference_fname);
     bam_pool = new bam_pool_t(config.threads, bam_fname, reference_fname);
@@ -2179,6 +2169,8 @@ int main(int argc, char* argv[]) {
         	inss_by_chr[sv->chr].push_back((insertion_t*) sv);
         } else if (sv->svtype() == "INV") {
             invs_by_chr[sv->chr].push_back((inversion_t*) sv);
+        } else {
+            delete sv;
         }
     }
 
@@ -2309,9 +2301,11 @@ int main(int argc, char* argv[]) {
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
 				throw std::runtime_error("Failed to write VCF record to " + out_vcf_fname);
 			}
+            delete sv;
 		}
     }
-    delete[] seqnames;
+    delete[] imap;
+    free(seqnames);
 
     bcf_destroy(vcf_record);
     bcf_hdr_destroy(out_vcf_header);

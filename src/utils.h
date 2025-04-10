@@ -304,6 +304,13 @@ int64_t overlap(hts_pos_t s1, hts_pos_t e1, hts_pos_t s2, hts_pos_t e2) {
     return std::max(int64_t(0), overlap);
 }
 
+template<typename T>
+T bring_within_range(T val, T min_val, T max_val) {
+    if (val < min_val) return min_val;
+    if (val > max_val) return max_val;
+    return val;
+}
+
 struct edge_t {
 	int next, score, overlap;
 

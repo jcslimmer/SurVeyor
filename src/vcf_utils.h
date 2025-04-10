@@ -733,8 +733,8 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		right_anchor_mapping_start = end, right_anchor_mapping_end = end + 150;
 	}
 
-	sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), left_anchor_mapping_start), left_anchor_mapping_end, 0, 0);
-	sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), right_anchor_mapping_start), right_anchor_mapping_end, 0, 0);
+	auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), left_anchor_mapping_start), left_anchor_mapping_end, 0, 0);
+	auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), right_anchor_mapping_start), right_anchor_mapping_end, 0, 0);
 
 	sv_t* sv;
 	if (svtype == "DEL") {
@@ -744,12 +744,12 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	} else if (svtype == "INS") {
 		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "INV") {
-		sv_t::anchor_aln_t* lbp_left_anchor_aln = left_anchor_aln, *lbp_right_anchor_aln = right_anchor_aln;
+		auto lbp_left_anchor_aln = left_anchor_aln, lbp_right_anchor_aln = right_anchor_aln;
 		hts_pos_t rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_right_split_mapping_start, rbp_right_split_mapping_end;
 		rbp_left_split_mapping_start = end - 150, rbp_left_split_mapping_end = end;
 		rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
-		sv_t::anchor_aln_t* rbp_left_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
-		sv_t::anchor_aln_t* rbp_right_anchor_aln = new sv_t::anchor_aln_t(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
+		auto rbp_left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
+		auto rbp_right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
 		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
