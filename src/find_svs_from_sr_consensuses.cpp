@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -17,6 +18,7 @@
 #include "../libs/ssw_cpp.h"
 #include "../libs/ssw.h"
 #include "../libs/IntervalTree.h"
+#include "htslib/hts.h"
 #include "sam_utils.h"
 #include "extend_1sr_consensus.h"
 #include "sw_utils.h"
@@ -168,7 +170,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 						[iv](Interval<int>& iv2) {return iv.value == iv2.value;}) != compatible_ra_idxs.end();
 				}), compatible_la_idxs.end());
 		}
-
+		
 		if (compatible_la_idxs.empty() != compatible_ra_idxs.empty()) {
 			consensus_t* consensus;
 			if (compatible_la_idxs.empty()) {
@@ -268,12 +270,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
+		consensus_t* c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
+		consensus_t* c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
 		if (used_c1 || used_c2) continue;
-
-		consensus_t* c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
-		consensus_t* c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
 
 		std::vector<sv_t*> svs;
 		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
@@ -297,7 +298,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
 				aligner, min_overlap, config.min_clip_len, max_mm_rate);
 		}
-
 
 		if (svs.empty()) continue;
 
@@ -333,15 +333,26 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		}
 
 		if (!has_bnd) {
-			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
-			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
-			breakend_t* bnd = new breakend_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '-');
+			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
+			rc(lm_seq);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+			breakend_t* bnd = NULL;
+			if (spa.overlap > 0) {
+				consensus_t* leftmost_consensus = new consensus_t(true, c->la_start, c->la_start, c->la_end, c->la_furthermost_seq, 0, 1, 0, c->la_max_mapq, 0, 0);
+				consensus_t* rightmost_consensus = new consensus_t(true, c->ra_start, c->ra_start, c->ra_end, c->ra_furthermost_seq, 0, 1, 0, c->ra_max_mapq, 0, 0);
+				bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, spa, aligner, config.min_clip_len);
+			} else {
+				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
+				auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
+				bnd = new breakend_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '-');
+				bnd->imprecise = true;
+			}
+
 			if (bnd->end-bnd->start < config.min_sv_size) {
 				delete bnd;
 				continue;
 			}
 			bnd->source = "DP";
-			bnd->imprecise = true;
 			bnds_lf.push_back(bnd);
 		}
 	}
@@ -360,18 +371,29 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		}
 
 		if (!has_bnd) {
-			sv_t::anchor_aln_t* left_anchor_aln = new sv_t::anchor_aln_t(c->la_start, c->la_end, c->la_end-c->la_start, 0);
-			sv_t::anchor_aln_t* right_anchor_aln = new sv_t::anchor_aln_t(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
-			if (left_anchor_aln->end > right_anchor_aln->end) {
-				std::swap(left_anchor_aln, right_anchor_aln);
+			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
+			rc(lm_seq);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+			breakend_t* bnd = NULL;
+			if (spa.overlap) {
+				consensus_t* leftmost_consensus = new consensus_t(true, c->la_start, c->la_end, c->la_end, c->la_furthermost_seq, 1, 0, 0, c->la_max_mapq, 0, 0);
+				consensus_t* rightmost_consensus = new consensus_t(true, c->ra_start, c->ra_end, c->ra_end, c->ra_furthermost_seq, 1, 0, 0, c->ra_max_mapq, 0, 0);
+				bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, spa, aligner, config.min_clip_len);
+			} else {
+				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
+				auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
+				if (left_anchor_aln->end > right_anchor_aln->end) {
+					std::swap(left_anchor_aln, right_anchor_aln);
+				}
+				bnd = new breakend_t(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '+');
+				bnd->imprecise = true;
 			}
-			breakend_t* bnd = new breakend_t(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '+');
+
 			if (bnd->end-bnd->start < config.min_sv_size) {
 				delete bnd;
 				continue;
 			}
 			bnd->source = "DP";
-			bnd->imprecise = true;
 			bnds_rf.push_back(bnd);
 		}
 	}
