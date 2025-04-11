@@ -450,7 +450,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		}
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
-		if (inv->svlen() < config.min_sv_size) {
+		if (inv->end-inv->start < config.min_sv_size) {
 			delete rc_consensus;
 			delete lc_consensus;
 			delete inv;
@@ -857,10 +857,11 @@ int main(int argc, char* argv[]) {
 					delete sv;
 					svs[i] = inv;
 				}
-			} else if (svs[i]->svtype() == "DEL" && -svs[i]->svlen() < config.min_sv_size) {
+			} else if (svs[i]->svtype() == "DEL" && svs[i]->end-svs[i]->start < config.min_sv_size) {
 				delete svs[i];
 				svs[i] = NULL;
-			} else if ((svs[i]->svtype() == "DUP" || svs[i]->svtype() == "INS") && svs[i]->svlen() < config.min_sv_size) {
+			} else if ((svs[i]->svtype() == "DUP" && svs[i]->svlen() < config.min_sv_size) || 
+					   (svs[i]->svtype() == "INS" && svs[i]->ins_seq.length() < config.min_sv_size)) {
 				delete svs[i];
 				svs[i] = NULL;
 			}

@@ -429,11 +429,10 @@ struct inversion_t : sv_t {
 
     std::string svtype() { return "INV"; }
     hts_pos_t svlen() { 
-        return end - start;
-        // if (!ins_seq.empty()) {
-        //     return ins_seq.length() - (end-start);
-        // }
-        // return 0;
+        if (!ins_seq.empty()) {
+            return ins_seq.length() - (end-start);
+        }
+        return (end-start) - (inv_end-inv_start);
     }
 
     bool is_left_facing() {

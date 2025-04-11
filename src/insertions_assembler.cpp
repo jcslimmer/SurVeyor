@@ -557,7 +557,7 @@ int main(int argc, char* argv[]) {
 
 	int a_id = 0, t_id = 0;
 	for (sv_t* insertion : insertions) {
-        if (insertion->svlen() < config.min_sv_size) {
+        if (insertion->ins_seq.length() < config.min_sv_size) {
             delete insertion;
             continue;
         }
