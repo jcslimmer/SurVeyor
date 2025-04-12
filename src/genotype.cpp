@@ -2058,7 +2058,7 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
 
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (inversion_t* inv : invs) {
-        if (inv->svlen() < stats.read_len-2*config.min_clip_len) {
+        if (inv->end-inv->start+inv->svlen() < stats.read_len-2*config.min_clip_len) {
             genotype_small_inv(inv, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
         } else {
             genotype_large_inv(inv, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
