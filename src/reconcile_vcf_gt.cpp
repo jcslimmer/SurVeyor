@@ -69,6 +69,10 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
 
     while (bcf_read(base_fp, base_hdr, b) == 0) {
         bcf_unpack(b, BCF_UN_STR);
+
+        if (get_sv_type(base_hdr, b) == "BND") {
+            continue;
+        }
         
         if (bcf_translate(out_hdr, base_hdr, b) != 0) {
             std::cerr << "Error translating record to output header" << std::endl;
