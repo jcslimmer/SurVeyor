@@ -413,6 +413,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* short_anchor_flt_tag = "##FILTER=<ID=SHORT_ANCHOR,Description=\"Read pairs supporting the SV are limited to a very small portion of the genome.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, short_anchor_flt_tag, &len));
 
+	const char* low_qual_flt_tag = "##FILTER=<ID=LOW_ALT_CONSENSUS_SCORE,Description=\"Assembled alternative consensus aligns better to REF than to ALT.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, low_qual_flt_tag, &len));
+
 	// add INFO tags
 	const char* svtype_tag = "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svtype_tag, &len));
