@@ -1840,17 +1840,21 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::vector<bool> alt_bp1_better_reads_isrc, alt_bp2_better_reads_isrc, ref_bp1_better_reads_isrc, ref_bp2_better_reads_isrc;
 
     StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < inv_start || inv_end < get_unclipped_start(read)) continue;
         if (inv_start < get_unclipped_start(read) && get_unclipped_end(read) < inv_end) continue;
-        
-        StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
-        
+
+        alt1_aln.Clear();
+        alt2_aln.Clear();
+        ref1_aln.Clear();
+        ref2_aln.Clear();
+
         std::string seq = get_sequence(read);
         bool alt_is_rc = false, ref_is_rc = false;
-        if (bam_is_rev(read) && inv->end+stats.read_len/2 <= get_mate_endpos(read) ||
-            !bam_is_rev(read) && read->core.mpos <= inv->start-stats.read_len/2) {
+        if (bam_is_mrev(read) && inv->end+stats.read_len/2 <= get_mate_endpos(read) ||
+            !bam_is_mrev(read) && read->core.mpos <= inv->start-stats.read_len/2) {
             if (bam_is_rev(read) == bam_is_mrev(read)) {
                 rc(seq);
                 alt_is_rc = true;
@@ -1878,7 +1882,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
                 aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
                 alt_is_rc = true;
             }
-        } 
+        }
 
         StripedSmithWaterman::Alignment& alt_aln = alt1_aln.sw_score >= alt2_aln.sw_score ? alt1_aln : alt2_aln;
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
@@ -1963,7 +1967,6 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     inv->sample_info.ext_alt_consensus1_length = alt_bp1_consensus_seq.length();
     inv->sample_info.ext_alt_consensus2_length = alt_bp2_consensus_seq.length();
 
-    StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
     ref1_aln.Clear();
     alt1_aln.Clear();
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
@@ -2147,7 +2150,7 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
 
         double ptn = std::max(pairs_ptn, reads_ptn);
         inv->n_gt = 2;
-        inv->sample_info.gt = new int[2];
+        inv->sample_info.gt = (int*) malloc(2*sizeof(int));
         if (ptn >= 0.75) {
             inv->sample_info.gt[0] = bcf_gt_unphased(1);
             inv->sample_info.gt[1] = bcf_gt_unphased(1);
