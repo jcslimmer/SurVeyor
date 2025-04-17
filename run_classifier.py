@@ -7,7 +7,7 @@ class Classifier:
     def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_prob, out_vcf_fname, stats_fname):
         stats = features.load_stats(stats_fname)
 
-        vcf_writer = pysam.VariantFile(out_vcf_fname, 'w', header=vcf_header)
+        vcf_writer = pysam.VariantFile(out_vcf_fname, 'wz', header=vcf_header)
         for record in vcf_reader.fetch():
             if features.Features.get_svtype(record) != "INV":
                 record.filter.clear()
