@@ -1,5 +1,6 @@
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
 #include <htslib/tbx.h>
@@ -195,7 +196,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				compatible_ra_idxs.push_back(Interval<int>(0, 0, i));
 			}
 		}
-
+		
 		for (Interval<int>& la_iv : compatible_la_idxs) {
 			consensus_t* la_consensus = (c->la_rev ? lc_consensuses[la_iv.value] : rc_consensuses[la_iv.value]);
 			for (Interval<int>& ra_iv : compatible_ra_idxs) {
@@ -245,8 +246,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			// these two are often extended to the same sequence, and they form a strong (perfect) match, instead of being used to call precise inversions
 			if (rc_consensus->sequence == lc_consensus->sequence) continue; 
 
+			
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
-			if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
+			consensus_t* c1_consensus = rc_consensus->left_clipped ? rc_consensus : lc_consensus;
+			consensus_t* c2_consensus = rc_consensus->left_clipped ? lc_consensus : rc_consensus;
+			if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap) && spa.overlap <= 2*stats.read_len) { 
 				consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
 				// TODO: investigate if we can use base qualities for this
@@ -254,7 +258,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				std::string lc_consensus_trim = lc_consensus->sequence.substr(lc_consensus->lowq_clip_portion);
 
 				suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_trim, lc_consensus_trim, 1, -4, max_mm_rate, min_overlap);
-				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap)) {
+				if (spa.overlap > 0 && !is_homopolymer(lc_consensus_trim.c_str(), spa.overlap) && spa.overlap <= 2*stats.read_len) {
 					consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
 				}
 			}
