@@ -246,7 +246,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			// these two are often extended to the same sequence, and they form a strong (perfect) match, instead of being used to call precise inversions
 			if (rc_consensus->sequence == lc_consensus->sequence) continue; 
 
-			
 			suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus->sequence, lc_consensus->sequence, 1, -4, max_mm_rate, min_overlap);
 			consensus_t* c1_consensus = rc_consensus->left_clipped ? rc_consensus : lc_consensus;
 			consensus_t* c2_consensus = rc_consensus->left_clipped ? lc_consensus : rc_consensus;
@@ -406,7 +405,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	std::vector<std::tuple<hts_pos_t, breakend_t*, breakend_t*>> bnd_pairs;
 	for (breakend_t* bnd_rf : bnds_rf) {
 		for (breakend_t* bnd_lf : bnds_lf) {
-			if (bnd_lf->start-bnd_rf->start <= stats.max_is && bnd_lf->start-bnd_rf->start > -stats.read_len &&
+			if (bnd_lf->start-bnd_rf->start <= stats.max_is && bnd_lf->start-bnd_rf->start > -stats.read_len ||
 				bnd_lf->end-bnd_rf->end <= stats.max_is && bnd_lf->end-bnd_rf->end > -stats.read_len) {
 				hts_pos_t dist = std::abs(bnd_rf->start-bnd_lf->start) + std::abs(bnd_rf->end-bnd_lf->end);
 				bnd_pairs.push_back(std::make_tuple(dist, bnd_rf, bnd_lf));
