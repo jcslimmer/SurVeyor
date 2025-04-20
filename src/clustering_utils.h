@@ -72,6 +72,10 @@ struct cluster_t {
 		merged->ra_confident_count += c1->ra_confident_count + c2->ra_confident_count;
 		merged->la_max_mapq = std::max(c1->la_max_mapq, c2->la_max_mapq);
 		merged->ra_max_mapq = std::max(c1->ra_max_mapq, c2->ra_max_mapq);
+		merged->la_start_unclipped = std::min(c1->la_start_unclipped, c2->la_start_unclipped);
+		merged->la_end_unclipped = std::max(c1->la_end_unclipped, c2->la_end_unclipped);
+		merged->ra_start_unclipped = std::min(c1->ra_start_unclipped, c2->ra_start_unclipped);
+		merged->ra_end_unclipped = std::max(c1->ra_end_unclipped, c2->ra_end_unclipped);
 
 		// set leftmost_lseq
 		if (c1->la_rev) {

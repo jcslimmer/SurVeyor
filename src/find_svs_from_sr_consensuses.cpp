@@ -155,23 +155,33 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		if (c->la_rev) {
 			compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_start-stats.max_is, c->la_start+stats.read_len/2);
 			compatible_ra_idxs = lc_consensus_ivtree.findOverlapping(c->ra_start-stats.max_is, c->ra_end+stats.read_len/2);
-			// remove elements in compatible_ra_idxs that are also in compatible_la_idxs
-			compatible_ra_idxs.erase(std::remove_if(compatible_ra_idxs.begin(), compatible_ra_idxs.end(),
-				[&compatible_la_idxs](Interval<int>& iv) {
-					return std::find_if(compatible_la_idxs.begin(), compatible_la_idxs.end(),
-						[iv](Interval<int>& iv2) {return iv.value == iv2.value;}) != compatible_la_idxs.end();
-				}), compatible_ra_idxs.end());
 		} else {
 			compatible_la_idxs = rc_consensus_ivtree.findOverlapping(c->la_end-stats.read_len/2, c->la_end+stats.max_is);
-			compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end-stats.read_len/2, c->ra_end+stats.max_is);
-			// remove elements in compatible_la_idxs that are also in compatible_ra_idxs
-			compatible_la_idxs.erase(std::remove_if(compatible_la_idxs.begin(), compatible_la_idxs.end(),
-				[&compatible_ra_idxs](Interval<int>& iv) {
-					return std::find_if(compatible_ra_idxs.begin(), compatible_ra_idxs.end(),
-						[iv](Interval<int>& iv2) {return iv.value == iv2.value;}) != compatible_ra_idxs.end();
-				}), compatible_la_idxs.end());
+			compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end-stats.read_len/2, c->ra_end+stats.max_is);	
 		}
 		
+		// for SR consensues that could belong to both the left and the right anchor, assign them to the most suitable anchor
+		for (Interval<int>& la_iv : compatible_la_idxs) {
+			for (Interval<int>& ra_iv : compatible_ra_idxs) {
+				if (la_iv.value == ra_iv.value) {
+					if (c->la_rev) {
+						consensus_t* sr_cluster = lc_consensuses[la_iv.value];
+						if (sr_cluster->breakpoint <= c->la_start+10) ra_iv.value = -1;
+						else la_iv.value = -1;
+					} else {
+						consensus_t* sr_cluster = rc_consensuses[la_iv.value];
+						if (sr_cluster->breakpoint >= c->ra_end-10) la_iv.value = -1;
+						else ra_iv.value = -1;
+					}
+					break;
+				}
+			}
+		}
+		compatible_la_idxs.erase(std::remove_if(compatible_la_idxs.begin(), compatible_la_idxs.end(),
+			[](Interval<int>& iv) { return iv.value == -1; }), compatible_la_idxs.end());
+		compatible_ra_idxs.erase(std::remove_if(compatible_ra_idxs.begin(), compatible_ra_idxs.end(),
+			[](Interval<int>& iv) { return iv.value == -1; }), compatible_ra_idxs.end());
+			
 		if (compatible_la_idxs.empty() != compatible_ra_idxs.empty()) {
 			consensus_t* consensus;
 			if (compatible_la_idxs.empty()) {
