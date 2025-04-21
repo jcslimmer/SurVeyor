@@ -151,6 +151,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	mtx.unlock();
 	// find viable pairs of consensuses that form BND, and push them to consensuses_scored_pairs
 	for (std::shared_ptr<cluster_t> c : ss_clusters) {
+
 		std::vector<Interval<int>> compatible_la_idxs, compatible_ra_idxs;
 		if (c->la_rev) {
 			compatible_la_idxs = lc_consensus_ivtree.findOverlapping(c->la_start-stats.max_is, c->la_start+stats.read_len/2);
@@ -159,7 +160,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			compatible_la_idxs = rc_consensus_ivtree.findOverlapping(c->la_end-stats.read_len/2, c->la_end+stats.max_is);
 			compatible_ra_idxs = rc_consensus_ivtree.findOverlapping(c->ra_end-stats.read_len/2, c->ra_end+stats.max_is);	
 		}
-		
+
 		// for SR consensues that could belong to both the left and the right anchor, assign them to the most suitable anchor
 		for (Interval<int>& la_iv : compatible_la_idxs) {
 			for (Interval<int>& ra_iv : compatible_ra_idxs) {
@@ -181,7 +182,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			[](Interval<int>& iv) { return iv.value == -1; }), compatible_la_idxs.end());
 		compatible_ra_idxs.erase(std::remove_if(compatible_ra_idxs.begin(), compatible_ra_idxs.end(),
 			[](Interval<int>& iv) { return iv.value == -1; }), compatible_ra_idxs.end());
-			
+
 		if (compatible_la_idxs.empty() != compatible_ra_idxs.empty()) {
 			consensus_t* consensus;
 			if (compatible_la_idxs.empty()) {
@@ -385,7 +386,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		if (!has_bnd) {
 			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
-			rc(lm_seq);
+			rc(rm_seq);
 			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
 			breakend_t* bnd = NULL;
 			if (spa.overlap) {
@@ -454,13 +455,14 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 
 		bool imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
 		inversion_t* inv = NULL;
+		hts_pos_t inv_start = bnd_lf->start, inv_end = bnd_rf->end;
+		hts_pos_t sv_start = inv_start, sv_end = inv_end;
 		if (!imprecise && (bnd_rf->start+10 <= bnd_lf->start || bnd_rf->end+10 <= bnd_lf->end)) {
-			inv = new inversion_t(contig_name, bnd_rf->start, bnd_lf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
-			inv->inv_start = bnd_lf->start;
-			inv->inv_end = bnd_rf->end;
-		} else {
-			inv = new inversion_t(contig_name, bnd_lf->start, bnd_rf->end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+			sv_start = bnd_rf->start, sv_end = bnd_lf->end;
 		}
+		inv = new inversion_t(contig_name, sv_start, sv_end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+		inv->inv_start = inv_start;
+		inv->inv_end = inv_end;
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
 		if (inv->end-inv->start < config.min_sv_size) {

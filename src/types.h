@@ -432,7 +432,7 @@ struct inversion_t : sv_t {
         if (!ins_seq.empty()) {
             return ins_seq.length() - (end-start);
         }
-        return (end-start) - (inv_end-inv_start);
+        return (inv_end-inv_start) - (end-start);
     }
 
     bool is_left_facing() {
