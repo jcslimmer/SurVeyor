@@ -595,7 +595,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	} else if (sv->svtype() == "INV") {
 		inversion_t* inv = (inversion_t*) sv;
 		if (inv->inv_start != inv->start || inv->inv_end != inv->end) {
-			int invpos[2] = {(int) inv->inv_start, (int) inv->inv_end};
+			int invpos[2] = {(int) inv->inv_start+1, (int) inv->inv_end+1};
 			bcf_update_info_int32(hdr, bcf_entry, "INVPOS", invpos, 2);
 		}
 	}
@@ -758,8 +758,8 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
 		inversion_t* inv = (inversion_t*) sv;
 		if (len > 0) {
-			inv->inv_start = data[0];
-			inv->inv_end = data[1];
+			inv->inv_start = data[0]-1;
+			inv->inv_end = data[1]-1;
 		}
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];

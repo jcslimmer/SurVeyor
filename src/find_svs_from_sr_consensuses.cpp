@@ -275,8 +275,16 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		}
 	}
 
+	// same-strand get priority, because the LC and RC SR consensues within small inversions may end up artificially
+	// forming a pair
 	std::sort(consensuses_scored_pairs.begin(), consensuses_scored_pairs.end(),
-	            [](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {return ps1.spa.score > ps2.spa.score;});
+			[](const pair_w_score_t& ps1, const pair_w_score_t& ps2) {
+				bool ps1_is_ss = ps1.c1_lc == ps1.c2_lc;
+				bool ps2_is_ss = ps2.c1_lc == ps2.c2_lc;
+				if (ps1_is_ss && !ps2_is_ss) return true;
+				else if (!ps1_is_ss && ps2_is_ss) return false;
+				else return ps1.spa.score > ps2.spa.score;
+			});
 
 	mtx.lock();
 	std::vector<breakend_t*> bnds_lf, bnds_rf;
@@ -390,8 +398,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
 			breakend_t* bnd = NULL;
 			if (spa.overlap) {
-				consensus_t* leftmost_consensus = new consensus_t(true, c->la_start, c->la_end, c->la_end, c->la_furthermost_seq, 1, 0, 0, c->la_max_mapq, 0, 0);
-				consensus_t* rightmost_consensus = new consensus_t(true, c->ra_start, c->ra_end, c->ra_end, c->ra_furthermost_seq, 1, 0, 0, c->ra_max_mapq, 0, 0);
+				consensus_t* leftmost_consensus = new consensus_t(false, c->la_start, c->la_end, c->la_end, c->la_furthermost_seq, 1, 0, 0, c->la_max_mapq, 0, 0);
+				consensus_t* rightmost_consensus = new consensus_t(false, c->ra_start, c->ra_end, c->ra_end, c->ra_furthermost_seq, 1, 0, 0, c->ra_max_mapq, 0, 0);
 				bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, spa, aligner, config.min_clip_len);
 			} else {
 				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
@@ -464,7 +472,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		inv->inv_start = inv_start;
 		inv->inv_end = inv_end;
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
-		inv->imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
+		inv->imprecise = imprecise;
 		if (inv->end-inv->start < config.min_sv_size) {
 			delete rc_consensus;
 			delete lc_consensus;

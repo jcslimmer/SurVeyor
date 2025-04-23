@@ -4,6 +4,7 @@
 #include <cmath>
 #include <string>
 
+#include "htslib/sam.h"
 #include "sam_utils.h"
 #include "hsr_utils.h"
 #include "utils.h"
@@ -90,13 +91,8 @@ struct bam_redux_t {
     }
 };
 
-struct del_ins_t {
-    int del, ins;
-
-    del_ins_t() : del(0), ins(0) {};
-};
-del_ins_t get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
-    del_ins_t del_ins;
+std::pair<int, int> get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
+    int dels = 0, inss = 0;
     int offset = 0;
     for (uint32_t c : r->cigar) {
         int len = bam_cigar_oplen(c);
@@ -109,9 +105,9 @@ del_ins_t get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
         }
 
         if (op == 'D') {
-            del_ins.del += len;
+            dels += len;
         } else if (op == 'I') {
-            del_ins.ins += len;
+            inss += len;
         }
 
         if (consumes_ref) {
@@ -119,7 +115,7 @@ del_ins_t get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
             if (offset == n) break;
         }
     }
-    return del_ins;
+    return {dels, inss};
 }
 
 hts_pos_t get_start_offset(bam_redux_t* r1, bam_redux_t* r2) {
@@ -131,8 +127,8 @@ hts_pos_t get_start_offset(bam_redux_t* r1, bam_redux_t* r2) {
      * If R1 has I bps inserted in the first N bps, then R2 will align to position N+1+I.
      * Conversely, if D bps are deleted, R2 will align to position N+1-D
      */
-    del_ins_t del_ins = get_dels_ins_in_first_n_chars(r1, offset);
-    return offset + del_ins.ins - del_ins.del;
+    std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(r1, offset);
+    return offset + del_ins.second - del_ins.first;
 }
 
 // mismatch_score, gap_open_score and gap_extend_score must be negative
@@ -286,7 +282,7 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
     std::vector<bam_redux_t*> lc_reads, rc_reads;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_left_clipped(read, config.min_clip_len) && !is_right_clipped(read, 1)) {
-        	bam_redux_t* bam_redux = new bam_redux_t(read);
+            bam_redux_t* bam_redux = new bam_redux_t(read);
         	if (bam_redux->unclipped_end() < contig_len) {
 				lc_reads.push_back(bam_redux);
         	} else {
