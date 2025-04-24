@@ -1770,7 +1770,8 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
 void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
-    hts_pos_t inv_start = inv->start, inv_end = inv->end;
+    
+    hts_pos_t sv_start = inv->start, sv_end = inv->end;
 
     hts_pos_t extend = stats.read_len + 20;
 
@@ -1780,25 +1781,25 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
      * END seems to be the base BEFORE the reference resumes - i.e., for a "clean" inversion (no deletion),POS == END, otherwise the last base deleted
      * As usual, in order to make intervals [ ), we increase the coordinates by 1
      */
-    inv_start++; inv_end++;
+    sv_start++; sv_end++;
 
     char* contig_seq = chr_seqs.get_seq(inv->chr);
     hts_pos_t contig_len = chr_seqs.get_len(inv->chr);
 
-    hts_pos_t alt_start = std::max(hts_pos_t(0), inv_start-extend);
-    hts_pos_t alt_end = std::min(inv_end+extend, contig_len);
-    int alt_lf_len = inv_start-alt_start, alt_rf_len = alt_end-inv_end;
-    hts_pos_t inv_border_len = std::min(extend, inv->end-inv->start);
+    hts_pos_t alt_start = std::max(hts_pos_t(0), sv_start-extend);
+    hts_pos_t alt_end = std::min(sv_end+extend, contig_len);
+    int alt_lf_len = sv_start-alt_start, alt_rf_len = alt_end-sv_end;
+    hts_pos_t inv_border_len = std::min(extend, inv->inv_end-inv->inv_start);
 
     char* inv_prefix = new char[inv_border_len+1];
-    strncpy(inv_prefix, contig_seq+inv->start, inv_border_len);
+    strncpy(inv_prefix, contig_seq+inv->inv_start, inv_border_len);
     inv_prefix[inv_border_len] = 0;
 
     char* inv_prefix_rc = strdup(inv_prefix);
     rc(inv_prefix_rc);
 
     char* inv_suffix = new char[inv_border_len+1];
-    strncpy(inv_suffix, contig_seq+inv->end-inv_border_len, inv_border_len);
+    strncpy(inv_suffix, contig_seq+inv->inv_end-inv_border_len, inv_border_len);
     inv_suffix[inv_border_len] = 0;
 
     char* inv_suffix_rc = strdup(inv_suffix);
@@ -1813,25 +1814,35 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     int alt_bp2_len = inv_border_len + alt_rf_len;
     char* alt_bp2_seq = new char[alt_bp2_len+1];
     strncpy(alt_bp2_seq, inv_prefix_rc, inv_border_len);
-    strncpy(alt_bp2_seq+inv_border_len, contig_seq+inv->end, alt_rf_len);
+    strncpy(alt_bp2_seq+inv_border_len, contig_seq+sv_end, alt_rf_len);
     alt_bp2_seq[alt_bp2_len] = 0;
 
-    hts_pos_t ref_bp1_start = std::max(hts_pos_t(0), inv_start-extend);
-    hts_pos_t ref_bp1_end = std::min(inv->start+extend, contig_len);
+    hts_pos_t ref_bp1_start = std::max(hts_pos_t(0), sv_start-extend);
+    hts_pos_t ref_bp1_end = std::min(sv_start+extend, contig_len);
     hts_pos_t ref_bp1_len = ref_bp1_end-ref_bp1_start;
-    hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), inv->end-extend);
-    hts_pos_t ref_bp2_end = std::min(inv_end+extend, contig_len);
+    hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), sv_end-extend);
+    hts_pos_t ref_bp2_end = std::min(sv_end+extend, contig_len);
     hts_pos_t ref_bp2_len = ref_bp2_end-ref_bp2_start;
 
-    std::stringstream l_region, r_region;
-    l_region << inv->chr << ":" << ref_bp1_start << "-" << ref_bp1_end;
-    r_region << inv->chr << ":" << ref_bp2_start << "-" << ref_bp2_end;
+    char* regions[4];
+    std::stringstream ss;
+    ss << inv->chr << ":" << ref_bp1_start << "-" << ref_bp1_end;
+    regions[0] = strdup(ss.str().c_str());
+    ss.str("");
+    
+    ss << inv->chr << ":" << ref_bp2_start << "-" << ref_bp2_end;
+    regions[1] = strdup(ss.str().c_str());
+    ss.str("");
 
-    char* regions[2];
-    regions[0] = strdup(l_region.str().c_str());
-    regions[1] = strdup(r_region.str().c_str());
+    ss << inv->chr << ":" << std::max(hts_pos_t(0), inv->inv_start-extend) << "-" << inv->inv_start+extend;
+    regions[2] = strdup(ss.str().c_str());
+    ss.str("");
 
-    hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
+    ss << inv->chr << ":" << std::max(hts_pos_t(0), inv->inv_end-extend) << "-" << inv->inv_end+extend;
+    regions[3] = strdup(ss.str().c_str());
+    ss.str("");
+
+    hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 4);
 
     bam1_t* read = bam_init1();
 
@@ -1843,8 +1854,12 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
-        if (get_unclipped_end(read) < inv_start || inv_end < get_unclipped_start(read)) continue;
-        if (inv_start < get_unclipped_start(read) && get_unclipped_end(read) < inv_end) continue;
+
+        hts_pos_t read_start = get_unclipped_start(read), read_end = get_unclipped_end(read);
+        if (overlap(read_start, read_end, sv_start, sv_start+1) == 0 && 
+            overlap(read_start, read_end, sv_end, sv_end+1) == 0 &&
+            overlap(read_start, read_end, inv->inv_start, inv->inv_start+1) == 0 &&
+            overlap(read_start, read_end, inv->inv_end, inv->inv_end+1) == 0) continue;
 
         alt1_aln.Clear();
         alt2_aln.Clear();
@@ -1982,9 +1997,9 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         alt_bp1_seq = new char[alt_bp1_len+1];
         strncpy(alt_bp1_seq, contig_seq+alt_bp1_start, inv->start-alt_bp1_start);
         
-        hts_pos_t ext_inv_border_len = std::min((hts_pos_t) alt_bp1_consensus_seq.length(), inv->end-inv->start);
+        hts_pos_t ext_inv_border_len = std::min((hts_pos_t) alt_bp1_consensus_seq.length(), inv->inv_end-inv->inv_start);
         char* ext_inv_suffix_rc = new char[ext_inv_border_len+1];
-        strncpy(ext_inv_suffix_rc, contig_seq+inv->end-ext_inv_border_len, ext_inv_border_len);
+        strncpy(ext_inv_suffix_rc, contig_seq+inv->inv_end-ext_inv_border_len, ext_inv_border_len);
         ext_inv_suffix_rc[ext_inv_border_len] = 0;
         rc(ext_inv_suffix_rc);
         strncpy(alt_bp1_seq+(inv->start-alt_bp1_start), ext_inv_suffix_rc, ext_inv_border_len);
@@ -2019,13 +2034,13 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         hts_pos_t alt_bp2_len = alt_bp2_end-alt_bp2_start;
         alt_bp2_seq = new char[alt_bp2_len+1];
         
-        hts_pos_t ext_inv_border_len = std::min((hts_pos_t) alt_bp2_consensus_seq.length(), inv->end-inv->start);
+        hts_pos_t ext_inv_border_len = std::min((hts_pos_t) alt_bp2_consensus_seq.length(), inv->inv_end-inv->inv_start);
         int extra_len = alt_bp2_consensus_seq.length() - ext_inv_border_len;
         if (extra_len > 0) {
             strncpy(alt_bp2_seq, contig_seq+inv->start-extra_len, extra_len);
         } else extra_len = 0;
         char* ext_inv_prefix_rc = new char[ext_inv_border_len+1];
-        strncpy(ext_inv_prefix_rc, contig_seq+inv->start, ext_inv_border_len);
+        strncpy(ext_inv_prefix_rc, contig_seq+inv->inv_start, ext_inv_border_len);
         ext_inv_prefix_rc[ext_inv_border_len] = 0;
         rc(ext_inv_prefix_rc);
         strncpy(alt_bp2_seq+extra_len, ext_inv_prefix_rc, ext_inv_border_len);

@@ -424,8 +424,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 	std::vector<std::tuple<hts_pos_t, breakend_t*, breakend_t*>> bnd_pairs;
 	for (breakend_t* bnd_rf : bnds_rf) {
 		for (breakend_t* bnd_lf : bnds_lf) {
-			if (bnd_lf->start-bnd_rf->start <= stats.max_is && bnd_lf->start-bnd_rf->start > -stats.read_len ||
-				bnd_lf->end-bnd_rf->end <= stats.max_is && bnd_lf->end-bnd_rf->end > -stats.read_len) {
+			if (bnd_lf->start-bnd_rf->start > -stats.read_len && bnd_lf->end-bnd_rf->end > -stats.read_len &&
+				(bnd_lf->start-bnd_rf->start <= stats.max_is || bnd_lf->end-bnd_rf->end <= stats.max_is)) {
 				hts_pos_t dist = std::abs(bnd_rf->start-bnd_lf->start) + std::abs(bnd_rf->end-bnd_lf->end);
 				bnd_pairs.push_back(std::make_tuple(dist, bnd_rf, bnd_lf));
 			}
