@@ -275,11 +275,11 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXR", ext_reads, 2);
     int hq_ext_reads[] = {sv->sample_info.hq_alt_lext_reads, sv->sample_info.hq_alt_rext_reads};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "AXRHQ", hq_ext_reads, 2);
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->sample_info.ext_alt_consensus1_length), 1);
 
     if (sv->sample_info.ext_alt_consensus1_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->sample_info.ext_alt_consensus1_to_alt_score), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->sample_info.ext_alt_consensus1_to_ref_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->sample_info.ext_alt_consensus1_length), 1);
         int exss[] = {sv->sample_info.alt_consensus1_split_size1, sv->sample_info.alt_consensus1_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
         int exssc[] = {sv->sample_info.alt_consensus1_split_score1, sv->sample_info.alt_consensus1_split_score2};
@@ -1868,9 +1868,10 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
         std::string seq = get_sequence(read);
         bool alt_is_rc = false, ref_is_rc = false;
+        // if mate is outside the inversion and pointing towards it
         if (bam_is_mrev(read) && inv->end+stats.read_len/2 <= get_mate_endpos(read) ||
             !bam_is_mrev(read) && read->core.mpos <= inv->start-stats.read_len/2) {
-            if (bam_is_rev(read) == bam_is_mrev(read)) {
+            if (is_samestr(read)) { // and mate is in the same orientation, we need to rc
                 rc(seq);
                 alt_is_rc = true;
                 ref_is_rc = true;
@@ -1883,19 +1884,30 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
             // align to REF
             aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
             aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
-        } else if (inv->start-10 <= read->core.mpos && get_mate_endpos(read) <= inv->end+10) {
-            // if mate is inside the inversion, we need to align it as it is to REF but reverse-complemented to ALT
-
-            if (bam_is_mrev(read)) {
-                aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
-                rc(seq);
-                aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
-                alt_is_rc = true;
-            } else {
-                aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
-                rc(seq);
-                aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
-                alt_is_rc = true;
+        } else if (inv->start-10 <= read->core.mpos && get_mate_endpos(read) <= inv->end+10) { // if mate is inside the inversion
+            
+            // if read and mate point towards each other, it means that if the inversion is true, they were RC together
+            // therefore, we need to align it as it is to REF but reverse-complemented to ALT
+            if (is_proper_pair(read, stats.min_is, stats.max_is)) {
+                if (bam_is_mrev(read)) {
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
+                    rc(seq);
+                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+                    alt_is_rc = true;
+                } else {
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+                    rc(seq);
+                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+                    alt_is_rc = true;
+                }
+            } else if (is_samestr(read)) { // if both point in the same direction, the mate was RC by itself, and we can align the read as it is
+                if (bam_is_rev(read)) {
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+                } else {
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+                }
             }
         }
 
@@ -2028,7 +2040,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         hts_pos_t ref_bp2_end = inv->end+alt_bp2_consensus_seq.length();
         if (ref_bp2_end > contig_len) ref_bp2_end = contig_len;
         aligner.Align(alt_bp2_consensus_seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
-
+        
         hts_pos_t alt_bp2_start = std::max(hts_pos_t(0), hts_pos_t(inv->end-alt_bp2_consensus_seq.length()));
         hts_pos_t alt_bp2_end = std::min(hts_pos_t(inv->end+alt_bp2_consensus_seq.length()), contig_len);
         hts_pos_t alt_bp2_len = alt_bp2_end-alt_bp2_start;
@@ -2077,6 +2089,10 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     hts_itr_destroy(iter);
 }
 
+bool is_small_inv(inversion_t* inv) {
+    return inv->end-inv->start+inv->svlen() < stats.read_len-2*config.min_clip_len;
+}
+
 void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<inversion_t*> invs,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config) {
 
@@ -2093,7 +2109,7 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
 
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (inversion_t* inv : invs) {
-        if (inv->end-inv->start+inv->svlen() < stats.read_len-2*config.min_clip_len) {
+        if (is_small_inv(inv)) {
             genotype_small_inv(inv, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
         } else {
             genotype_large_inv(inv, bam_file, candidate_reads_for_extension_itree, mateseqs_w_mapq[contig_id]);
@@ -2141,8 +2157,8 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
             inv->sample_info.filters.push_back("SHORT_ANCHOR");
             fail_sr = true;
         }
-        if (inv->sample_info.ext_alt_consensus1_to_alt_score < inv->sample_info.ext_alt_consensus1_to_ref_score || 
-            inv->sample_info.ext_alt_consensus2_to_alt_score < inv->sample_info.ext_alt_consensus2_to_ref_score) {
+        if (inv->sample_info.ext_alt_consensus1_to_alt_score <= inv->sample_info.ext_alt_consensus1_to_ref_score || 
+            !is_small_inv(inv) && inv->sample_info.ext_alt_consensus2_to_alt_score <= inv->sample_info.ext_alt_consensus2_to_ref_score) {
             inv->sample_info.filters.push_back("LOW_ALT_CONSENSUS_SCORE");
             fail_sr = true;
         }
