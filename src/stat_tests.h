@@ -418,9 +418,9 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	});
 
     std::vector<hts_pos_t> midpoints, sizes;
-    std::vector<uint64_t> sums(svs.size()), sums_highmq(svs.size());
-	std::vector<uint64_t> sq_sums(svs.size()), sq_sums_highmq(svs.size());
-    std::vector<uint32_t> ns(svs.size()), ns_highmq(svs.size());
+    std::vector<uint64_t> sums(svs.size());
+	std::vector<uint64_t> sq_sums(svs.size());
+    std::vector<uint32_t> ns(svs.size());
     std::vector<char*> regions;
     std::vector<std::pair<hts_pos_t, hts_pos_t> > regions_coos;
     for (sv_t* sv : svs) {
@@ -443,7 +443,7 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 	int curr_pos = 0;
     hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
     bam1_t* read = bam_init1();
-    std::vector<std::vector<double> > local_dists(svs.size()), local_dists_highmq(svs.size());
+    std::vector<std::vector<double> > local_dists(svs.size());
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 
     	if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read)) continue;
@@ -459,33 +459,20 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
                 sq_sums[i] += read->core.isize*read->core.isize;
                 ns[i]++;
                 local_dists[i].push_back(read->core.isize);
-				if (read->core.qual >= config.high_confidence_mapq) {
-					sums_highmq[i] += read->core.isize;
-                	sq_sums_highmq[i] += read->core.isize*read->core.isize;
-					ns_highmq[i]++;
-					local_dists_highmq[i].push_back(read->core.isize);
-				}
             }
         }
     }
 
     for (int i = 0; i < svs.size(); i++) {
 		sv_t* sv = svs[i];
-        uint32_t n = ns[i], n_highmq = ns_highmq[i];
-        uint64_t sum = sums[i], sum_highmq = sums_highmq[i];
-		uint64_t sq_sum = sq_sums[i], sq_sum_highmq = sq_sums_highmq[i];
+        uint32_t n = ns[i], sum = sums[i];
+		uint64_t sq_sum = sq_sums[i];
         if (n >= 4) {
             int avg_is = sum/n;
             int var_is = (sq_sum - sum*sum/n)/(n-1);
             int confidence_ival = 2.576 * sqrt(var_is/n);
 			sv->min_conf_size = abs(avg_is - stats.pop_avg_crossing_is) - confidence_ival;
             sv->max_conf_size = abs(avg_is - stats.pop_avg_crossing_is) + confidence_ival;
-
-			if (n_highmq >= 4) {
-				int avg_is_highmq = sum_highmq/n_highmq;
-				int var_is_highmq = (sq_sum_highmq - sum_highmq*sum_highmq/n_highmq)/(n_highmq-1);
-				int confidence_ival_highmq = 2.576 * sqrt(var_is_highmq/n_highmq);
-			}
 
             if (!global_crossing_isize_dist.empty()) {
 				double ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
@@ -971,39 +958,58 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 	std::vector<char*> regions;
 	for (inversion_t* inv : inversions) {
 		std::stringstream ss;
-		ss << contig_name << ":" << std::max(hts_pos_t(1), inv->start-stats.max_is) << "-" << inv->start+stats.max_is;
-		char* region = new char[ss.str().length()+1];
-		strcpy(region, ss.str().c_str());
-		regions.push_back(region);
+		ss << contig_name << ":" << inv->inv_start << "-" << inv->inv_start+stats.max_is;
+		regions.push_back(strdup(ss.str().c_str()));
+		ss.str("");
+
+		ss << contig_name << ":" << std::max(hts_pos_t(1), inv->inv_end-stats.max_is) << "-" << inv->inv_end;
+		regions.push_back(strdup(ss.str().c_str()));
+		ss.str("");
 	}
 
-	std::sort(inversions.begin(), inversions.end(), [](const inversion_t* i1, const inversion_t* i2) {
-		return i1->start < i2->start;
+	std::vector<inversion_t*> inversions_by_start(inversions.begin(), inversions.end());
+	std::sort(inversions_by_start.begin(), inversions_by_start.end(), [](const inversion_t* i1, const inversion_t* i2) {
+		return i1->inv_start < i2->inv_start;
+	});
+	std::vector<inversion_t*> inversions_by_end(inversions.begin(), inversions.end());
+	std::sort(inversions_by_end.begin(), inversions_by_end.end(), [](const inversion_t* i1, const inversion_t* i2) {
+		return i1->inv_end < i2->inv_end;
 	});
 
 	std::vector<std::vector<int> > supp_pairs_bp1_pos_mqs(inversions.size()), supp_pairs_bp1_neg_mqs(inversions.size());
 	std::vector<std::vector<int> > supp_pairs_bp2_pos_mqs(inversions.size()), supp_pairs_bp2_neg_mqs(inversions.size());
 	
-	int curr_pos = 0;
+	int by_start_idx = 0, by_end_idx = 0;
 	hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions.data(), regions.size());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		if (is_unmapped(read) || !is_primary(read) || !is_samechr(read) || !is_samestr(read)) continue;
 
-		while (curr_pos < inversions.size() && inversions[curr_pos]->start+stats.max_is < bam_endpos(read)) curr_pos++;
+		if (bam_is_rev(read)) {
+			while (by_start_idx < inversions.size() && inversions_by_start[by_start_idx]->inv_start+stats.max_is < bam_endpos(read)) by_start_idx++;
+		} else {
+			while (by_end_idx < inversions.size() && inversions_by_end[by_end_idx]->inv_end < read->core.pos) by_end_idx++;
+		}
 
-		for (int i = curr_pos; i < inversions.size() && read->core.pos >= inversions[i]->start-stats.max_is; i++) {
-			inversion_t* inv = inversions[i];
-			
-			if (!bam_is_rev(read) && read->core.pos+stats.read_len/2 > inv->start) continue;
-			if (bam_is_rev(read) && bam_endpos(read)-stats.read_len/2 < inv->start) break;
+		int curr_idx = bam_is_rev(read) ? by_start_idx : by_end_idx;
+		for (int i = curr_idx; i < inversions.size(); i++) {
+			inversion_t* inv = bam_is_rev(read) ? inversions_by_start[i] : inversions_by_end[i];
+
+			if (bam_is_rev(read) && inv->inv_start+stats.max_is < read->core.pos) break;
+			if (!bam_is_rev(read) && inv->inv_end < read->core.pos) break;
 
 			hts_pos_t mate_startpos = read->core.mpos, mate_endpos = get_mate_endpos(read);
-			if (!bam_is_mrev(read) && mate_startpos >= inv->end-stats.max_is && mate_startpos+stats.read_len/2 <= inv->end) {
-				supp_pairs_bp1_pos_mqs[i].push_back(read->core.qual);
-				supp_pairs_bp1_neg_mqs[i].push_back(get_mq(read));
+			if (!bam_is_mrev(read) && 
+				overlap(read->core.pos, bam_endpos(read), inv->inv_end-stats.max_is, inv->inv_end) >= stats.read_len/2 &&
+				overlap(mate_startpos, mate_endpos, inv->inv_start-stats.max_is, inv->inv_start) >= stats.read_len/2 &&
+				read->core.mpos < read->core.pos) {
+				supp_pairs_bp1_pos_mqs[i].push_back(get_mq(read));
+				supp_pairs_bp1_neg_mqs[i].push_back(read->core.qual);
 			}
-			if (bam_is_mrev(read) && mate_endpos-stats.read_len/2 >= inv->end && mate_endpos <= inv->end+stats.max_is) {
+			if (bam_is_mrev(read) && 
+				overlap(read->core.pos, bam_endpos(read), inv->inv_start, inv->inv_start+stats.max_is) >= stats.read_len/2 &&
+				overlap(mate_startpos, mate_endpos, inv->inv_end, inv->inv_end+stats.max_is) >= stats.read_len/2 &&
+				read->core.mpos > read->core.pos) {
 				supp_pairs_bp2_pos_mqs[i].push_back(read->core.qual);
 				supp_pairs_bp2_neg_mqs[i].push_back(get_mq(read));
 			}
@@ -1011,10 +1017,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 	}
 
 	for (int i = 0; i < inversions.size(); i++) {
-		inversion_t* inv = inversions[i];
-
-		set_bp_pairs_info(inv->sample_info.alt_bp1.pairs_info, supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], config);
-		set_bp_pairs_info(inv->sample_info.alt_bp2.pairs_info, supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], config);
+		set_bp_pairs_info(inversions_by_end[i]->sample_info.alt_bp1.pairs_info, supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], config);
+		set_bp_pairs_info(inversions_by_start[i]->sample_info.alt_bp2.pairs_info, supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], config);
 	}
 }
 
