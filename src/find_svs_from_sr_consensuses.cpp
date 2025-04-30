@@ -473,7 +473,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 		inv->inv_end = inv_end;
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = imprecise;
-		if (inv->end-inv->start < config.min_sv_size) {
+		if (inv->inv_end-inv->inv_start < config.min_sv_size) {
 			delete rc_consensus;
 			delete lc_consensus;
 			delete inv;
