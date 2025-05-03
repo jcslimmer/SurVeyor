@@ -61,3 +61,9 @@ For other parameters, please see the help with
 ```
 python surveyor.py genotype -h
 ```
+
+## Citation
+
+Currently, there is no manuscript for SurVeyor.
+If you use deletions or tandem duplications, please cite: Rajaby, R., Sung, WK. SurVIndel2: improving copy number variant calling from next-generation sequencing using hidden split reads. Nat Commun 15, 10473 (2024). https://doi.org/10.1038/s41467-024-53087-7
+If you use insertions, please cite: Rajaby, R., Liu, DX., Au, C.H. et al. INSurVeyor: improving insertion calling from short read sequencing data. Nat Commun 14, 3243 (2023). https://doi.org/10.1038/s41467-023-38870-2
