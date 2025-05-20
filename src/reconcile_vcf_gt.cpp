@@ -70,16 +70,12 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
     while (bcf_read(base_fp, base_hdr, b) == 0) {
         bcf_unpack(b, BCF_UN_STR);
 
-        if (get_sv_type(base_hdr, b) == "BND") {
-            continue;
-        }
-        
         if (bcf_translate(out_hdr, base_hdr, b) != 0) {
             std::cerr << "Error translating record to output header" << std::endl;
             exit(1);
         }
         bcf_subset(out_hdr, b, 1, imap);
-        
+
         std::string id = b->d.id;
         auto it = gt_records.find(id);
         if (it != gt_records.end()) {
@@ -149,6 +145,9 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
                 bcf_update_info_string(out_hdr, b, "HARD_FILTERS", hard_filters);
             }
             free(hard_filters);
+        } else {
+            int32_t missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
+            bcf_update_genotypes(out_hdr, b, missing_gt, 2);
         }
 
         if (bcf_write(out_fp, out_hdr, b) < 0) {

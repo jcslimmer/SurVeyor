@@ -811,7 +811,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	return sv;
 }
 
-int find_sample_index(bcf_hdr_t* hdr, std::string sample_name) {
+int find_sample_index(bcf_hdr_t* hdr, std::string& sample_name) {
     for (int i = 0; i < bcf_hdr_nsamples(hdr); i++) {
         if (sample_name == hdr->samples[i]) {
             return i;
@@ -834,6 +834,9 @@ bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& i
         bcf_hdr_add_sample(out_hdr, sample_name.c_str());
         imap[0] = -1;
     }
+	if (bcf_hdr_sync(out_hdr) < 0) {
+		throw std::runtime_error("Failed to sync header.");
+	}
 	return out_hdr;
 }
 
