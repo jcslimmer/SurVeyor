@@ -411,7 +411,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<consensus
 				bnd->imprecise = true;
 			}
 
-			if (bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
 				delete bnd;
 				continue;
 			}
