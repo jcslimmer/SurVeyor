@@ -882,13 +882,12 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-		if (is_unmapped(read) || !is_primary(read)) continue;
+        if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
+        if (!is_samechr(read) || is_samestr(read)) continue;
 
         std::string seq;
-
-        if (!is_samechr(read) || is_samestr(read)) continue;
         if (!bam_is_mrev(read)) {
             if (read->core.mpos < dup_start-stats.max_is || read->core.mpos > dup_end) continue;
             seq = get_sequence(read, true);
@@ -910,7 +909,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
                 best_aln_score = alt_aln.sw_score;
             }
         }
-
+        
         if (best_aln_score > ref_aln.sw_score) {
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
@@ -1079,6 +1078,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
+    int same = 0;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
@@ -1125,13 +1125,15 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         if (alt_aln.sw_score > ref_aln_score) {
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
-        } else {
+        } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
                 ref_bp1_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
             if (increase_ref_bp2_better) {
                 ref_bp2_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
+        } else {
+            same++;
         }
 
         if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() > 4*stats.get_max_depth(dup->chr)) {
@@ -1237,7 +1239,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp2.reads_info, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
-    
+    dup->sample_info.alt_ref_equal_reads = same;
+
     delete[] alt_seq;
 
     free(regions[0]);
