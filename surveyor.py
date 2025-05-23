@@ -1,7 +1,7 @@
 import sys, os, argparse, pysam, timeit
 from run_classifier import Classifier
 
-VERSION = "0.6"
+VERSION = "0.7"
 
 MAX_READS = 1000
 GEN_DIST_SIZE = 100000
