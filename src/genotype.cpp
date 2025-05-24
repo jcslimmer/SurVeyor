@@ -1136,7 +1136,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             same++;
         }
 
-        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() > 4*stats.get_max_depth(dup->chr)) {
+        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() + same > 4*stats.get_max_depth(dup->chr)) {
             alt_better_reads.clear();
             ref_bp1_better_reads.clear();
             ref_bp2_better_reads.clear();
