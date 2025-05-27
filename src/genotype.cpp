@@ -2139,9 +2139,9 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
             inv->sample_info.filters.push_back("ANOMALOUS_SC_NUMBER");
             fail_dp = fail_sr = true;
         }
-        
-        if ((inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq && inv->sample_info.alt_bp2.pairs_info.pos_max_mq < config.high_confidence_mapq) ||
-            (inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq && inv->sample_info.alt_bp2.pairs_info.neg_max_mq < config.high_confidence_mapq)) {
+
+        if (inv->sample_info.alt_bp1.pairs_info.pos_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp2.pairs_info.pos_max_mq < config.high_confidence_mapq ||
+            inv->sample_info.alt_bp1.pairs_info.neg_max_mq < config.high_confidence_mapq || inv->sample_info.alt_bp2.pairs_info.neg_max_mq < config.high_confidence_mapq) {
             inv->sample_info.filters.push_back("LOW_MAPQ_DISC_PAIRS");
             fail_dp = true;
         }
