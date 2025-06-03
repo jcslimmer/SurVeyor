@@ -49,6 +49,10 @@ call_parser.add_argument('--generate-training-data', action='store_true', help='
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
 genotype_parser.add_argument('--dedup', action='store_true', help='Remove duplicated calls from the input VCF file.')
+genotype_parser.add_argument('--resolve-incompatible', type=str,
+help='In catalogues obtained by merging many samples, there might be many similar or overlapping SVs. ' \
+    'When all of them are preferrable to the reference allele, they may all be genotyped as present, artificially increasing the number of calls. ' \
+    'This option will prevent this by keeping only the most reliable calls and removing those that violate the ploidy of the sample.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
@@ -58,7 +62,7 @@ genotype_parser.add_argument('ml_model', help='Path to the ML model to be used f
 
 cmd_args = parser.parse_args()
 
-def exec(cmd, error_msg=None):
+def run_cmd(cmd, error_msg=None):
     start_time = timeit.default_timer()
     print("Executing:", cmd)
     return_code = os.system(cmd)
@@ -126,11 +130,11 @@ def reads_categorizer():
             contig_map.write("%s\n" % (k))
 
     read_categorizer_cmd = SURVEYOR_PATH + "/bin/reads_categorizer %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference)
-    exec(read_categorizer_cmd)
+    run_cmd(read_categorizer_cmd)
 
 def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
     compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
-    exec(compare_cmd)
+    run_cmd(compare_cmd)
 
     with open(cmd_args.workdir + "/compare.txt") as compare_file:
         epr_vals, imprecise_vals = {}, {}
@@ -174,38 +178,38 @@ if cmd_args.command == 'call':
     reads_categorizer()
 
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-    exec(clip_consensus_builder_cmd)
+    run_cmd(clip_consensus_builder_cmd)
 
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    exec(find_svs_from_sr_consensuses_cmd)
+    run_cmd(find_svs_from_sr_consensuses_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    exec(merge_identical_calls_cmd)
+    run_cmd(merge_identical_calls_cmd)
 
     dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    exec(dp_clusterer)
+    run_cmd(dp_clusterer)
 
     ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
-    exec(ins_assembler_cmd)
+    run_cmd(ins_assembler_cmd)
 
     concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
-    exec(concat_cmd)
+    run_cmd(concat_cmd)
 
     normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    exec(normalise_cmd)
+    run_cmd(normalise_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    exec(merge_identical_calls_cmd)
+    run_cmd(merge_identical_calls_cmd)
 
     insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
-    exec(insertions_to_duplications_cmd)
+    run_cmd(insertions_to_duplications_cmd)
     
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-    exec(genotype_cmd)
+    run_cmd(genotype_cmd)
     
     if cmd_args.generate_training_data:
         cp_cmd = "cp %s/intermediate_results/calls-with-fmt.vcf.gz %s/training-data.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        exec(cp_cmd)
+        run_cmd(cp_cmd)
 
     if not cmd_args.ml_model:
         print("No model provided. Skipping filtering and genotyping.")
@@ -214,35 +218,39 @@ if cmd_args.command == 'call':
     Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
-    exec(reconcile_vcf_gt_cmd)
+    run_cmd(reconcile_vcf_gt_cmd)
 
     deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
     check_duplicate_ids_cmd = SURVEYOR_PATH + "/bin/check_duplicate_ids %s" % cmd_args.in_vcf_file
-    exec(check_duplicate_ids_cmd, "Error: Duplicate IDs found in the input VCF file. Please remove duplicates before running the genotype command.")
+    run_cmd(check_duplicate_ids_cmd, "Error: Duplicate IDs found in the input VCF file. Please remove duplicates before running the genotype command.")
 
     if not use_call_info():
         reads_categorizer()
 
     vcf_for_genotyping_fname = cmd_args.workdir + "/intermediate_results/calls-for-genotyping.vcf.gz"
     insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s %s %s %s" % (cmd_args.in_vcf_file, vcf_for_genotyping_fname, cmd_args.reference, cmd_args.workdir)
-    exec(insertions_to_duplications_cmd)
+    run_cmd(insertions_to_duplications_cmd)
 
     vcf_with_fmt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.vcf.gz"
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, vcf_with_fmt_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-    exec(genotype_cmd)
+    run_cmd(genotype_cmd)
 
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
     reconcile_out_vcf = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reconciled.vcf.gz"
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, reconcile_out_vcf, sample_name)
-    exec(reconcile_vcf_gt_cmd)
+    run_cmd(reconcile_vcf_gt_cmd)
 
     if cmd_args.dedup:
         deduplicate_vcf(reconcile_out_vcf, cmd_args.out_vcf_file)
     else:
         cp_cmd = "cp %s %s" % (reconcile_out_vcf, cmd_args.out_vcf_file)
-        exec(cp_cmd)
+        run_cmd(cp_cmd)
+
+    if cmd_args.resolve_incompatible:
+        resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (cmd_args.out_vcf_file, cmd_args.resolve_incompatible)
+        run_cmd(resolve_incompatible_cmd)

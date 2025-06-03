@@ -11,7 +11,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 add_definitions(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set(CMAKE_OSX_ARCHITECTURES "x86_64")
+# set(CMAKE_OSX_ARCHITECTURES "x86_64")
+# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+# set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS}")
 
 include_directories(htslib-1.21)
 include_directories(htslib-1.21/include)
@@ -25,6 +28,7 @@ add_executable(insertions_assembler libs/ssw.c libs/ssw_cpp.cpp src/insertions_a
 add_executable(concat_vcf src/concat_vcf.cpp)
 add_executable(genotype libs/ssw.c libs/ssw_cpp.cpp src/genotype.cpp)
 add_executable(reconcile_vcf_gt src/reconcile_vcf_gt.cpp)
+add_executable(resolve_incompatible_gts src/resolve_incompatible_gts.cpp)
 
 add_executable(compare libs/ssw.c libs/ssw_cpp.cpp utils/compare.cpp)
 add_executable(normalise utils/normalise.cpp)
@@ -43,6 +47,7 @@ target_link_libraries(insertions_assembler "${HTS_LIB}")
 target_link_libraries(concat_vcf "${HTS_LIB}")
 target_link_libraries(genotype "${HTS_LIB}")
 target_link_libraries(reconcile_vcf_gt "${HTS_LIB}")
+target_link_libraries(resolve_incompatible_gts "${HTS_LIB}")
 
 target_link_libraries(compare "${HTS_LIB}")
 target_link_libraries(normalise "${HTS_LIB}")
