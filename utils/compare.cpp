@@ -322,6 +322,7 @@ int main(int argc, char* argv[]) {
 		("bdup-ids", "ID of benchmark SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("cdup-ids", "ID of called SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
+		("keep-all-benchmark", "Keep all variants in the benchmark file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
 		("e,exclusive", "SV cannot be used in multiple matches.", cxxopts::value<bool>()->default_value("false"))
@@ -423,16 +424,20 @@ int main(int argc, char* argv[]) {
 	}
 	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_unsupported_func), called_svs.end());
 
-	int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
-	if (n_ac_0 > 0) {
-		std::cerr << "Warning: excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
+	if (parsed_args["keep-all-benchmark"].as<bool>()) {
+		std::cerr << "Warning: keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
+	} else {
+		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+		if (n_ac_0 > 0) {
+			std::cerr << "Warning: excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
+		}
+		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
 	}
-	benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
 
 	if (parsed_args["keep-all-called"].as<bool>()) {
 		std::cerr << "Warning: keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
 	} else {
-		n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+		int n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
 		if (n_ac_0 > 0) {
 			std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
 		}
