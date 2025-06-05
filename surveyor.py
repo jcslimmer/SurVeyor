@@ -146,7 +146,7 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
         removed_ids = set()
         for line in compare_file:
             id1, id2 = line.strip().split()
-            if id1 >= id2: # each pair will be output twice, e.g. A B and B A. Let us process it once
+            if id1 >= id2 or id2 == "NONE": # each pair will be output twice, e.g. A B and B A. Let us process it once
                 continue
 
             if imprecise_vals[id1] and not imprecise_vals[id2]:
