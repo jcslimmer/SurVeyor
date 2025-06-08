@@ -358,8 +358,8 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 			else chosen_ins = svs2[0];
 		}
 
-		if (chosen_ins == svs1[0]) full_assembled_seq = assembled_sequence + "-" + assembled_sequences[1];
-		else if (chosen_ins == svs2[0]) full_assembled_seq = assembled_sequences[1] + "-" + assembled_sequence;
+		if (!svs1.empty() && chosen_ins == svs1[0]) full_assembled_seq = assembled_sequence + "-" + assembled_sequences[1];
+		else if (!svs2.empty() && chosen_ins == svs2[0]) full_assembled_seq = assembled_sequences[1] + "-" + assembled_sequence;
 	} else if (assembled_sequences.size() > 1) { // can identify an insertion, but check if we can get a better one as incomplete assembly
 		chosen_ins = svs[0];
 		full_assembled_seq = assembled_sequence;
