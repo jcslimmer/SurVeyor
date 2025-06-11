@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <htslib/vcf.h>
+#include <memory>
 #include <sstream>
 #include "htslib/hts.h"
 #include "types.h"
@@ -702,20 +703,20 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	float* f_data = NULL;
 	int len = 0;
 
-	consensus_t* rc_consensus = NULL;
+	std::shared_ptr<consensus_t> rc_consensus = nullptr;
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_UB", &data, &len);
 	if (len > 0) {
-		rc_consensus = new consensus_t(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
 
-	consensus_t* lc_consensus = NULL;
+	std::shared_ptr<consensus_t> lc_consensus = nullptr;
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_LB", &data, &len);
 	if (len > 0) {
-		lc_consensus = new consensus_t(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
 
 	data = NULL;
@@ -826,8 +827,7 @@ bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& i
     bcf_hdr_t* out_hdr;
     int sample_idx = find_sample_index(in_hdr, sample_name);
     if (sample_idx >= 0) {
-        char** samples = new char*[1];
-        samples[0] = strdup(sample_name.c_str());
+        char* samples[1] = { strdup(sample_name.c_str()) };
         out_hdr = bcf_hdr_subset(in_hdr, 1, samples, imap);
     } else {
         out_hdr = bcf_hdr_subset(in_hdr, 0, NULL, NULL);
@@ -838,6 +838,21 @@ bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& i
 		throw std::runtime_error("Failed to sync header.");
 	}
 	return out_hdr;
+}
+
+int count_alt_alleles(bcf_hdr_t* hdr, bcf1_t* sv) {
+    int* gt = nullptr;
+    int ngt = 0;
+    if (bcf_get_genotypes(hdr, sv, &gt, &ngt) < 0 || ngt < 2) {
+        free(gt);
+        return 0;
+    }
+    int count = 0;
+    for (int i = 0; i < ngt; i++) {
+        if (bcf_gt_allele(gt[i]) > 0) count++;
+    }
+    free(gt);
+    return count;
 }
 
 #endif /* VCF_UTILS_H */

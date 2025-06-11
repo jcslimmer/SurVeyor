@@ -525,7 +525,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 
 	insertion_t* insertion = (insertion_t*) insertions[0];
 
-	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
+	std::shared_ptr<insertion_cluster_t> refined_r_cluster = std::make_shared<insertion_cluster_t>();
     for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
         std::shared_ptr<bam1_t> r = r_cluster->cluster->reads[i];
         if (ro_remap_infos[i].accepted) {
@@ -536,7 +536,7 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
         refined_r_cluster->add_clip_cluster(r_cluster->clip_consensus);
     }
 
-	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
+	std::shared_ptr<insertion_cluster_t> refined_l_cluster = std::make_shared<insertion_cluster_t>();
     for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
         std::shared_ptr<bam1_t> r = l_cluster->cluster->reads[i];
         if (lo_remap_infos[i].accepted) {
@@ -548,8 +548,6 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
     }
 
 	if (refined_r_cluster->empty() || refined_l_cluster->empty()) {
-		delete refined_r_cluster;
-		delete refined_l_cluster;
 		return NULL;
 	}
 
@@ -627,9 +625,6 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	// 	update_read(r, best_region, lo_remap_infos[i], is_rc);
 	// 	kept.push_back(r);
 	// }
-
-	delete refined_r_cluster;
-	delete refined_l_cluster;
 
 	return insertion;
 }
