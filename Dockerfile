@@ -16,7 +16,7 @@ ADD libs ./libs
 ADD utils ./utils
 ADD src ./src
 
-RUN cmake -DCMAKE_BUILD_TYPE=Release -DNATIVE=ON . && make
+RUN cmake -DCMAKE_BUILD_TYPE=Release . && make
 
 RUN apt-get install -y python3 python3-dev python3-pysam python3-pyfaidx python3-numpy python3-xgboost
 
