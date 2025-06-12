@@ -1,5 +1,7 @@
+#include <cstddef>
 #include <iostream>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <vector>
 #include <algorithm>
@@ -22,14 +24,43 @@ const std::string VERSION = "1.0";
 std::unordered_map<std::string, int> sample2id;
 std::vector<std::string> sample_names;
 chr_seqs_map_t chr_seqs;
+std::mutex samples_mtx;
 
-struct sv_w_samplename_t {
-    sv_t* sv;
+struct sv_w_samplename_t { // minimal SV representation for memory efficiency
+	std::string id, chr, svtype;
+	hts_pos_t start, end, svlen;
+	std::string ins_seq;
+	bool imprecise = false, incomplete_ins_seq = false;
     std::string sample;
+	int n_gt;
+	std::vector<int> gt;
 
     sv_w_samplename_t() {}
-    sv_w_samplename_t(sv_t* sv, std::string sample) : sv(sv), sample(sample) {}
+    sv_w_samplename_t(std::shared_ptr<sv_t> sv, const std::string& sample) : sample(sample), chr(sv->chr), 
+		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), n_gt(sv->n_gt),
+		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()) {
+		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
+	}
+
+	std::string unique_key() {
+        return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype + ":" + ins_seq;
+    }
 };
+
+int distance(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
+    if (sv1.chr != sv2.chr) return INT32_MAX;
+	if ((sv1.svtype == "DUP" && sv2.svtype == "INS") || (sv1.svtype == "INS" && sv2.svtype == "DUP")) {
+		return std::min(abs(sv1.start-sv2.start), abs(sv1.end-sv2.end));
+	}
+    return std::max(abs(sv1.start-sv2.start), abs(sv1.end-sv2.end));
+}
+
+double overlap(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
+	if (sv1.svtype == "INS" && sv2.svtype == "INS") return 1.0;
+	if (sv1.end == sv1.start || sv2.end == sv2.start) return 1.0;
+	return overlap(sv1.start, sv1.end, sv2.start, sv2.end)/double(std::min(sv1.end-sv1.start, sv2.end-sv2.start));
+}
+	
 
 struct idx_size_t {
     int idx, size;
@@ -45,25 +76,28 @@ bool operator > (const idx_size_t& s1, const idx_size_t& s2) {
 };
 
 std::unordered_map<std::string, std::vector<sv_w_samplename_t> > svs_by_chr;
-std::unordered_map<std::string, std::vector<bcf1_t*> > clustered_svs_by_chr;
+std::unordered_map<std::string, std::vector<std::shared_ptr<bcf1_t>> > clustered_svs_by_chr;
 int max_prec_dist, max_imprec_dist, max_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
 bool overlap_for_ins;
 
-bool is_compatible(sv_t* sv1, sv_t* sv2) {
-	if (sv1->svtype() != sv2->svtype()) return false;
+std::unordered_set<std::string> called_by;
+std::mutex called_by_mtx;
+
+bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
+	if (sv1.svtype != sv2.svtype) return false;
 
 	bool distance_ok, overlap_ok, len_diff_ok;
 
-	if (sv1->imprecise || sv2->imprecise) {
+	if (sv1.imprecise || sv2.imprecise) {
 		distance_ok = distance(sv1, sv2) <= max_imprec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_imprec_frac_overlap;
-		len_diff_ok = abs(sv1->svlen()-sv2->svlen()) <= max_imprec_len_diff;
+		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_imprec_len_diff;
 	} else {
 		distance_ok = distance(sv1, sv2) <= max_prec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_prec_frac_overlap;
-		len_diff_ok = abs(sv1->svlen()-sv2->svlen()) <= max_prec_len_diff;
+		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_prec_len_diff;
 	}
 
 	return distance_ok && overlap_ok && len_diff_ok;
@@ -71,7 +105,7 @@ bool is_compatible(sv_t* sv1, sv_t* sv2) {
 
 bool can_join_clique(std::vector<int>& neighbor_clique, std::vector<sv_w_samplename_t>& svs, int curr_idx) {
 	for (int clique_elem_idx : neighbor_clique) {
-		if (!is_compatible(svs[curr_idx].sv, svs[clique_elem_idx].sv)) {
+		if (!is_compatible(svs[curr_idx], svs[clique_elem_idx])) {
 			return false;
 		}
 	}
@@ -96,7 +130,7 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
         std::vector<idx_size_t> cliqued_neighbors;
         for (int adj_idx : compatibility_list[curr_idx]) {
             int clique_idx = cliques_idx[adj_idx-start];
-            if (clique_idx != -1 && is_compatible(svs[curr_idx].sv, svs[adj_idx].sv)) {
+            if (clique_idx != -1 && is_compatible(svs[curr_idx], svs[adj_idx])) {
                 cliqued_neighbors.emplace_back(adj_idx, cliques[clique_idx].size());
             }
         }
@@ -152,13 +186,13 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
 sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     std::unordered_map<std::string, int> counts;
     for (sv_w_samplename_t& sv : svs) {
-        if (!sv.sv->imprecise && !sv.sv->incomplete_ins_seq()) {
-            counts[sv.sv->unique_key()]++;
+        if (!sv.imprecise && !sv.incomplete_ins_seq) {
+            counts[sv.unique_key()]++;
         }
     }
     if (counts.empty()) { // if no precise accepts imprecise
         for (sv_w_samplename_t& sv : svs) {
-            counts[sv.sv->unique_key()]++;
+            counts[sv.unique_key()]++;
         }
     }
 
@@ -172,7 +206,7 @@ sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     }
 
     for (sv_w_samplename_t& sv : svs) {
-        if (sv.sv->unique_key() == str) return sv;
+        if (sv.unique_key() == str) return sv;
     }
     std::cerr << "SHOULD NOT BE HERE." << std::endl;
     exit(1);
@@ -180,7 +214,7 @@ sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
 
 std::atomic<int> glob_cluster_id(0);
 void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samplename_t>& svs, bcf_hdr_t* out_hdr,
-		chr_seqs_map_t& chr_seqs, std::vector<bcf1_t*>& append_svs) {
+		chr_seqs_map_t& chr_seqs, std::vector<std::shared_ptr<bcf1_t>>& append_svs) {
 	int n_samples = bcf_hdr_nsamples(out_hdr);
 	const char** coos = new const char*[n_samples];
 	const char** sizes = new const char*[n_samples]; // could be int, but I did not find an easy way to set a variable number of ints in the format
@@ -201,9 +235,9 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 	}
 	std::sort(sv_order.begin(), sv_order.end(),
 			[out_hdr](const std::pair<sv_w_samplename_t, int>& sv1, const std::pair<sv_w_samplename_t, int>& sv2) {
-		int cid1 = bcf_hdr_name2id(out_hdr, sv1.first.sv->chr.c_str());
-		int cid2 = bcf_hdr_name2id(out_hdr, sv2.first.sv->chr.c_str());
-		return std::tie(cid1, sv1.first.sv->start) < std::tie(cid2, sv2.first.sv->start);
+		int cid1 = bcf_hdr_name2id(out_hdr, sv1.first.chr.c_str());
+		int cid2 = bcf_hdr_name2id(out_hdr, sv2.first.chr.c_str());
+		return std::tie(cid1, sv1.first.start) < std::tie(cid2, sv2.first.start);
 	});
 
 	std::vector<bcf1_t*> vcf_svs;
@@ -227,40 +261,40 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
         int cluster_id = glob_cluster_id++;
 
         // set basic info
-        vcf_sv->rid = bcf_hdr_name2id(out_hdr, chosen_sv.sv->chr.c_str());
-        vcf_sv->pos = chosen_sv.sv->start;
+        vcf_sv->rid = bcf_hdr_name2id(out_hdr, chosen_sv.chr.c_str());
+        vcf_sv->pos = chosen_sv.start;
         std::string id = "CLUSTER_" + std::to_string(cluster_id);
         bcf_update_id(out_hdr, vcf_sv, id.c_str());
-        char* chr_seq = chr_seqs.get_seq(chosen_sv.sv->chr);
-        std::string alleles = std::string(1, chr_seq[chosen_sv.sv->start]) + ",<" + chosen_sv.sv->svtype() + ">";
+        char* chr_seq = chr_seqs.get_seq(chosen_sv.chr);
+        std::string alleles = std::string(1, chr_seq[chosen_sv.start]) + ",<" + chosen_sv.svtype + ">";
 		bcf_update_alleles_str(out_hdr, vcf_sv, alleles.c_str());
 
 		// set INFO
-		int int_conv = chosen_sv.sv->end+1;
+		int int_conv = chosen_sv.end+1;
 		bcf_update_info_int32(out_hdr, vcf_sv, "END", &int_conv, 1);
-		bcf_update_info_string(out_hdr, vcf_sv, "SVTYPE", chosen_sv.sv->svtype().c_str());
+		bcf_update_info_string(out_hdr, vcf_sv, "SVTYPE", chosen_sv.svtype.c_str());
 		int_conv = unique_samples.size();
 		bcf_update_info_int32(out_hdr, vcf_sv, "N_SAMPLES", &int_conv, 1);
 		int_conv = clique.size();
 		bcf_update_info_int32(out_hdr, vcf_sv, "N_SVS", &int_conv, 1);
-		bcf_update_info_flag(out_hdr, vcf_sv, "IMPRECISE", "", chosen_sv.sv->imprecise);
-		bcf_update_info_flag(out_hdr, vcf_sv, "INCOMPLETE_ASSEMBLY", "", chosen_sv.sv->incomplete_ins_seq());
+		bcf_update_info_flag(out_hdr, vcf_sv, "IMPRECISE", "", chosen_sv.imprecise);
+		bcf_update_info_flag(out_hdr, vcf_sv, "INCOMPLETE_ASSEMBLY", "", chosen_sv.incomplete_ins_seq);
 
-		if (!chosen_sv.sv->ins_seq.empty()) {
-			bcf_update_info_string(out_hdr, vcf_sv, "SVINSSEQ", chosen_sv.sv->ins_seq.c_str());
+		if (!chosen_sv.ins_seq.empty()) {
+			bcf_update_info_string(out_hdr, vcf_sv, "SVINSSEQ", chosen_sv.ins_seq.c_str());
 		}
-		if (chosen_sv.sv->svlen()) {
-			int_conv = chosen_sv.sv->svlen();
+		if (chosen_sv.svlen) {
+			int_conv = chosen_sv.svlen;
 			bcf_update_info_int32(out_hdr, vcf_sv, "SVLEN", &int_conv, 1);
 		}
 
 		int sv_ploidy = 0;
 		for (sv_w_samplename_t& sv : clique_svs) {
-			if (sv_ploidy < sv.sv->n_gt) sv_ploidy = sv.sv->n_gt;
+			if (sv_ploidy < sv.n_gt) sv_ploidy = sv.n_gt;
 		}
-		for (sv_w_samplename_t& sv : clique_svs) if (sv.sv->n_gt != sv_ploidy) { // all SVs being clustered must have same ploidy
+		for (sv_w_samplename_t& sv : clique_svs) if (sv.n_gt != sv_ploidy) { // all SVs being clustered must have same ploidy
 			mtx.lock();
-			std::cerr << clique_svs[0].sample << "," << clique_svs[0].sv->id << " and " << sv.sample << "," << sv.sv->id << " have different ploidy." << std::endl;
+			std::cerr << clique_svs[0].sample << "," << clique_svs[0].id << " and " << sv.sample << "," << sv.id << " have different ploidy." << std::endl;
 			mtx.unlock();
 		}
 
@@ -269,10 +303,11 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		std::fill(gts, gts+n_samples*sv_ploidy, bcf_gt_unphased(0));
 		for (sv_w_samplename_t& sv : clique_svs) {
 			for (int i = 0; i < sv_ploidy; i++) {
-				gts[sample2id[sv.sample]*sv_ploidy+i] = sv.sv->sample_info.gt[i];
+				gts[sample2id[sv.sample]*sv_ploidy+i] = sv.gt[i];
 			}
 		}
 		bcf_update_genotypes(out_hdr, vcf_sv, gts, n_samples*sv_ploidy);
+		delete[] gts;
 
 		// set CO (original coordinates)
 		std::vector<std::string> coos_str(n_samples);
@@ -286,10 +321,10 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 				prec_str[sample2id[sv.sample]] += ",";
 				incomplete_ass_str[sample2id[sv.sample]] += ",";
 			}
-			coos_str[sample2id[sv.sample]] += std::to_string(sv.sv->start+1) + "-" + std::to_string(sv.sv->end+1); // report 1-based
-			sizes_str[sample2id[sv.sample]] += std::to_string(sv.sv->svlen());
-			prec_str[sample2id[sv.sample]] += (sv.sv->imprecise ? "I" : "P");
-			incomplete_ass_str[sample2id[sv.sample]] += (sv.sv->incomplete_ins_seq() ? "T" : "F");
+			coos_str[sample2id[sv.sample]] += std::to_string(sv.start+1) + "-" + std::to_string(sv.end+1); // report 1-based
+			sizes_str[sample2id[sv.sample]] += std::to_string(sv.svlen);
+			prec_str[sample2id[sv.sample]] += (sv.imprecise ? "I" : "P");
+			incomplete_ass_str[sample2id[sv.sample]] += (sv.incomplete_ins_seq ? "T" : "F");
 		}
 		for (int i = 0; i < n_samples; i++) {
 			if (coos_str[i].empty()) {
@@ -308,7 +343,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		bcf_update_format_string(out_hdr, vcf_sv, "IP", prec, n_samples);
 		bcf_update_format_string(out_hdr, vcf_sv, "IC", incomplete_ass, n_samples);
 
-		append_svs.push_back(bcf_dup(vcf_sv));
+		append_svs.push_back(std::shared_ptr<bcf1_t>(bcf_dup(vcf_sv), bcf_destroy));
 
         cluster_id++;
     }
@@ -317,6 +352,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
     delete[] coos;
     delete[] sizes;
     delete[] prec;
+	delete[] incomplete_ass;
 }
 
 bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set<std::string>& called_by) {
@@ -415,11 +451,11 @@ bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set
 void cluster_contig(int id, std::string contig_name, bcf_hdr_t* out_hdr) {
 	mtx.lock();
 	std::vector<sv_w_samplename_t>& svs = svs_by_chr[contig_name];
-	std::vector<bcf1_t*>& vcf_clustered_svs = clustered_svs_by_chr[contig_name];
+	std::vector<std::shared_ptr<bcf1_t>>& vcf_clustered_svs = clustered_svs_by_chr[contig_name];
 	mtx.unlock();
 
     std::sort(svs.begin(), svs.end(), [](const sv_w_samplename_t& sv1, const sv_w_samplename_t& sv2) {
-        return sv1.sv->start < sv2.sv->start;
+        return sv1.start < sv2.start;
     });
 
     std::vector<std::vector<int>> compatibility_list(svs.size());
@@ -429,15 +465,15 @@ void cluster_contig(int id, std::string contig_name, bcf_hdr_t* out_hdr) {
 		sv_w_samplename_t& sv1 = svs[i];
 		for (int j = i+1; j < svs.size(); j++) {
 			sv_w_samplename_t& sv2 = svs[j];
-			if (sv2.sv->start-sv1.sv->start > max_dist) break;
-			if (is_compatible(sv1.sv, sv2.sv)) {
+			if (sv2.start-sv1.start > max_dist) break;
+			if (is_compatible(sv1, sv2)) {
 				compatibility_list[i].push_back(j);
 				compatibility_list[j].push_back(i);
 			}
 		}
 		compatibility_list[i].shrink_to_fit();
 
-		if (i > 0 && sv1.sv->start-svs[i-1].sv->start > max_dist) {
+		if (i > 0 && sv1.start-svs[i-1].start > max_dist) {
 			std::vector<std::vector<int>> cliques = compute_minimal_clique_cover(i_prev, i, svs, compatibility_list);
 			print_cliques(cliques, svs, out_hdr, chr_seqs, vcf_clustered_svs);
 
@@ -450,6 +486,59 @@ void cluster_contig(int id, std::string contig_name, bcf_hdr_t* out_hdr) {
 	}
 	std::vector<std::vector<int>> cliques = compute_minimal_clique_cover(i_prev, svs.size(), svs, compatibility_list);
 	print_cliques(cliques, svs, out_hdr, chr_seqs, vcf_clustered_svs);
+}
+
+void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
+	mtx.lock();
+	std::cout << "Reading SVs from " << sample_sv_fpath << std::endl;
+	mtx.unlock();
+
+	htsFile* sample_sv_file = bcf_open(sample_sv_fpath.c_str(), "r");
+	bcf_hdr_t* vcf_header = bcf_hdr_read(sample_sv_file);
+	if (vcf_header == NULL) {
+		throw std::runtime_error("Failed to read the VCF header of " + sample_sv_fpath + ".");
+	}
+
+	for (int i = 0; i < vcf_header->nhrec; i++) {
+		if (strcmp(vcf_header->hrec[i]->key, "calledBy") == 0) {
+			called_by_mtx.lock();
+			called_by.insert(vcf_header->hrec[i]->value);
+			called_by_mtx.unlock();
+		}
+	}
+
+	bcf1_t* vcf_record = bcf_init();
+	std::unordered_map<std::string, std::vector<sv_w_samplename_t> > local_svs_by_chr;
+	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
+		if (count_alt_alleles(vcf_header, vcf_record) < 1) continue; // skip records without ALT alleles
+		
+		auto sv = std::shared_ptr<sv_t>(bcf_to_sv(vcf_header, vcf_record));
+		if (sv == nullptr) {
+			std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
+			continue;
+		}
+
+		if (sv->is_pass()) {	
+			sv_w_samplename_t sv_w_sample(sv, sample_name);
+			std::string seqname = bcf_seqname(vcf_header, vcf_record);
+			local_svs_by_chr[seqname].push_back(sv_w_sample);
+		}
+	}
+	bcf_destroy(vcf_record);
+	bcf_hdr_destroy(vcf_header);
+	hts_close(sample_sv_file);
+	
+	samples_mtx.lock();
+	sample_names.push_back(sample_name);
+	samples_mtx.unlock();
+
+	mtx.lock();
+	for (auto& e : local_svs_by_chr) {
+		std::string chr_name = e.first;
+		std::vector<sv_w_samplename_t>& svs = e.second;
+		svs_by_chr[chr_name].insert(svs_by_chr[chr_name].end(), svs.begin(), svs.end());
+	}
+	mtx.unlock();
 }
 
 int main(int argc, char* argv[]) {
@@ -475,7 +564,7 @@ int main(int argc, char* argv[]) {
 			("S,max-len-diff-imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 					cxxopts::value<int>()->default_value("500"))
 			("i,overlap-for-ins", "Require overlap for insertions.", cxxopts::value<bool>()->default_value("false"))
-			("t,threads", "Maximum number of threads used.", cxxopts::value<int>()->default_value("8"))
+			("t,threads", "Maximum number of threads used.", cxxopts::value<int>()->default_value("1"))
 			("v,version", "Print the version number and exit.")
 			("h,help", "Print usage");
 
@@ -518,37 +607,25 @@ int main(int argc, char* argv[]) {
     chr_seqs.read_fasta_into_map(reference_fname);
 
     std::string sample_name, sample_sv_fpath;
-    bcf1_t* vcf_record = bcf_init();
-    std::unordered_set<std::string> called_by;
+	ctpl::thread_pool thread_pool_read_svs(n_threads);
+	std::vector<std::future<void> > futures;
     while (file_list >> sample_name >> sample_sv_fpath) {
-    	std::cout << "Reading SVs from " << sample_sv_fpath << std::endl;
-    	htsFile* sample_sv_file = bcf_open(sample_sv_fpath.c_str(), "r");
-    	bcf_hdr_t* vcf_header = bcf_hdr_read(sample_sv_file);
-		if (vcf_header == NULL) {
-			throw std::runtime_error("Failed to read the VCF header of " + sample_sv_fpath + ".");
-		}
-
-		for (int i = 0; i < vcf_header->nhrec; i++) {
-			if (strcmp(vcf_header->hrec[i]->key, "calledBy") == 0) {
-				called_by.insert(vcf_header->hrec[i]->value);
-			}
-		}
-
-    	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
-            sv_w_samplename_t sv_w_sample(bcf_to_sv(vcf_header, vcf_record), sample_name);
-            if (sv_w_sample.sv == NULL) {
-                std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
-                continue;
-            }
-    		std::string seqname = bcf_seqname(vcf_header, vcf_record);
-    		svs_by_chr[seqname].push_back(sv_w_sample);
-    	}
-		bcf_hdr_destroy(vcf_header);
-    	hts_close(sample_sv_file);
-    	sample_names.push_back(sample_name);
+		std::future<void> future = thread_pool_read_svs.push(read_svs, sample_sv_fpath, sample_name);
+		futures.push_back(std::move(future));
     }
-    bcf_destroy(vcf_record);
+	thread_pool_read_svs.stop(true);
+	for (int i = 0; i < futures.size(); i++) {
+		try {
+			futures[i].get();
+		} catch (char const* s) {
+			std::cout << s << std::endl;
+		}
+	}
+	futures.clear();
+
     std::cout << "Finished reading SVs." << std::endl;
+
+	std::cout << sample_names.size() << " samples were read." << std::endl;
 
     bcf_hdr_t* out_hdr = generate_clustered_vcf_header(full_cmd, called_by);
     if (bcf_hdr_write(out_vcf_file, out_hdr) != 0) {
@@ -557,13 +634,12 @@ int main(int argc, char* argv[]) {
 
     int nseqs;
     const char** contig_names = bcf_hdr_seqnames(out_hdr, &nseqs);
-	ctpl::thread_pool thread_pool(n_threads);
-    std::vector<std::future<void> > futures;
+	ctpl::thread_pool thread_pool_cc(n_threads);
     for (int i = 0; i < nseqs; i++) {
-		std::future<void> future = thread_pool.push(cluster_contig, contig_names[i], out_hdr);
+		std::future<void> future = thread_pool_cc.push(cluster_contig, contig_names[i], out_hdr);
 		futures.push_back(std::move(future));
     }
-	thread_pool.stop(true);
+	thread_pool_cc.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
 		try {
 			futures[i].get();
@@ -573,8 +649,8 @@ int main(int argc, char* argv[]) {
 	}
 
     for (int i = 0; i < nseqs; i++) {
-    	for (bcf1_t* b : clustered_svs_by_chr[contig_names[i]]) {
-			if (bcf_write(out_vcf_file, out_hdr, b) != 0) {
+    	for (std::shared_ptr<bcf1_t> b : clustered_svs_by_chr[contig_names[i]]) {
+			if (bcf_write(out_vcf_file, out_hdr, b.get()) != 0) {
 				throw std::runtime_error("Failed to write record to " + std::string(out_vcf_file->fn));
 			}
     	}

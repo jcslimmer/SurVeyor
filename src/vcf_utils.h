@@ -710,6 +710,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
+	free(data);
 
 	std::shared_ptr<consensus_t> lc_consensus = nullptr;
 	data = NULL;
@@ -718,10 +719,12 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
+	free(data);
 
 	data = NULL;
 	len = 0;
 	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
+	free(data);
 
 	std::string svtype = get_sv_type(hdr, b);
 	hts_pos_t start = b->pos, end = get_sv_end(hdr, b);
@@ -756,12 +759,14 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		auto rbp_right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
 		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 
+		data = NULL;
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
 		inversion_t* inv = (inversion_t*) sv;
 		if (len > 0) {
 			inv->inv_start = data[0]-1;
 			inv->inv_end = data[1]-1;
 		}
+		free(data);
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];
 		size_t colon_pos = alt.find(':');
@@ -785,6 +790,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->inferred_ins_seq = s_data;
 	}
+	free(s_data);
 
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
@@ -795,7 +801,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	std::string ft = "PASS";
 	if (len > 0) {
 		ft = ss_data[0];
+		free(ss_data[0]);
 	}
+	free(ss_data);
 
 	std::istringstream tokenStream(ft);
 	std::string token;
