@@ -29,7 +29,7 @@ std::mutex samples_mtx;
 struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 	std::string id, chr, svtype;
 	hts_pos_t start, end, svlen;
-	std::string ins_seq;
+	std::string ins_seq, ins_seq_inferred;
 	bool imprecise = false, incomplete_ins_seq = false;
     std::string sample;
 	int n_gt;
@@ -37,7 +37,7 @@ struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 
     sv_w_samplename_t() {}
     sv_w_samplename_t(std::shared_ptr<sv_t> sv, const std::string& sample) : sample(sample), chr(sv->chr), 
-		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), n_gt(sv->n_gt),
+		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq), n_gt(sv->n_gt),
 		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()) {
 		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
 	}
@@ -283,9 +283,11 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		if (!chosen_sv.ins_seq.empty()) {
 			bcf_update_info_string(out_hdr, vcf_sv, "SVINSSEQ", chosen_sv.ins_seq.c_str());
 		}
-		if (chosen_sv.svlen) {
-			int_conv = chosen_sv.svlen;
-			bcf_update_info_int32(out_hdr, vcf_sv, "SVLEN", &int_conv, 1);
+		if (!chosen_sv.ins_seq_inferred.empty()) {
+			bcf_update_info_string(out_hdr, vcf_sv, "SVINSSEQ_INFERRED", chosen_sv.ins_seq_inferred.c_str());
+		}
+		if (!chosen_sv.incomplete_ins_seq) {
+			bcf_update_info_int32(out_hdr, vcf_sv, "SVLEN", &chosen_sv.svlen, 1);
 		}
 
 		int sv_ploidy = 0;
@@ -388,6 +390,10 @@ bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set
 
 	const char* insseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, insseq_tag, &len));
+
+	const char* infsvinsseq_tag = "##INFO=<ID=SVINSSEQ_INFERRED,Number=1,Type=String,Description=\"Inferred insertion sequence. When the inserted sequence is too long "
+		"to be fully assembled but SurVeyor suspects it to be a transposition, it uses the reference to infer the content of the insertion. Not guaranteed to be accurate. \">";
+	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, infsvinsseq_tag, &len));
 
 	const char* svlen_tag = "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length of the resulting SV.\">";
 	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, svlen_tag, &len));

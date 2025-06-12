@@ -551,7 +551,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
 	
 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", sv->svtype().c_str());
-	if (sv->ins_seq.find("-") == std::string::npos) {
+	if (!sv->incomplete_ins_seq()) {
 		int_conv = sv->svlen();
 		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 		if (!sv->ins_seq.empty()) {
