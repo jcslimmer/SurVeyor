@@ -97,8 +97,8 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<deletion
 	for (std::shared_ptr<cluster_t> c : clusters) {
 		if (c->used) continue;
 
-		consensus_t* rc_consensus = new consensus_t(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0);
-		consensus_t* lc_consensus = new consensus_t(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, 0, 0);
+		std::shared_ptr<consensus_t> rc_consensus = std::make_shared<consensus_t>(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0);
+		std::shared_ptr<consensus_t> lc_consensus = std::make_shared<consensus_t>(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, 0, 0);
 		std::vector<sv_t*> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, aligner, stats.read_len/3, config.min_clip_len, 0.0);
 
 		deletion_t* del = NULL;

@@ -6,13 +6,18 @@
 #include "types.h"
 #include "sam_utils.h"
 #include "clustering_utils.h"
+#include <memory>
 
 struct insertion_cluster_t {
 
     hts_pos_t start, end;
     std::shared_ptr<cluster_t> cluster = NULL;
     std::vector<bam1_t*> semi_mapped_reads;
-    consensus_t* clip_consensus = NULL;
+    std::shared_ptr<consensus_t> clip_consensus = NULL;
+
+    insertion_cluster_t() : start(0), end(0) {
+        cluster = std::make_shared<cluster_t>();
+    }
 
     insertion_cluster_t(std::shared_ptr<cluster_t> cluster) : cluster(cluster), start(cluster->la_start), end(cluster->la_end) {
         std::vector<std::shared_ptr<bam1_t>> reads;
@@ -43,7 +48,7 @@ struct insertion_cluster_t {
         start = std::min(start, read->core.mpos);
         end = std::max(end, get_mate_endpos(read));
     }
-    void add_clip_cluster(consensus_t* clip_consensus) {
+    void add_clip_cluster(std::shared_ptr<consensus_t> clip_consensus) {
         if (!clip_consensus) return;
         if (!this->clip_consensus || this->clip_consensus->reads() < clip_consensus->reads()) {
             this->clip_consensus = clip_consensus;

@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 
 #include "../libs/ssw.h"
 #include "../libs/ssw_cpp.h"
@@ -575,7 +576,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 }
 
 std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
-					consensus_t* rc_consensus, consensus_t* lc_consensus,
+					std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus,
 					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
 
 	std::string consensus_junction_seq;
@@ -675,7 +676,7 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
     return svs;
 }
 
-breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t contig_len, consensus_t* leftmost_consensus, consensus_t* rightmost_consensus, 
+breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::shared_ptr<consensus_t> leftmost_consensus, std::shared_ptr<consensus_t> rightmost_consensus, 
 	suffix_prefix_aln_t& spa, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
 
 	std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;

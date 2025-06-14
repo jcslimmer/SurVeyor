@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <htslib/vcf.h>
+#include <memory>
 #include <sstream>
 #include "htslib/hts.h"
 #include "types.h"
@@ -550,7 +551,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
 	
 	bcf_update_info_string(hdr, bcf_entry, "SVTYPE", sv->svtype().c_str());
-	if (sv->ins_seq.find("-") == std::string::npos) {
+	if (!sv->incomplete_ins_seq()) {
 		int_conv = sv->svlen();
 		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
 		if (!sv->ins_seq.empty()) {
@@ -702,25 +703,28 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	float* f_data = NULL;
 	int len = 0;
 
-	consensus_t* rc_consensus = NULL;
+	std::shared_ptr<consensus_t> rc_consensus = nullptr;
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_UB", &data, &len);
 	if (len > 0) {
-		rc_consensus = new consensus_t(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
+	free(data);
 
-	consensus_t* lc_consensus = NULL;
+	std::shared_ptr<consensus_t> lc_consensus = nullptr;
 	data = NULL;
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_LB", &data, &len);
 	if (len > 0) {
-		lc_consensus = new consensus_t(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
 	}
+	free(data);
 
 	data = NULL;
 	len = 0;
 	int imprecise = bcf_get_info_flag(hdr, b, "IMPRECISE", &data, &len);
+	free(data);
 
 	std::string svtype = get_sv_type(hdr, b);
 	hts_pos_t start = b->pos, end = get_sv_end(hdr, b);
@@ -755,12 +759,14 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		auto rbp_right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
 		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 
+		data = NULL;
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
 		inversion_t* inv = (inversion_t*) sv;
 		if (len > 0) {
 			inv->inv_start = data[0]-1;
 			inv->inv_end = data[1]-1;
 		}
+		free(data);
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];
 		size_t colon_pos = alt.find(':');
@@ -784,6 +790,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	if (len > 0) {
 		sv->inferred_ins_seq = s_data;
 	}
+	free(s_data);
 
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
@@ -794,7 +801,9 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	std::string ft = "PASS";
 	if (len > 0) {
 		ft = ss_data[0];
+		free(ss_data[0]);
 	}
+	free(ss_data);
 
 	std::istringstream tokenStream(ft);
 	std::string token;
@@ -826,8 +835,7 @@ bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& i
     bcf_hdr_t* out_hdr;
     int sample_idx = find_sample_index(in_hdr, sample_name);
     if (sample_idx >= 0) {
-        char** samples = new char*[1];
-        samples[0] = strdup(sample_name.c_str());
+        char* samples[1] = { strdup(sample_name.c_str()) };
         out_hdr = bcf_hdr_subset(in_hdr, 1, samples, imap);
     } else {
         out_hdr = bcf_hdr_subset(in_hdr, 0, NULL, NULL);
@@ -838,6 +846,21 @@ bcf_hdr_t* bcf_subset_header(bcf_hdr_t* in_hdr, std::string sample_name, int*& i
 		throw std::runtime_error("Failed to sync header.");
 	}
 	return out_hdr;
+}
+
+int count_alt_alleles(bcf_hdr_t* hdr, bcf1_t* sv) {
+    int* gt = nullptr;
+    int ngt = 0;
+    if (bcf_get_genotypes(hdr, sv, &gt, &ngt) < 0 || ngt < 2) {
+        free(gt);
+        return 0;
+    }
+    int count = 0;
+    for (int i = 0; i < ngt; i++) {
+        if (bcf_gt_allele(gt[i]) > 0) count++;
+    }
+    free(gt);
+    return count;
 }
 
 #endif /* VCF_UTILS_H */

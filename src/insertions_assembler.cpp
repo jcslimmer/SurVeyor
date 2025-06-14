@@ -150,7 +150,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
     return success;
 }
 
-std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t* dc_file, int contig_id, std::vector<consensus_t*>& clip_consensuses) {
+std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t* dc_file, int contig_id, std::vector<std::shared_ptr<consensus_t>>& clip_consensuses) {
 
 	std::string contig_name = contig_map.get_name(contig_id);
     hts_itr_t* iter = sam_itr_querys(dc_file->idx, dc_file->header, contig_name.c_str());
@@ -184,12 +184,12 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
     }
 
     if (!clip_consensuses.empty()) { // TODO: temporary, enhance logic
-        std::sort(clip_consensuses.begin(), clip_consensuses.end(), [](consensus_t* c1, consensus_t* c2) {
+        std::sort(clip_consensuses.begin(), clip_consensuses.end(), [](std::shared_ptr<consensus_t> c1, std::shared_ptr<consensus_t> c2) {
             return c1->breakpoint < c2->breakpoint;
         });
 
         int curr_j = 0;
-        std::vector<consensus_t*> clip_consensus_per_cluster(read_clusters.size(), NULL);
+        std::vector<std::shared_ptr<consensus_t>> clip_consensus_per_cluster(read_clusters.size(), NULL);
 
         bool left_facing = clip_consensuses[0]->left_clipped;
         if (left_facing) {
@@ -197,7 +197,7 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
                 return rc1->end < rc2->end;
             });
 
-            for (consensus_t* clip_consensus : clip_consensuses) {
+            for (std::shared_ptr<consensus_t> clip_consensus : clip_consensuses) {
                 while (curr_j < read_clusters.size() && read_clusters[curr_j]->end < clip_consensus->breakpoint) curr_j++;
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
@@ -213,7 +213,7 @@ std::vector<std::shared_ptr<insertion_cluster_t> > cluster_reads(open_samFile_t*
                 return rc1->start < rc2->start;
             });
 
-            for (consensus_t* clip_consensus : clip_consensuses) {
+            for (std::shared_ptr<consensus_t> clip_consensus : clip_consensuses) {
                 while (curr_j < read_clusters.size() && clip_consensus->breakpoint-read_clusters[curr_j]->start > stats.max_is) curr_j++;
 
                 for (int j = curr_j; j < read_clusters.size(); j++) {
@@ -350,7 +350,7 @@ void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distan
 }
 
 void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::vector<std::future<void> >& futures) {
-    
+
     std::string r_dc_fname = workdir + "/workspace/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam";
     std::string l_dc_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
@@ -359,12 +359,12 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
     open_samFile_t* l_dc_file = open_samFile(l_dc_fname.c_str(), true);
 
     std::string clip_consensus_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
-    std::vector<consensus_t*> rc_consensuses, lc_consensuses;
+    std::vector<std::shared_ptr<consensus_t>> rc_consensuses, lc_consensuses;
     if (file_exists(clip_consensus_fname)) {
         std::ifstream clipped_fin(clip_consensus_fname);
         std::string line;
         while (std::getline(clipped_fin, line)) {
-            consensus_t* consensus = new consensus_t(line, false);
+            std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line, false);
             if (consensus->left_clipped) {
                 consensus->start += consensus->lowq_clip_portion;
                 consensus->clip_len -= consensus->lowq_clip_portion;
@@ -379,8 +379,8 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         }
     }
 
-	std::vector<std::shared_ptr<insertion_cluster_t> > r_clusters = cluster_reads(r_dc_file, contig_id, rc_consensuses);
-	std::vector<std::shared_ptr<insertion_cluster_t> > l_clusters = cluster_reads(l_dc_file, contig_id, lc_consensuses);
+	std::vector<std::shared_ptr<insertion_cluster_t>> r_clusters = cluster_reads(r_dc_file, contig_id, rc_consensuses);
+	std::vector<std::shared_ptr<insertion_cluster_t>> l_clusters = cluster_reads(l_dc_file, contig_id, lc_consensuses);
 
 	std::string clipped_fname = workdir + "/workspace/clipped/" + std::to_string(contig_id) + ".bam";
 	add_semi_mapped_pairs(clipped_fname, contig_id, r_clusters, l_clusters);

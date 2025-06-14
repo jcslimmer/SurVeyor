@@ -10,21 +10,6 @@
 
 const SegTree::T max_alt_alleles = 2; // maximum number of alt alleles allowed
 
-int count_alt_alleles(bcf_hdr_t* hdr, bcf1_t* sv) {
-    int* gt = nullptr;
-    int ngt = 0;
-    if (bcf_get_genotypes(hdr, sv, &gt, &ngt) < 0 || ngt < 2) {
-        free(gt);
-        return 0;
-    }
-    int count = 0;
-    for (int i = 0; i < ngt; i++) {
-        if (bcf_gt_allele(gt[i]) > 0) count++;
-    }
-    free(gt);
-    return count;
-}
-
 int main(int argc, char** argv) {
     
     std::string in_vcf_fname = argv[1];

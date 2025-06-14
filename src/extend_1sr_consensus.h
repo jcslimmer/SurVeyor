@@ -350,13 +350,13 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 	return reads;
 }
 
-std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<consensus_t*>& consensuses, std::string contig_name, hts_pos_t contig_len,
+std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<std::shared_ptr<consensus_t>>& consensuses, std::string contig_name, hts_pos_t contig_len,
 		stats_t& stats, open_samFile_t* bam_file) {
 
 	if (consensuses.empty()) return std::vector<ext_read_t*>();
 
 	std::vector<hts_pair_pos_t> target_ivals;
-	for (consensus_t* consensus : consensuses) {
+	for (std::shared_ptr<consensus_t> consensus : consensuses) {
 		hts_pos_t left_ext_target_start = consensus->left_ext_target_start(stats.max_is, stats.read_len);
 		hts_pos_t left_ext_target_end = consensus->left_ext_target_end(stats.max_is, stats.read_len);
 		hts_pos_t right_ext_target_start = consensus->right_ext_target_start(stats.max_is, stats.read_len);
@@ -385,7 +385,7 @@ void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >
 	}
 }
 
-void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
+void extend_consensus_to_right(std::shared_ptr<consensus_t> consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len,
 		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
@@ -454,7 +454,7 @@ void extend_consensus_to_right(consensus_t* consensus, IntervalTree<ext_read_t*>
 	consensus->extended_to_right = true;
 }
 
-void extend_consensus_to_left(consensus_t* consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
+void extend_consensus_to_left(std::shared_ptr<consensus_t> consensus, IntervalTree<ext_read_t*>& candidate_reads_itree,
 		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len,
 		const int high_confidence_mapq, stats_t& stats, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq) {
 
