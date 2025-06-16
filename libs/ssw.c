@@ -583,7 +583,8 @@ static cigar* banded_sw (const int8_t* ref,
 	int32_t i, j, e, f, temp1, temp2, s = 16, s1 = 8, l, max = 0;
 	int64_t s2 = 1024;
 	char op, prev_op;
-	int32_t width, width_d, *h_b, *e_b, *h_c;
+	int64_t width, width_d;
+	int32_t *h_b, *e_b, *h_c;
 	int8_t *direction, *direction_line;
 	cigar* result = (cigar*)malloc(sizeof(cigar));
 	h_b = (int32_t*)malloc(s1 * sizeof(int32_t));
@@ -645,7 +646,9 @@ static cigar* banded_sw (const int8_t* ref,
 
 				if (h_c[u] > max) max = h_c[u];
 
-				if (temp1 <= temp2) direction_line[dh] = 1;
+				if (temp1 <= temp2) {
+					direction_line[dh] = 1;
+				}
 				else direction_line[dh] = e1 > f1 ? direction_line[de] : direction_line[df];
 			}
 			for (j = 1; j <= u; j ++) h_b[j] = h_c[j];
