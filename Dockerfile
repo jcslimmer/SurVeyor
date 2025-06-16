@@ -18,7 +18,7 @@ ADD src ./src
 
 RUN cmake -DCMAKE_BUILD_TYPE=Release . && make
 
-RUN apt-get install -y python3 python3-dev python3-pysam python3-pyfaidx python3-numpy python3-xgboost
+RUN apt-get install -y python3 python3-dev python3-pysam python3-pyfaidx python3-numpy python3-xgboost python3-sklearn
 
 COPY surveyor.py features.py train_classifier.py run_classifier.py ./
 
