@@ -39,6 +39,9 @@ bool is_long(bam1_t* r, int max_is) {
 bool is_proper_pair(bam1_t* r, int min_is, int max_is) {
 	return is_primary(r) && is_samechr(r) && !is_samestr(r) && !is_dc_pair(r) && !is_outward(r) && !is_short(r, min_is) && !is_long(r, max_is);
 }
+bool is_first_read(bam1_t* r) {
+    return r->core.flag & BAM_FREAD1;
+}
 
 int get_endpoint(bam1_t* r) {
     return bam_is_rev(r) ? r->core.pos : bam_endpos(r);

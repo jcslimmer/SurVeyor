@@ -515,6 +515,8 @@ void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
 		}
 	}
 
+	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
+
 	bcf1_t* vcf_record = bcf_init();
 	std::unordered_map<std::string, std::vector<sv_w_samplename_t> > local_svs_by_chr;
 	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
@@ -523,6 +525,8 @@ void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
 		auto sv = std::shared_ptr<sv_t>(bcf_to_sv(vcf_header, vcf_record));
 		if (sv == nullptr) {
 			std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
+			continue;
+		} else if (sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV") {
 			continue;
 		}
 
