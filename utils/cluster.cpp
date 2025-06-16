@@ -26,6 +26,8 @@ std::vector<std::string> sample_names;
 chr_seqs_map_t chr_seqs;
 std::mutex samples_mtx;
 
+bool keep_all_called = false;
+
 struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 	std::string id, chr, svtype;
 	hts_pos_t start, end, svlen;
@@ -513,14 +515,18 @@ void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
 		}
 	}
 
+	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
+
 	bcf1_t* vcf_record = bcf_init();
 	std::unordered_map<std::string, std::vector<sv_w_samplename_t> > local_svs_by_chr;
 	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
-		if (count_alt_alleles(vcf_header, vcf_record) < 1) continue; // skip records without ALT alleles
+		if (!keep_all_called && count_alt_alleles(vcf_header, vcf_record) < 1) continue; // skip records without ALT alleles
 		
 		auto sv = std::shared_ptr<sv_t>(bcf_to_sv(vcf_header, vcf_record));
 		if (sv == nullptr) {
 			std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
+			continue;
+		} else if (sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV") {
 			continue;
 		}
 
@@ -570,6 +576,7 @@ int main(int argc, char* argv[]) {
 			("S,max-len-diff-imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 					cxxopts::value<int>()->default_value("500"))
 			("i,overlap-for-ins", "Require overlap for insertions.", cxxopts::value<bool>()->default_value("false"))
+			("k,keep-all-called", "Keep all SVs, even if they have no alt alleles.", cxxopts::value<bool>()->default_value("false"))
 			("t,threads", "Maximum number of threads used.", cxxopts::value<int>()->default_value("1"))
 			("v,version", "Print the version number and exit.")
 			("h,help", "Print usage");
@@ -605,6 +612,7 @@ int main(int argc, char* argv[]) {
     overlap_for_ins = parsed_args["overlap-for-ins"].as<bool>();
     std::string out_prefix = parsed_args["out-prefix"].as<std::string>();
     int n_threads = parsed_args["threads"].as<int>();
+	keep_all_called = parsed_args.count("keep-all-called");
 
     std::string out_vcf_fname = out_prefix + ".vcf.gz";
     htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
