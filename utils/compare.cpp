@@ -235,6 +235,7 @@ void find_match(int id, int start_idx, int end_idx) {
 		sv_t* bsv = benchmark_svs[i];
 
 		std::vector<sv_t*>* called_svs_chr_type;
+		mtx.lock();
 		if (bsv->svtype() == "DEL") {
 			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
 		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
@@ -244,6 +245,7 @@ void find_match(int id, int start_idx, int end_idx) {
 		} else {
 			continue;
 		}
+		mtx.unlock();
 
 		std::vector<repeat_t> reps_containing_bsv;
 		if (reps_i[bsv->chr] != NULL) {
