@@ -7,7 +7,8 @@
 
 void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
-                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner) {
+                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
+                bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
 
@@ -86,6 +87,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
         
         if (best_aln_score > ref_aln.sw_score) {
+            if (reassign_evidence && reads_to_sv_map[bam_get_qname(read)] != dup->id) continue;
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
                     alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -192,6 +194,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     alt_better_reads_consistent = find_seqs_consistent_with_ref_seq(alt_consensus_seq, alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
 
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads[alt_with_most_reads]);
+
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
     
@@ -208,7 +212,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
 void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
-                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner) {
+                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
+                bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
     
     hts_pos_t dup_start = dup->start, dup_end = dup->end;
 
@@ -296,6 +301,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
+            if (reassign_evidence && reads_to_sv_map[bam_get_qname(read)] != dup->id) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
@@ -331,6 +337,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, std::vector<bool>(), alt_consensus_seq, alt_avg_score, alt_stddev_score);
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
@@ -424,7 +432,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::vector<duplication_t*> dups,
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
-    std::string workdir, std::vector<double>* global_crossing_isize_dist) {
+    std::string workdir, std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
+    bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -444,10 +453,10 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     std::vector<sv_t*> small_dups;
     for (duplication_t* dup : dups) {
         if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
-			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner);
+			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, reads_to_sv_map);
             small_dups.push_back(dup);
 		} else {
-			genotype_large_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner);
+			genotype_large_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, reads_to_sv_map);
 		}
     }
 
@@ -458,7 +467,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, reassign_evidence, reads_to_sv_map, mates_nms_file);
     count_stray_pairs(contig_name, dups, bam_file, config, stats);
 }
 

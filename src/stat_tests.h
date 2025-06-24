@@ -9,6 +9,7 @@
 
 #include "../libs/ssw_cpp.h"
 #include "../libs/ks-test.h"
+#include "genotype.h"
 #include "htslib/hts.h"
 #include "types.h"
 #include "utils.h"
@@ -667,7 +668,9 @@ void add_read(pairs_data_t& pairs_data, bam1_t* read, int64_t mate_nm) {
 	}
 }
 
-void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, config_t& config, stats_t& stats,
+void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& deletions, open_samFile_t* bam_file, 
+	config_t& config, stats_t& stats, evidence_logger_t* evidence_logger, 
+	bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map,
 	std::string nm_file = "") {
 	
 	if (deletions.empty()) return;
@@ -720,6 +723,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 			for (int i = curr_del_bystart_idx; i < deletions.size() && deletions_by_start[i]->start <= pair_end; i++) {
 				if (pair_start <= deletions_by_start[i]->start+5 && deletions_by_start[i]->end-5 <= pair_end && 
 					deletions_by_start[i]->start-pair_start + pair_end-deletions_by_start[i]->end <= stats.max_is) {
+					if (evidence_logger) evidence_logger->log_read_association(deletions_by_start[i]->id, read);
+					if (reassign_evidence && reads_to_sv_map[std::string(bam_get_qname(read))] != deletions_by_start[i]->id) continue;
 					add_read(alt_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 				}
 			}
@@ -746,7 +751,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 		set_bp_pairs_info(deletions_by_end[i]->sample_info.neutral_bp2_pairs, neutral_bp2_pairs_data[i], config);
 	}
 }
-void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, config_t& config, stats_t& stats,
+void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& duplications, open_samFile_t* bam_file, 
+	config_t& config, stats_t& stats, evidence_logger_t* evidence_logger, 
+	bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map,
 	std::string nm_file = "") {
 	
 	if (duplications.empty()) return;
@@ -795,6 +802,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 			for (int i = curr_dup_dp_idx; i < duplications.size() && bam_endpos(read) > duplications_by_start[i]->start; i++) {
 				duplication_t* dup = duplications_by_start[i];
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
+					if (evidence_logger) evidence_logger->log_read_association(dup->id, read);
+					if (reassign_evidence && reads_to_sv_map[std::string(bam_get_qname(read))] != dup->id) continue;
 					add_read(alt_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 				}
 			}
@@ -829,6 +838,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 }
 
 void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& insertions, open_samFile_t* bam_file, config_t& config, stats_t& stats,
+	evidence_logger_t* evidence_logger, bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map,
 	std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr) {
 	
 	if (insertions.empty()) return;
@@ -895,6 +905,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 					
 					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
 						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_start[i]->ins_seq.length()-1)) {
+						if (evidence_logger) evidence_logger->log_read_association(insertions_by_start[i]->id, read);
+						if (reassign_evidence && reads_to_sv_map[std::string(bam_get_qname(read))] != insertions_by_start[i]->id) continue;
 						add_read(alt_bp1_pairs_data[i], read, aln.mismatches);
 					} else {
 						add_read(stray_bp1_pairs_data[i], read, aln.mismatches);
@@ -909,6 +921,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 					
 					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
 						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_end[i]->ins_seq.length()-1)) {
+						if (evidence_logger) evidence_logger->log_read_association(insertions_by_end[i]->id, read);
+						if (reassign_evidence && reads_to_sv_map[std::string(bam_get_qname(read))] != insertions_by_end[i]->id) continue;
 						add_read(alt_bp2_pairs_data[i], read, aln.mismatches);
 					} else {
 						add_read(stray_bp2_pairs_data[i], read, aln.mismatches);

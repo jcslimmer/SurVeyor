@@ -697,6 +697,19 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	return "";
 }
 
+float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
+    int ngt = 0;
+    float *epr = NULL;
+    if (bcf_get_format_float(hdr, b, "EPR", &epr, &ngt) > 0) {
+        float value = epr[0];
+        free(epr);
+        return value;
+    }
+    free(epr);
+    return -1.0;
+}
+
+
 sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int* data = NULL;

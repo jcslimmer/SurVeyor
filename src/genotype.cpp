@@ -1,8 +1,10 @@
+#include "genotype.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <new>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,9 +51,6 @@ StripedSmithWaterman::Aligner harsh_aligner(1, 4, 100, 1, false);
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
 std::vector<int> active_threads_per_chr;
 std::vector<std::mutex> mutex_per_chr;
-
-std::ofstream alt_reads_to_sv_associations;
-std::mutex alt_reads_to_sv_associations_mtx;
 
 void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_info_t bp_reads_info, std::string prefix, int bp_number) {
     if (!bp_reads_info.computed) return;
@@ -294,7 +293,15 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", exssc, 2);
         int exsscia[] = {sv->sample_info.alt_consensus1_split_score1_ind_aln, sv->sample_info.alt_consensus1_split_score2_ind_aln};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSCIA", exsscia, 2);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSCIA", NULL, 0);
     }
+
     if (sv->sample_info.ext_alt_consensus2_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", &(sv->sample_info.ext_alt_consensus2_to_alt_score), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", &(sv->sample_info.ext_alt_consensus2_to_ref_score), 1);
@@ -305,6 +312,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", exssc2, 2);
         int exssc2ia[] = {sv->sample_info.alt_consensus2_split_score1_ind_aln, sv->sample_info.alt_consensus2_split_score2_ind_aln};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", exssc2ia, 2);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", NULL, 0);
     }
 
     std::string filters;
@@ -396,6 +410,23 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     bp_reads_info.rev_hq_mate_cov_bps = get_covered_bps(rev_hq_mate_positions);
 }
 
+std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std::string>& seqs) {
+    std::vector<std::string> temp1, temp2;
+    std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
+    
+    std::vector<std::string> consensus_seqs; 
+    
+    consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
+    
+    std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
+    for (std::string& seq : seqs) {
+        seqs_w_pp.push_back({seq, true, true});
+    }
+    std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
+    consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
+    return consensus_seqs;
+}
+
 std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<bool> revcomp_read, std::string& consensus_seq, double& avg_score, double& stddev_score) {
 
     if (reads.empty()) {
@@ -417,22 +448,10 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
         seqs.push_back(seq);
     }
 
-    std::vector<std::shared_ptr<bam1_t>> consistent_reads;
     avg_score = 0;
-    std::vector<std::string> temp1, temp2;
-    std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
-    
-    std::vector<std::string> consensus_seqs; 
-    
-    consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
-    
-    std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
-    for (std::string& seq : seqs) {
-        seqs_w_pp.push_back({seq, true, true});
-    }
-    std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
-    consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
+    std::vector<std::string> consensus_seqs = gen_consensus_seqs(ref_seq, seqs);
 
+    std::vector<std::shared_ptr<bam1_t>> consistent_reads;
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln;
     std::vector<int> start_positions, end_positions;
@@ -559,15 +578,6 @@ void release_mates(int contig_id) {
 	mutex_per_chr[contig_id].unlock();
 }
 
-void write_reads_associations(std::string id, std::vector<std::shared_ptr<bam1_t>>& reads) {
-    for (std::shared_ptr<bam1_t> read : reads) {
-        std::string qname = bam_get_qname(read.get());
-        alt_reads_to_sv_associations_mtx.lock();
-        alt_reads_to_sv_associations << id << "\t" << qname << "\t" << is_first_read(read.get()) << "\n";
-        alt_reads_to_sv_associations_mtx.unlock();
-    }
-}
-
 IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string contig_name, hts_pos_t contig_len, std::vector<hts_pair_pos_t> target_ivals, open_samFile_t* bam_file,
                                                                   std::vector<ext_read_t*>& candidate_reads_for_extension) {
     int contig_id = contig_map.get_id(contig_name);
@@ -580,6 +590,47 @@ IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string co
     return IntervalTree<ext_read_t*>(it_ivals);
 }
 
+std::unordered_map<std::string, std::string> assign_reads(std::string in_vcf_fname) {
+    
+    htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
+    if (in_vcf_file == NULL) {
+        throw std::runtime_error("Unable to open file " + in_vcf_fname + ".");
+    }
+
+    bcf_hdr_t* in_vcf_header = bcf_hdr_read(in_vcf_file);
+    if (in_vcf_header == NULL) {
+        throw std::runtime_error("Failed to read the VCF header.");
+    }
+
+    std::unordered_map<std::string, float> sv_epr_map;
+
+    bcf1_t* vcf_record = bcf_init();
+    while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
+        bcf_unpack(vcf_record, BCF_UN_ALL);
+
+        std::string id = vcf_record->d.id;
+        float epr = get_sv_epr(in_vcf_header, vcf_record);
+        sv_epr_map[id] = epr;
+    }
+    hts_close(in_vcf_file);
+    bcf_hdr_destroy(in_vcf_header);
+
+    std::string alt_reads_association_fname = workdir + "/alt_reads_to_sv_associations.txt";
+    std::ifstream alt_reads_association_fin(alt_reads_association_fname);
+    std::string sv_id, read_name, temp;
+    std::unordered_map<std::string, std::string> read_to_sv_map;
+    std::unordered_map<std::string, float> read_to_epr_map;
+    while (alt_reads_association_fin >> sv_id >> read_name) {
+        float epr = sv_epr_map[sv_id];
+        if (epr > read_to_epr_map[read_name]) {
+            read_to_epr_map[read_name] = epr; // Store the highest EPR for the read
+            read_to_sv_map[read_name] = sv_id;
+        }
+    }
+
+    return read_to_sv_map;
+}
+
 int main(int argc, char* argv[]) {
 
     std::string in_vcf_fname = argv[1];
@@ -588,6 +639,13 @@ int main(int argc, char* argv[]) {
     reference_fname = argv[4];
     workdir = argv[5];
     std::string sample_name = argv[6];
+
+    std::unordered_map<std::string, std::string> reads_to_sv_map;
+    bool reassign_evidence = false;
+    if (argc > 7 && std::string(argv[7]) == "--reassign-evidence") {
+        reassign_evidence = true;
+        reads_to_sv_map = assign_reads(in_vcf_fname);
+    }
 
     contig_map.load(workdir);
     config.parse(workdir + "/config.txt");
@@ -664,12 +722,15 @@ int main(int argc, char* argv[]) {
     	throw std::runtime_error("Failed to read the VCF header.");
     }
 
+    evidence_logger_t* evidence_logger = NULL;
+    if (!reassign_evidence) {
+        evidence_logger = new evidence_logger_t(workdir);
+    }
+
     // genotype chrs in descending order of svs
     ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
-
-    alt_reads_to_sv_associations.open(workdir + "/alt_reads_to_sv_associations.txt");
 
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
@@ -678,7 +739,7 @@ int main(int argc, char* argv[]) {
             std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -687,7 +748,7 @@ int main(int argc, char* argv[]) {
             std::vector<duplication_t*> block_dups(dups.begin() + i, dups.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dups.size())));
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -696,7 +757,7 @@ int main(int argc, char* argv[]) {
             std::vector<insertion_t*> block_inss(inss.begin() + i, inss.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(inss.size())));
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -753,5 +814,6 @@ int main(int argc, char* argv[]) {
     bcf_hdr_destroy(in_vcf_header);
     bcf_close(in_vcf_file);
     bcf_close(out_vcf_file);
-    alt_reads_to_sv_associations.close();
+    delete bam_pool;
+    delete evidence_logger;
 }
