@@ -87,7 +87,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
         
         if (best_aln_score > ref_aln.sw_score) {
-            if (reassign_evidence && reads_to_sv_map[bam_get_qname(read)] != dup->id) continue;
+            std::string read_name = bam_get_qname(read);
+            if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != dup->id) continue;
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
                     alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -301,7 +302,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
 
         if (alt_aln.sw_score > ref_aln_score) {
-            if (reassign_evidence && reads_to_sv_map[bam_get_qname(read)] != dup->id) continue;
+            std::string read_name = bam_get_qname(read);
+            if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != dup->id) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
@@ -433,7 +435,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
     std::string workdir, std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
-    bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
+    bool reassign_evidence, std::unordered_map<std::string, std::string>* reads_to_sv_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -453,10 +455,10 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     std::vector<sv_t*> small_dups;
     for (duplication_t* dup : dups) {
         if (dup->svlen() <= stats.read_len-2*config.min_clip_len) {
-			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, reads_to_sv_map);
+			genotype_small_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, *reads_to_sv_map);
             small_dups.push_back(dup);
 		} else {
-			genotype_large_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, reads_to_sv_map);
+			genotype_large_dup(dup, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, *reads_to_sv_map);
 		}
     }
 
@@ -467,7 +469,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, reassign_evidence, reads_to_sv_map, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, reassign_evidence, *reads_to_sv_map, mates_nms_file);
     count_stray_pairs(contig_name, dups, bam_file, config, stats);
 }
 

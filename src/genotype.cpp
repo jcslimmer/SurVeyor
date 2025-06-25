@@ -739,7 +739,7 @@ int main(int argc, char* argv[]) {
             std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -748,7 +748,7 @@ int main(int argc, char* argv[]) {
             std::vector<duplication_t*> block_dups(dups.begin() + i, dups.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dups.size())));
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -757,7 +757,7 @@ int main(int argc, char* argv[]) {
             std::vector<insertion_t*> block_inss(inss.begin() + i, inss.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(inss.size())));
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 

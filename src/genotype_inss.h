@@ -80,7 +80,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         StripedSmithWaterman::Alignment& alt_aln = alt1_aln.sw_score >= alt2_aln.sw_score ? alt1_aln : alt2_aln;
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
-            if (reassign_evidence && reads_to_sv_map[bam_get_qname(read)] != ins->id) continue;
+            std::string read_name = bam_get_qname(read);
+            if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != ins->id) continue;
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
                 alt_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             } 
@@ -296,7 +297,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
     std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
-    bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
+    bool reassign_evidence, std::unordered_map<std::string, std::string>* reads_to_sv_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -313,13 +314,13 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
                     
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
-        genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, reads_to_sv_map);
+        genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, *reads_to_sv_map);
     }
 
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
-    calculate_ptn_ratio(contig_name, inss, bam_file, config, stats, evidence_logger, reassign_evidence, reads_to_sv_map, *mateseqs_w_mapq_chr);
+    calculate_ptn_ratio(contig_name, inss, bam_file, config, stats, evidence_logger, reassign_evidence, *reads_to_sv_map, *mateseqs_w_mapq_chr);
     std::vector<sv_t*> inss_sv(inss.begin(), inss.end());
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, inss_sv, bam_file, config, stats, config.min_sv_size, true);
 
