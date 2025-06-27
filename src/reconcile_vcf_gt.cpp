@@ -176,7 +176,7 @@ int main(int argc, char** argv) {
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";
     bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, gt_as_dup_tag, &len));
     
-    htsFile* out_fp = bcf_open(out_vcf_fname.c_str(), "w");
+    htsFile* out_fp = bcf_open(out_vcf_fname.c_str(), "wz");
     if (!out_fp) {
         std::cerr << "Error opening " << out_vcf_fname << std::endl;
         exit(1);
