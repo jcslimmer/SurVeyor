@@ -82,9 +82,6 @@ class Features:
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
 
-        if (Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
-            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0): # note that EXL2 should be PRESENT and 0
-            svtype_str += "_IMPRECISE"
         return svtype_str
 
     def get_number_value(info, key, default, norm_factor = 1.0):
