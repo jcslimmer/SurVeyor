@@ -49,12 +49,8 @@ call_parser.add_argument('--generate-training-data', action='store_true', help='
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
 genotype_parser.add_argument('--dedup', action='store_true', help='Remove duplicated calls from the input VCF file.')
-genotype_parser.add_argument('--resolve-incompatible', type=str,
-help='In catalogues obtained by merging many samples, there might be many similar or overlapping SVs. ' \
-    'When all of them are preferrable to the reference allele, they may all be genotyped as present, artificially increasing the number of calls. ' \
-    'This option will prevent this by keeping only the most reliable calls and removing those that violate the ploidy of the sample.')
+genotype_parser.add_argument('--independent-gt', action='store_true', help='Genotype each SVs independently from each other. Reads and other evidence can support multiple SVs.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
-genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
@@ -241,16 +237,26 @@ elif cmd_args.command == 'genotype':
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
+    if not cmd_args.independent_gt:
+        vcf_with_fmt_reassigned_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.reassigned.vcf.gz"
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s --reassign-evidence" % (vcf_with_gt_fname, vcf_with_fmt_reassigned_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        run_cmd(genotype_cmd)
+
+        vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reassigned.vcf.gz"
+        Classifier.run_classifier(vcf_with_fmt_reassigned_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+
     reconcile_out_vcf = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reconciled.vcf.gz"
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, reconcile_out_vcf, sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
 
+    out_vcf_file = cmd_args.workdir + "/genotyped.vcf.gz"
+    out_resolved_vcf_file = cmd_args.workdir + "/genotyped.resolved.vcf.gz"
+
     if cmd_args.dedup:
-        deduplicate_vcf(reconcile_out_vcf, cmd_args.out_vcf_file)
+        deduplicate_vcf(reconcile_out_vcf, out_vcf_file)
     else:
-        cp_cmd = "cp %s %s" % (reconcile_out_vcf, cmd_args.out_vcf_file)
+        cp_cmd = "cp %s %s" % (reconcile_out_vcf, out_vcf_file)
         run_cmd(cp_cmd)
 
-    if cmd_args.resolve_incompatible:
-        resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (cmd_args.out_vcf_file, cmd_args.resolve_incompatible)
-        run_cmd(resolve_incompatible_cmd)
+    resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (out_vcf_file, out_resolved_vcf_file)
+    run_cmd(resolve_incompatible_cmd)
