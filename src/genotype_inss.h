@@ -311,7 +311,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     }
     std::vector<ext_read_t*> candidate_reads_for_extension;
     IntervalTree<ext_read_t*> candidate_reads_for_extension_itree = get_candidate_reads_for_extension_itree(contig_name, contig_len, target_ivals, bam_pool->get_bam_reader(id), candidate_reads_for_extension);
-                    
+             
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
         genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, *reads_to_sv_map);

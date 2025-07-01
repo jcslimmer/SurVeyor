@@ -31,6 +31,7 @@ struct config_t {
 
     const int min_score_diff = 15;
     const int high_confidence_mapq = 60;
+    const int flanking_size = 5000, indel_tested_region_size = 10000;
 
     void parse(std::string config_file) {
         std::unordered_map<std::string, std::string> config_params;

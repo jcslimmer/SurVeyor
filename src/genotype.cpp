@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "assemble.h"
+#include "htslib/hts_endian.h"
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
@@ -26,6 +27,8 @@
 #include "vcf_utils.h"
 #include "stat_tests.h"
 #include "reference_guided_assembly.h"
+#include "SegTree.h"
+#include "../libs/IntervalTree.h"
 
 #include "genotype_dels.h"
 #include "genotype_dups.h"
@@ -631,6 +634,97 @@ std::unordered_map<std::string, std::string> assign_reads(std::string in_vcf_fna
     return read_to_sv_map;
 }
 
+void clear_invalid_stat_tests(bcf_hdr_t* hdr, std::vector<deletion_t*>& dels) {
+    std::vector<std::pair<deletion_t*, float>> dels_w_epr;
+    hts_pos_t chr_len = 0;
+    for (deletion_t* del : dels) {
+        dels_w_epr.push_back({del, get_sv_epr(hdr, del->vcf_entry)});
+        chr_len = std::max(chr_len, del->end);
+    }
+
+    std::sort(dels_w_epr.begin(), dels_w_epr.end(), 
+    [](const std::pair<deletion_t*, float>& a, const std::pair<deletion_t*, float>& b) {
+        return a.second > b.second; // Sort by EPR in descending order
+    });
+
+    SegTree seg_tree(chr_len+1);
+    for (const auto& del_epr : dels_w_epr) {
+        deletion_t* del = del_epr.first;
+        hts_pos_t midpoint = (del->start + del->end) / 2;
+        if (seg_tree.any_ge(midpoint-stats.max_is, midpoint, 1)) {
+            del->ks_pval = deletion_t::KS_PVAL_NOT_COMPUTED;
+            del->min_conf_size = deletion_t::SIZE_NOT_COMPUTED;
+            del->max_conf_size = deletion_t::SIZE_NOT_COMPUTED;
+        } else {
+            seg_tree.add(midpoint-stats.max_is, midpoint, 1);
+        }
+    }
+}
+
+void rebalance_depth_cov(hts_pos_t strong_start, hts_pos_t strong_end, hts_pos_t weak_start, hts_pos_t weak_end, 
+    int per_base_cov_delta, int& cov_to_update) {
+    int ov = overlap(strong_start, strong_end, weak_start, weak_end);
+    if (ov <= 0 || weak_end-weak_start <= 0) {
+        return;
+    }
+
+    uint64_t weak_total_cov = (weak_end - weak_start) * cov_to_update;
+    weak_total_cov += per_base_cov_delta * ov;
+    cov_to_update = weak_total_cov / (weak_end - weak_start);
+}
+
+void rebalance_covs(bcf_hdr_t* hdr, std::vector<deletion_t*>& dels) {
+    std::vector<std::pair<deletion_t*, float>> dels_w_epr;
+    for (deletion_t* del : dels) {
+        dels_w_epr.push_back({del, get_sv_epr(hdr, del->vcf_entry)});
+    }
+
+    std::vector<Interval<std::pair<deletion_t*, float>>> it_ivals;
+    for (const auto& del_epr : dels_w_epr) {
+        deletion_t* del = del_epr.first;
+        float epr = del_epr.second;
+        Interval<std::pair<deletion_t*, float>> it_ival(del->start, del->end, {del, epr});
+        it_ivals.push_back(it_ival);
+    }
+    IntervalTree<std::pair<deletion_t*, float>> it_tree(it_ivals);
+
+    for (auto& curr_del : dels_w_epr) {
+        auto ov_dels = it_tree.findOverlapping(curr_del.first->start, curr_del.first->end);
+        for (const auto& it_del : ov_dels) {
+            auto& ov_del = it_del.value;
+            int ov_del_alt_ac = count_alt_alleles(hdr, ov_del.first->vcf_entry);
+            if (ov_del.second <= curr_del.second || ov_del.first == curr_del.first || ov_del_alt_ac == 0) continue;
+
+            deletion_t* strong_del = ov_del.first;
+            deletion_t* weak_del = curr_del.first;
+            int strong_del_alt_ac = ov_del_alt_ac;
+
+            int strong_del_avg_flanking_cov = (strong_del->sample_info.left_flanking_cov + strong_del->sample_info.right_flanking_cov)/2;
+            int strong_del_avg_indel_cov = (strong_del->sample_info.indel_left_cov + strong_del->sample_info.indel_right_cov)/2;
+            int avg_depth_delta = std::max(0, (strong_del_avg_flanking_cov-strong_del_avg_indel_cov)/2 * strong_del_alt_ac);
+
+            // int strong_del_avg_flanking_cov_hq = (strong_del->sample_info.left_flanking_cov_highmq + strong_del->sample_info.right_flanking_cov_highmq)/2;
+            // int strong_del_avg_indel_cov_hq = (strong_del->sample_info.indel_left_cov_highmq + strong_del->sample_info.indel_right_cov_highmq)/2;
+            // int avg_depth_delta_hq = std::max(0, (strong_del_avg_flanking_cov_hq-strong_del_avg_indel_cov_hq)/2 * strong_del_alt_ac);
+
+            if (weak_del->end - weak_del->start <= config.indel_tested_region_size) {
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->start, weak_del->end, avg_depth_delta, weak_del->sample_info.indel_left_cov);
+                weak_del->sample_info.indel_right_cov = weak_del->sample_info.indel_left_cov;
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->start, weak_del->end, avg_depth_delta, weak_del->sample_info.indel_left_cov_highmq);
+                weak_del->sample_info.indel_right_cov_highmq = weak_del->sample_info.indel_left_cov_highmq;
+            } else {
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->start, weak_del->start+config.indel_tested_region_size, avg_depth_delta, weak_del->sample_info.indel_left_cov);
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->end-config.indel_tested_region_size, weak_del->end, avg_depth_delta, weak_del->sample_info.indel_right_cov);
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->start, weak_del->start+config.indel_tested_region_size, avg_depth_delta, weak_del->sample_info.indel_left_cov_highmq);
+                rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->end-config.indel_tested_region_size, weak_del->end, avg_depth_delta, weak_del->sample_info.indel_right_cov_highmq);
+                
+            }
+            rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->start-config.flanking_size, weak_del->start, avg_depth_delta, weak_del->sample_info.left_flanking_cov);
+            rebalance_depth_cov(strong_del->start, strong_del->end, weak_del->end, weak_del->end+config.flanking_size, avg_depth_delta, weak_del->sample_info.right_flanking_cov);
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
 
     std::string in_vcf_fname = argv[1];
@@ -783,6 +877,15 @@ int main(int argc, char* argv[]) {
         }
     }
     futures.clear();
+
+    if (reassign_evidence) {
+        for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+            std::string contig_name = contig_map.get_name(contig_id);
+            std::vector<deletion_t*>& dels = dels_by_chr[contig_name];
+            clear_invalid_stat_tests(in_vcf_header, dels);
+            rebalance_covs(in_vcf_header, dels);
+        }
+    }
 
     // print contigs in vcf order
     int n_seqs;
