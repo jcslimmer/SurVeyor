@@ -35,12 +35,13 @@ struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 	bool imprecise = false, incomplete_ins_seq = false;
     std::string sample;
 	int n_gt;
+	float epr;
 	std::vector<int> gt;
 
     sv_w_samplename_t() {}
     sv_w_samplename_t(std::shared_ptr<sv_t> sv, const std::string& sample) : sample(sample), chr(sv->chr), 
 		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq), n_gt(sv->n_gt),
-		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()) {
+		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()), epr(sv->sample_info.epr) {
 		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
 	}
 
@@ -187,10 +188,12 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
 
 sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     std::unordered_map<std::string, int> counts;
+	std::unordered_map<std::string, float> eprs;
     for (sv_w_samplename_t& sv : svs) {
-        if (!sv.imprecise && !sv.incomplete_ins_seq) {
-            counts[sv.unique_key()]++;
+		if (!sv.imprecise && !sv.incomplete_ins_seq) {
+			counts[sv.unique_key()]++;
         }
+		eprs[sv.unique_key()] = sv.epr;
     }
     if (counts.empty()) { // if no precise accepts imprecise
         for (sv_w_samplename_t& sv : svs) {
@@ -201,7 +204,10 @@ sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     int max_freq = 0;
     std::string str;
     for (auto& e : counts) {
-        if (e.second > max_freq) {
+        if (e.second > max_freq || (e.second == max_freq && eprs[e.first] > eprs[str])) {
+			// mtx.lock();
+			// if (e.second == max_freq) std::cout << "Choosen " << e.first << " instead of " << str << " because of EPR " << eprs[e.first] << " vs " << eprs[str] << std::endl;
+			// mtx.unlock();
             max_freq = e.second;
             str = e.first;
         }

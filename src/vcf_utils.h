@@ -713,7 +713,6 @@ float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
 sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int* data = NULL;
-	float* f_data = NULL;
 	int len = 0;
 
 	std::shared_ptr<consensus_t> rc_consensus = nullptr;
@@ -829,6 +828,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->sample_info.gt), &n);
 	if (sv->n_gt < 0) sv->n_gt = 0;
 	std::sort(sv->sample_info.gt, sv->sample_info.gt+sv->n_gt);
+
+	float* f_data = NULL;
+	len = 0;
+	if (bcf_get_format_float(hdr, b, "EPR", &f_data, &len) > 0 && len > 0) {
+		sv->sample_info.epr = f_data[0];
+		free(f_data);
+	}
 
 	return sv;
 }
