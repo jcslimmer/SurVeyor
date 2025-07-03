@@ -43,6 +43,7 @@ struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq), n_gt(sv->n_gt),
 		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()), epr(sv->sample_info.epr) {
 		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
+		if (incomplete_ins_seq) svlen = 0;
 	}
 
 	std::string unique_key() {
