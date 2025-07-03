@@ -19,7 +19,6 @@ double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
 std::unordered_set<std::string> bdup_ids, cdup_ids;
 
-// StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 std::vector<sv_t*> benchmark_svs;
 std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
 std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
@@ -45,8 +44,17 @@ std::string get_csv_type(sv_t* sv) {
 int len_diff(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") return abs(sv1->svlen()-sv2->svlen());
 	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return abs(sv1->svlen()-sv2->svlen());
-	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") return abs((int) (sv1->svlen()-sv2->svlen()));
-	else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 0;
+	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
+		if (sv1->incomplete_ins_seq() && sv2->incomplete_ins_seq()) {
+			return 0;
+		} else if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) {
+			sv_t* sv_full = sv1->incomplete_ins_seq() ? sv2 : sv1;
+			sv_t* sv_incmpl = sv1->incomplete_ins_seq() ? sv1 : sv2;
+			return std::max(0, (int) (sv_incmpl->ins_seq.length() - sv_full->svlen()));
+		} else {
+			return abs((int) (sv1->svlen()-sv2->svlen()));
+		}
+	} else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 0;
 	else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") return abs(sv1->svlen()-sv2->svlen());
 	else return INT32_MAX;
 }
@@ -117,30 +125,59 @@ bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& 
 	}
 }
 
+bool check_cmpl_cmpl_seq(std::string& cmpl_seq1, std::string& cmpl_seq2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	std::string& query = cmpl_seq1.length() < cmpl_seq2.length() ? cmpl_seq1 : cmpl_seq2;
+	std::string& ref = cmpl_seq1.length() < cmpl_seq2.length() ? cmpl_seq2 : cmpl_seq1;
+	StripedSmithWaterman::Filter filter;
+	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
+	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
+}
+
+bool check_cmpl_incmpl_seq(std::string& cmpl_seq, std::string& incmpl_seq, bool incmpl_is_imprecise, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	int dash_pos = incmpl_seq.find('-');
+	std::string left_seq = incmpl_seq.substr(0, dash_pos);
+	std::string right_seq = incmpl_seq.substr(dash_pos+1);
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment left_aln, right_aln;
+	int max_len_diff = incmpl_is_imprecise ? max_imprec_len_diff : max_prec_len_diff;
+	aligner.Align(left_seq.data(), cmpl_seq.data(), cmpl_seq.length(), filter, &left_aln, 0);
+	aligner.Align(right_seq.data(), cmpl_seq.data(), cmpl_seq.length(), filter, &right_aln, 0);
+	if (left_aln.query_end-left_aln.query_begin+right_aln.query_end-right_aln.query_begin < incmpl_seq.length()*0.8 || 
+		left_aln.ref_begin > max_len_diff || cmpl_seq.length()-right_aln.ref_end > max_len_diff) return false;
+	return true;
+}
+
+bool check_incmpl_incmpl_seq(std::string& incmpl_seq1, std::string& incmpl_seq2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	return true;
+}
+
 bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
-	if (sv1->ins_seq.length() > UINT16_MAX || sv2->ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
-
-	if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) return true; // do not compare incomplete assemblies
-
+	
 	int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-	if (abs((int) (sv1->ins_seq.length()-sv2->ins_seq.length())) > max_len_diff) return false;
-
+	if (len_diff(sv1, sv2) > max_len_diff) return false;
+	
 	sv_t* l_sv = sv1->start < sv2->start ? sv1 : sv2;
 	sv_t* r_sv = sv1->start < sv2->start ? sv2 : sv1;
 	char* extra_seq = new char[r_sv->start-l_sv->start+1];
 	strncpy(extra_seq, chr_seqs.get_seq(sv1->chr)+l_sv->start, r_sv->start-l_sv->start);
 	extra_seq[r_sv->start-l_sv->start] = '\0';
-
+	
 	std::string lsv_seq = l_sv->ins_seq + extra_seq;
 	std::string rsv_seq = extra_seq + r_sv->ins_seq;
 	delete[] extra_seq;
 
-	std::string& query = lsv_seq.length() < rsv_seq.length() ? lsv_seq : rsv_seq;
-	std::string& ref = lsv_seq.length() < rsv_seq.length() ? rsv_seq : lsv_seq;
-	StripedSmithWaterman::Filter filter;
-	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
-	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
+	if (lsv_seq.length() > UINT16_MAX || rsv_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
+
+	if (!sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq()) {
+		return check_cmpl_cmpl_seq(lsv_seq, rsv_seq, aligner, alignment);
+	} else if (l_sv->incomplete_ins_seq() && !r_sv->incomplete_ins_seq()) {
+		return check_cmpl_incmpl_seq(rsv_seq, lsv_seq, r_sv->imprecise, aligner, alignment);
+	} else if (!l_sv->incomplete_ins_seq() && r_sv->incomplete_ins_seq()) {
+		return check_cmpl_incmpl_seq(lsv_seq, rsv_seq, l_sv->imprecise, aligner, alignment);
+	} else {
+		return check_incmpl_incmpl_seq(lsv_seq, rsv_seq, aligner, alignment);
+	}
 }
 bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
