@@ -1,6 +1,8 @@
 # SurVeyor
 An SV caller from paired-end NGS data.
 
+**Note: this software is outdated. Please use SurVIndel2 [https://github.com/kensung-lab/SurVIndel2].**
+
 ## Installation
 
 Please download the source code from the latest release, since an appropriate trained model is provided. 
