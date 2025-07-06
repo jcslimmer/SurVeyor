@@ -77,6 +77,12 @@ class Features:
 
     def get_model_name(record, max_is, read_len):
         svtype_str = Features.get_svtype(record)
+
+        if svtype_str == "DUP" and "INS_TO_DUP" in record.info:
+            svtype_str = "INS_TO_DUP"
+            if Features.get_svlen(record) > read_len-30:
+                svtype_str += "_LARGE"
+
         if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
             svtype_str += "_LARGE"
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
@@ -99,7 +105,7 @@ class Features:
             return info[key]
         else:
             return default
-        
+
     def generate_id(record):
         svinsseq = Features.get_svinsseq(record)
         return f"{record.chrom}:{record.pos}-{record.stop}:{Features.get_svtype(record)}:{Features.get_svlen(record)}:{hash(svinsseq)}"

@@ -28,6 +28,7 @@ common_parser.add_argument('--sampling-regions', help='File in BED format contai
 common_parser.add_argument('--per-contig-stats', action='store_true',
                         help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
+common_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 
 # SurVIndel2 specific arguments
 common_parser.add_argument('--min_size_for_depth_filtering', type=int, default=1000, help='Minimum size for depth filtering.')
@@ -44,7 +45,6 @@ call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
 call_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
-call_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
@@ -160,6 +160,17 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
                 if record.id not in removed_ids:
                     out_vcf.write(record)
 
+def separate_ins_to_dup(in_vcf_fname, ins_to_dup_vcf_fname, remaining_vcf_fname):
+    with pysam.VariantFile(in_vcf_fname) as in_vcf, \
+         pysam.VariantFile(ins_to_dup_vcf_fname, 'w', header=in_vcf.header) as ins_to_dup_vcf, \
+         pysam.VariantFile(remaining_vcf_fname, 'w', header=in_vcf.header) as remaining_vcf:
+        for record in in_vcf:
+            if "INS_TO_DUP" in record.info:
+                record.id = record.id[:-4] # remove the _DUP suffix
+                ins_to_dup_vcf.write(record)
+            else:
+                remaining_vcf.write(record)
+
 if cmd_args.samplename:
     sample_name = cmd_args.samplename
 else:
@@ -204,8 +215,7 @@ if cmd_args.command == 'call':
     run_cmd(genotype_cmd)
     
     if cmd_args.generate_training_data:
-        cp_cmd = "cp %s/intermediate_results/calls-with-fmt.vcf.gz %s/training-data.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(cp_cmd)
+        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
     if not cmd_args.ml_model:
         print("No model provided. Skipping filtering and genotyping.")
@@ -233,6 +243,9 @@ elif cmd_args.command == 'genotype':
     vcf_with_fmt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.vcf.gz"
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, vcf_with_fmt_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     run_cmd(genotype_cmd)
+
+    if cmd_args.generate_training_data:
+        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/vcf_with_fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)

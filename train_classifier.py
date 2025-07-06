@@ -20,25 +20,24 @@ def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
                            tolerate_no_gts = False)
+    ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
+        features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
+                            training_prefix + ".gts", tolerate_no_gts = False)
+    
+    vcf_training_data["INS_TO_DUP"] = ins_to_dup_vcf_training_data["INS_TO_DUP"]
+    vcf_training_gts["INS_TO_DUP"] = ins_to_dup_vcf_training_gts["INS_TO_DUP"]
+    vcf_training_data["INS_TO_DUP_LARGE"] = ins_to_dup_vcf_training_data["INS_TO_DUP_LARGE"]
+    vcf_training_gts["INS_TO_DUP_LARGE"] = ins_to_dup_vcf_training_gts["INS_TO_DUP_LARGE"]
     return vcf_training_data, vcf_training_gts
-
-def merge_data(cum_training_data, cum_training_gts, add_training_data, add_training_gts):
-    # If cumulative data is empty, initialize dictionaries with lists
-    if cum_training_data is None:
-        cum_training_data = {model: [add_training_data[model]] for model in add_training_data}
-        cum_training_gts = {model: [add_training_gts[model]] for model in add_training_gts}
-    else:
-        for model in add_training_data:
-            cum_training_data.setdefault(model, []).append(add_training_data[model])
-            cum_training_gts.setdefault(model, []).append(add_training_gts[model])
-    return cum_training_data, cum_training_gts
 
 training_prefixes = cmd_args.training_prefixes.split(",")
 with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
     future_to_prefix = {executor.submit(process_vcf, prefix): prefix for prefix in training_prefixes}
     for future in as_completed(future_to_prefix):
         vcf_training_data, vcf_training_gts = future.result()
-        training_data, training_gts = merge_data(training_data, training_gts, vcf_training_data, vcf_training_gts)
+        for model in vcf_training_data:
+            training_data[model].append(vcf_training_data[model])
+            training_gts[model].append(vcf_training_gts[model])
 
 for model in training_data:
     training_data[model] = np.concatenate(training_data[model])
