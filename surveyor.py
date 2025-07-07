@@ -29,6 +29,7 @@ common_parser.add_argument('--per-contig-stats', action='store_true',
                         help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
 common_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
+common_parser.add_argument('--tr-bed', help='BED file with tandem repetitive regions. If provided, it will be used for a more aggrestive duplicate removal.')
 
 # SurVIndel2 specific arguments
 common_parser.add_argument('--min_size_for_depth_filtering', type=int, default=1000, help='Minimum size for depth filtering.')
@@ -48,7 +49,6 @@ call_parser.add_argument('--ml-model', help='Path to the ML model to be used for
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
-genotype_parser.add_argument('--dedup', action='store_true', help='Remove duplicated calls from the input VCF file.')
 genotype_parser.add_argument('--independent-gt', action='store_true', help='Genotype each SVs independently from each other. Reads and other evidence can support multiple SVs.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
@@ -129,7 +129,10 @@ def reads_categorizer():
     run_cmd(read_categorizer_cmd)
 
 def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
-    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
+    if cmd_args.tr_bed:
+        compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s -T %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.tr_bed, cmd_args.workdir)
+    else:
+        compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
     run_cmd(compare_cmd)
 
     with open(cmd_args.workdir + "/compare.txt") as compare_file:
@@ -141,7 +144,7 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
 
         removed_ids = set()
         for line in compare_file:
-            id1, id2 = line.strip().split()
+            id1, id2 = line.strip().split()[:2]
             if id1 >= id2 or id2 == "NONE": # each pair will be output twice, e.g. A B and B A. Let us process it once
                 continue
 
@@ -263,13 +266,12 @@ elif cmd_args.command == 'genotype':
     run_cmd(reconcile_vcf_gt_cmd)
 
     out_vcf_file = cmd_args.workdir + "/genotyped.vcf.gz"
+    cp_cmd = "cp %s %s" % (reconcile_out_vcf, out_vcf_file)
+    run_cmd(cp_cmd)
+    
     out_resolved_vcf_file = cmd_args.workdir + "/genotyped.resolved.vcf.gz"
-
-    if cmd_args.dedup:
-        deduplicate_vcf(reconcile_out_vcf, out_vcf_file)
-    else:
-        cp_cmd = "cp %s %s" % (reconcile_out_vcf, out_vcf_file)
-        run_cmd(cp_cmd)
-
     resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (out_vcf_file, out_resolved_vcf_file)
     run_cmd(resolve_incompatible_cmd)
+
+    out_deduped_vcf_file = cmd_args.workdir + "/genotyped.resolved.deduped.vcf.gz"
+    deduplicate_vcf(out_resolved_vcf_file, out_deduped_vcf_file)
