@@ -612,11 +612,11 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<sv_t*>& svs, open_
 
 		hts_pos_t start, end;
 		if (bam_is_rev(read)) {
-			start = read->core.mpos + read->core.l_qseq/2;
-			end = bam_endpos(read) - read->core.l_qseq/2;
+			start = read->core.mpos + stats.read_len/2;
+			end = bam_endpos(read) - stats.read_len/2;
 		} else {
-			start = read->core.pos + read->core.l_qseq/2;
-			end = read->core.pos + read->core.isize - read->core.l_qseq/2;
+			start = read->core.pos + stats.read_len/2;
+			end = read->core.pos + read->core.isize - stats.read_len/2;
 		}
 		for (int i = curr_pos; i < bkp_with_conc_pairs_count.size() && bkp_with_conc_pairs_count[i].pos <= end; i++) {
 			if (start <= bkp_with_conc_pairs_count[i].pos && bkp_with_conc_pairs_count[i].pos <= end) {
