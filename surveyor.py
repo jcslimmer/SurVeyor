@@ -49,7 +49,7 @@ call_parser.add_argument('--ml-model', help='Path to the ML model to be used for
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
-genotype_parser.add_argument('--independent-gt', action='store_true', help='Genotype each SVs independently from each other. Reads and other evidence can support multiple SVs.')
+genotype_parser.add_argument('--two-pass', action='store_true', help='Activate two-pass genotyping.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
@@ -253,7 +253,7 @@ elif cmd_args.command == 'genotype':
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
-    if not cmd_args.independent_gt:
+    if cmd_args.two_pass:
         vcf_with_fmt_reassigned_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.reassigned.vcf.gz"
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s --reassign-evidence" % (vcf_with_gt_fname, vcf_with_fmt_reassigned_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
         run_cmd(genotype_cmd)
