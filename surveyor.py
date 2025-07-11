@@ -140,7 +140,7 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
         with pysam.VariantFile(vcf_fname) as vcf:
             for record in vcf:
                 epr_vals[record.id] = record.samples[0].get('EPR', 0)
-                imprecise_vals[record.id] = record.info.get('IMPRECISE', False)
+                imprecise_vals[record.id] = 'IMPRECISE' in record.info
 
         removed_ids = set()
         for line in compare_file:
