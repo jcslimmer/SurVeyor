@@ -56,9 +56,9 @@ python surveyor.py call -h
 
 The basic command to genotype a set of structural variants in VCF format (IN_VCF) is
 ```
-python surveyor.py genotype --threads N_THREADS IN_VCF OUT_VCF BAM_FILE WORKDIR REFERENCE_FASTA TRAINED_MODEL
+python surveyor.py genotype --threads N_THREADS IN_VCF BAM_FILE WORKDIR REFERENCE_FASTA TRAINED_MODEL
 ```
-where OUT_VCF is the location of the output VCF containing the genotyped variants.
+The genotyped variants will be reported in genotyped.vcf.gz (version with all of the original calls) and genotyped.deduped.vcf.gz (version with duplicate calls removed).
 
 For other parameters, please see the help with
 ```
