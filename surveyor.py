@@ -268,10 +268,13 @@ elif cmd_args.command == 'genotype':
     out_vcf_file = cmd_args.workdir + "/genotyped.vcf.gz"
     cp_cmd = "cp %s %s" % (reconcile_out_vcf, out_vcf_file)
     run_cmd(cp_cmd)
-    
+
+    out_deduped_vcf_file = cmd_args.workdir + "/genotyped.deduped.vcf.gz"
+    deduplicate_vcf(out_vcf_file, out_deduped_vcf_file)
+
     out_resolved_vcf_file = cmd_args.workdir + "/genotyped.resolved.vcf.gz"
     resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (out_vcf_file, out_resolved_vcf_file)
     run_cmd(resolve_incompatible_cmd)
 
-    out_deduped_vcf_file = cmd_args.workdir + "/genotyped.resolved.deduped.vcf.gz"
-    deduplicate_vcf(out_resolved_vcf_file, out_deduped_vcf_file)
+    out_resolved_deduped_vcf_file = cmd_args.workdir + "/genotyped.resolved.deduped.vcf.gz"
+    deduplicate_vcf(out_resolved_vcf_file, out_resolved_deduped_vcf_file)
