@@ -17,6 +17,7 @@ chr_seqs_map_t chr_seqs;
 int max_prec_dist, max_imprec_dist, max_repeat_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
+double min_prec_len_ratio, min_imprec_len_ratio;
 std::unordered_set<std::string> bdup_ids, cdup_ids;
 
 std::vector<sv_t*> benchmark_svs;
@@ -43,7 +44,7 @@ std::string get_csv_type(sv_t* sv) {
 
 int len_diff(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") return abs(sv1->svlen()-sv2->svlen());
-	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return abs(sv1->svlen()-sv2->svlen());
+	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return 0;
 	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
 		if (sv1->incomplete_ins_seq() && sv2->incomplete_ins_seq()) {
 			return 0;
@@ -59,15 +60,43 @@ int len_diff(sv_t* sv1, sv_t* sv2) {
 	else return INT32_MAX;
 }
 
+double len_ratio(hts_pos_t svlen1, hts_pos_t svlen2) {
+	svlen1 = abs(svlen1);
+	svlen2 = abs(svlen2);
+	if (svlen1 == 0 && svlen2 == 0) return 1.0;
+	else return double(std::min(svlen1, svlen2)) / std::max(svlen1, svlen2);
+}
+
+double len_ratio(sv_t* sv1, sv_t* sv2) {
+	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") {
+		return len_ratio(sv1->svlen(), sv2->svlen());
+	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return 1.0;
+	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
+		if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) {
+			return 1.0;
+		} else {
+			return std::min(double(sv1->svlen()), double(sv2->svlen())) / std::max(double(sv1->svlen()), double(sv2->svlen()));
+		}
+	} else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 1.0;
+	else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") {
+		return std::min(double(sv1->svlen()), double(sv2->svlen())) / std::max(double(sv1->svlen()), double(sv2->svlen()));
+	} else {
+		return 0.0; // not compatible
+	}
+}
+
 bool is_compatible_del_del(sv_t* sv1, sv_t* sv2) {
 	if (sv1->imprecise || sv2->imprecise) {
 		return  distance(sv1, sv2) <= max_imprec_dist &&
 				overlap(sv1, sv2) >= min_imprec_frac_overlap &&
-				len_diff(sv1, sv2) <= max_imprec_len_diff;
+				len_diff(sv1, sv2) <= max_imprec_len_diff &&
+				len_ratio(sv1, sv2) >= min_imprec_len_ratio;
+				
 	} else {
 		return  distance(sv1, sv2) <= max_prec_dist &&
 				overlap(sv1, sv2) >= min_prec_frac_overlap &&
-				len_diff(sv1, sv2) <= max_prec_len_diff;
+				len_diff(sv1, sv2) <= max_prec_len_diff &&
+				len_ratio(sv1, sv2) >= min_prec_len_ratio;
 	}
 }
 bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2) {
@@ -155,7 +184,8 @@ bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& alig
 	if (ignore_seq) return true;
 	
 	int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-	if (len_diff(sv1, sv2) > max_len_diff) return false;
+	double min_len_ratio = (sv1->imprecise || sv2->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+	if (len_diff(sv1, sv2) > max_len_diff || len_ratio(sv1, sv2) < min_len_ratio) return false;
 	
 	sv_t* l_sv = sv1->start < sv2->start ? sv1 : sv2;
 	sv_t* r_sv = sv1->start < sv2->start ? sv2 : sv1;
@@ -307,7 +337,8 @@ void find_match(int id, int start_idx, int end_idx) {
 			if (distance(bsv, csv) > max_repeat_dist) continue;
 
 			int max_len_diff = (bsv->imprecise || csv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-			if (len_diff(bsv, csv) <= max_len_diff) {
+			double min_len_ratio = (bsv->imprecise || csv->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+			if (len_diff(bsv, csv) <= max_len_diff && len_ratio(bsv, csv) >= min_len_ratio) {
 				bool same_tr = false;
 				for (repeat_t& rep : reps_containing_bsv) {
 					if (rep.intersects(csv)) {
@@ -351,6 +382,8 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<int>()->default_value("100"))
 		("S,max_len_diff_imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 				cxxopts::value<int>()->default_value("500"))
+		("l, min_len_ratio_precise", "Maximum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
+		("L, min_len_ratio_imprecise", "Maximum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
 		("max-repeat-dist", "Maximum distance between two variant in the same tandem repeat.", cxxopts::value<int>()->default_value("1000"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
@@ -390,6 +423,8 @@ int main(int argc, char* argv[]) {
 	min_imprec_frac_overlap = parsed_args["min_overlap_imprecise"].as<double>();
 	max_prec_len_diff = parsed_args["max_len_diff_precise"].as<int>();
 	max_imprec_len_diff = parsed_args["max_len_diff_imprecise"].as<int>();
+	min_prec_len_ratio = parsed_args["min_len_ratio_precise"].as<double>();
+	min_imprec_len_ratio = parsed_args["min_len_ratio_imprecise"].as<double>();
     bool report = parsed_args["report"].as<bool>();
 	bool exclusive = parsed_args["exclusive"].as<bool>();
 	int threads = parsed_args["threads"].as<int>();
