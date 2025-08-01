@@ -11,13 +11,16 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
                 bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
 
 	hts_pos_t dup_start = dup->start, dup_end = dup->end;
-
+    
 	hts_pos_t extend = stats.read_len + 20;
 	hts_pos_t svlen = dup->svlen();
-
+    
 	// See comments for relative code in genotype_del
 	dup_start++; dup_end++;
-
+    if (dup_end > contig_len) {
+        dup_end = contig_len;
+    }
+    
     hts_pos_t ref_start = std::max(hts_pos_t(0), dup_start-extend), ref_end = std::min(dup_end+extend, contig_len);
 	hts_pos_t ref_len = ref_end - ref_start;
 	char* ref_seq = new char[ref_len + 1];
