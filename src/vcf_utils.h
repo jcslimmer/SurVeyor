@@ -494,7 +494,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
 	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
 	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
-	called_by_ss << "min-size-for-depth-filtering: " << config.min_size_for_depth_filtering << "; ";
 	called_by_ss << "min-diff-hsr: " << config.min_diff_hsr << "; ";
 	called_by_ss << "sampling-regions: " << (config.sampling_regions.empty() ? "no" : config.sampling_regions) << "; ";
 	called_by_ss << "per-contig-stats: " << (config.per_contig_stats ? "true" : "false") << "; ";

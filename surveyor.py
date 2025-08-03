@@ -32,7 +32,6 @@ common_parser.add_argument('--generate-training-data', action='store_true', help
 common_parser.add_argument('--tr-bed', help='BED file with tandem repetitive regions. If provided, it will be used for a more aggrestive duplicate removal.')
 
 # SurVIndel2 specific arguments
-common_parser.add_argument('--min_size_for_depth_filtering', type=int, default=1000, help='Minimum size for depth filtering.')
 common_parser.add_argument('--min-diff-hsr', type=int, default=3, help='Minimum number of differences with the reference \
                         (considered as number of insertions, deletions and mismatches) for a read to be considered a hidden split read.')
 

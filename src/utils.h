@@ -23,7 +23,6 @@ struct config_t {
     int threads, seed;
     int min_clip_len, min_stable_mapq, min_diff_hsr;
     int min_sv_size, max_trans_size;
-    int min_size_for_depth_filtering;
     double max_seq_error;
     int max_clipped_pos_dist;
     bool per_contig_stats;
@@ -49,7 +48,6 @@ struct config_t {
         min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
         min_sv_size = std::stoi(config_params["min_sv_size"]);
         max_trans_size = std::stoi(config_params["max_trans_size"]);
-        min_size_for_depth_filtering = std::stoi(config_params["min_size_for_depth_filtering"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
         max_clipped_pos_dist = std::stoi(config_params["max_clipped_pos_dist"]);
         per_contig_stats = std::stoi(config_params["per_contig_stats"]);
