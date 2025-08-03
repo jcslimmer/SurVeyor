@@ -19,7 +19,7 @@ common_parser.add_argument('--samplename', default='', help='Name of the sample 
                                                          'If not provided, the basename of the bam/cram file will be used,'
                                                          'up until the first \'.\'')
 common_parser.add_argument('--min-sv-size', type=int, default=50, help='Min SV size.')
-common_parser.add_argument('--min-clip-len', type=int, default=15, help='Min length for a clip to be used.')
+common_parser.add_argument('--min-clip-len', type=int, default=10, help='Min length for a clip to be used.')
 common_parser.add_argument('--max-seq-error', type=float, default=0.04, help='Max sequencing error admissible on the platform used.')
 common_parser.add_argument('--max-clipped-pos-dist', type=int, default=5, help='Max distance (in bp) for two clips to be considered '
                                                                    'representing the same breakpoint.')
