@@ -44,15 +44,16 @@ bool operator > (const region_t& r1, const region_t& r2) {
 }
 
 struct remap_info_t {
-    int start, end;
-    int score;
+    int start = 0, end = 0;
+    int score = 0;
     std::string cigar;
-    bool accepted, left_clipped, right_clipped;
+    bool accepted = false, left_clipped = false, right_clipped = false;
 
-    remap_info_t() : start(0), end(0), score(0), cigar(""), accepted(false), left_clipped(false), right_clipped(false) {}
+    remap_info_t() {}
 
     remap_info_t(StripedSmithWaterman::Alignment& aln, bool accepted, int min_clip_len) : start(aln.ref_begin), end(aln.ref_end),
     score(aln.sw_score), cigar(aln.cigar_string), accepted(accepted) {
+        if (aln.cigar.empty()) return;
         uint32_t f = aln.cigar[0], l = aln.cigar[aln.cigar.size()-1];
         left_clipped = cigar_int_to_op(f) == 'S' && cigar_int_to_len(f) >= min_clip_len;
         right_clipped = cigar_int_to_op(l) == 'S' && cigar_int_to_len(l) >= min_clip_len;
