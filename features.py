@@ -16,7 +16,7 @@ class Features:
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN']
-    
+
     reads_features_names = ['AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
@@ -83,8 +83,11 @@ class Features:
             if Features.get_svlen(record) > read_len-30:
                 svtype_str += "_LARGE"
 
-        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
-            svtype_str += "_LARGE"
+        if svtype_str == "DEL":
+            if abs(Features.get_svlen(record)) >= max_is:
+                svtype_str += "_LARGE"
+            if 'EXL' not in record.samples[0]:
+                svtype_str += "_NOEXL"
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
 
@@ -225,8 +228,7 @@ class Features:
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
-        td = Features.get_number_value(record.samples[0], 'TD', 0)
-        features['TD'] = td
+        features['TD'] = Features.get_number_value(record.samples[0], 'TD', 0)
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         ar1c = Features.get_number_value(record.samples[0], 'AR1C', 0)
@@ -406,7 +408,7 @@ class Features:
         features['ASP2HQ_1_RATIO'], features['ASP2HQ_2_RATIO'] = asp2hq_1/max(1, asp2), asp2hq_2/max(1, asp2)
         features['ASP2mQ_1'], features['ASP2mQ_2'] = Features.get_number_value(record.samples[0], 'ASP2mQ', [Features.NAN, Features.NAN])
         features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [Features.NAN, Features.NAN])
-        
+
         features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
 
         asp1span_1, asp1span_2 = Features.get_number_value(record.samples[0], 'ASP1SPAN', [0, 0])

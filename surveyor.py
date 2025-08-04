@@ -98,7 +98,6 @@ with open(cmd_args.workdir + "/config.txt", "w") as config_file:
     config_file.write("per_contig_stats %d\n" % cmd_args.per_contig_stats)
     config_file.write("version %s\n" % VERSION)
 
-    config_file.write("min_size_for_depth_filtering %s\n" % cmd_args.min_size_for_depth_filtering)
     config_file.write("min_diff_hsr %s\n" % cmd_args.min_diff_hsr)
     config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
     config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
