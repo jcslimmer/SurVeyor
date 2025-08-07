@@ -72,8 +72,17 @@ double len_ratio(sv_t* sv1, sv_t* sv2) {
 		return len_ratio(sv1->svlen(), sv2->svlen());
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return 1.0;
 	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
-		if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) {
+		if (sv1->incomplete_ins_seq() && sv2->incomplete_ins_seq()) { // if both are incomplete, we cannot compare lengths
 			return 1.0;
+		} else if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) { 
+			// if one is incomplete, we know a lower bound for its length - if it is longer than the full one, we can compute an upper bound for the ratio
+			sv_t* sv_full = sv1->incomplete_ins_seq() ? sv2 : sv1;
+			sv_t* sv_incmpl = sv1->incomplete_ins_seq() ? sv1 : sv2;
+			if (sv_incmpl->svlen() > sv_full->svlen()) {
+				return double(sv_full->svlen()) / sv_incmpl->svlen();
+			} else {
+				return 1.0;
+			}
 		} else {
 			return std::min(double(sv1->svlen()), double(sv2->svlen())) / std::max(double(sv1->svlen()), double(sv2->svlen()));
 		}
@@ -382,8 +391,8 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<int>()->default_value("100"))
 		("S,max_len_diff_imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 				cxxopts::value<int>()->default_value("500"))
-		("l, min_len_ratio_precise", "Maximum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
-		("L, min_len_ratio_imprecise", "Maximum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
+		("l,min_len_ratio_precise", "Minimum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
+		("L,min_len_ratio_imprecise", "Minimum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
 		("max-repeat-dist", "Maximum distance between two variant in the same tandem repeat.", cxxopts::value<int>()->default_value("1000"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
