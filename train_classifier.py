@@ -66,7 +66,7 @@ if __name__ == '__main__':
         if cmd_args.cross_species:
             classifier = xgb.XGBClassifier(n_estimators=50, max_depth=7, min_child_weight=42, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
         else:
-            classifier = xgb.XGBClassifier(n_estimators=1000, scale_pos_weight=scale_pos_weight, max_depth=8, min_child_weight=16, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
+            classifier = xgb.XGBClassifier(n_estimators=1000, max_depth=8, min_child_weight=16, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
 
         start_time = time.time()
         classifier.fit(training_data[model_name], training_labels)

@@ -90,6 +90,8 @@ class Features:
                 svtype_str += "_NOEXL"
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
+            if 'EXL' not in record.samples[0]:
+                svtype_str += "_NOEXL"
 
         return svtype_str
 
