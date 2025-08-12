@@ -117,6 +117,7 @@ bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Aligner
 
 	int max_len_diff = (ins_sv->imprecise || dup_sv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
 	if (dup_sv->svlen() > ins_sv->ins_seq.length()+max_len_diff) return false;
+	if (dup_sv->svlen() <= 0) return false;
 
 	char* dup_seq = new char[dup_sv->end-dup_sv->start+1];
 	strncpy(dup_seq, chr_seqs.get_seq(dup_sv->chr)+dup_sv->start, dup_sv->end-dup_sv->start);
