@@ -23,7 +23,7 @@ If you are compiling on the same platform as where you will execute it, you can 
 cmake -DCMAKE_BUILD_TYPE=Release -DNATIVE=ON . && make
 ```
 
-Python 3 is necessary to run SurVIndel2. Libraries NumPy (http://www.numpy.org/), PySam (https://github.com/pysam-developers/pysam) and xgboost (https://xgboost.readthedocs.io/en/stable/) are also necessary.
+Python 3 is necessary to run SurVeyor. Libraries NumPy (http://www.numpy.org/), PySam (https://github.com/pysam-developers/pysam) and xgboost (https://xgboost.readthedocs.io/en/stable/) are also necessary.
 
 Please also download trained-model.zip from the release you are using, and uncompress it in a location of your convenience.
 
