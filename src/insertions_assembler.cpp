@@ -489,13 +489,12 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         });
 
         std::vector<cc_v_distance_t>& curr_batch = batches.back();
+        curr_batch.insert(curr_batch.end(), cc_v_distances_component.begin(), cc_v_distances_component.end());
         if (curr_batch.size() > MIN_COMP_SIZE || comp_id == cc_v_distances_components.size()-1) {
             std::future<void> future = thread_pool.push(find_insertions, contig_id, comp_id, curr_batch, header,
                 mateseqs, matequals);
             futures.push_back(std::move(future));
             batches.push_back(std::vector<cc_v_distance_t>());
-        } else {
-            curr_batch.insert(curr_batch.end(), cc_v_distances_component.begin(), cc_v_distances_component.end());
         }
     }
 
