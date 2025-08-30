@@ -13,9 +13,11 @@
 #include "utils.h"
 
 int get_left_clip_size(StripedSmithWaterman::Alignment& aln) {
+	if (aln.cigar.empty()) return 0;
 	return cigar_int_to_op(aln.cigar[0]) == 'S' ? cigar_int_to_len(aln.cigar[0]) : 0;
 }
 int get_right_clip_size(StripedSmithWaterman::Alignment& aln) {
+	if (aln.cigar.empty()) return 0;
 	return cigar_int_to_op(aln.cigar[aln.cigar.size()-1]) == 'S' ? cigar_int_to_len(aln.cigar[aln.cigar.size()-1]) : 0;
 }
 int get_unclipped_start(StripedSmithWaterman::Alignment& aln) {
