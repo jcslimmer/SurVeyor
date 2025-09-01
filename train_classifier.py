@@ -58,11 +58,6 @@ if __name__ == '__main__':
             continue
 
         training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
-        num_pos = np.sum(training_labels == 1)
-        num_neg = np.sum(training_labels == 0)
-        scale_pos_weight = max(num_neg/(num_pos*10), 1.0) if num_pos > 0 else 1.0
-        print(f"Training model {model_name} with scale_pos_weight={scale_pos_weight}, num_pos={num_pos}, num_neg={num_neg}")
-
         if cmd_args.cross_species:
             classifier = xgb.XGBClassifier(n_estimators=50, max_depth=7, min_child_weight=42, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
         else:
