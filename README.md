@@ -3,8 +3,8 @@ An SV caller from paired-end NGS data.
 
 ## Installation
 
-Please download the source code from the latest release, since an appropriate trained model is provided. 
-We discourage cloning the repository, as it may not be compatible with the latest trained model.
+**Please download the source code from the latest release, since an appropriate trained model is provided.**
+**We discourage cloning the repository, as it may not be compatible with the latest trained model.**
 
 In order to compile the code, the following are required:
 - A C and a C++ compiler are required. If the GCC suite is used, version 4.9.3 or above is required.
