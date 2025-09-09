@@ -33,11 +33,7 @@ SurVeyor needs a BAM/CRAM file, a (possibly empty) working directory and referen
 
 The BAM/CRAM file must be coordinate-sorted and indexed. Furthermore, the MD, MC and the MQ tag must be present for all primary alignments, when applicable.
 
-Recent versions of BWA MEM (0.7.17) will add the MC tag. The easiest (but probably not the fastest) way to add the MQ tag is to use Picard FixMateInformation 
-(http://broadinstitute.github.io/picard/command-line-overview.html#FixMateInformation) 
-```
-java -jar picard.jar FixMateInformation I=file.bam
-```
+Recent versions of BWA MEM will automatically add all the necessary tags. If you used an old version, a different aligner, or if for any reason your BAM/CRAM does not have the required tags, you can use the samtools command fixmate (for MC and MQ) and callmd (for MD) to add them.
 
 ## Denovo calling of structural variants
 
