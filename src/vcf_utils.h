@@ -610,6 +610,10 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
 		if (sv->d.allele[1][0] == '<') {
 			std::string alt = sv->d.allele[1];
 			return alt.substr(1, alt.length()-2);
+		} else if (is_genomic_string(sv->d.allele[0]) && is_genomic_string(sv->d.allele[1])) {
+			int ref_len = strlen(sv->d.allele[0]);
+			int alt_len = strlen(sv->d.allele[1]);
+			return (alt_len > ref_len) ? "INS" : "DEL";
 		}
 		std::cerr << "Failed to determine SVTYPE for sv " << std::string(sv->d.id) << std::endl;
 		return "";
@@ -677,12 +681,8 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	}
 
 	// otherwise, look for SVINSSEQ (compliant with Manta)
-	char* data = NULL;
-	int size = 0;
-	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
-	if (data) {
-		std::string ins_seq = data;
-		free(data);
+	std::string ins_seq = get_sv_info_str(hdr, sv, "SVINSSEQ");
+	if (!ins_seq.empty()) {
 		return ins_seq;
 	}
 

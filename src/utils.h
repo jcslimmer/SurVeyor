@@ -410,4 +410,14 @@ struct random_pos_generator_t {
     }
 };
 
+bool is_genomic_string(std::string s) {
+    for (char c : s) {
+        if (c != 'A' && c != 'C' && c != 'G' && c != 'T' &&
+            c != 'a' && c != 'c' && c != 'g' && c != 't') {
+            return false;
+        }
+    }
+    return true;
+}
+
 #endif
