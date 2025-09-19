@@ -423,7 +423,7 @@ std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std
 
 std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
                     hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
-    
+
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
     hts_pos_t ref_remap_rh_len = ref_remap_rh_end - ref_remap_rh_start;
 
@@ -474,6 +474,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
     std::string middle_part = junction_seq.substr(best_i, best_j-best_i);
     std::string right_part = junction_seq.substr(best_j);
 
+
     std::vector<StripedSmithWaterman::Alignment> left_part_alns = get_best_alns(ref_lh_cstr, 0, ref_remap_lh_len, (char*) left_part.c_str(), aligner);
 	std::vector<StripedSmithWaterman::Alignment> right_part_alns = get_best_alns(ref_rh_cstr, 0, ref_remap_rh_len, (char*) right_part.c_str(), aligner);
 
@@ -502,12 +503,6 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 		However, I am not sure what the base "after the event" is in the case of a duplication. I will report 1 in the VCF (meaning 0 here) for now */
 	auto left_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score);
 	auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score);
-
-	StripedSmithWaterman::Filter filter;
-	StripedSmithWaterman::Alignment full_aln_lh, full_aln_rh;
-	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_lh_start, ref_remap_lh_len, filter, &full_aln_lh, 0);
-	aligner.Align(junction_seq.c_str(), contig_seq+ref_remap_rh_start, ref_remap_rh_len, filter, &full_aln_rh, 0);
-	StripedSmithWaterman::Alignment& best_full_aln = full_aln_lh.sw_score >= full_aln_rh.sw_score ? full_aln_lh : full_aln_rh;
 
 	int prefix_mh_len = 0;
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
@@ -557,7 +552,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	svs[0]->mh_len = prefix_mh_len;
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
-	hts_pos_t forbidden_zone_end = std::max(left_anchor_start, right_anchor_end);
+	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
 	std::vector<sv_t*> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part);
 	for (sv_t* sv : extra_svs) {
 		if (overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
@@ -598,13 +593,13 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 				return std::vector<sv_t*>();
 			}
 		}
-
+		
 		overlap = spa.overlap;
 		mismatch_rate = spa.mismatch_rate();
 		
 		StripedSmithWaterman::Filter filter;
 		StripedSmithWaterman::Alignment aln_rh, aln_lh;
-
+		
 		consensus_junction_seq = rc_consensus_seq + lc_consensus_seq.substr(spa.overlap);
 		ref_remap_lh_start = rc_consensus->breakpoint - consensus_junction_seq.length();
 		ref_remap_lh_end = rc_consensus->breakpoint + consensus_junction_seq.length();
@@ -647,6 +642,7 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 		return std::vector<sv_t*>();
 	}
 
+	
     std::vector<sv_t*> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
 	for (sv_t* sv : svs) {
 		sv->rc_consensus = rc_consensus;
