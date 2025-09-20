@@ -62,7 +62,7 @@ typedef __m256i SIMD_INT;
 #define STOREU_INT _mm256_storeu_si256
 #define ADD_INT _mm256_add_epi32
 #define MAX_INT _mm256_max_epi32
-#define CMP_GT_INT32 _mm256_cmpgt_epi32_mask
+#define CMP_GT_INT32(a,b) _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32((a),(b))))
 #define COUNT_EQUAL_BYTES(a, b) _mm_popcnt_u32(_mm256_movemask_epi8(_mm256_cmpeq_epi8(a, b)))
 #define INT_PER_BLOCK 8
 #define BYTES_PER_BLOCK 32
