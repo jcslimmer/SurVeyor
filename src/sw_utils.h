@@ -311,23 +311,24 @@ suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, 
 
 // Finds the best alignment between a suffix of s1 and a prefix of s2
 // Disallows gaps
-int number_of_mismatches_fast(const char* s1, const char* s2, int len) {
-    // count number of mismatches between the first len characters of s1 and s2
-    int n_matches = 0;
+int number_of_mismatches_fast(const char* s1, const char* s2, int len, int max_mismatches) {
+	// count number of mismatches between the first len characters of s1 and s2
+	int n_mismatches = 0;
     SIMD_INT* s1_it = (SIMD_INT*) s1;
     SIMD_INT* s2_it = (SIMD_INT*) s2;
     int scaled_len = len/BYTES_PER_BLOCK;
     for (int i = 0; i < scaled_len; i++) {
         SIMD_INT n1 = LOADU_INT(s1_it);
         SIMD_INT n2 = LOADU_INT(s2_it);
-        n_matches += COUNT_EQUAL_BYTES(n1, n2);
+        n_mismatches += BYTES_PER_BLOCK - COUNT_EQUAL_BYTES(n1, n2);
         s1_it++;
         s2_it++;
+		if (n_mismatches > max_mismatches) return n_mismatches;
     }
     for (int i = scaled_len*BYTES_PER_BLOCK; i < len; i++) {
-        if (s1[i] == s2[i]) n_matches++;
+        if (s1[i] != s2[i]) n_mismatches++;
     }
-    return len-n_matches;
+    return n_mismatches;
 }
 suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
                                       int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
@@ -343,14 +344,15 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
 
         int sp_len = s1.length()-i;
         if (best_score >= sp_len*match_score) break; // current best score is unbeatable
-
+		
+		
         const char* s1_suffix = s1.data()+i;
         const char* s2_prefix = s2.data();
-        int mismatches = mismatches = number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len);
+		int max_acceptable_mm = sp_len * max_seq_error;
+		int mismatches = number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len, std::min(max_acceptable_mm, max_mismatches));
 
         int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
 
-        int max_acceptable_mm = sp_len * max_seq_error;
         if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
             best_score = score;
             best_aln_mismatches = mismatches;
