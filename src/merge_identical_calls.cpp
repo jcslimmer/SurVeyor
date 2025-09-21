@@ -57,41 +57,48 @@ int main(int argc, char* argv[]) {
 
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
-			std::string src_prev = sv_entries[unique_id]->source;
-			std::string src_curr = sv->source;
-			if (source_priorities[src_prev] > source_priorities[src_curr]) {
-				std::swap(sv_entries[unique_id], sv);
-				std::swap(src_prev, src_curr);
+			sv_t* prev_sv = sv_entries[unique_id];
+			if (prev_sv->is_pass() != sv->is_pass()) {
+				if (sv->is_pass()) {
+					sv_entries[unique_id] = sv;
+				} else {
+					// keep the previous one
+				}
+			} else {
+				std::string src_prev = sv_entries[unique_id]->source;
+				std::string src_curr = sv->source;
+				if (source_priorities[src_prev] > source_priorities[src_curr]) {
+					std::swap(sv_entries[unique_id], sv);
+					std::swap(src_prev, src_curr);
+				}
+	 
+				if (src_prev == "2SR") continue; // 2SR has highest priority. If prev indel is 2SR, keep it
+				else if (src_prev == "HSR-SR" && src_curr == "1SR_RC") { // HSR-SR + 1SR_RC -> 2SR
+					merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
+					sv_entries[unique_id]->source = "2SR";
+				} else if (src_prev == "SR-HSR" && src_curr == "1SR_LC") { // SR-HSR + 1SR_LC -> 2SR
+					merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
+					sv_entries[unique_id]->source = "2SR";
+				} else if (src_prev == "1SR_LC" && src_curr == "1SR_RC") { // 1SR_RC + 1SR_LC -> 2SR
+					merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
+					sv_entries[unique_id]->source = "2SR";
+				} else if (src_prev == "1SR_RC" && src_curr == "1SR_LC") { // 1SR_RC + 1SR_LC -> 2SR
+					merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
+					sv_entries[unique_id]->source = "2SR";
+				} else if (src_prev == "1SR_RC" && src_curr == "1HSR_LC") { // 1SR_RC + 1HSR_LC -> SR-HSR
+					merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
+					sv_entries[unique_id]->source = "SR-HSR";
+				} else if (src_prev == "1SR_LC" && src_curr == "1HSR_RC") { // 1HSR_RC + 1SR_LC -> HSR-SR
+					merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
+					sv_entries[unique_id]->source = "HSR-SR";
+				} else if (src_prev == "1HSR_RC" && src_curr == "1HSR_LC") { // 1HSR_RC + 1HSR_LC -> 2HSR
+					merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
+					sv_entries[unique_id]->source = "2HSR";
+				} else if (src_prev == "1HSR_LC" && src_curr == "1HSR_RC") { // 1HSR_RC + 1HSR_LC -> 2HSR
+					merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
+					sv_entries[unique_id]->source = "2HSR";
+				}
 			}
- 
-			if (src_prev == "2SR") continue; // 2SR has highest priority. If prev indel is 2SR, keep it
-			else if (src_prev == "HSR-SR" && src_curr == "1SR_RC") { // HSR-SR + 1SR_RC -> 2SR
-				merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
-				sv_entries[unique_id]->source = "2SR";
-			} else if (src_prev == "SR-HSR" && src_curr == "1SR_LC") { // SR-HSR + 1SR_LC -> 2SR
-				merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
-				sv_entries[unique_id]->source = "2SR";
-			} else if (src_prev == "1SR_LC" && src_curr == "1SR_RC") { // 1SR_RC + 1SR_LC -> 2SR
-				merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
-				sv_entries[unique_id]->source = "2SR";
-			} else if (src_prev == "1SR_RC" && src_curr == "1SR_LC") { // 1SR_RC + 1SR_LC -> 2SR
-				merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
-				sv_entries[unique_id]->source = "2SR";
-			} else if (src_prev == "1SR_RC" && src_curr == "1HSR_LC") { // 1SR_RC + 1HSR_LC -> SR-HSR
-				merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
-				sv_entries[unique_id]->source = "SR-HSR";
-			} else if (src_prev == "1SR_LC" && src_curr == "1HSR_RC") { // 1HSR_RC + 1SR_LC -> HSR-SR
-				merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
-				sv_entries[unique_id]->source = "HSR-SR";
-			} else if (src_prev == "1HSR_RC" && src_curr == "1HSR_LC") { // 1HSR_RC + 1HSR_LC -> 2HSR
-				merge_1sr_with_1sr(in_vcf_hdr, sv_entries[unique_id], sv, true);
-				sv_entries[unique_id]->source = "2HSR";
-			} else if (src_prev == "1HSR_LC" && src_curr == "1HSR_RC") { // 1HSR_RC + 1HSR_LC -> 2HSR
-				merge_1sr_with_1sr(in_vcf_hdr, sv, sv_entries[unique_id], false);
-				sv_entries[unique_id]->source = "2HSR";
-			}
-
-			// TODO: other possible cases: HSR-SR + SR-HSR -> 2SR, 2HSR + 1SR -> HSR-SR (or SR-HSR)
 		} else {
 			ids_sorted.push_back(unique_id);
 			sv_entries[unique_id] = sv;
