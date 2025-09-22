@@ -214,7 +214,7 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
 				int orig_score = compute_read_score(r, 1, -4, -6, -1);
 				int new_score = (r->seq_len()-mm)*1 - mm*4;
 
-				if (new_score - orig_score >= config.min_score_diff) {
+				if (new_score - orig_score >= config.min_diff_hsr*5) { // each mismatch costs 5 points
                     accepted_reads.push_back(r);
 				} else {
 					rejected_reads.push_back(r);

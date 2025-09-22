@@ -28,7 +28,6 @@ struct config_t {
     bool per_contig_stats;
     std::string sampling_regions, version;
 
-    const int min_score_diff = 15;
     const int high_confidence_mapq = 60;
     const int flanking_size = 5000, indel_tested_region_size = 10000;
 
