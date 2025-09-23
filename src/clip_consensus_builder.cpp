@@ -91,10 +91,13 @@ struct bam_redux_t {
     }
 };
 
-std::pair<int, int> get_dels_ins_in_first_n_chars(bam_redux_t* r, int n) {
+std::pair<int, int> get_dels_ins_in_first_n_chars(std::vector<uint32_t>& cigar, int n) {
+
+    if (n < 0) return {0, 0};
+
     int dels = 0, inss = 0;
     int offset = 0;
-    for (uint32_t c : r->cigar) {
+    for (uint32_t c : cigar) {
         int len = bam_cigar_oplen(c);
         char op = bam_cigar_opchr(c);
 
@@ -127,7 +130,19 @@ hts_pos_t get_start_offset(bam_redux_t* r1, bam_redux_t* r2) {
      * If R1 has I bps inserted in the first N bps, then R2 will align to position N+1+I.
      * Conversely, if D bps are deleted, R2 will align to position N+1-D
      */
-    std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(r1, offset);
+    std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(r1->cigar, offset);
+    return offset + del_ins.second - del_ins.first;
+}
+
+hts_pos_t get_end_offset(bam_redux_t* r1, bam_redux_t* r2) {
+    hts_pos_t offset = r2->unclipped_end() - r1->unclipped_end();
+    std::vector<uint32_t> rev_cigar(r2->cigar.rbegin(), r2->cigar.rend());
+    std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(rev_cigar, offset);
+    if (offset + del_ins.second - del_ins.first < 0) {
+        std::cout << offset << " " << del_ins.first << " " << del_ins.second << std::endl;
+        std::cerr << "WARNING: read_start_offset < 0" << std::endl;
+        exit(0);
+    }
     return offset + del_ins.second - del_ins.first;
 }
 
@@ -150,10 +165,30 @@ int compute_read_score(bam_redux_t* r, int match_score, int mismatch_score, int 
 	return score;
 }
 
-std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped) {
+std::vector<hts_pos_t> get_read_start_offsets(std::vector<bam_redux_t*>& reads, bool left_clipped) {
+    std::vector<hts_pos_t> read_start_offsets;
+    int smallest_unclipped_len_i = 0;
+    for (int i = 1; i < reads.size(); i++) {
+        if (reads[i]->unclipped_end() < reads[smallest_unclipped_len_i]->unclipped_end()) {
+            smallest_unclipped_len_i = i;
+        }
+    }
+    for (bam_redux_t* r : reads) {
+        if (left_clipped) {
+            hts_pos_t offset = get_end_offset(reads[smallest_unclipped_len_i], r);
+            offset -= r->seq_len() - reads[smallest_unclipped_len_i]->seq_len();
+            read_start_offsets.push_back(offset);
+        } else {
+            read_start_offsets.push_back(get_start_offset(reads[0], r));
+        }
+    }
+    return read_start_offsets;
+}
+
+std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped, bool left_clipped) {
     std::vector<std::string> seqs;
     std::vector<uint8_t*> quals;
-    std::vector<hts_pos_t> read_start_offsets;
+    std::vector<hts_pos_t> read_start_offsets = get_read_start_offsets(clipped, left_clipped);
     for (bam_redux_t* r : clipped) {
         std::string seq(r->seq_len(), 'N');
         for (int i = 0; i < r->seq_len(); i++) {
@@ -161,7 +196,6 @@ std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped) {
         }
         seqs.push_back(seq);
         quals.push_back(r->qual.data());
-        read_start_offsets.push_back(get_start_offset(clipped[0], r));
     }
     return build_full_consensus_seq(seqs, quals, read_start_offsets);
 }
@@ -178,16 +212,19 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
     if (clipped[0]->unclipped_start() < 0) return consensuses;
 
     while (!clipped.empty()) {
-        std::string consensus_seq = build_full_consensus_seq(clipped);
+        std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped);
         if (consensus_seq == "") return consensuses;
 
+        std::vector<hts_pos_t> read_start_offsets = get_read_start_offsets(clipped, left_clipped);
+
         std::vector<bam_redux_t*> accepted_reads, rejected_reads;
-        for (bam_redux_t* r : clipped) {
+        for (int i = 0; i < clipped.size(); i++) {
+            bam_redux_t* r = clipped[i];
+            hts_pos_t offset = read_start_offsets[i];
             int mm = 0;
             int mm_clip = 0; // mismatches in the clipped portion only
 
             // filter reads with too many differences from the consensus_seq
-            hts_pos_t offset = get_start_offset(clipped[0], r);
             hts_pos_t clip_start = left_clipped ? 0 : r->seq_len() - r->right_clip_size;
             hts_pos_t clip_end = left_clipped ? r->left_clip_size : r->seq_len();
             for (int i = 0; i < r->seq_len(); i++) {
@@ -248,14 +285,16 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
                 }
             }
 
-            consensus_seq = build_full_consensus_seq(accepted_reads);
+            // rebuild consensus sequence using only accepted reads
+            consensus_seq = build_full_consensus_seq(accepted_reads, left_clipped); 
 
             // these bps have support from only one or two reads, so they are prone to errors
             hts_pos_t remove_from_start = get_start_offset(accepted_reads[0], accepted_reads[2]);
+
             sort(accepted_reads.begin(), accepted_reads.end(), [](bam_redux_t* r1, bam_redux_t* r2) {
                 return r1->unclipped_end() > r2->unclipped_end();
             });
-            hts_pos_t remove_from_end = accepted_reads[0]->unclipped_end() - accepted_reads[2]->unclipped_end();
+            hts_pos_t remove_from_end = get_end_offset(accepted_reads[2], accepted_reads[0]);
 
             int clip_len = left_clipped ? breakpoint-start : end-breakpoint;
             int lowq_clip_portion = left_clipped ? remove_from_start : remove_from_end;
