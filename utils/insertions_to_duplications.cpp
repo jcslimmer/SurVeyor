@@ -35,13 +35,13 @@ int main(int argc, char* argv[]) {
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln_before, aln_after;
 
-    std::vector<sv_t*> svs;
+    std::vector<std::shared_ptr<sv_t>> svs;
     std::unordered_set<std::string> new_dup_ids;
     while (bcf_read(in_vcf_file, hdr, b) == 0) {
-        sv_t* sv = bcf_to_sv(hdr, b);
-        if (sv == NULL) continue;
+        std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, b);
+        if (sv == nullptr) continue;
 
-        sv_t* new_dup = NULL;
+        std::shared_ptr<duplication_t> new_dup = nullptr;
 
         std::string ins_seq = sv->ins_seq;
         if (sv->svtype() == "INS" && !ins_seq.empty() && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
                 if (!aln_before_rc) aln_len += aln_before.query_end-aln_before.query_begin+1;
                 if (aln_len >= ins_seq.length()) {
                     auto anchor_aln = std::make_shared<sv_t::anchor_aln_t>(sv->start-ins_seq.length()+best_i, sv->start+best_i, ins_seq.length(), 0);
-                    new_dup = new duplication_t(contig_name, anchor_aln->start, anchor_aln->end, "", NULL, NULL, anchor_aln, anchor_aln);
+                    new_dup = std::make_shared<duplication_t>(contig_name, anchor_aln->start, anchor_aln->end, "", nullptr, nullptr, anchor_aln, anchor_aln);
                     new_dup->id = sv->id + "_DUP";
                     new_dup->source = sv->source;
                     new_dup_ids.insert(new_dup->id);
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::sort(svs.begin(), svs.end(), [&contig_map](sv_t* a, sv_t* b) { 
+    std::sort(svs.begin(), svs.end(), [&contig_map](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) { 
         size_t chr_a = contig_map.get_id(a->chr);
         size_t chr_b = contig_map.get_id(b->chr);
         return std::tie(chr_a, a->start) < std::tie(chr_b, b->start);
@@ -113,8 +113,8 @@ int main(int argc, char* argv[]) {
     if (bcf_hdr_write(out_vcf_file, out_hdr) != 0) {
         throw std::runtime_error("Failed to write VCF header to " +  out_vcf_fname);
     }
-    for (sv_t* sv : svs) {
-        sv2bcf(out_hdr, b, sv, chr_seqs.get_seq(sv->chr), true);
+    for (const auto& sv : svs) {
+        sv2bcf(out_hdr, b, sv.get(), chr_seqs.get_seq(sv->chr), true);
         if (new_dup_ids.count(sv->id) > 0) {
             bcf_update_info_flag(out_hdr, b, "INS_TO_DUP", "", 1);
         }

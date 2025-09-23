@@ -35,7 +35,7 @@ chr_seqs_map_t contigs;
 
 std::ofstream assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer;
 
-std::vector<sv_t*> insertions;
+std::vector<std::shared_ptr<sv_t>> insertions;
 
 const double BASE_ACCEPTANCE_THRESHOLD = 0.95;
 const int TOO_MANY_READS = 1000;
@@ -87,7 +87,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 
     std::string contig_name = contig_map.get_name(contig_id);
     if (regions.empty()) {
-		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
+		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
@@ -122,7 +122,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 	for (remap_info_t& remap_info : lo_remap_infos) lc_accepted_reads += remap_info.accepted;
 	int tot_reads = r_cluster->cluster->count + l_cluster->cluster->count;
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
-		sv_t* ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
+		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
@@ -136,7 +136,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 	if (corrected_consensus_sequence.empty()) return false;
 
     bool success = false;
-    insertion_t* insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
+    std::shared_ptr<insertion_t> insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
         corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
     if (insertion != NULL) {
         mtx.lock();
@@ -548,22 +548,21 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_vcf_fname + ".");
 	}
 
-    std::sort(insertions.begin(), insertions.end(), [](sv_t* sv1, sv_t* sv2) {
+    std::sort(insertions.begin(), insertions.end(), [](const std::shared_ptr<sv_t>& sv1, const std::shared_ptr<sv_t>& sv2) {
         int chr1 = contig_map.get_id(sv1->chr);
         int chr2 = contig_map.get_id(sv2->chr);
         return (chr1 < chr2) || (chr1 == chr2 && sv1->start < sv2->start);
     });
 
 	int a_id = 0, t_id = 0;
-	for (sv_t* insertion : insertions) {
+	for (const std::shared_ptr<sv_t>& insertion : insertions) {
         if (insertion->ins_seq.length() < config.min_sv_size) {
-            delete insertion;
             continue;
         }
 
         if (insertion->source == "REFERENCE_GUIDED_ASSEMBLY") insertion->id = "T_INS_" + std::to_string(t_id++);
         else insertion->id = "A_INS_" + std::to_string(a_id++);
-        sv2bcf(out_vcf_header, bcf_entry, insertion, contigs.get_seq(insertion->chr));
+        sv2bcf(out_vcf_header, bcf_entry, insertion.get(), contigs.get_seq(insertion->chr));
 		if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 			throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 		}

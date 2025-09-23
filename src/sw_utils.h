@@ -389,9 +389,9 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 	return best_alns;
 }
 
-std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
 	std::string junction_seq, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {
-	std::vector<sv_t*> svs;
+	std::vector<std::shared_ptr<sv_t>> svs;
     hts_pos_t current_pos = ref_start + aln.ref_begin;
 	hts_pos_t junction_pos = 0;
 
@@ -405,10 +405,10 @@ std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std
 		auto left_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score);
 		auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score);
 		if (op == 'D') {
-			sv_t* sv = new deletion_t(contig_name, start, end, "", NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
+			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, start, end, "", nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else if (op == 'I') {
-			sv_t* sv = new insertion_t(contig_name, current_pos-1, current_pos-1, ins_seq, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
+			std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, current_pos-1, current_pos-1, ins_seq, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		}
 
@@ -423,7 +423,7 @@ std::vector<sv_t*> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std
 	return svs;
 }
 
-std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
                     hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
 
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
@@ -470,7 +470,7 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 	free(prefix_scores);
 	free(suffix_scores);
 
-    if (max_score == 0) return std::vector<sv_t*>();
+    if (max_score == 0) return std::vector<std::shared_ptr<sv_t>>(); // no good alignment found
 
     std::string left_part = junction_seq.substr(0, best_i);
     std::string middle_part = junction_seq.substr(best_i, best_j-best_i);
@@ -516,8 +516,8 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
 			if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
 				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
 				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
-				duplication_t* sv = new duplication_t(contig_name, right_bp, left_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
-				return std::vector<sv_t*>({sv});
+				std::shared_ptr<duplication_t> sv = std::make_shared<duplication_t>(contig_name, right_bp, left_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
+				return std::vector<std::shared_ptr<sv_t>>({sv});
 			}
 		}
 
@@ -543,38 +543,34 @@ std::vector<sv_t*> detect_svs_from_junction(std::string& contig_name, char* cont
         }
     }
 
-    std::vector<sv_t*> svs;
+    std::vector<std::shared_ptr<sv_t>> svs;
     if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-		sv_t* sv = new deletion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
+		std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
         svs.push_back(sv);
     } else { // length of ALT > REF, insertion
-		sv_t* sv = new insertion_t(contig_name, left_bp, right_bp, middle_part, NULL, NULL, left_part_anchor_aln, right_part_anchor_aln);
+		std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
         svs.push_back(sv);
     }
 	svs[0]->mh_len = prefix_mh_len;
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
-	std::vector<sv_t*> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part);
-	for (sv_t* sv : extra_svs) {
-		if (overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
-			delete sv;
-		} else {
+	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part);
+	for (const auto& sv : extra_svs) {
+		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
 		}
 	}
 	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part);
-	for (sv_t* sv : extra_svs) {
-		if (overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
-			delete sv;
-		} else {
+	for (const auto& sv : extra_svs) {
+		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
 		}
 	}
     return svs;
 }
 
-std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
+std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
 					std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus,
 					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
 
@@ -592,7 +588,7 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_clip_portion);
 			spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
 			if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
-				return std::vector<sv_t*>();
+				return std::vector<std::shared_ptr<sv_t>>();
 			}
 		}
 		
@@ -641,12 +637,12 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
 		ref_remap_rh_start = std::max(hts_pos_t(0), lc_consensus->start - (int) lc_consensus->sequence.length());
 		ref_remap_rh_end = std::min(lc_consensus->end + (int) lc_consensus->sequence.length(), contig_len);
 	} else {
-		return std::vector<sv_t*>();
+		return std::vector<std::shared_ptr<sv_t>>();
 	}
 
 	
-    std::vector<sv_t*> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
-	for (sv_t* sv : svs) {
+    std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
+	for (const auto& sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
 
@@ -676,7 +672,7 @@ std::vector<sv_t*> detect_svs(std::string& contig_name, char* contig_seq, hts_po
     return svs;
 }
 
-breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::shared_ptr<consensus_t> leftmost_consensus, std::shared_ptr<consensus_t> rightmost_consensus, 
+std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::shared_ptr<consensus_t> leftmost_consensus, std::shared_ptr<consensus_t> rightmost_consensus, 
 	suffix_prefix_aln_t& spa, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
 
 	std::string lm_seq = leftmost_consensus->sequence, rm_seq = rightmost_consensus->sequence;
@@ -730,7 +726,7 @@ breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t cont
 		auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score);
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_end, end = ref_remap_rh_start + right_part_aln.ref_end;
-		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '-');
+		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '-');
 	} else {
 
 		rc(full_junction_seq);
@@ -782,7 +778,7 @@ breakend_t* detect_bnd(std::string contig_name, char* contig_seq, hts_pos_t cont
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_begin-1, end = ref_remap_rh_start + right_part_aln.ref_begin-1;
 		if (start < 0) start = 0;
-		return new breakend_t(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '+');
+		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, '+');
 	}
 }
 

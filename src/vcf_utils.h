@@ -709,7 +709,7 @@ float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
 }
 
 
-sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
+std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int* data = NULL;
 	int len = 0;
@@ -754,13 +754,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), left_anchor_mapping_start), left_anchor_mapping_end, 0, 0);
 	auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), right_anchor_mapping_start), right_anchor_mapping_end, 0, 0);
 
-	sv_t* sv;
+	std::shared_ptr<sv_t> sv;
 	if (svtype == "DEL") {
-		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<deletion_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "DUP") {
-		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<duplication_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "INS") {
-		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<insertion_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "INV") {
 		auto lbp_left_anchor_aln = left_anchor_aln, lbp_right_anchor_aln = right_anchor_aln;
 		hts_pos_t rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_right_split_mapping_start, rbp_right_split_mapping_end;
@@ -768,11 +768,11 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
 		auto rbp_left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
 		auto rbp_right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
-		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
+		sv = std::make_shared<inversion_t>(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 
 		data = NULL;
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
-		inversion_t* inv = (inversion_t*) sv;
+		inversion_t* inv = (inversion_t*) sv.get();
 		if (len > 0) {
 			inv->inv_start = data[0]-1;
 			inv->inv_end = data[1]-1;
@@ -789,7 +789,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		} else if (alt[pos_end] == '[') {
 			dir = '-';
 		}
-		sv = new breakend_t(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
+		sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
 	} else {
 		return NULL;
 	}

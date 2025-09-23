@@ -634,22 +634,22 @@ std::unordered_map<std::string, std::string> assign_reads(std::string in_vcf_fna
     return read_to_sv_map;
 }
 
-void clear_invalid_stat_tests(bcf_hdr_t* hdr, std::vector<deletion_t*>& dels) {
-    std::vector<std::pair<deletion_t*, float>> dels_w_epr;
+void clear_invalid_stat_tests(bcf_hdr_t* hdr, std::vector<std::shared_ptr<deletion_t>>& dels) {
+    std::vector<std::pair<std::shared_ptr<deletion_t>, float>> dels_w_epr;
     hts_pos_t chr_len = 0;
-    for (deletion_t* del : dels) {
+    for (const auto& del : dels) {
         dels_w_epr.push_back({del, get_sv_epr(hdr, del->vcf_entry)});
         chr_len = std::max(chr_len, del->end);
     }
 
     std::sort(dels_w_epr.begin(), dels_w_epr.end(), 
-    [](const std::pair<deletion_t*, float>& a, const std::pair<deletion_t*, float>& b) {
+    [](const std::pair<std::shared_ptr<deletion_t>, float>& a, const std::pair<std::shared_ptr<deletion_t>, float>& b) {
         return a.second > b.second; // Sort by EPR in descending order
     });
 
     SegTree seg_tree(chr_len+1);
     for (const auto& del_epr : dels_w_epr) {
-        deletion_t* del = del_epr.first;
+        const auto& del = del_epr.first;
         hts_pos_t midpoint = (del->start + del->end) / 2;
         if (seg_tree.any_ge(midpoint-stats.max_is, midpoint, 1)) {
             del->ks_pval = deletion_t::KS_PVAL_NOT_COMPUTED;
@@ -673,20 +673,20 @@ void rebalance_depth_cov(hts_pos_t strong_start, hts_pos_t strong_end, hts_pos_t
     cov_to_update = weak_total_cov / (weak_end - weak_start);
 }
 
-void rebalance_covs(bcf_hdr_t* hdr, std::vector<deletion_t*>& dels) {
-    std::vector<std::pair<deletion_t*, float>> dels_w_epr;
-    for (deletion_t* del : dels) {
+void rebalance_covs(bcf_hdr_t* hdr, std::vector<std::shared_ptr<deletion_t>>& dels) {
+    std::vector<std::pair<std::shared_ptr<deletion_t>, float>> dels_w_epr;
+    for (const auto& del : dels) {
         dels_w_epr.push_back({del, get_sv_epr(hdr, del->vcf_entry)});
     }
 
-    std::vector<Interval<std::pair<deletion_t*, float>>> it_ivals;
+    std::vector<Interval<std::pair<std::shared_ptr<deletion_t>, float>>> it_ivals;
     for (const auto& del_epr : dels_w_epr) {
-        deletion_t* del = del_epr.first;
+        const auto& del = del_epr.first;
         float epr = del_epr.second;
-        Interval<std::pair<deletion_t*, float>> it_ival(del->start, del->end, {del, epr});
+        Interval<std::pair<std::shared_ptr<deletion_t>, float>> it_ival(del->start, del->end, {del, epr});
         it_ivals.push_back(it_ival);
     }
-    IntervalTree<std::pair<deletion_t*, float>> it_tree(it_ivals);
+    IntervalTree<std::pair<std::shared_ptr<deletion_t>, float>> it_tree(it_ivals);
 
     for (auto& curr_del : dels_w_epr) {
         auto ov_dels = it_tree.findOverlapping(curr_del.first->start, curr_del.first->end);
@@ -695,8 +695,8 @@ void rebalance_covs(bcf_hdr_t* hdr, std::vector<deletion_t*>& dels) {
             int ov_del_alt_ac = count_alt_alleles(hdr, ov_del.first->vcf_entry);
             if (ov_del.second <= curr_del.second || ov_del.first == curr_del.first || ov_del_alt_ac == 0) continue;
 
-            deletion_t* strong_del = ov_del.first;
-            deletion_t* weak_del = curr_del.first;
+            deletion_t* strong_del = ov_del.first.get();
+            deletion_t* weak_del = curr_del.first.get();
             int strong_del_alt_ac = ov_del_alt_ac;
 
             int strong_del_avg_flanking_cov = (strong_del->sample_info.left_flanking_cov + strong_del->sample_info.right_flanking_cov)/2;
@@ -778,33 +778,30 @@ int main(int argc, char* argv[]) {
     }
 
     bcf1_t* vcf_record = bcf_init();
-    std::unordered_map<std::string, std::vector<deletion_t*> > dels_by_chr;
-    std::unordered_map<std::string, std::vector<duplication_t*> > dups_by_chr;
-    std::unordered_map<std::string, std::vector<insertion_t*> > inss_by_chr;
-    std::unordered_map<std::string, std::vector<inversion_t*> > invs_by_chr;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<deletion_t>>> dels_by_chr;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<duplication_t>>> dups_by_chr;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<insertion_t>>> inss_by_chr;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<inversion_t>>> invs_by_chr;
     while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
-        sv_t* sv = bcf_to_sv(in_vcf_header, vcf_record);
-        if (sv == NULL) {
+        std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_header, vcf_record);
+        if (sv == nullptr) {
             std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
             continue;
         }
 
         sv->vcf_entry = bcf_dup(vcf_record);
         if (sv->svtype() == "DEL") {
-            dels_by_chr[sv->chr].push_back((deletion_t*) sv);
+            dels_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
         } else if (sv->svtype() == "DUP") {
             if (sv->end-sv->start <= 0) {
                 std::cout << "Discarding SV with invalid coordinates: " << sv->id << std::endl;
-                delete sv;
                 continue;
             }
-            dups_by_chr[sv->chr].push_back((duplication_t*) sv);
+            dups_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<duplication_t>(sv));
         } else if (sv->svtype() == "INS") {
-        	inss_by_chr[sv->chr].push_back((insertion_t*) sv);
+        	inss_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<insertion_t>(sv));
         } else if (sv->svtype() == "INV") {
-            invs_by_chr[sv->chr].push_back((inversion_t*) sv);
-        } else {
-            delete sv;
+            invs_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<inversion_t>(sv));
         }
     }
 
@@ -828,36 +825,48 @@ int main(int argc, char* argv[]) {
 
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
-        std::vector<deletion_t*>& dels = dels_by_chr[contig_name];
+        std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
         for (int i = 0; i < dels.size(); i += BLOCK_SIZE) {
-            std::vector<deletion_t*> block_dels(dels.begin() + i, dels.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dels.size())));
+            std::vector<deletion_t*> block_dels;
+            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)dels.size()); j++) {
+                block_dels.push_back(dels[j].get());
+            }
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
                     contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
-        std::vector<duplication_t*>& dups = dups_by_chr[contig_name];
+        std::vector<std::shared_ptr<duplication_t>>& dups = dups_by_chr[contig_name];
         for (int i = 0; i < dups.size(); i += BLOCK_SIZE) {
-            std::vector<duplication_t*> block_dups(dups.begin() + i, dups.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(dups.size())));
+            std::vector<duplication_t*> block_dups;
+            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)dups.size()); j++) {
+                block_dups.push_back(dups[j].get());
+            }
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
                     contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
-        std::vector<insertion_t*>& inss = inss_by_chr[contig_name];
+        std::vector<std::shared_ptr<insertion_t>>& inss = inss_by_chr[contig_name];
         for (int i = 0; i < inss.size(); i += BLOCK_SIZE) {
-            std::vector<insertion_t*> block_inss(inss.begin() + i, inss.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(inss.size())));
+            std::vector<insertion_t*> block_inss;
+            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)inss.size()); j++) {
+                block_inss.push_back(inss[j].get());
+            }
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
                     contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
             futures.push_back(std::move(future));
         }
 
-        std::vector<inversion_t*>& invs = invs_by_chr[contig_name];
+        std::vector<std::shared_ptr<inversion_t>>& invs = invs_by_chr[contig_name];
         for (int i = 0; i < invs.size(); i += BLOCK_SIZE) {
-            std::vector<inversion_t*> block_invs(invs.begin() + i, invs.begin() + std::min(i + BLOCK_SIZE, static_cast<int>(invs.size())));
+            std::vector<inversion_t*> block_invs;
+            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)invs.size()); j++) {
+                block_invs.push_back(invs[j].get());
+            }
             std::future<void> future = thread_pool.push(genotype_invs, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_invs, in_vcf_header, out_vcf_header, stats, config,
                     contig_map, bam_pool, &mateseqs_w_mapq[contig_id]);
@@ -881,7 +890,7 @@ int main(int argc, char* argv[]) {
     if (reassign_evidence) {
         for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
             std::string contig_name = contig_map.get_name(contig_id);
-            std::vector<deletion_t*>& dels = dels_by_chr[contig_name];
+            std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
             clear_invalid_stat_tests(in_vcf_header, dels);
             rebalance_covs(in_vcf_header, dels);
         }
@@ -892,21 +901,20 @@ int main(int argc, char* argv[]) {
     const char** seqnames = bcf_hdr_seqnames(in_vcf_header, &n_seqs);
     for (int i = 0; i < n_seqs; i++) {
     	std::string contig_name = seqnames[i];
-    	std::vector<sv_t*> contig_svs;
+    	std::vector<std::shared_ptr<sv_t>> contig_svs;
     	if (dels_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dels_by_chr[contig_name].begin(), dels_by_chr[contig_name].end());
     	if (dups_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dups_by_chr[contig_name].begin(), dups_by_chr[contig_name].end());
     	if (inss_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), inss_by_chr[contig_name].begin(), inss_by_chr[contig_name].end());
         if (invs_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), invs_by_chr[contig_name].begin(), invs_by_chr[contig_name].end());
-    	std::sort(contig_svs.begin(), contig_svs.end(), [](const sv_t* sv1, const sv_t* sv2) {return sv1->start < sv2->start;});
+    	std::sort(contig_svs.begin(), contig_svs.end(), [](const std::shared_ptr<sv_t>& sv1, const std::shared_ptr<sv_t>& sv2) {return sv1->start < sv2->start;});
 
 		for (auto& sv : contig_svs) {
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            update_record(in_vcf_header, out_vcf_header, sv, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
+            update_record(in_vcf_header, out_vcf_header, sv.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
 				throw std::runtime_error("Failed to write VCF record to " + out_vcf_fname);
 			}
-            delete sv;
 		}
     }
     delete[] imap;

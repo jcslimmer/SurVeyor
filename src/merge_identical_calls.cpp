@@ -7,7 +7,7 @@
 #include "vcf_utils.h"
 
 // if store_in_rc, the new 2SR entry will be in rc_sv, otherwise in lc_sv
-void merge_1sr_with_1sr(bcf_hdr_t* hdr, sv_t* rc_sv, sv_t* lc_sv, bool store_in_rc) {
+void merge_1sr_with_1sr(bcf_hdr_t* hdr, std::shared_ptr<sv_t> rc_sv, std::shared_ptr<sv_t> lc_sv, bool store_in_rc) {
 	if (store_in_rc) {
 		rc_sv->lc_consensus = lc_sv->lc_consensus;
 	} else {
@@ -46,18 +46,18 @@ int main(int argc, char* argv[]) {
 	source_priorities["1HSR_RC"] = 5;
 	source_priorities["DP"] = 6;
 
-	std::unordered_map<std::string, sv_t*> sv_entries;
+	std::unordered_map<std::string, std::shared_ptr<sv_t>> sv_entries;
 	std::vector<std::string> ids_sorted;
 
 	htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
 	bcf_hdr_t* in_vcf_hdr = bcf_hdr_read(in_vcf_file);
 	bcf1_t* b = bcf_init();
 	while (bcf_read(in_vcf_file, in_vcf_hdr, b) == 0) {
-		sv_t* sv = bcf_to_sv(in_vcf_hdr, b);
+		std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_hdr, b);
 
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
-			sv_t* prev_sv = sv_entries[unique_id];
+			std::shared_ptr<sv_t> prev_sv = sv_entries[unique_id];
 			if (prev_sv->is_pass() != sv->is_pass()) {
 				if (sv->is_pass()) {
 					sv_entries[unique_id] = sv;
@@ -114,8 +114,8 @@ int main(int argc, char* argv[]) {
 	chr_seqs.read_fasta_into_map(reference_fname);
 
 	for (std::string& id : ids_sorted) {
-		sv_t* sv = sv_entries[id];
-		sv2bcf(in_vcf_hdr, b, sv, chr_seqs.get_seq(sv->chr));
+		std::shared_ptr<sv_t> sv = sv_entries[id];
+		sv2bcf(in_vcf_hdr, b, sv.get(), chr_seqs.get_seq(sv->chr));
 		if (bcf_write(out_vcf_file, in_vcf_hdr, b) != 0) {
 			throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 		}

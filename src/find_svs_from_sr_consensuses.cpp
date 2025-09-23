@@ -34,12 +34,12 @@ std::string workdir, complete_bam_fname, reference_fname;
 chr_seqs_map_t chr_seqs;
 contig_map_t contig_map;
 
-std::unordered_map<std::string, std::vector<sv_t*> > svs_by_chr;
+std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>> > svs_by_chr;
 std::unordered_map<std::string, std::vector<std::shared_ptr<consensus_t>> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<std::shared_ptr<consensus_t>> > unpaired_consensuses_by_chr;
 
 std::unordered_map<std::string, std::vector<std::shared_ptr<cluster_t>> > ss_clusters_by_chr;
-std::unordered_map<std::string, std::vector<breakend_t*> > dp_bnds_by_chr;
+std::unordered_map<std::string, std::vector<std::shared_ptr<breakend_t>> > dp_bnds_by_chr;
 
 std::vector<std::unordered_map<std::string, std::pair<std::string, int> > > mateseqs_w_mapq;
 std::vector<int> active_threads_per_chr;
@@ -118,7 +118,7 @@ void remove_marked_consensuses(std::vector<std::shared_ptr<consensus_t>>& consen
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shared_ptr<consensus_t>>& rc_consensuses, std::vector<std::shared_ptr<consensus_t>>& lc_consensuses,
 		StripedSmithWaterman::Aligner& aligner) {
 
-	std::vector<sv_t*> local_svs;
+	std::vector<std::shared_ptr<sv_t>> local_svs;
 
 	auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
 		return c1->is_hsr && c2->is_hsr ? 50 : config.min_clip_len;
@@ -286,9 +286,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 				else return ps1.spa.score > ps2.spa.score;
 			});
 
-	mtx.lock();
-	std::vector<breakend_t*> bnds_lf, bnds_rf;
-	mtx.unlock();
+	std::vector<std::shared_ptr<breakend_t>> bnds_lf, bnds_rf;
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
@@ -298,13 +296,12 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
 		if (used_c1 || used_c2) continue;
 
-		std::vector<sv_t*> svs;
+		std::vector<std::shared_ptr<sv_t>> svs;
 		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
 			std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
 			std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
-			breakend_t* bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
+			std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
 			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
-				delete bnd;
 				continue;
 			}
 			bnd->source = "2SR";
@@ -342,8 +339,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 	}
 
 	int bnd_idx = 0;
-	std::sort(bnds_lf.begin(), bnds_lf.end(), [](const breakend_t* i1, const breakend_t* i2) { return i1->start < i2->start; });
-	for (std::shared_ptr<cluster_t> c : lf_ss_clusters) {	
+	std::sort(bnds_lf.begin(), bnds_lf.end(), [](const std::shared_ptr<breakend_t>& i1, const std::shared_ptr<breakend_t>& i2) { return i1->start < i2->start; });
+	for (std::shared_ptr<cluster_t> c : lf_ss_clusters) {
 		while (bnd_idx < bnds_lf.size() && bnds_lf[bnd_idx]->start < c->la_end-stats.max_is) bnd_idx++;
 
 		bool has_bnd = false;
@@ -358,7 +355,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
 			rc(lm_seq);
 			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
-			breakend_t* bnd = NULL;
+			std::shared_ptr<breakend_t> bnd = nullptr;
 			if (spa.overlap > 0) {
 				std::shared_ptr<consensus_t> leftmost_consensus = std::make_shared<consensus_t>(true, c->la_start, c->la_start, c->la_end, c->la_furthermost_seq, 0, 1, 0, c->la_max_mapq, 0, 0);
 				std::shared_ptr<consensus_t> rightmost_consensus = std::make_shared<consensus_t>(true, c->ra_start, c->ra_start, c->ra_end, c->ra_furthermost_seq, 0, 1, 0, c->ra_max_mapq, 0, 0);
@@ -366,12 +363,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 			} else {
 				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
 				auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
-				bnd = new breakend_t(contig_name, c->la_start, c->ra_start, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '-');
+				bnd = std::make_shared<breakend_t>(contig_name, c->la_start, c->ra_start, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, '-');
 				bnd->imprecise = true;
 			}
 
 			if (bnd->end-bnd->start < config.min_sv_size) {
-				delete bnd;
 				continue;
 			}
 			bnd->source = "DP";
@@ -379,7 +375,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		}
 	}
 
-	std::sort(bnds_rf.begin(), bnds_rf.end(), [](const breakend_t* i1, const breakend_t* i2) { return i1->start < i2->start; });
+	std::sort(bnds_rf.begin(), bnds_rf.end(), [](const std::shared_ptr<breakend_t>& i1, const std::shared_ptr<breakend_t>& i2) { return i1->start < i2->start; });
 	bnd_idx = 0;
 	for (std::shared_ptr<cluster_t> c : rf_ss_clusters) {
 		while (bnd_idx < bnds_rf.size() && bnds_rf[bnd_idx]->start < c->la_start) bnd_idx++;
@@ -396,7 +392,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
 			rc(rm_seq);
 			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
-			breakend_t* bnd = NULL;
+			std::shared_ptr<breakend_t> bnd = nullptr;
 			if (spa.overlap) {
 				std::shared_ptr<consensus_t> leftmost_consensus = std::make_shared<consensus_t>(false, c->la_start, c->la_end, c->la_end, c->la_furthermost_seq, 1, 0, 0, c->la_max_mapq, 0, 0);
 				std::shared_ptr<consensus_t> rightmost_consensus = std::make_shared<consensus_t>(false, c->ra_start, c->ra_end, c->ra_end, c->ra_furthermost_seq, 1, 0, 0, c->ra_max_mapq, 0, 0);
@@ -407,12 +403,11 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 				if (left_anchor_aln->end > right_anchor_aln->end) {
 					std::swap(left_anchor_aln, right_anchor_aln);
 				}
-				bnd = new breakend_t(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", NULL, NULL, left_anchor_aln, right_anchor_aln, '+');
+				bnd = std::make_shared<breakend_t>(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, '+');
 				bnd->imprecise = true;
 			}
 
 			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
-				delete bnd;
 				continue;
 			}
 			bnd->source = "DP";
@@ -420,10 +415,10 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		}
 	}
 
-	std::unordered_set<breakend_t*> used_breakends;
-	std::vector<std::tuple<hts_pos_t, breakend_t*, breakend_t*>> bnd_pairs;
-	for (breakend_t* bnd_rf : bnds_rf) {
-		for (breakend_t* bnd_lf : bnds_lf) {
+	std::unordered_set<std::shared_ptr<breakend_t>> used_breakends;
+	std::vector<std::tuple<hts_pos_t, std::shared_ptr<breakend_t>, std::shared_ptr<breakend_t>>> bnd_pairs;
+	for (std::shared_ptr<breakend_t> bnd_rf : bnds_rf) {
+		for (std::shared_ptr<breakend_t> bnd_lf : bnds_lf) {
 			if (bnd_lf->start-bnd_rf->start > -stats.read_len && bnd_lf->end-bnd_rf->end > -stats.read_len &&
 				(bnd_lf->start-bnd_rf->start <= stats.max_is || bnd_lf->end-bnd_rf->end <= stats.max_is)) {
 				hts_pos_t dist = std::abs(bnd_rf->start-bnd_lf->start) + std::abs(bnd_rf->end-bnd_lf->end);
@@ -434,8 +429,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 
 	std::sort(bnd_pairs.begin(), bnd_pairs.end());
 	for (auto& bnd_pair : bnd_pairs) {
-		breakend_t* bnd_rf = std::get<1>(bnd_pair);
-		breakend_t* bnd_lf = std::get<2>(bnd_pair);
+		std::shared_ptr<breakend_t> bnd_rf = std::get<1>(bnd_pair);
+		std::shared_ptr<breakend_t> bnd_lf = std::get<2>(bnd_pair);
 		if (used_breakends.count(bnd_rf) || used_breakends.count(bnd_lf)) continue;
 		used_breakends.insert(bnd_rf);
 		used_breakends.insert(bnd_lf);
@@ -462,29 +457,26 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		}
 
 		bool imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
-		inversion_t* inv = NULL;
 		hts_pos_t inv_start = bnd_lf->start, inv_end = bnd_rf->end;
 		hts_pos_t sv_start = inv_start, sv_end = inv_end;
 		if (!imprecise && (bnd_rf->start+10 <= bnd_lf->start || bnd_rf->end+10 <= bnd_lf->end)) {
 			sv_start = bnd_rf->start, sv_end = bnd_lf->end;
 		}
-		inv = new inversion_t(contig_name, sv_start, sv_end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
+		std::shared_ptr<inversion_t> inv = std::make_shared<inversion_t>(contig_name, sv_start, sv_end, "", rc_consensus, lc_consensus, bnd_rf->left_anchor_aln, bnd_lf->left_anchor_aln, bnd_rf->right_anchor_aln, bnd_lf->right_anchor_aln);
 		inv->inv_start = inv_start;
 		inv->inv_end = inv_end;
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = imprecise;
-		if (inv->inv_end-inv->inv_start < config.min_sv_size) {
-			delete inv;
-		} else {
+		if (inv->inv_end-inv->inv_start >= config.min_sv_size) {
 			local_svs.push_back(inv);
 		}
 	}
 
 	mtx.lock();
-	std::vector<breakend_t*>& dp_bnds = dp_bnds_by_chr[contig_name];
+	std::vector<std::shared_ptr<breakend_t>>& dp_bnds = dp_bnds_by_chr[contig_name];
 	mtx.unlock();
-	local_svs.erase(std::remove_if(local_svs.begin(), local_svs.end(), [](sv_t* sv) { return sv->svtype() == "BND"; }), local_svs.end());
-	for (breakend_t* bnd : bnds_lf) {
+	local_svs.erase(std::remove_if(local_svs.begin(), local_svs.end(), [](const std::shared_ptr<sv_t>& sv) { return sv->svtype() == "BND"; }), local_svs.end());
+	for (std::shared_ptr<breakend_t> bnd : bnds_lf) {
 		if (!used_breakends.count(bnd)) {
 			if (bnd->source == "DP") {
 				dp_bnds.push_back(bnd);
@@ -493,7 +485,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 			}
 		}
 	}
-	for (breakend_t* bnd : bnds_rf) {
+	for (std::shared_ptr<breakend_t> bnd : bnds_rf) {
 		if (!used_breakends.count(bnd)) {
 			if (bnd->source == "DP") {
 				dp_bnds.push_back(bnd);
@@ -511,7 +503,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 	remove_marked_consensuses(lc_consensuses, used_consensus_lc);
 
 	mtx.lock();
-	std::vector<sv_t*>& svs = svs_by_chr[contig_name];
+	std::vector<std::shared_ptr<sv_t>>& svs = svs_by_chr[contig_name];
 	svs.insert(svs.end(), local_svs.begin(), local_svs.end());
 	mtx.unlock();
 
@@ -619,7 +611,7 @@ void find_indels_from_paired_consensuses(int id, int contig_id, std::string cont
 
 void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std::vector<std::shared_ptr<consensus_t>>* consensuses, int start, int end) {
 
-	std::vector<sv_t*> local_svs;
+	std::vector<std::shared_ptr<sv_t>> local_svs;
 
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 	char* contig_seq = chr_seqs.get_seq(contig_name);
@@ -627,8 +619,8 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 
 	for (int i = start; i < consensuses->size() && i < end; i++) {
 		std::shared_ptr<consensus_t> consensus = consensuses->at(i);
-
-		std::vector<sv_t*> svs;
+		
+		std::vector<std::shared_ptr<sv_t>> svs;
 		if (!consensus->left_clipped) {
 			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
 		} else if (consensus->left_clipped) {
@@ -859,7 +851,7 @@ int main(int argc, char* argv[]) {
 
 		auto& svs = svs_by_chr[contig_name];
 		for (int i = 0; i < svs.size(); i++) {
-			sv_t* sv = svs[i];
+			std::shared_ptr<sv_t> sv = svs[i];
 			if (!sv->imprecise && sv->end-sv->start >= config.min_sv_size && abs(sv->svlen()) < config.min_sv_size && sv->ins_seq.length() >= config.min_sv_size
 			&& (sv->svtype() == "DEL" || sv->svtype() == "INS") && double(sv->ins_seq.length())/(sv->end-sv->start) >= 0.75) {
 				char* contig_seq = chr_seqs.get_seq(contig_name);
@@ -870,21 +862,18 @@ int main(int argc, char* argv[]) {
 				if (aln.sw_score >= 0.9*inv_seq.length()) {
 					std::string ins_seq = sv->ins_seq;
 					if (sv->svlen() == 0 && aln.sw_score == inv_seq.length()) ins_seq = "";
-					inversion_t* inv = new inversion_t(contig_name, sv->start, sv->end, ins_seq, sv->rc_consensus, sv->lc_consensus, sv->left_anchor_aln, sv->left_anchor_aln, sv->right_anchor_aln, sv->right_anchor_aln);
+					std::shared_ptr<inversion_t> inv = std::make_shared<inversion_t>(contig_name, sv->start, sv->end, ins_seq, sv->rc_consensus, sv->lc_consensus, sv->left_anchor_aln, sv->left_anchor_aln, sv->right_anchor_aln, sv->right_anchor_aln);
 					inv->source = sv->source;
-					delete sv;
 					svs[i] = inv;
 				}
 			} else if (svs[i]->svtype() == "DEL" && svs[i]->end-svs[i]->start < config.min_sv_size) {
-				delete svs[i];
-				svs[i] = NULL;
+				svs[i] = nullptr;
 			} else if ((svs[i]->svtype() == "DUP" && svs[i]->svlen() < config.min_sv_size) || 
 					   (svs[i]->svtype() == "INS" && svs[i]->ins_seq.length() < config.min_sv_size)) {
-				delete svs[i];
-				svs[i] = NULL;
+				svs[i] = nullptr;
 			}
 		}
-		svs.erase(std::remove(svs.begin(), svs.end(), (sv_t*) NULL), svs.end());
+		svs.erase(std::remove(svs.begin(), svs.end(), nullptr), svs.end());
 	}
 
     // create VCF out files
@@ -904,12 +893,12 @@ int main(int argc, char* argv[]) {
     bcf1_t* bcf_entry = bcf_init();
 	std::unordered_map<std::string, int> svtype_id;
     for (std::string& contig_name : chr_seqs.ordered_contigs) {
-		std::vector<sv_t*>& svs = svs_by_chr[contig_name];
-		std::sort(svs.begin(), svs.end(), [](sv_t* sv1, sv_t* sv2) {
+		std::vector<std::shared_ptr<sv_t>>& svs = svs_by_chr[contig_name];
+		std::sort(svs.begin(), svs.end(), [](std::shared_ptr<sv_t> sv1, std::shared_ptr<sv_t> sv2) {
 			return std::tie(sv1->start, sv1->end) < std::tie(sv2->start, sv2->end);
 		});
 
-        for (sv_t* sv : svs) {
+        for (std::shared_ptr<sv_t> sv : svs) {
 			sv->id = sv->svtype() +  "_SR_" + std::to_string(svtype_id[sv->svtype()]++);
 
 			// do some light filtering here - it helps merge_identical_calls not merge good calls with calls that will get filtered
@@ -935,27 +924,25 @@ int main(int argc, char* argv[]) {
             	if (sv->lc_consensus->left_ext_reads < 3) sv->sample_info.filters.push_back("FAILED_TO_EXTEND");
             }
 
-			sv2bcf(out_vcf_header, bcf_entry, sv, chr_seqs.get_seq(contig_name));
+			sv2bcf(out_vcf_header, bcf_entry, sv.get(), chr_seqs.get_seq(contig_name));
             if (bcf_write(out_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
-            delete sv;
         }
     }
 
 	for (std::string& contig_name : chr_seqs.ordered_contigs) {
 		auto dp_invs = dp_bnds_by_chr[contig_name];
-		std::sort(dp_invs.begin(), dp_invs.end(), [](breakend_t* inv1, breakend_t* inv2) {
+		std::sort(dp_invs.begin(), dp_invs.end(), [](std::shared_ptr<breakend_t> inv1, std::shared_ptr<breakend_t> inv2) {
 			return std::tie(inv1->start, inv1->end) < std::tie(inv2->start, inv2->end);
 		});
 
-		for (breakend_t* bnd : dp_invs) {
+		for (std::shared_ptr<breakend_t> bnd : dp_invs) {
 			bnd->id = "BND_DP_" + std::to_string(svtype_id["BND"]++);
-			sv2bcf(out_vcf_header, bcf_entry, bnd, chr_seqs.get_seq(contig_name));
+			sv2bcf(out_vcf_header, bcf_entry, bnd.get(), chr_seqs.get_seq(contig_name));
 			if (bcf_write(out_dp_inv_vcf_file, out_vcf_header, bcf_entry) != 0) {
 				throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 			}
-			delete bnd;
 		}
 	}
 
