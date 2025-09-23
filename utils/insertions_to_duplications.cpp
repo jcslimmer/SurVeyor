@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
             hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
             bool skip = false;
-            if (sv->start+1 < ins_seq.length()) skip = true;
+            if (sv->start <= ins_seq.length()) skip = true;
             if (sv->start+ins_seq.length() >= contig_len) skip = true;
 
             if (!skip) {
