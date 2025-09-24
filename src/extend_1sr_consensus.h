@@ -107,8 +107,14 @@ std::vector<bool> find_vertices_in_cycles(std::vector<std::vector<edge_t> >& l_a
 	return in_cycle;
 }
 
-void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> starting_idxs, std::vector<int>& out_edges,
-		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, int min_overlap) {
+void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>& read_starts,
+		std::vector<int> starting_idxs, std::vector<int>& out_edges,
+		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, int min_overlap,
+		bool strict) {
+
+	l_adj = std::vector<std::vector<edge_t> >(read_seqs.size());
+	l_adj_rev = std::vector<std::vector<edge_t> >(read_seqs.size());
+	out_edges = std::vector<int>(read_seqs.size(), 0);
 
 	uint64_t nucl_bm[256] = { 0 };
 	nucl_bm['A'] = nucl_bm['a'] = 0;
@@ -155,6 +161,7 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> start
 			std::string& s2 = read_seqs[j];
 
 			if (s1 == s2) continue;
+			if (strict && read_starts[i] >= read_starts[j] && read_starts[i] != 0 && read_starts[j] != 0) continue;
 
 			suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s1, s2, min_overlap);
 			if (spa.overlap) {
@@ -169,8 +176,14 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<int> start
 	}
 }
 
-void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> starting_idxs, std::vector<int>& out_edges,
-		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, int min_overlap) {
+void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>& read_starts,
+		std::vector<int> starting_idxs, std::vector<int>& out_edges,
+		std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev, int min_overlap, 
+		bool strict) {
+
+	l_adj = std::vector<std::vector<edge_t> >(read_seqs.size());
+	l_adj_rev = std::vector<std::vector<edge_t> >(read_seqs.size());
+	out_edges = std::vector<int>(read_seqs.size(), 0);
 
 	uint64_t nucl_bm[256] = { 0 };
 	nucl_bm['A'] = nucl_bm['a'] = 0;
@@ -220,14 +233,15 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> start
 			std::string& s2 = read_seqs[j];
 
 			if (s1 == s2) continue;
+			if (strict && read_starts[i] <= read_starts[j] && read_starts[i] != 0 && read_starts[j] != 0) continue;
 
-			suffix_prefix_aln_t spa2 = aln_suffix_prefix_perfect(s2, s1, min_overlap);
-			if (spa2.overlap) {
-				bool spa2_homopolymer = is_homopolymer(s1.c_str(), spa2.overlap);
-				if (!spa2_homopolymer) {
+			suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s2, s1, min_overlap);
+			if (spa.overlap) {
+				bool spa_homopolymer = is_homopolymer(s1.c_str(), spa.overlap);
+				if (!spa_homopolymer) {
 					out_edges[i]++;
-					l_adj[i].push_back({j, spa2.score, spa2.overlap});
-					l_adj_rev[j].push_back({i, spa2.score, spa2.overlap});
+					l_adj[i].push_back({j, spa.score, spa.overlap});
+					l_adj_rev[j].push_back({i, spa.score, spa.overlap});
 					bfs.push(j);
 				}
 			}
@@ -235,8 +249,8 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<int> start
 	}
 }
 
-void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, std::vector<std::string>& read_seqs, std::vector<int>& read_mapqs,
-		std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq,
+void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, std::vector<std::string>& read_seqs,
+		std::vector<int>& read_mapqs, std::vector<hts_pos_t>& read_starts, std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq,
 		hts_pos_t target_start, hts_pos_t target_end, hts_pos_t contig_len, int high_confidence_mapq, stats_t& stats, int max_reads = INT32_MAX) {
 
 	hts_pos_t fwd_mates_start = std::max(hts_pos_t(1), target_start-stats.max_is+stats.read_len);
@@ -259,6 +273,7 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 			rc(mateseq_w_mapq.first);
 			read_seqs.push_back(mateseq_w_mapq.first);
 			read_mapqs.push_back(mateseq_w_mapq.second);
+			read_starts.push_back(0); // dummy value
 		} else if (ext_read->rev && ext_read->mapq >= high_confidence_mapq &&
 				!ext_read->same_chr && ext_read->end >= rev_mates_start && ext_read->end <= rev_mates_end) {
 			if (mateseqs_w_mapq.count(ext_read->qname) == 0) {
@@ -268,11 +283,13 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 			std::pair<std::string, int> mateseq_w_mapq = mateseqs_w_mapq[ext_read->qname];
 			read_seqs.push_back(mateseq_w_mapq.first);
 			read_mapqs.push_back(mateseq_w_mapq.second);
+			read_starts.push_back(0); // dummy value
 		}
 
 		if (ext_read->end > target_start && ext_read->start < target_end) {
 			read_seqs.push_back(ext_read->sequence);
 			read_mapqs.push_back(ext_read->mapq);
+			read_starts.push_back(ext_read->start);
 		}
 
 		if (read_seqs.size() > max_reads) return;
@@ -393,30 +410,41 @@ void extend_consensus_to_right(std::shared_ptr<consensus_t> consensus, IntervalT
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
+	std::vector<hts_pos_t> read_starts;
 	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(high_confidence_mapq);
+	read_starts.push_back(1); // we want our consensus to be to the left of every other read that extends it to the right (but not 0, since that is reserved for mates, i.e., unknown pos)
 
-	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
+	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, read_starts, mateseqs_w_mapq, 
+		target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
 
 	if (read_seqs.size() > 5000) return;
 
 	int n = read_seqs.size();
 	std::vector<int> out_edges(n);
-	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-	build_graph_fwd(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2);
+	std::vector<std::vector<edge_t> > l_adj, l_adj_rev;
+	build_graph_fwd(read_seqs, read_starts, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2, false);
 
 	bool cycle_contains_0 = is_vertex_in_cycle(l_adj, 0);
 	if (cycle_contains_0) {
 		// remove all edges pointing to 0
-		for (std::vector<edge_t>& l_adj_i : l_adj) {
+		for (int i = 0; i < n; i++) {
+			std::vector<edge_t>& l_adj_i = l_adj[i];
 			l_adj_i.erase(std::remove_if(l_adj_i.begin(), l_adj_i.end(), [](edge_t& e) {return e.next == 0;}), l_adj_i.end());
+			out_edges[i] = l_adj_i.size();
 		}
 		l_adj_rev[0].clear();
 	}
 
 	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 	bool cycle_at_0 = std::find(rev_topological_order.begin(), rev_topological_order.end(), 0) == rev_topological_order.end();
-	if (cycle_at_0) {
+	if (cycle_at_0) { // try to regenerate the graph enforcing a reference-based order - it might fail due to mates all having pos 0
+		build_graph_fwd(read_seqs, read_starts, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2, true);
+		rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
+	}
+
+	cycle_at_0 = std::find(rev_topological_order.begin(), rev_topological_order.end(), 0) == rev_topological_order.end();
+	if (cycle_at_0) { // final fallback - break cycles brutally
 		break_cycles(out_edges, l_adj, l_adj_rev);
 		rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 	}
@@ -462,31 +490,41 @@ void extend_consensus_to_left(std::shared_ptr<consensus_t> consensus, IntervalTr
 
 	std::vector<std::string> read_seqs;
 	std::vector<int> read_mapqs;
+	std::vector<hts_pos_t> read_starts;
 	read_seqs.push_back(consensus->sequence);
 	read_mapqs.push_back(high_confidence_mapq);
+	read_starts.push_back(INT32_MAX); // we want our consensus to be to the right of every other read that extends it to the left
 
-	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
+	get_extension_read_seqs(candidate_reads_itree, read_seqs, read_mapqs, read_starts, mateseqs_w_mapq, target_start, target_end, contig_len, high_confidence_mapq, stats, 5000);
 
 	if (read_seqs.size() > 5000) return;
 
 	int n = read_seqs.size();
-	std::vector<int> out_edges(n);
-	std::vector<std::vector<edge_t> > l_adj(n), l_adj_rev(n);
-	build_graph_rev(read_seqs, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2);
+	std::vector<int> out_edges;
+	std::vector<std::vector<edge_t> > l_adj, l_adj_rev;
+	build_graph_rev(read_seqs, read_starts, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2, false);
 
 	std::vector<int> rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 
-	bool cycle_contains_0 = is_vertex_in_cycle(l_adj, 0);
-	if (cycle_contains_0) {
+	bool cycle_at_0 = is_vertex_in_cycle(l_adj, 0);
+	if (cycle_at_0) {
 		// remove all edges pointing to 0
-		for (std::vector<edge_t>& l_adj_i : l_adj) {
+		for (int i = 0; i < n; i++) {
+			std::vector<edge_t>& l_adj_i = l_adj[i];
 			l_adj_i.erase(std::remove_if(l_adj_i.begin(), l_adj_i.end(), [](edge_t& e) {return e.next == 0;}), l_adj_i.end());
+			out_edges[i] = l_adj_i.size();
 		}
 		l_adj_rev[0].clear();
 	}
 
-	bool cycle_at_0 = std::find(rev_topological_order.begin(), rev_topological_order.end(), 0) == rev_topological_order.end();
-	if (cycle_at_0) {
+	cycle_at_0 = std::find(rev_topological_order.begin(), rev_topological_order.end(), 0) == rev_topological_order.end();
+	if (cycle_at_0) { // try to regenerate the graph enforcing a reference-based order - it might fail due to mates all having pos 0
+		build_graph_rev(read_seqs, read_starts, std::vector<int>(1, 0), out_edges, l_adj, l_adj_rev, stats.read_len/2, true);
+		rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
+	}
+
+	cycle_at_0 = std::find(rev_topological_order.begin(), rev_topological_order.end(), 0) == rev_topological_order.end();
+	if (cycle_at_0) { // final fallback - break cycles brutally
 		break_cycles(out_edges, l_adj, l_adj_rev);
 		rev_topological_order = find_rev_topological_order(n, out_edges, l_adj_rev);
 	}

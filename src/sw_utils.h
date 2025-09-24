@@ -294,13 +294,11 @@ struct suffix_prefix_aln_t {
 	double mismatch_rate() { return overlap > 0 ? double(mismatches)/overlap : 1; }
 };
 
-suffix_prefix_aln_t aln_suffix_prefix_perfect(std::string& s1, std::string& s2, int min_overlap = 1) {
-    int best_overlap = 0, overlap = 0;
-
+suffix_prefix_aln_t aln_suffix_prefix_perfect(const std::string& s1, const std::string& s2, int min_overlap = 1) {
     const char* _s1 = s1.c_str(),* _s2 = s2.c_str();
     int _s1_len = s1.length(), _s2_len = s2.length();
 
-    int max_overlap = std::min(s1.length(), s2.length());
+    int max_overlap = std::min(_s1_len, _s2_len);
     for (int i = max_overlap; i >= min_overlap; i--) {
     	if (strncmp(_s1+(_s1_len-i), _s2, i) == 0) {
 			return suffix_prefix_aln_t(i, i, 0);
@@ -640,7 +638,6 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		return std::vector<std::shared_ptr<sv_t>>();
 	}
 
-	
     std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
 	for (const auto& sv : svs) {
 		sv->rc_consensus = rc_consensus;
