@@ -121,7 +121,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 	std::vector<std::shared_ptr<sv_t>> local_svs;
 
 	auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
-		return c1->is_hsr && c2->is_hsr ? 50 : config.min_clip_len;
+		return c1->is_hsr && c2->is_hsr ? 50 : 2*config.min_clip_len;
 	};
 	auto max_seq_error_f = [](consensus_t* c1, consensus_t* c2) {
 		return c1->is_hsr && c2->is_hsr ? 0 : config.max_seq_error;
@@ -221,7 +221,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 				if (c->la_rev) rc(lm_seq);
 				else rc(rm_seq);
 
-				suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+				suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, 2*config.min_clip_len);
 				if (spa.overlap > 0) {
 					consensuses_scored_pairs.push_back(pair_w_score_t(la_iv.value, la_consensus->left_clipped, ra_iv.value, ra_consensus->left_clipped, spa, c));
 				}
@@ -290,6 +290,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
+
 		std::shared_ptr<consensus_t> c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
 		std::shared_ptr<consensus_t> c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
@@ -354,7 +355,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		if (!has_bnd) {
 			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
 			rc(lm_seq);
-			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, 2*config.min_clip_len);
 			std::shared_ptr<breakend_t> bnd = nullptr;
 			if (spa.overlap > 0) {
 				std::shared_ptr<consensus_t> leftmost_consensus = std::make_shared<consensus_t>(true, c->la_start, c->la_start, c->la_end, c->la_furthermost_seq, 0, 1, 0, c->la_max_mapq, 0, 0);
@@ -391,7 +392,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		if (!has_bnd) {
 			std::string lm_seq = c->la_furthermost_seq, rm_seq = c->ra_furthermost_seq;
 			rc(rm_seq);
-			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, config.min_clip_len);
+			suffix_prefix_aln_t spa = aln_suffix_prefix(lm_seq, rm_seq, 1, -4, config.max_seq_error, 2*config.min_clip_len);
 			std::shared_ptr<breakend_t> bnd = nullptr;
 			if (spa.overlap) {
 				std::shared_ptr<consensus_t> leftmost_consensus = std::make_shared<consensus_t>(false, c->la_start, c->la_end, c->la_end, c->la_furthermost_seq, 1, 0, 0, c->la_max_mapq, 0, 0);
@@ -509,25 +510,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 
 }
 
-// remove HSR clusters that overlap with a clipped position, i.e., the clipped position of a clipped cluster is contained in the HSR cluster
-// direction of clip must be the same 
-// clipped_consensuses must be sorted by breakpoint
-void remove_hsr_overlapping_clipped(std::vector<std::shared_ptr<consensus_t>>& hsr_consensuses, std::vector<std::shared_ptr<consensus_t>>& clipped_consensuses) {
-	std::sort(hsr_consensuses.begin(), hsr_consensuses.end(),
-			[](std::shared_ptr<consensus_t> c1, std::shared_ptr<consensus_t> c2) { return c1->start < c2->start; });
-	std::vector<std::shared_ptr<consensus_t>> kept_consensus;
-	int i = 0;
-	for (std::shared_ptr<consensus_t> c : hsr_consensuses) {
-		while (i < clipped_consensuses.size() && clipped_consensuses[i]->breakpoint < c->start) i++;
-
-		// clipped_consensuses[i] must be same clip direction as cluster and breakpoint must be the smallest s.t. >= cluster.start
-		if (i >= clipped_consensuses.size() || clipped_consensuses[i]->breakpoint > c->end) {
-			kept_consensus.push_back(c);
-		}
-	}
-	kept_consensus.swap(hsr_consensuses);
-}
-
 void read_consensuses(int id, int contig_id, std::string contig_name) {
 	std::string dir, seq;
     hts_pos_t start, end, breakpoint;
@@ -576,9 +558,6 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 	};
     std::sort(rc_sr_consensuses.begin(), rc_sr_consensuses.end(), consensus_cmp);
     std::sort(lc_sr_consensuses.begin(), lc_sr_consensuses.end(), consensus_cmp);
-
-	remove_hsr_overlapping_clipped(rc_hsr_consensuses, rc_sr_consensuses);
-    remove_hsr_overlapping_clipped(lc_hsr_consensuses, lc_sr_consensuses);
 }
 
 void find_indels_from_paired_consensuses(int id, int contig_id, std::string contig_name, 
@@ -619,6 +598,7 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 
 	for (int i = start; i < consensuses->size() && i < end; i++) {
 		std::shared_ptr<consensus_t> consensus = consensuses->at(i);
+
 		
 		std::vector<std::shared_ptr<sv_t>> svs;
 		if (!consensus->left_clipped) {

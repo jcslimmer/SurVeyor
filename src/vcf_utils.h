@@ -672,6 +672,14 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
 }
 
 std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
+	
+	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
+	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
+	std::string right_ins_seq = get_sv_info_str(hdr, sv, "RIGHT_SVINSSEQ");
+	if (!left_ins_seq.empty() && !right_ins_seq.empty()) {
+		return left_ins_seq + "-" + right_ins_seq;
+	}
+	
 	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
 	bcf_unpack(sv, BCF_UN_INFO);
 	char c = toupper(sv->d.allele[1][0]);
@@ -684,13 +692,6 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	std::string ins_seq = get_sv_info_str(hdr, sv, "SVINSSEQ");
 	if (!ins_seq.empty()) {
 		return ins_seq;
-	}
-
-	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
-	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
-	std::string right_ins_seq = get_sv_info_str(hdr, sv, "RIGHT_SVINSSEQ");
-	if (!left_ins_seq.empty() && !right_ins_seq.empty()) {
-		return left_ins_seq + "-" + right_ins_seq;
 	}
 
 	return "";
