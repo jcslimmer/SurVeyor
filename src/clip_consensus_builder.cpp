@@ -138,11 +138,6 @@ hts_pos_t get_end_offset(bam_redux_t* r1, bam_redux_t* r2) {
     hts_pos_t offset = r2->unclipped_end() - r1->unclipped_end();
     std::vector<uint32_t> rev_cigar(r2->cigar.rbegin(), r2->cigar.rend());
     std::pair<int, int> del_ins = get_dels_ins_in_first_n_chars(rev_cigar, offset);
-    if (offset + del_ins.second - del_ins.first < 0) {
-        std::cout << offset << " " << del_ins.first << " " << del_ins.second << std::endl;
-        std::cerr << "WARNING: read_start_offset < 0" << std::endl;
-        exit(0);
-    }
     return offset + del_ins.second - del_ins.first;
 }
 

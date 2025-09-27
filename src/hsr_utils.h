@@ -20,10 +20,10 @@ int compute_left_half_Ms(bam1_t* r) {
 	for (int i = 0; i < r->core.n_cigar; i++) {
 		char op_char = bam_cigar_opchr(cigar[i]);
 		int op_len = bam_cigar_oplen(cigar[i]);
-		if (op_char == 'M') {
+		if (op_char == 'M' || op_char == '=' || op_char == 'X') {
 			left_Ms += std::min(border, qpos+op_len) - qpos;
 			qpos += op_len;
-		} else if (op_char == 'I') {
+		} else if (op_char == 'I' || op_char == 'S') {
 			qpos += op_len;
 		}
 
@@ -58,6 +58,7 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_1_diff(bam1_t* r
 				else right_diffs++;
 			}
 		} else if (c == '^') {
+			left_Ms -= m;
 			del_mode = true;
 			if (left_Ms > 0) left_diffs++;
 			else right_diffs++;
@@ -113,6 +114,7 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
             else right_diffs++;
             if (!del_mode) left_Ms--;
         } else if (c == '^') {
+			left_Ms -= m;
             del_mode = true;
         }
     }
