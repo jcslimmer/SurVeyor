@@ -511,6 +511,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 }
 
 void read_consensuses(int id, int contig_id, std::string contig_name) {
+
 	std::string dir, seq;
     hts_pos_t start, end, breakpoint;
     int fwd_clipped, rev_clipped;
@@ -598,7 +599,6 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 
 	for (int i = start; i < consensuses->size() && i < end; i++) {
 		std::shared_ptr<consensus_t> consensus = consensuses->at(i);
-
 		
 		std::vector<std::shared_ptr<sv_t>> svs;
 		if (!consensus->left_clipped) {

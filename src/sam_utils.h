@@ -283,6 +283,15 @@ std::string get_qual_ascii(bam1_t* r, bool fastq_seq = false) {
 	return qual_ascii;
 }
 
+std::string get_cigar_string(bam1_t* r) {
+    std::string cigar_str;
+    uint32_t* cigar = bam_get_cigar(r);
+    for (uint32_t i = 0; i < r->core.n_cigar; i++) {
+        cigar_str += std::to_string(bam_cigar_oplen(cigar[i])) + bam_cigar_opchr(cigar[i]);
+    }
+    return cigar_str;
+}
+
 double avg_qual(bam1_t* read) {
 	double avg_qual = 0;
 	uint8_t* qual = bam_get_qual(read);
