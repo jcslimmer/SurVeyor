@@ -505,6 +505,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 	auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score);
 
 	int prefix_mh_len = 0;
+	std::vector<std::shared_ptr<sv_t>> svs;
     if (left_bp > right_bp) { // there is microhomology in the inserted seq or it's a duplication
         int mh_len = left_bp - right_bp;
         std::pair<int, int> lp_suffix_score = find_aln_suffix_score(left_part_aln.cigar, mh_len, 1, -4, -6, -1);
@@ -515,7 +516,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
 				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
 				std::shared_ptr<duplication_t> sv = std::make_shared<duplication_t>(contig_name, right_bp, left_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
-				return std::vector<std::shared_ptr<sv_t>>({sv});
+				svs.push_back(sv);
 			}
 		}
 
@@ -529,6 +530,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
             mh = right_part.substr(0, query_mh_bases);
             right_bp = left_bp + right_bp_adjustment;
             middle_part = middle_part + mh;
+			prefix_mh_len = mh.length();
         } else {
             // the prefix of the right part is more similar to the reference, hence we choose the suffix of the left part
             // to add as part of the inserted sequence
@@ -541,15 +543,16 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
         }
     }
 
-    std::vector<std::shared_ptr<sv_t>> svs;
-    if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
-		std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
-        svs.push_back(sv);
-    } else { // length of ALT > REF, insertion
-		std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
-        svs.push_back(sv);
-    }
-	svs[0]->mh_len = prefix_mh_len;
+    if (svs.empty()) { // we haven't already called a duplication
+		if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
+			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
+			svs.push_back(sv);
+		} else { // length of ALT > REF, insertion
+			std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
+			svs.push_back(sv);
+		}
+		svs[0]->mh_len = prefix_mh_len;
+	}
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
