@@ -465,7 +465,7 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
         std::vector<bool> accepted;
         std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted);
         if (consensus_seq == "") return consensuses;
-        
+
         int accepted_reads_n = std::count(accepted.begin(), accepted.end(), true);
         if (accepted_reads_n < 3) {
             consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted);
@@ -626,11 +626,15 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
         if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
 
         std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
+        if (left_and_right_diffs.first == left_and_right_diffs.second) {
+            left_and_right_diffs = compute_left_and_right_differences(read, false);
+        }
 
         bool lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
         std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
 
         if (cluster.size() >= 3 && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
+
             std::vector<bam_redux_t*> cluster_v;
 			for (bam1_t* r : cluster) cluster_v.push_back(new bam_redux_t(r));
 			std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, lc_clipped);

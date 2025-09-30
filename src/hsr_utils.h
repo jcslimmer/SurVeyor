@@ -59,6 +59,7 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_1_diff(bam1_t* r
 			}
 		} else if (c == '^') {
 			left_Ms -= m;
+			m = 0;
 			del_mode = true;
 			if (left_Ms > 0) left_diffs++;
 			else right_diffs++;
@@ -115,6 +116,7 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
             if (!del_mode) left_Ms--;
         } else if (c == '^') {
 			left_Ms -= m;
+			m = 0;
             del_mode = true;
         }
     }
