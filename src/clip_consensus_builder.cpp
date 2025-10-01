@@ -687,6 +687,8 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
     select_nonoverlapping_clusters(rc_consensuses);
     select_nonoverlapping_clusters(lc_consensuses);
+    enforce_max_ploidy(rc_consensuses, 2);
+    enforce_max_ploidy(lc_consensuses, 2);
 
     std::vector<consensus_t*> all_consensuses;
     all_consensuses.insert(all_consensuses.end(), rc_consensuses.begin(), rc_consensuses.end());
