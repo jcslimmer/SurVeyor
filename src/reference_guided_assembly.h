@@ -240,6 +240,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		}
 	}
 
+
 	// we assembled as much as possible using guidance from the reference
 	// however, reads may be misaligned for in the case of an incomplete or rearranged reference
 	// we can try to "scaffold" the contigs using the reads that were rejected during the assembly

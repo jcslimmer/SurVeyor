@@ -342,8 +342,7 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
 
         int sp_len = s1.length()-i;
         if (best_score >= sp_len*match_score) break; // current best score is unbeatable
-		
-		
+
         const char* s1_suffix = s1.data()+i;
         const char* s2_prefix = s2.data();
 		int max_acceptable_mm = sp_len * max_seq_error;

@@ -15,7 +15,7 @@
 #endif
 
 #ifdef USE_SCALAR
-typedef int SIMD_INT;
+typedef uint32_t SIMD_INT;
 
 #define SET1_INT(x) (x)
 #define LOAD_INT(p) (*(p))
@@ -25,13 +25,13 @@ typedef int SIMD_INT;
 #define ADD_INT(a, b) ((a) + (b))
 #define MAX_INT(a, b) std::max((a), (b))
 #define CMP_GT_INT32(a, b) ((a) > (b) ? 1 : 0)
-#define COUNT_EQUAL_BYTES(a, b) \
+#define COUNT_EQUAL_BYTES(a, b) (\
     ((a & 0xFF000000) == (b & 0xFF000000)) + \
     ((a & 0x00FF0000) == (b & 0x00FF0000)) + \
     ((a & 0x0000FF00) == (b & 0x0000FF00)) + \
-    ((a & 0x000000FF) == (b & 0x000000FF))
+    ((a & 0x000000FF) == (b & 0x000000FF)) )
 #define INT_PER_BLOCK 1
-#define BYTES_PER_BLOCK 4
+#define BYTES_PER_BLOCK (sizeof(SIMD_INT))
 
 #elif defined(USE_SSE)
 #include <immintrin.h>
