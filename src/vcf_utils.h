@@ -13,7 +13,7 @@
 #include "utils.h"
 
 bcf_hrec_t* generate_contig_hrec() {
-	bcf_hrec_t* contig_hrec = new bcf_hrec_t;
+	bcf_hrec_t* contig_hrec = (bcf_hrec_t*) malloc(sizeof(bcf_hrec_t));
 	contig_hrec->type = BCF_HL_CTG;
 	contig_hrec->key = strdup("contig");
 	contig_hrec->value = NULL;
@@ -679,7 +679,7 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	if (!left_ins_seq.empty() && !right_ins_seq.empty()) {
 		return left_ins_seq + "-" + right_ins_seq;
 	}
-	
+
 	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
 	bcf_unpack(sv, BCF_UN_INFO);
 	char c = toupper(sv->d.allele[1][0]);

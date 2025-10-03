@@ -1,6 +1,8 @@
 #ifndef SIMD_MACROS_H_
 #define SIMD_MACROS_H_
 
+#include <cstdint>
+#include <cstring>
 
 #if !defined(USE_SCALAR) && !defined(USE_SSE) && !defined(USE_AVX2) && !defined(USE_AVX512)
   #if defined(__AVX512F__)
@@ -17,11 +19,20 @@
 #ifdef USE_SCALAR
 typedef uint32_t SIMD_INT;
 
+static inline SIMD_INT load_int_unaligned(const void* p) {
+    SIMD_INT v;
+    std::memcpy(&v, p, sizeof v);  // safe for any alignment
+    return v;
+}
+static inline void store_int_unaligned(void* p, SIMD_INT v) {
+    std::memcpy(p, &v, sizeof v);
+}
+
 #define SET1_INT(x) (x)
 #define LOAD_INT(p) (*(p))
 #define STORE_INT(p, v) (*(p) = (v))
-#define LOADU_INT(p) (*(p))
-#define STOREU_INT(p, v) (*(p) = (v))
+#define LOADU_INT(p) load_int_unaligned(p)
+#define STOREU_INT(p, v) store_int_unaligned(p, v)
 #define ADD_INT(a, b) ((a) + (b))
 #define MAX_INT(a, b) std::max((a), (b))
 #define CMP_GT_INT32(a, b) ((a) > (b) ? 1 : 0)
