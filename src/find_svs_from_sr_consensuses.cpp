@@ -368,7 +368,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 				bnd->imprecise = true;
 			}
 
-			if (bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == nullptr || bnd->end-bnd->start < config.min_sv_size) {
 				continue;
 			}
 			bnd->source = "DP";
