@@ -577,6 +577,7 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
         curr_candidate_cluster.clear();
         full_consensuses.insert(full_consensuses.end(), consensuses.begin(), consensuses.end());
     }
+
     auto rc_same_cluster = [](bam_redux_t* r1, bam_redux_t* r2) {return abs(r1->end-r2->end) <= config.max_clipped_pos_dist;};
     sort(rc_reads.begin(), rc_reads.end(), [](bam_redux_t* r1, bam_redux_t* r2) { return r1->end < r2->end; });
     if (!rc_reads.empty()) {

@@ -17,7 +17,7 @@
 #endif
 
 #ifdef USE_SCALAR
-typedef uint32_t SIMD_INT;
+typedef int32_t SIMD_INT;
 
 static inline SIMD_INT load_int_unaligned(const void* p) {
     SIMD_INT v;

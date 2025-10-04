@@ -667,7 +667,6 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 			sv->source = "HSR-SR";
 		}
 	}
-
     return svs;
 }
 
