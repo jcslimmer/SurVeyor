@@ -1,7 +1,7 @@
 import sys, os, argparse, pysam, timeit
 from run_classifier import Classifier
 
-VERSION = "0.9"
+VERSION = "0.10"
 
 MAX_READS = 1000
 GEN_DIST_SIZE = 100000
@@ -214,7 +214,7 @@ if cmd_args.command == 'call':
     
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     run_cmd(genotype_cmd)
-    
+
     if cmd_args.generate_training_data:
         separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
