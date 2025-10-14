@@ -119,7 +119,18 @@ class Features:
         if "<" not in record.alts[0]:
             return record.alts[0]
         elif 'SVINSSEQ' in record.info:
-            return record.info['SVINSSEQ']
+            svinsseq = record.info['SVINSSEQ']
+            if isinstance(svinsseq, list) or isinstance(svinsseq, tuple):
+                return svinsseq[0]
+            return svinsseq
+        elif "LEFT_SVINSSEQ" in record.info or "RIGHT_SVINSSEQ" in record.info:
+            left_svinsseq = Features.get_string_value(record.info, 'LEFT_SVINSSEQ', "")
+            right_svinsseq = Features.get_string_value(record.info, 'RIGHT_SVINSSEQ', "")
+            if isinstance(left_svinsseq, list) or isinstance(left_svinsseq, tuple):
+                left_svinsseq = left_svinsseq[0]
+            if isinstance(right_svinsseq, list) or isinstance(right_svinsseq, tuple):
+                right_svinsseq = right_svinsseq[0]
+            return left_svinsseq + '-' + right_svinsseq
         return ""
 
     def get_svlen(record):
@@ -180,12 +191,10 @@ class Features:
         source_str = Features.get_string_value(info, 'SOURCE', "")
         features['START_STOP_DIST'] = record.stop - record.pos
 
-        svinsseq = ""
-        if 'SVINSSEQ' in info:
-            svinsseq = info['SVINSSEQ']
         svlen = abs(Features.get_svlen(record))
         features['SVLEN'] = math.log1p(svlen)
 
+        svinsseq = Features.get_svinsseq(record)
         svinslen = Features.get_number_value(info, 'SVINSLEN', 0)
         if svinslen == 0 and svinsseq:
             svinslen = len(svinsseq)

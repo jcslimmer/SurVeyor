@@ -436,6 +436,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
 
+	const char* left_svinsseq_tag = "##INFO=<ID=LEFT_SVINSSEQ,Number=1,Type=String,Description=\"Known left side of insertion for an insertion of unknown length.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, left_svinsseq_tag, &len));
+
+	const char* right_svinsseq_tag = "##INFO=<ID=RIGHT_SVINSSEQ,Number=1,Type=String,Description=\"Known right side of insertion for an insertion of unknown length.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, right_svinsseq_tag, &len));
+
 	const char* infsvinsseq_tag = "##INFO=<ID=SVINSSEQ_INFERRED,Number=1,Type=String,Description=\"Inferred insertion sequence. When the inserted sequence is too long "
 		"to be fully assembled but SurVeyor suspects it to be a transposition, it uses the reference to infer the content of the insertion. Not guaranteed to be accurate. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, infsvinsseq_tag, &len));
@@ -507,25 +513,77 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	return header;
 }
 
+void update_alleles_info(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, hts_pos_t start, hts_pos_t end, std::string svtype, int svlen, std::string ins_seq) {
+	
+	std::string ref_allele = std::string(1, chr_seq[start]);
+	std::string alt_allele = std::string(1, chr_seq[start]);
+	if (svtype == "BND") {
+		throw std::runtime_error("BND not supported in update_alleles_info.");
+	} else if (svtype == "DEL" && end-start <= 100) {
+		ref_allele += std::string(chr_seq + start + 1, end-start);
+		alt_allele += ins_seq;
+	} else if (svtype == "INS" && end-start <= 100 && !ins_seq.empty()) {
+		ref_allele += std::string(chr_seq + start + 1, end-start);
+		alt_allele += ins_seq;
+	} else {
+		alt_allele = "<" + svtype + ">";
+	}
+	std::string alleles = ref_allele + "," + alt_allele;
+	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
+
+	int int_conv = end+1;
+	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
+
+	if (svtype != "BND") {
+		int_conv = svlen;
+		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
+		if (!ins_seq.empty()) {
+			int_conv = ins_seq.length();
+			bcf_update_info_int32(hdr, bcf_entry, "SVINSLEN", &int_conv, 1);
+		}
+	}
+}
+
 void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for_gt = false) {
 	bcf_clear(bcf_entry);
 	
 	bcf_entry->rid = bcf_hdr_name2id(hdr, sv->chr.c_str());
 	bcf_entry->pos = sv->start;
 	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
-	
+
 	std::string ref_allele = std::string(1, chr_seq[sv->start]);
-	std::string alleles = ref_allele + ",";
+	std::string alt_allele = std::string(1, chr_seq[sv->start]);
 	if (sv->svtype() == "BND") {
 		breakend_t* bnd = (breakend_t*) sv;
 		if (bnd->direction == '+') {
-			alleles += std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
+			alt_allele = std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
 		} else {
-			alleles += std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
+			alt_allele = std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
 		}
+	} else if (sv->svtype() == "DEL" && sv->end-sv->start <= 100) {
+		ref_allele += std::string(chr_seq + sv->start + 1, sv->end-sv->start);
+		alt_allele += sv->ins_seq;
+	} else if (sv->svtype() == "INS" && sv->end-sv->start <= 100 && !sv->incomplete_ins_seq()) {
+		ref_allele += std::string(chr_seq + sv->start + 1, sv->end-sv->start);
+		alt_allele += sv->ins_seq;
 	} else {
-		alleles += "<" + sv->svtype() + ">";
+		alt_allele = "<" + sv->svtype() + ">";
+		if (!sv->ins_seq.empty()) {
+			if (sv->incomplete_ins_seq()) {
+				std::string left_ins_seq = sv->ins_seq.substr(0, sv->known_seq_prefix_len());
+				std::string right_ins_seq = sv->ins_seq.substr(sv->ins_seq.length()-sv->known_seq_suffix_len(), sv->known_seq_suffix_len());
+				if (!left_ins_seq.empty()) {
+					bcf_update_info_string(hdr, bcf_entry, "LEFT_SVINSSEQ", left_ins_seq.c_str());
+				}
+				if (!right_ins_seq.empty()) {
+					bcf_update_info_string(hdr, bcf_entry, "RIGHT_SVINSSEQ", right_ins_seq.c_str());
+				}
+			} else {
+				bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
+			}
+		}
 	}
+	std::string alleles = ref_allele + "," + alt_allele;
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	int n_samples = bcf_hdr_nsamples(hdr);
@@ -559,9 +617,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		}
 	}
 	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
-	if (!sv->ins_seq.empty()) {
-		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
-	}
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
 	}
@@ -673,6 +728,8 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
 
 std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	
+	bcf_unpack(sv, BCF_UN_INFO);
+
 	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
 	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
 	std::string right_ins_seq = get_sv_info_str(hdr, sv, "RIGHT_SVINSSEQ");
@@ -681,7 +738,6 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	}
 
 	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
-	bcf_unpack(sv, BCF_UN_INFO);
 	char c = toupper(sv->d.allele[1][0]);
 	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
 		// return everything after the padding base
