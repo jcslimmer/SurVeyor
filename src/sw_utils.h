@@ -510,7 +510,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
         std::pair<int, int> lp_suffix_score = find_aln_suffix_score(left_part_aln.cigar, mh_len, 1, -4, -6, -1);
         std::pair<int, int> rp_prefix_score = find_aln_prefix_score(right_part_aln.cigar, mh_len, 1, -4, -6, -1);
 
-		if (middle_part.size() < left_bp - right_bp) {
+		if (middle_part.size() < mh_len && middle_part.size() + mh_len > 50) {
 			if (right_anchor_end - left_anchor_end < min_clip_len || right_anchor_start - left_anchor_start < min_clip_len ||
 				(lp_suffix_score.first == mh_len && rp_prefix_score.first == mh_len && middle_part.empty() &&
 				!is_right_clipped(left_part_aln) && !is_left_clipped(right_part_aln))) { // it's a duplication
@@ -591,7 +591,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 				return std::vector<std::shared_ptr<sv_t>>();
 			}
 		}
-		
+
 		overlap = spa.overlap;
 		mismatch_rate = spa.mismatch_rate();
 		
