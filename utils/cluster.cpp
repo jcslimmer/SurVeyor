@@ -84,7 +84,10 @@ double len_ratio(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 		}
 	} else if ((sv1.svtype == "INS" && sv2.svtype == "DUP") || (sv1.svtype == "DUP" && sv2.svtype == "INS")) return 1.0;
 	else if (sv1.svtype == "INV" && sv2.svtype == "INV") {
-		return std::min(double(sv1.svlen), double(sv2.svlen)) / std::max(double(sv1.svlen), double(sv2.svlen));
+		double sv1_len = sv1.end - sv1.start;
+		double sv2_len = sv2.end - sv2.start;
+		if (sv1_len == 0 && sv2_len == 0) return 1.0;
+		else return std::min(sv1_len, sv2_len) / std::max(sv1_len, sv2_len);
 	} else {
 		return 0.0; // not compatible
 	}
@@ -119,18 +122,23 @@ bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 	if (sv1.svtype != sv2.svtype) return false;
 
 	bool distance_ok, overlap_ok, len_diff_ok, len_ratio_ok;
-
+	
 	if (sv1.imprecise || sv2.imprecise) {
 		distance_ok = distance(sv1, sv2) <= max_imprec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_imprec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_imprec_len_diff;
 		len_ratio_ok = len_ratio(sv1, sv2) >= min_imprec_len_ratio;
+		std::cout << "imprecise: " << len_ratio(sv1, sv2) << std::endl;
 	} else {
 		distance_ok = distance(sv1, sv2) <= max_prec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_prec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_prec_len_diff;
 		len_ratio_ok = len_ratio(sv1, sv2) >= min_prec_len_ratio;
+		std::cout << "precise: " << len_ratio(sv1, sv2) << std::endl;
 	}
+	
+	std::cout << "Comparing " << sv1.unique_key() << " and " << sv2.unique_key() << std::endl;
+	std::cout << distance_ok << " " << overlap_ok << " " << len_diff_ok << " " << len_ratio_ok << std::endl;
 
 	return distance_ok && overlap_ok && len_diff_ok && len_ratio_ok;
 }
