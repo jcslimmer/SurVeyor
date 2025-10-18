@@ -268,12 +268,14 @@ bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& alig
 bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
 	int max_dist = (sv1->imprecise || sv2->imprecise) ? max_imprec_dist : max_prec_dist;
-	if (distance(sv1, sv2) > max_dist || !check_ins_ins_seq(sv1, sv2, aligner, alignment)) return false;
-	if (!sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq() && sv1->svlen() < 1000 && sv2->svlen() < 1000) {
+	if (distance(sv1, sv2) > max_dist) return false;
+	if (!ignore_seq && !sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq() && sv1->svlen() < 1000 && sv2->svlen() < 1000) {
 		double min_len_ratio = (sv1->imprecise || sv2->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
 		int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
 		int max_score_loss = max_svlen * (1-min_len_ratio);
 		return alt_allele_match(sv1, sv2, max_score_loss);
+	} else {
+		return check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	}
 	return true;
 }
@@ -413,6 +415,18 @@ void find_match(int id, int start_idx, int end_idx) {
 	}
 }
 
+std::unordered_set<std::string> find_dup_ids(std::vector<std::shared_ptr<sv_t>>& svs) {
+	std::unordered_set<std::string> seen_ids, dup_ids;
+	for (const std::shared_ptr<sv_t>& sv : svs) {
+		if (seen_ids.count(sv->id)) {
+			dup_ids.insert(sv->id);
+		} else {
+			seen_ids.insert(sv->id);
+		}
+	}
+	return dup_ids;
+}
+
 int main(int argc, char* argv[]) {
 
 	cxxopts::Options options("compare", "Given a VCF or SV file with benchmark deletions and one with the called ones, reports for "
@@ -442,8 +456,6 @@ int main(int argc, char* argv[]) {
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
 		("I,ignore-seq", "Only compare insertions by position.", cxxopts::value<bool>()->default_value("false"))
-		("i,force-ids", "Generate new IDs for the variants, required when variants do not have IDs or have duplicated IDs.",
-				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("bdup-ids", "ID of benchmark SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("cdup-ids", "ID of called SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
@@ -588,35 +600,20 @@ int main(int argc, char* argv[]) {
 			
 	}
 
-	if (parsed_args["force-ids"].as<bool>()) {
-		if (!bdup_ids.empty()) {
-			std::cerr << "Warning: --force-ids and --bdup-ids are both used. IDs of benchmark SVs will not be forced." << std::endl;
-		} else {
-			for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
-		}
-		if (!cdup_ids.empty()) {
-			std::cerr << "Warning: --force-ids and --cdup-ids are both used. IDs of called SVs will not be forced." << std::endl;
-		} else {
-			for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
+	std::unordered_set<std::string> bdup_ids = find_dup_ids(benchmark_svs);
+	std::unordered_set<std::string> cdup_ids = find_dup_ids(called_svs);
+	if (!bdup_ids.empty()) {
+		for (std::shared_ptr<sv_t>& sv : benchmark_svs) {
+			if (bdup_ids.count(sv->id)) {
+				sv->id = sv->unique_key();
+			}
 		}
 	}
-
-	// if two variants have the same ID, give a warning that the user should consider --force-ids
-	std::unordered_set<std::string> benchmark_id_count, called_id_count;
-	for (const std::shared_ptr<sv_t>& sv : benchmark_svs) {
-		if (benchmark_id_count.count(sv->id)) {
-			std::cerr << "Warning: benchmark file contains duplicated IDs. Sensitivity may not be computed correctly. Consider using --force-ids." << std::endl;
-			break;
-		} else {
-			benchmark_id_count.insert(sv->id);
-		}
-	}
-	for (const std::shared_ptr<sv_t>& sv : called_svs) {
-		if (called_id_count.count(sv->id)) {
-			std::cerr << "Warning: called file contains duplicated IDs. Precision may not be computed correctly. Consider using --force-ids." << std::endl;
-			break;
-		} else {
-			called_id_count.insert(sv->id);
+	if (!cdup_ids.empty()) {
+		for (std::shared_ptr<sv_t>& sv : called_svs) {
+			if (cdup_ids.count(sv->id)) {
+				sv->id = sv->unique_key();
+			}
 		}
 	}
 
