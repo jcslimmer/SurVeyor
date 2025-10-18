@@ -603,6 +603,7 @@ int main(int argc, char* argv[]) {
 	std::unordered_set<std::string> bdup_ids = find_dup_ids(benchmark_svs);
 	std::unordered_set<std::string> cdup_ids = find_dup_ids(called_svs);
 	if (!bdup_ids.empty()) {
+		std::cerr << "Warning: found duplicate IDs in benchmark file, assigning new IDs" << std::endl;
 		for (std::shared_ptr<sv_t>& sv : benchmark_svs) {
 			if (bdup_ids.count(sv->id)) {
 				sv->id = sv->unique_key();
@@ -610,6 +611,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	if (!cdup_ids.empty()) {
+		std::cerr << "Warning: found duplicate IDs in called file, assigning new IDs" << std::endl;
 		for (std::shared_ptr<sv_t>& sv : called_svs) {
 			if (cdup_ids.count(sv->id)) {
 				sv->id = sv->unique_key();
