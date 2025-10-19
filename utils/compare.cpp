@@ -103,16 +103,18 @@ char* generate_alt_allele(sv_t* sv, hts_pos_t start, hts_pos_t end) {
 	int len = sv->start - start + sv->ins_seq.length() + end - sv->end;
 	char* alt = new char[len+1];
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
-	strncpy(alt, chr_seq+start, sv->start-start);
+	strncpy(alt, chr_seq+start+1, sv->start-start);
 	strncpy(alt+sv->start-start, sv->ins_seq.c_str(), sv->ins_seq.length());
-	strncpy(alt+sv->start-start+sv->ins_seq.length(), chr_seq+sv->end, end-sv->end);
+	strncpy(alt+sv->start-start+sv->ins_seq.length(), chr_seq+sv->end+1, end-sv->end);
 	alt[len] = '\0';
 	return alt;
 }
 
 bool alt_allele_match(sv_t* sv1, sv_t* sv2, int max_score_loss) {
 	hts_pos_t start = std::min(sv1->start, sv2->start) - 100;
+	if (start < 0) start = 0;
 	hts_pos_t end = std::max(sv1->end, sv2->end) + 100;
+	if (end >= chr_seqs.get_len(sv1->chr)) end = chr_seqs.get_len(sv1->chr)-1;
 	char* alt1 = generate_alt_allele(sv1, start, end);
 	char* alt2 = generate_alt_allele(sv2, start, end);
 	int strlen1 = strlen(alt1);
@@ -609,6 +611,8 @@ int main(int argc, char* argv[]) {
 				sv->id = sv->unique_key();
 			}
 		}
+	} else {
+		std::cerr << "No duplicate IDs found in benchmark file." << std::endl;
 	}
 	if (!cdup_ids.empty()) {
 		std::cerr << "Warning: found duplicate IDs in called file, assigning new IDs" << std::endl;
