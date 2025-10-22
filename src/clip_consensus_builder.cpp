@@ -162,19 +162,31 @@ int compute_read_score(bam_redux_t* r, int match_score, int mismatch_score, int 
 
 std::vector<hts_pos_t> get_read_start_offsets(std::vector<bam_redux_t*>& reads, bool left_clipped) {
     std::vector<hts_pos_t> read_start_offsets;
-    int smallest_unclipped_len_i = 0;
+    int smallest_unclipped_end_i = 0;
     for (int i = 1; i < reads.size(); i++) {
-        if (reads[i]->unclipped_end() < reads[smallest_unclipped_len_i]->unclipped_end()) {
-            smallest_unclipped_len_i = i;
+        if (reads[i]->unclipped_end() < reads[smallest_unclipped_end_i]->unclipped_end()) {
+            smallest_unclipped_end_i = i;
         }
     }
     for (bam_redux_t* r : reads) {
         if (left_clipped) {
-            hts_pos_t offset = get_end_offset(reads[smallest_unclipped_len_i], r);
-            offset -= r->seq_len() - reads[smallest_unclipped_len_i]->seq_len();
+            hts_pos_t offset = get_end_offset(reads[smallest_unclipped_end_i], r);
+            offset -= r->seq_len() - reads[smallest_unclipped_end_i]->seq_len();
             read_start_offsets.push_back(offset);
         } else {
             read_start_offsets.push_back(get_start_offset(reads[0], r));
+        }
+    }
+
+    // this is possible when left-clipped reads are used and they have variable lengths - then the one with the smallest unclipped end
+    // is not necessarily the leftmost read in terms of unclipped starting position
+    hts_pos_t min_offset = 0;
+    for (hts_pos_t offset : read_start_offsets) {
+        if (offset < min_offset) min_offset = offset;
+    }
+    if (min_offset < 0) {
+        for (hts_pos_t& offset : read_start_offsets) {
+            offset -= min_offset;
         }
     }
     return read_start_offsets;
@@ -191,7 +203,7 @@ bool operator < (const base_score_t& bs1, const base_score_t& bs2) {
     return bs1.qual < bs2.qual;
 }
 
-std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector<uint8_t*>& quals, std::vector<hts_pos_t>& read_start_offsets) {
+std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector<uint8_t*>& quals, std::vector<hts_pos_t> read_start_offsets) {
 
     // if not already sorted, sort by start offset
     if (!std::is_sorted(read_start_offsets.begin(), read_start_offsets.end())) {
@@ -360,13 +372,13 @@ std::vector<bool> find_accepted_reads(std::string& consensus_seq, std::vector<ba
         // filter reads with too many differences from the consensus_seq
         hts_pos_t clip_start = left_clipped ? 0 : r->seq_len() - r->right_clip_size;
         hts_pos_t clip_end = left_clipped ? r->left_clip_size : r->seq_len();
-        for (int i = 0; i < r->seq_len(); i++) {
-            if (i+offset >= consensus_seq.length()) {
+        for (int j = 0; j < r->seq_len(); j++) {
+            if (j + offset >= consensus_seq.length()) {
                 std::cerr << "WARNING: consensus_seq out of boundary." << std::endl;
             }
-            if (consensus_seq[i + offset] != get_base(r->seq.data(), i)) {
+            if (consensus_seq[j + offset] != get_base(r->seq.data(), j)) {
                 mm++;
-                if (i >= clip_start && i < clip_end) mm_clip++;
+                if (j >= clip_start && j < clip_end) mm_clip++;
             }
         }
         if (mm <= std::ceil(config.max_seq_error * consensus_seq.length()) &&
@@ -394,6 +406,7 @@ std::vector<bool> find_accepted_reads(std::string& consensus_seq, std::vector<ba
 
 std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped, bool left_clipped, bool use_kmer_selection,
                                      std::vector<bool>& accepted) {
+
     std::vector<std::string> seqs;
     std::vector<uint8_t*> quals;
     std::vector<hts_pos_t> read_start_offsets = get_read_start_offsets(clipped, left_clipped);
@@ -437,7 +450,7 @@ std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped, bool le
 
     std::string consensus_seq = build_full_consensus_seq(seqs, quals, read_start_offsets);
     if (consensus_seq == "") return consensus_seq;
-    
+
     std::vector<bool> selected_accepted = find_accepted_reads(consensus_seq, selected_clipped, read_start_offsets, left_clipped);
 
     accepted = std::vector<bool>(clipped.size(), false);

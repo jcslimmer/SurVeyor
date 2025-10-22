@@ -567,21 +567,21 @@ int main(int argc, char* argv[]) {
 	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_unsupported_func), called_svs.end());
 
 	if (parsed_args["keep-all-benchmark"].as<bool>()) {
-		std::cerr << "Warning: keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
+		std::cerr << "Keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
 	} else {
 		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;});
 		if (n_ac_0 > 0) {
-			std::cerr << "Warning: excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
+			std::cerr << "Excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
 		}
 		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
 	}
 
 	if (parsed_args["keep-all-called"].as<bool>()) {
-		std::cerr << "Warning: keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
+		std::cerr << "Keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
 	} else {
 		int n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;});
 		if (n_ac_0 > 0) {
-			std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
+			std::cerr << "Excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
 		}
 		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;}), called_svs.end());
 	}
@@ -592,10 +592,10 @@ int main(int argc, char* argv[]) {
 		int n_not_pass_b = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass);
 		int n_not_pass_c = std::count_if(called_svs.begin(), called_svs.end(), is_not_pass);
 		if (n_not_pass_b > 0) {
-			std::cerr << "Warning: excluded " << n_not_pass_b << " variants in benchmark file that are not PASS." << std::endl;
+			std::cerr << "Excluded " << n_not_pass_b << " variants in benchmark file that are not PASS." << std::endl;
 		}
 		if (n_not_pass_c > 0) {
-			std::cerr << "Warning: excluded " << n_not_pass_c << " variants in called file that are not PASS." << std::endl;
+			std::cerr << "Excluded " << n_not_pass_c << " variants in called file that are not PASS." << std::endl;
 		}
 		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass), benchmark_svs.end());
 		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_not_pass), called_svs.end());
@@ -611,8 +611,6 @@ int main(int argc, char* argv[]) {
 				sv->id = sv->unique_key();
 			}
 		}
-	} else {
-		std::cerr << "No duplicate IDs found in benchmark file." << std::endl;
 	}
 	if (!cdup_ids.empty()) {
 		std::cerr << "Warning: found duplicate IDs in called file, assigning new IDs" << std::endl;
