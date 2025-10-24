@@ -378,8 +378,9 @@ void find_match(int id, int start_idx, int end_idx) {
 		mtx.unlock();
 
 		std::vector<repeat_t> reps_containing_bsv;
-		if (reps_i[bsv->chr] != NULL) {
-			std::vector<Interval<repeat_t>> intervals_temp = reps_i[bsv->chr]->findOverlapping(bsv->start, bsv->end);
+		auto it = reps_i.find(bsv->chr);
+		if (it != reps_i.end() && it->second != nullptr) {
+			std::vector<Interval<repeat_t>> intervals_temp = it->second->findOverlapping(bsv->start, bsv->end);
 			for (auto &iv : intervals_temp) {
 				repeat_t rep = iv.value;
 				if (rep.contains(bsv.get())) {
