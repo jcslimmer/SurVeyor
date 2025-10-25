@@ -522,22 +522,24 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
         // otherwise, it's an insertion
         std::string mh;
         if (lp_suffix_score.first > rp_prefix_score.first) { 
-            // the suffix of the left part is more similar to the reference, hence we choose the prefix of the right part 
+            // the suffix of the left part is more similar to the reference, hence we choose
+			// the right-clip (if any) of the left part + the prefix of the right part 
             //to add as part of the inserted sequence
             int right_bp_adjustment = 0;
             int query_mh_bases = query_prefix_len(right_part_aln.cigar, mh_len, right_bp_adjustment);
             mh = right_part.substr(0, query_mh_bases);
             right_bp = left_bp + right_bp_adjustment;
-            middle_part = middle_part + mh;
+            middle_part = left_part.substr(left_part.length() - get_right_clip_size(left_part_aln)) + middle_part + mh;
 			prefix_mh_len = mh.length();
         } else {
-            // the prefix of the right part is more similar to the reference, hence we choose the suffix of the left part
+            // the prefix of the right part is more similar to the reference, hence we choose 
+			// the suffix of the left part + the left-clip (if any) of the right part
             // to add as part of the inserted sequence
             int left_bp_adjustment = 0;
             int query_mh_bases = query_suffix_len(left_part_aln.cigar, mh_len, left_bp_adjustment);
             mh = left_part.substr(left_part.length() - query_mh_bases);
             left_bp = right_bp - left_bp_adjustment;
-            middle_part = mh + middle_part;
+            middle_part = mh + middle_part + right_part.substr(0, get_left_clip_size(right_part_aln));
 			prefix_mh_len = mh.length();
         }
     }
@@ -640,7 +642,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		return std::vector<std::shared_ptr<sv_t>>();
 	}
 
-    std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
+	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
 	for (const auto& sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
