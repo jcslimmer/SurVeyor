@@ -80,7 +80,7 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
 		throw "Failed to read reference " + reference_fname;
 	}
-	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), stats, bam_file);
+	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), config, stats, bam_file);
 	if (!candidate_reads_for_extension.empty()) {
 		std::vector<Interval<ext_read_t*>> it_ivals;
 		for (ext_read_t* ext_read : candidate_reads_for_extension) {
@@ -795,7 +795,6 @@ int main(int argc, char* argv[]) {
 
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Unpaired consensuses extended in " << elapsed_time << " seconds" << std::endl;
-
 
 	std::cout << "Finding indels from unpaired consensuses." << std::endl;
 	start_time = std::chrono::high_resolution_clock::now();

@@ -584,7 +584,7 @@ void release_mates(int contig_id) {
 IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string contig_name, hts_pos_t contig_len, std::vector<hts_pair_pos_t> target_ivals, open_samFile_t* bam_file,
                                                                   std::vector<ext_read_t*>& candidate_reads_for_extension) {
     int contig_id = contig_map.get_id(contig_name);
-    candidate_reads_for_extension = get_extension_reads(contig_name, target_ivals, contig_len, stats, bam_file);
+    candidate_reads_for_extension = get_extension_reads(contig_name, target_ivals, contig_len, config, stats, bam_file);
     std::vector<Interval<ext_read_t*>> it_ivals;
     for (ext_read_t* ext_read : candidate_reads_for_extension) {
         Interval<ext_read_t*> it_ival(ext_read->start, ext_read->end, ext_read);
