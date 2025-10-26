@@ -258,9 +258,9 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 
 	hts_pos_t rev_mates_start = std::min(target_start+stats.min_is, contig_len);
 	hts_pos_t rev_mates_end = std::min(target_end+stats.max_is-stats.read_len, contig_len);
-
+	
 	std::vector<Interval<ext_read_t*> > target_reads = candidate_reads_itree.findOverlapping(
-			std::min(fwd_mates_start, rev_mates_start)-10, std::max(fwd_mates_end, rev_mates_end)+10);
+		std::min(fwd_mates_start, rev_mates_start)-10, std::max(fwd_mates_end, rev_mates_end)+10);
 	for (Interval<ext_read_t*> i_read : target_reads) {
 		ext_read_t* ext_read = i_read.value;
 		if (!ext_read->rev && ext_read->mapq >= high_confidence_mapq &&
@@ -296,7 +296,7 @@ void get_extension_read_seqs(IntervalTree<ext_read_t*>& candidate_reads_itree, s
 	}
 }
 std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vector<hts_pair_pos_t>& target_ivals, hts_pos_t contig_len,
-		stats_t& stats, open_samFile_t* bam_file) {
+		config_t& config, stats_t& stats, open_samFile_t* bam_file) {
 
 	ext_read_allocator_t ext_read_allocator;
 
@@ -323,6 +323,8 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 
 		std::vector<ext_read_t*> region_reads;
 		region_reads.reserve(target_ival.end-target_ival.beg+1);
+		ext_read_t* curr_read = nullptr;
+		
 		hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 			if (is_unmapped(read) || !is_primary(read)) continue;
@@ -350,14 +352,25 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 					region_reads.push_back(ext_read_orig);
 				}
 			}
-			region_reads.push_back(ext_read);
 
-			if (region_reads.size() > target_ival.end-target_ival.beg) { // too many reads
-				for (ext_read_t* r : region_reads) ext_read_allocator.release(r);
-				region_reads.clear();
-				break;
+			// we are downsampling by keeping only the highest mapping quality read at each start position 
+			// (plus all left-clipped reads because they have a legitimate reason for starting at the same position, and all MAPQ 60)
+			if (is_left_clipped(read, 0) || curr_read->mapq == config.high_confidence_mapq) {
+				region_reads.push_back(ext_read);
+			} else if (curr_read == nullptr) {
+				curr_read = ext_read;
+			} else if (curr_read->start == ext_read->start && curr_read->mapq < ext_read->mapq) {
+				ext_read_allocator.release(curr_read);
+				curr_read = ext_read;
+			} else if (curr_read->start == ext_read->start && curr_read->mapq >= ext_read->mapq) {
+				ext_read_allocator.release(ext_read);
+			} else {
+				region_reads.push_back(curr_read);
+				curr_read = ext_read;
 			}
 		}
+		if (curr_read != nullptr) region_reads.push_back(curr_read);
+		
 		reads.insert(reads.end(), region_reads.begin(), region_reads.end());
 		hts_itr_destroy(iter);
 	}
@@ -368,7 +381,7 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 }
 
 std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<std::shared_ptr<consensus_t>>& consensuses, std::string contig_name, hts_pos_t contig_len,
-		stats_t& stats, open_samFile_t* bam_file) {
+		config_t& config, stats_t& stats, open_samFile_t* bam_file) {
 
 	if (consensuses.empty()) return std::vector<ext_read_t*>();
 
@@ -384,7 +397,7 @@ std::vector<ext_read_t*> get_extension_reads_from_consensuses(std::vector<std::s
 		target_ival.beg = right_ext_target_start, target_ival.end = right_ext_target_end;
 		target_ivals.push_back(target_ival);
 	}
-	return get_extension_reads(contig_name, target_ivals, contig_len, stats, bam_file);
+	return get_extension_reads(contig_name, target_ivals, contig_len, config, stats, bam_file);
 }
 
 void break_cycles(std::vector<int>& out_edges, std::vector<std::vector<edge_t> >& l_adj, std::vector<std::vector<edge_t> >& l_adj_rev) {
