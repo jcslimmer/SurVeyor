@@ -272,14 +272,16 @@ bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& 
 	int max_dist = (sv1->imprecise || sv2->imprecise) ? max_imprec_dist : max_prec_dist;
 	if (distance(sv1, sv2) > max_dist) return false;
 	if (!ignore_seq && !sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq() && sv1->svlen() < 1000 && sv2->svlen() < 1000) {
+		int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
 		double min_len_ratio = (sv1->imprecise || sv2->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+		if (len_diff(sv1, sv2) > max_len_diff || len_ratio(sv1, sv2) < min_len_ratio) return false;
+
 		int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
 		int max_score_loss = max_svlen * (1-min_len_ratio);
 		return alt_allele_match(sv1, sv2, max_score_loss);
 	} else {
 		return check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	}
-	return true;
 }
 
 bool check_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
