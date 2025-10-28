@@ -232,6 +232,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 
 std::vector<std::string> assemble_sequences(std::string contig_name, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
+
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
 	if (r_cluster->clip_consensus) left_stable_read_seqs.push_back({r_cluster->clip_consensus->sequence, true, false});
@@ -334,7 +335,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 	std::string full_assembled_seq;
 	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
 	std::shared_ptr<sv_t> chosen_ins = NULL;
-	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svlen() < config.min_sv_size) { // cannot identify an insertion, check if it is an incomplete assembly
+	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svlen() < 50) { // cannot identify an SV insertion, check if it is an incomplete assembly
 		if (assembled_sequences.size() == 1) return NULL;
 
 		extend = 2*(assembled_sequence.length() + assembled_sequences[1].length());
@@ -474,6 +475,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 	}
 
 	chosen_ins->source = "DE_NOVO_ASSEMBLY";
+	if (assembled_reads.size() <= 2) return NULL;
 	chosen_ins->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 	return chosen_ins;
 }
