@@ -541,14 +541,16 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
             middle_part = mh + middle_part + right_part.substr(0, get_left_clip_size(right_part_aln));
 			prefix_mh_len = mh.length();
         }
-    }
+    } else {
+		middle_part = left_part.substr(left_part.length() - get_right_clip_size(left_part_aln)) + middle_part +
+					  right_part.substr(0, get_left_clip_size(right_part_aln));
+	}
 
     if (svs.empty()) { // we haven't already called a duplication
 		if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
 			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else { // length of ALT > REF, insertion
-
 			// If we are detecting a small insertion with a microhomology, try to realign the whole junction sequence
 			// This is because split alignments that support duplications have an unfair advantage compared to regular insertions,
 			// since the inserted sequence is also aligned to the sequence. This can lead to suboptimal duplications being called instead of correct insertions
@@ -615,7 +617,12 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		StripedSmithWaterman::Filter filter;
 		StripedSmithWaterman::Alignment aln_rh, aln_lh;
 		
-		consensus_junction_seq = rc_consensus_seq + lc_consensus_seq.substr(spa.overlap);
+		if (rc_consensus->reads() >= lc_consensus->reads()) {
+			consensus_junction_seq = rc_consensus_seq + lc_consensus_seq.substr(spa.overlap);
+		} else {
+			consensus_junction_seq = rc_consensus_seq.substr(0, rc_consensus_seq.length()-spa.overlap) + lc_consensus_seq;
+		}
+
 		ref_remap_lh_start = rc_consensus->breakpoint - consensus_junction_seq.length();
 		ref_remap_lh_end = rc_consensus->breakpoint + consensus_junction_seq.length();
 		if (ref_remap_lh_start < 0) ref_remap_lh_start = 0;
