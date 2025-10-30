@@ -13,22 +13,23 @@
 
 struct evidence_logger_t {
 
-    std::ofstream alt_reads_to_sv_associations;
+    std::ofstream alt_reads_to_sv_associations, alt_pairs_to_sv_associations;
     std::mutex mtx;
 
     evidence_logger_t(const std::string& workdir) {
         alt_reads_to_sv_associations.open(workdir + "/alt_reads_to_sv_associations.txt");
+        alt_pairs_to_sv_associations.open(workdir + "/alt_pairs_to_sv_associations.txt");
     }
 
-    void log_read_association(const std::string& sv_id, bam1_t* pair) {
+    void log_pair_association(const std::string& sv_id, bam1_t* pair) {
         std::lock_guard<std::mutex> lock(mtx);
-        alt_reads_to_sv_associations << sv_id << " " << bam_get_qname(pair) << "\n";
+        alt_pairs_to_sv_associations << sv_id << " " << bam_get_qname(pair) << "\n";
     }
 
-    void log_reads_associations(std::string sv_id, std::vector<std::shared_ptr<bam1_t>>& reads) {
+    void log_reads_associations(std::string sv_id, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
         std::lock_guard<std::mutex> lock(mtx);
-        for (std::shared_ptr<bam1_t> read : reads) {
-            alt_reads_to_sv_associations << sv_id << " " << bam_get_qname(read.get()) << std::endl;
+        for (size_t i = 0; i < reads.size(); i++) {
+            alt_reads_to_sv_associations << sv_id << " " << bam_get_qname(reads[i].get()) << " " << scores[i] << std::endl;
         }
     }
 

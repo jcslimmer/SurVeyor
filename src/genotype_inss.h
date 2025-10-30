@@ -28,17 +28,44 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     hts_pos_t ins_lh_len = std::min(extend, (hts_pos_t) ins->ins_seq.length());
 	hts_pos_t ins_rh_len = ins_lh_len;
 
-	int alt_bp1_len = alt_lf_len + ins_lh_len;
-	char* alt_bp1_seq = new char[alt_bp1_len+1];
-	strncpy(alt_bp1_seq, contig_seq+alt_start, alt_lf_len);
-	strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_lh_len);
-	alt_bp1_seq[alt_bp1_len] = 0;
+    char* alt_bp1_seq;
+    int alt_bp1_len;
+    if (ins_lh_len < extend) {
+        // in this case, alt_bp1 = left flank + insertion + enough right flank to make sure that
+        // there are 'extend' bases on each side of the breakpoint (if possible)
+        int extra = std::min(extend-ins_lh_len, (hts_pos_t) alt_rf_len); // there may not be enough bp if near the end of contig
+        alt_bp1_len = alt_lf_len + ins_lh_len + extra;
+        alt_bp1_seq = new char[alt_bp1_len+1];
+        strncpy(alt_bp1_seq, contig_seq+alt_start, alt_lf_len);
+        strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_lh_len);
+        strncpy(alt_bp1_seq+alt_lf_len+ins_lh_len, contig_seq+ins_end, extra);
+        alt_bp1_seq[alt_bp1_len] = 0;
+    } else {
+        alt_bp1_len = alt_lf_len + ins_lh_len;
+        alt_bp1_seq = new char[alt_bp1_len+1];
+        strncpy(alt_bp1_seq, contig_seq+alt_start, alt_lf_len);
+        strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_lh_len);
+        alt_bp1_seq[alt_bp1_len] = 0;
+    }
 
     int alt_bp2_len = ins_rh_len + alt_rf_len;
 	char* alt_bp2_seq = new char[alt_bp2_len+1];
-	strncpy(alt_bp2_seq, ins->ins_seq.c_str()+(ins->ins_seq.length()-ins_rh_len), ins_rh_len);
-	strncpy(alt_bp2_seq+ins_rh_len, contig_seq+ins_end, alt_rf_len);
-	alt_bp2_seq[alt_bp2_len] = 0;
+    if (ins_rh_len < extend) {
+        // in this case, alt_bp2 = enough left flank + insertion + right flank
+        int extra = std::min(extend-ins_rh_len, (hts_pos_t) alt_lf_len); // there may not be enough bp if near the start of contig
+        alt_bp2_len = extra + ins_rh_len + alt_rf_len;
+        alt_bp2_seq = new char[alt_bp2_len+1];
+        strncpy(alt_bp2_seq, contig_seq+ins_start - extra, extra);
+        strncpy(alt_bp2_seq+extra, ins->ins_seq.c_str(), ins_rh_len);
+        strncpy(alt_bp2_seq+extra+ins_rh_len, contig_seq+ins_end, alt_rf_len);
+        alt_bp2_seq[alt_bp2_len] = 0;
+    } else {
+        alt_bp2_len = ins_rh_len + alt_rf_len;
+        alt_bp2_seq = new char[alt_bp2_len+1];
+        strncpy(alt_bp2_seq, ins->ins_seq.c_str()+(ins->ins_seq.length()-ins_rh_len), ins_rh_len);
+        strncpy(alt_bp2_seq+ins_rh_len, contig_seq+ins_end, alt_rf_len);
+        alt_bp2_seq[alt_bp2_len] = 0;
+    }
 
     hts_pos_t ref_bp1_start = alt_start, ref_bp1_end = std::min(ins_start+extend, contig_len);
     hts_pos_t ref_bp1_len = ref_bp1_end - ref_bp1_start;
@@ -59,6 +86,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
     int same = 0;
     std::vector<std::shared_ptr<bam1_t>> alt_bp1_better_seqs, alt_bp2_better_seqs, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<int> alt_bp1_better_scores, alt_bp2_better_scores;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
@@ -66,17 +94,17 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < ins_start || ins_end < get_unclipped_start(read)) continue;
         if (ins_start < get_unclipped_start(read) && get_unclipped_end(read) < ins_end) continue;
-
+        
         std::string seq = get_sequence(read);
         
         // align to ALT
         aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
         aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
-
+        
         // align to REF (two breakpoints)
         aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
         aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
-
+        
         StripedSmithWaterman::Alignment& alt_aln = alt1_aln.sw_score >= alt2_aln.sw_score ? alt1_aln : alt2_aln;
         StripedSmithWaterman::Alignment& ref_aln = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln : ref2_aln;
         if (alt_aln.sw_score > ref_aln.sw_score) {
@@ -84,9 +112,11 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
             if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != ins->id) continue;
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
                 alt_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
-            } 
+                alt_bp1_better_scores.push_back(alt1_aln.sw_score);
+            }
             if (alt1_aln.sw_score <= alt2_aln.sw_score) {
                 alt_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
+                alt_bp2_better_scores.push_back(alt2_aln.sw_score);
             }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
             if (ref1_aln.sw_score >= ref2_aln.sw_score) {
@@ -130,8 +160,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp1_better_seqs);
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp2_better_seqs);
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp1_better_seqs, alt_bp1_better_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp2_better_seqs, alt_bp2_better_scores);
 
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence

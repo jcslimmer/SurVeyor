@@ -721,7 +721,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<deletion_t*>& dele
 			for (int i = curr_del_bystart_idx; i < deletions.size() && deletions_by_start[i]->start <= pair_end; i++) {
 				if (pair_start <= deletions_by_start[i]->start+5 && deletions_by_start[i]->end-5 <= pair_end && 
 					deletions_by_start[i]->start-pair_start + pair_end-deletions_by_start[i]->end <= stats.max_is) {
-					if (evidence_logger) evidence_logger->log_read_association(deletions_by_start[i]->id, read);
+					if (evidence_logger) evidence_logger->log_pair_association(deletions_by_start[i]->id, read);
 					std::string read_name = bam_get_qname(read);
 					if (reassign_evidence && reads_to_sv_map.count(read_name) &&
 						reads_to_sv_map[read_name] != deletions_by_start[i]->id) continue;
@@ -802,7 +802,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 			for (int i = curr_dup_dp_idx; i < duplications.size() && bam_endpos(read) > duplications_by_start[i]->start; i++) {
 				duplication_t* dup = duplications_by_start[i];
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
-					if (evidence_logger) evidence_logger->log_read_association(dup->id, read);
+					if (evidence_logger) evidence_logger->log_pair_association(dup->id, read);
 					std::string read_name = bam_get_qname(read);
 					if (reassign_evidence && reads_to_sv_map.count(read_name) &&
 						reads_to_sv_map[read_name] != dup->id) continue;
@@ -907,7 +907,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 
 					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
 						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_start[i]->ins_seq.length()-1)) {
-						if (evidence_logger) evidence_logger->log_read_association(insertions_by_start[i]->id, read);
+						if (evidence_logger) evidence_logger->log_pair_association(insertions_by_start[i]->id, read);
 						std::string read_name = bam_get_qname(read);
 						if (reassign_evidence && reads_to_sv_map.count(read_name) > 0 &&
 							reads_to_sv_map[read_name] != insertions_by_start[i]->id) continue;
@@ -925,7 +925,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 					
 					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
 						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_end[i]->ins_seq.length()-1)) {
-						if (evidence_logger) evidence_logger->log_read_association(insertions_by_end[i]->id, read);
+						if (evidence_logger) evidence_logger->log_pair_association(insertions_by_end[i]->id, read);
 						std::string read_name = bam_get_qname(read);
 						if (reassign_evidence && reads_to_sv_map.count(read_name) > 0 &&
 							reads_to_sv_map[read_name] != insertions_by_end[i]->id) continue;

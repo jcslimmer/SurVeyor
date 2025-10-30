@@ -459,12 +459,14 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     StripedSmithWaterman::Alignment aln;
     std::vector<int> start_positions, end_positions;
     std::vector<StripedSmithWaterman::Alignment> alns;
+    std::vector<int> chosen_seqs_idxs;
     double cum_score = 0;
     std::vector<double> aln_scores;
     for (std::string cseq : consensus_seqs) {
         std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
+        std::vector<int> curr_seqs_idxs;
         double curr_cum_score = 0;
         std::vector<double> curr_aln_scores;
         for (int i = 0; i < reads.size(); i++) {
@@ -473,10 +475,11 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             if (revcomp_read[i]) rc(seq);
 
             harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
-            curr_alns.push_back(aln);
-
+            
             double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
             if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+                curr_alns.push_back(aln);
+                curr_seqs_idxs.push_back(i);
                 curr_consistent_reads.push_back(read);
                 curr_cum_score += double(aln.sw_score)/seq.length();
                 curr_aln_scores.push_back(double(aln.sw_score)/seq.length());
@@ -487,6 +490,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
 
         if (curr_cum_score > cum_score) {
             consistent_reads = curr_consistent_reads;
+            chosen_seqs_idxs = curr_seqs_idxs;
             cum_score = curr_cum_score;
             aln_scores = curr_aln_scores;
             start_positions = curr_start_positions;
@@ -501,8 +505,12 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     else avg_score = 0;
     stddev_score = stddev(aln_scores);
 
+    std::vector<std::string> chosen_seqs;
+    for (int idx : chosen_seqs_idxs) {
+        chosen_seqs.push_back(seqs[idx]);
+    }
     if (start_positions.size() >= 2) {
-        correct_contig(consensus_seq, seqs, alns, config, true);
+        correct_contig(consensus_seq, chosen_seqs, alns, config, true);
 
         consensus_seq = consensus_seq.substr(start_positions[1], end_positions[1]-start_positions[1]);
 

@@ -56,6 +56,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     std::vector<std::shared_ptr<bam1_t>> ref_better_reads;
     std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_better_reads(alt_seqs.size());
+    std::vector<std::vector<int>> alt_better_reads_scores(alt_seqs.size());
     int same = 0;
 
     StripedSmithWaterman::Filter filter;
@@ -95,6 +96,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
                     alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
+                    alt_better_reads_scores[i].push_back(alt_aln_scores[i]);
                 }
             }
         } else if (best_aln_score < ref_aln.sw_score) {
@@ -198,7 +200,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     alt_better_reads_consistent = find_seqs_consistent_with_ref_seq(alt_consensus_seq, alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
 
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads[alt_with_most_reads]);
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads[alt_with_most_reads], alt_better_reads_scores[alt_with_most_reads]);
 
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
@@ -256,6 +258,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     bam1_t* read = bam_init1();
 
     std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
+    std::vector<int> alt_better_reads_scores;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
@@ -308,6 +311,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             std::string read_name = bam_get_qname(read);
             if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != dup->id) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
+            alt_better_reads_scores.push_back(alt_aln.sw_score);
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
                 ref_bp1_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -343,7 +347,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads);
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads, alt_better_reads_scores);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence

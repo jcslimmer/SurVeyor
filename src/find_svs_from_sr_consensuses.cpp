@@ -607,11 +607,9 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
 		}
 
-		if (svs.empty()) {
-			continue;
+		if (!svs.empty()) {
+			local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 		}
-
-		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
 
 	mtx.lock();
