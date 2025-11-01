@@ -32,9 +32,8 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
-                            'EXSCC1_1_IA_RATIO', 'EXSCC1_2_IA_RATIO', 'EXSCC2_1_IA_RATIO', 'EXSCC2_2_IA_RATIO',
-                            'EXSSC1_1_IA_DIFF', 'EXSSC1_2_IA_DIFF', 'EXSSC2_1_IA_DIFF', 'EXSSC2_2_IA_DIFF',
+                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF', #'EXAS_EXRS_DIFF_TO_LEN', 
+                            'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
@@ -233,7 +232,7 @@ class Features:
         ins_prefix_base_count_ratio = [x/max(1, sum(ins_prefix_base_count)) for x in ins_prefix_base_count]
         features['MAX_INS_PREFIX_BASE_COUNT_RATIO'] = max(ins_prefix_base_count_ratio)
         features['INS_PREFIX_A_RATIO'], features['INS_PREFIX_C_RATIO'], features['INS_PREFIX_G_RATIO'], features['INS_PREFIX_T_RATIO'] = ins_prefix_base_count_ratio
-        
+
         ins_suffix_base_count = Features.get_number_value(info, 'INS_SUFFIX_BASE_COUNT', [0, 0, 0, 0])
         ins_suffix_base_count_ratio = [x/max(1, sum(ins_suffix_base_count)) for x in ins_suffix_base_count]
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
@@ -604,6 +603,9 @@ class Features:
         features['EXAS_EXRS_RATIO'] = 0 if exrs1+exrs2 == 0 else (exas1+exas2)/(exrs1+exrs2)
         features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
 
+        affected_length = features['START_STOP_DIST'] + svinslen
+        features['EXAS_EXRS_DIFF_TO_LEN'] = features['EXAS_EXRS_DIFF']/max(1, affected_length)
+
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
         features['EXSS1_1'] = exss1_1/max_is
         features['EXSS1_2'] = exss1_2/max_is
@@ -620,10 +622,10 @@ class Features:
         exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [Features.NAN, Features.NAN])
         exsscia1_1, exsscia1_2 = Features.get_number_value(record.samples[0], 'EXSSCIA', [Features.NAN, Features.NAN])
         exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [Features.NAN, Features.NAN])
-        features['EXSCC1_1_IA_RATIO'], features['EXSCC1_2_IA_RATIO'] = exssc1_1/max(1, exsscia1_1), exssc1_2/max(1, exsscia1_2)
-        features['EXSCC2_1_IA_RATIO'], features['EXSCC2_2_IA_RATIO'] = exssc2_1/max(1, exsscia2_1), exssc2_2/max(1, exsscia2_2)
-        features['EXSSC1_1_IA_DIFF'], features['EXSSC1_2_IA_DIFF'] = (exsscia1_1-exssc1_1)/max(1, exss1_1), (exsscia1_2-exssc1_2)/max(1, exss1_2)
-        features['EXSSC2_1_IA_DIFF'], features['EXSSC2_2_IA_DIFF'] = (exsscia2_1-exssc2_1)/max(1, exss2_1), (exsscia2_2-exssc2_2)/max(1, exss2_2)
+        features['EXSSC1_IA_RATIO'] = (exssc1_1+exssc1_2)/max(1, exsscia1_1+exsscia1_2)
+        features['EXSSC2_IA_RATIO'] = (exssc2_1+exssc2_2)/max(1, exsscia2_1+exsscia2_2)
+        features['EXSSC1_IA_DIFF'] = (exsscia1_1+exsscia1_2-exssc1_1-exssc1_2)/max(1, exss1_1+exss1_2)
+        features['EXSSC2_IA_DIFF'] = (exsscia2_1+exsscia2_2-exssc2_1-exssc2_2)/max(1, exss2_1+exss2_2)
 
         feature_values = []
         for feature_name in Features.get_feature_names(model_name):
