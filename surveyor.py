@@ -1,7 +1,7 @@
 import sys, os, argparse, pysam, timeit
 from run_classifier import Classifier
 
-VERSION = "0.10.1"
+VERSION = "0.11"
 
 MAX_READS = 1000
 GEN_DIST_SIZE = 100000
@@ -30,6 +30,8 @@ common_parser.add_argument('--per-contig-stats', action='store_true',
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
 common_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 common_parser.add_argument('--tr-bed', help='BED file with tandem repetitive regions. If provided, it will be used for a more aggrestive duplicate removal.')
+common_parser.add_argument('--two-pass', action='store_true', help='Activate two-pass genotyping.')
+
 
 # SurVIndel2 specific arguments
 common_parser.add_argument('--min-diff-hsr', type=int, default=3, help='Minimum number of differences with the reference \
@@ -48,7 +50,6 @@ call_parser.add_argument('--ml-model', help='Path to the ML model to be used for
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
-genotype_parser.add_argument('--two-pass', action='store_true', help='Activate two-pass genotyping.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
@@ -223,9 +224,18 @@ if cmd_args.command == 'call':
         exit(0)
 
     Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
-
+    
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
+
+    if cmd_args.two_pass:
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        run_cmd(genotype_cmd)
+
+        Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+
+        reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/calls-genotyped.reassigned.vcf.gz", sample_name)
+        run_cmd(reconcile_vcf_gt_cmd)
 
     deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
