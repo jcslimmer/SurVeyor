@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - 'v0.7'
+      - 'v0.10.1'
 
 jobs:
   build-and-push:
