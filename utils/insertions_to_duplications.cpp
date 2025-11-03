@@ -1,4 +1,5 @@
 #include <string>
+#include <unordered_set>
 
 #include "../src/sw_utils.h"
 #include "../src/sam_utils.h"
@@ -34,12 +35,13 @@ int main(int argc, char* argv[]) {
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln_before, aln_after;
 
-    std::vector<sv_t*> svs;
+    std::vector<std::shared_ptr<sv_t>> svs;
+    std::unordered_set<std::string> new_dup_ids;
     while (bcf_read(in_vcf_file, hdr, b) == 0) {
-        sv_t* sv = bcf_to_sv(hdr, b);
-        if (sv == NULL) continue;
+        std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, b);
+        if (sv == nullptr) continue;
 
-        sv_t* new_dup = NULL;
+        std::shared_ptr<duplication_t> new_dup = nullptr;
 
         std::string ins_seq = sv->ins_seq;
         if (sv->svtype() == "INS" && !ins_seq.empty() && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
@@ -47,7 +49,7 @@ int main(int argc, char* argv[]) {
             hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
             bool skip = false;
-            if (sv->start+1 < ins_seq.length()) skip = true;
+            if (sv->start <= ins_seq.length()) skip = true;
             if (sv->start+ins_seq.length() >= contig_len) skip = true;
 
             if (!skip) {
@@ -72,9 +74,10 @@ int main(int argc, char* argv[]) {
                 if (!aln_before_rc) aln_len += aln_before.query_end-aln_before.query_begin+1;
                 if (aln_len >= ins_seq.length()) {
                     auto anchor_aln = std::make_shared<sv_t::anchor_aln_t>(sv->start-ins_seq.length()+best_i, sv->start+best_i, ins_seq.length(), 0);
-                    new_dup = new duplication_t(contig_name, anchor_aln->start, anchor_aln->end, "", NULL, NULL, anchor_aln, anchor_aln);
+                    new_dup = std::make_shared<duplication_t>(contig_name, anchor_aln->start, anchor_aln->end, "", nullptr, nullptr, anchor_aln, anchor_aln);
                     new_dup->id = sv->id + "_DUP";
                     new_dup->source = sv->source;
+                    new_dup_ids.insert(new_dup->id);
                 }
             }
         }
@@ -91,12 +94,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::sort(svs.begin(), svs.end(), [&contig_map](sv_t* a, sv_t* b) { 
+    std::sort(svs.begin(), svs.end(), [&contig_map](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) { 
         size_t chr_a = contig_map.get_id(a->chr);
         size_t chr_b = contig_map.get_id(b->chr);
         return std::tie(chr_a, a->start) < std::tie(chr_b, b->start);
     });
     bcf_hdr_t* out_hdr = generate_vcf_header(chr_seqs, "", config, "");
+    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "INS_TO_DUP");
+    int len = 0;
+    const char* ins_to_dup_tag = "##INFO=<ID=INS_TO_DUP,Number=0,Type=Flag,Description=\"Originally an insertion.\">";
+    bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, ins_to_dup_tag, &len));
 
     if (bcf_hdr_set_samples(out_hdr, NULL, 0) != 0) {
         throw std::runtime_error("Failed to unset samples in VCF header");
@@ -106,8 +113,11 @@ int main(int argc, char* argv[]) {
     if (bcf_hdr_write(out_vcf_file, out_hdr) != 0) {
         throw std::runtime_error("Failed to write VCF header to " +  out_vcf_fname);
     }
-    for (sv_t* sv : svs) {
-        sv2bcf(out_hdr, b, sv, chr_seqs.get_seq(sv->chr), true);
+    for (const auto& sv : svs) {
+        sv2bcf(out_hdr, b, sv.get(), chr_seqs.get_seq(sv->chr), true);
+        if (new_dup_ids.count(sv->id) > 0) {
+            bcf_update_info_flag(out_hdr, b, "INS_TO_DUP", "", 1);
+        }
         if (bcf_write(out_vcf_file, out_hdr, b) != 0) {
             throw std::runtime_error("Failed to write to " + out_vcf_fname);
         }

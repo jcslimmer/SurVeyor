@@ -23,14 +23,13 @@ struct config_t {
     int threads, seed;
     int min_clip_len, min_stable_mapq, min_diff_hsr;
     int min_sv_size, max_trans_size;
-    int min_size_for_depth_filtering;
     double max_seq_error;
     int max_clipped_pos_dist;
     bool per_contig_stats;
     std::string sampling_regions, version;
 
-    const int min_score_diff = 15;
     const int high_confidence_mapq = 60;
+    const int flanking_size = 5000, indel_tested_region_size = 10000;
 
     void parse(std::string config_file) {
         std::unordered_map<std::string, std::string> config_params;
@@ -48,7 +47,6 @@ struct config_t {
         min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
         min_sv_size = std::stoi(config_params["min_sv_size"]);
         max_trans_size = std::stoi(config_params["max_trans_size"]);
-        min_size_for_depth_filtering = std::stoi(config_params["min_size_for_depth_filtering"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
         max_clipped_pos_dist = std::stoi(config_params["max_clipped_pos_dist"]);
         per_contig_stats = std::stoi(config_params["per_contig_stats"]);
@@ -410,5 +408,15 @@ struct random_pos_generator_t {
         throw std::runtime_error("Error: random_pos_generator_t::get_random_pos() failed\n");
     }
 };
+
+bool is_genomic_string(std::string s) {
+    for (char c : s) {
+        if (c != 'A' && c != 'C' && c != 'G' && c != 'T' &&
+            c != 'a' && c != 'c' && c != 'g' && c != 't') {
+            return false;
+        }
+    }
+    return true;
+}
 
 #endif

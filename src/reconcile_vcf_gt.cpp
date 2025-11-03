@@ -15,19 +15,6 @@ struct gt_record_t {
     float epr;
 };
 
-// Function to get FORMAT/EPR from a VCF record
-float get_epr(bcf_hdr_t *hdr, bcf1_t *b) {
-    int ngt = 0;
-    float *epr = NULL;
-    if (bcf_get_format_float(hdr, b, "EPR", &epr, &ngt) > 0) {
-        float value = epr[0];
-        free(epr);
-        return value;
-    }
-    free(epr);
-    return -1.0;
-}
-
 // Load gt_vcf records, retaining only the one with the highest EPR for each unique ID
 std::unordered_map<std::string, gt_record_t> load_gt_vcf(std::string gt_vcf_fname) {
     htsFile* fp = bcf_open(gt_vcf_fname.c_str(), "r");
@@ -48,7 +35,7 @@ std::unordered_map<std::string, gt_record_t> load_gt_vcf(std::string gt_vcf_fnam
             id = id.substr(0, id.size() - 4);
         }
 
-        float epr = get_epr(hdr, b);
+        float epr = get_sv_epr(hdr, b);
         auto it = gt_records.find(id);
 
         if (it == gt_records.end() || epr > it->second.epr) {
@@ -189,7 +176,7 @@ int main(int argc, char** argv) {
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";
     bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, gt_as_dup_tag, &len));
     
-    htsFile* out_fp = bcf_open(out_vcf_fname.c_str(), "w");
+    htsFile* out_fp = bcf_open(out_vcf_fname.c_str(), "wz");
     if (!out_fp) {
         std::cerr << "Error opening " << out_vcf_fname << std::endl;
         exit(1);

@@ -13,7 +13,7 @@
 #include "utils.h"
 
 bcf_hrec_t* generate_contig_hrec() {
-	bcf_hrec_t* contig_hrec = new bcf_hrec_t;
+	bcf_hrec_t* contig_hrec = (bcf_hrec_t*) malloc(sizeof(bcf_hrec_t));
 	contig_hrec->type = BCF_HL_CTG;
 	contig_hrec->key = strdup("contig");
 	contig_hrec->value = NULL;
@@ -436,6 +436,12 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* svinsseq_tag = "##INFO=<ID=SVINSSEQ,Number=1,Type=String,Description=\"Inserted sequence.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, svinsseq_tag, &len));
 
+	const char* left_svinsseq_tag = "##INFO=<ID=LEFT_SVINSSEQ,Number=1,Type=String,Description=\"Known left side of insertion for an insertion of unknown length.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, left_svinsseq_tag, &len));
+
+	const char* right_svinsseq_tag = "##INFO=<ID=RIGHT_SVINSSEQ,Number=1,Type=String,Description=\"Known right side of insertion for an insertion of unknown length.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, right_svinsseq_tag, &len));
+
 	const char* infsvinsseq_tag = "##INFO=<ID=SVINSSEQ_INFERRED,Number=1,Type=String,Description=\"Inferred insertion sequence. When the inserted sequence is too long "
 		"to be fully assembled but SurVeyor suspects it to be a transposition, it uses the reference to infer the content of the insertion. Not guaranteed to be accurate. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, infsvinsseq_tag, &len));
@@ -494,7 +500,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
 	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
 	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
-	called_by_ss << "min-size-for-depth-filtering: " << config.min_size_for_depth_filtering << "; ";
 	called_by_ss << "min-diff-hsr: " << config.min_diff_hsr << "; ";
 	called_by_ss << "sampling-regions: " << (config.sampling_regions.empty() ? "no" : config.sampling_regions) << "; ";
 	called_by_ss << "per-contig-stats: " << (config.per_contig_stats ? "true" : "false") << "; ";
@@ -508,25 +513,77 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	return header;
 }
 
+void update_alleles_info(bcf_hdr_t* hdr, bcf1_t* bcf_entry, char* chr_seq, hts_pos_t start, hts_pos_t end, std::string svtype, int svlen, std::string ins_seq) {
+	
+	std::string ref_allele = std::string(1, chr_seq[start]);
+	std::string alt_allele = std::string(1, chr_seq[start]);
+	if (svtype == "BND") {
+		throw std::runtime_error("BND not supported in update_alleles_info.");
+	} else if (svtype == "DEL" && end-start <= 100) {
+		ref_allele += std::string(chr_seq + start + 1, end-start);
+		alt_allele += ins_seq;
+	} else if (svtype == "INS" && end-start <= 100 && !ins_seq.empty()) {
+		ref_allele += std::string(chr_seq + start + 1, end-start);
+		alt_allele += ins_seq;
+	} else {
+		alt_allele = "<" + svtype + ">";
+	}
+	std::string alleles = ref_allele + "," + alt_allele;
+	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
+
+	int int_conv = end+1;
+	bcf_update_info_int32(hdr, bcf_entry, "END", &int_conv, 1);
+
+	if (svtype != "BND") {
+		int_conv = svlen;
+		bcf_update_info_int32(hdr, bcf_entry, "SVLEN", &int_conv, 1);
+		if (!ins_seq.empty()) {
+			int_conv = ins_seq.length();
+			bcf_update_info_int32(hdr, bcf_entry, "SVINSLEN", &int_conv, 1);
+		}
+	}
+}
+
 void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for_gt = false) {
 	bcf_clear(bcf_entry);
 	
 	bcf_entry->rid = bcf_hdr_name2id(hdr, sv->chr.c_str());
 	bcf_entry->pos = sv->start;
 	bcf_update_id(hdr, bcf_entry, sv->id.c_str());
-	
+
 	std::string ref_allele = std::string(1, chr_seq[sv->start]);
-	std::string alleles = ref_allele + ",";
+	std::string alt_allele = std::string(1, chr_seq[sv->start]);
 	if (sv->svtype() == "BND") {
 		breakend_t* bnd = (breakend_t*) sv;
 		if (bnd->direction == '+') {
-			alleles += std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
+			alt_allele = std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
 		} else {
-			alleles += std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
+			alt_allele = std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
 		}
+	} else if (sv->svtype() == "DEL" && sv->end-sv->start <= 100) {
+		ref_allele += std::string(chr_seq + sv->start + 1, sv->end-sv->start);
+		alt_allele += sv->ins_seq;
+	} else if (sv->svtype() == "INS" && sv->end-sv->start <= 100 && !sv->incomplete_ins_seq()) {
+		ref_allele += std::string(chr_seq + sv->start + 1, sv->end-sv->start);
+		alt_allele += sv->ins_seq;
 	} else {
-		alleles += "<" + sv->svtype() + ">";
+		alt_allele = "<" + sv->svtype() + ">";
+		if (!sv->ins_seq.empty()) {
+			if (sv->incomplete_ins_seq()) {
+				std::string left_ins_seq = sv->ins_seq.substr(0, sv->known_seq_prefix_len());
+				std::string right_ins_seq = sv->ins_seq.substr(sv->ins_seq.length()-sv->known_seq_suffix_len(), sv->known_seq_suffix_len());
+				if (!left_ins_seq.empty()) {
+					bcf_update_info_string(hdr, bcf_entry, "LEFT_SVINSSEQ", left_ins_seq.c_str());
+				}
+				if (!right_ins_seq.empty()) {
+					bcf_update_info_string(hdr, bcf_entry, "RIGHT_SVINSSEQ", right_ins_seq.c_str());
+				}
+			} else {
+				bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
+			}
+		}
 	}
+	std::string alleles = ref_allele + "," + alt_allele;
 	bcf_update_alleles_str(hdr, bcf_entry, alleles.c_str());
 
 	int n_samples = bcf_hdr_nsamples(hdr);
@@ -560,9 +617,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		}
 	}
 	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
-	if (!sv->ins_seq.empty()) {
-		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ", sv->ins_seq.c_str());
-	}
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
 	}
@@ -611,6 +665,10 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
 		if (sv->d.allele[1][0] == '<') {
 			std::string alt = sv->d.allele[1];
 			return alt.substr(1, alt.length()-2);
+		} else if (is_genomic_string(sv->d.allele[0]) && is_genomic_string(sv->d.allele[1])) {
+			int ref_len = strlen(sv->d.allele[0]);
+			int alt_len = strlen(sv->d.allele[1]);
+			return (alt_len > ref_len) ? "INS" : "DEL";
 		}
 		std::cerr << "Failed to determine SVTYPE for sv " << std::string(sv->d.id) << std::endl;
 		return "";
@@ -669,23 +727,8 @@ std::string get_sv_info_str(bcf_hdr_t* hdr, bcf1_t* sv, std::string info) {
 }
 
 std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
-	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
+	
 	bcf_unpack(sv, BCF_UN_INFO);
-	char c = toupper(sv->d.allele[1][0]);
-	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
-		// return everything after the padding base
-		return sv->d.allele[1] + 1;
-	}
-
-	// otherwise, look for SVINSSEQ (compliant with Manta)
-	char* data = NULL;
-	int size = 0;
-	bcf_get_info_string(hdr, sv, "SVINSSEQ", (void**) &data, &size);
-	if (data) {
-		std::string ins_seq = data;
-		free(data);
-		return ins_seq;
-	}
 
 	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
 	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
@@ -694,13 +737,38 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 		return left_ins_seq + "-" + right_ins_seq;
 	}
 
+	// priority to the ALT allele, if it is not symbolic and longer than just the padding base
+	char c = toupper(sv->d.allele[1][0]);
+	if ((c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N') && strlen(sv->d.allele[1]) > 1) {
+		// return everything after the padding base
+		return sv->d.allele[1] + 1;
+	}
+
+	// otherwise, look for SVINSSEQ (compliant with Manta)
+	std::string ins_seq = get_sv_info_str(hdr, sv, "SVINSSEQ");
+	if (!ins_seq.empty()) {
+		return ins_seq;
+	}
+
 	return "";
 }
 
-sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
+float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
+    int ngt = 0;
+    float *epr = NULL;
+    if (bcf_get_format_float(hdr, b, "EPR", &epr, &ngt) > 0) {
+        float value = epr[0];
+        free(epr);
+        return value;
+    }
+    free(epr);
+    return -1.0;
+}
+
+
+std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
 	int* data = NULL;
-	float* f_data = NULL;
 	int len = 0;
 
 	std::shared_ptr<consensus_t> rc_consensus = nullptr;
@@ -743,13 +811,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), left_anchor_mapping_start), left_anchor_mapping_end, 0, 0);
 	auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), right_anchor_mapping_start), right_anchor_mapping_end, 0, 0);
 
-	sv_t* sv;
+	std::shared_ptr<sv_t> sv;
 	if (svtype == "DEL") {
-		sv = new deletion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<deletion_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "DUP") {
-		sv = new duplication_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<duplication_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "INS") {
-		sv = new insertion_t(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
+		sv = std::make_shared<insertion_t>(bcf_seqname_safe(hdr, b), b->pos, end, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln);
 	} else if (svtype == "INV") {
 		auto lbp_left_anchor_aln = left_anchor_aln, lbp_right_anchor_aln = right_anchor_aln;
 		hts_pos_t rbp_left_split_mapping_start, rbp_left_split_mapping_end, rbp_right_split_mapping_start, rbp_right_split_mapping_end;
@@ -757,11 +825,11 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		rbp_right_split_mapping_start = end, rbp_right_split_mapping_end = end + 150;
 		auto rbp_left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_left_split_mapping_start), rbp_left_split_mapping_end, 0, 0);
 		auto rbp_right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(std::max(hts_pos_t(0), rbp_right_split_mapping_start), rbp_right_split_mapping_end, 0, 0);
-		sv = new inversion_t(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
+		sv = std::make_shared<inversion_t>(bcf_seqname_safe(hdr, b), b->pos, get_sv_end(hdr, b), get_ins_seq(hdr, b), rc_consensus, lc_consensus, lbp_left_anchor_aln, lbp_right_anchor_aln, rbp_left_anchor_aln, rbp_right_anchor_aln);
 
 		data = NULL;
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
-		inversion_t* inv = (inversion_t*) sv;
+		inversion_t* inv = (inversion_t*) sv.get();
 		if (len > 0) {
 			inv->inv_start = data[0]-1;
 			inv->inv_end = data[1]-1;
@@ -778,7 +846,7 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		} else if (alt[pos_end] == '[') {
 			dir = '-';
 		}
-		sv = new breakend_t(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
+		sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
 	} else {
 		return NULL;
 	}
@@ -816,6 +884,13 @@ sv_t* bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->sample_info.gt), &n);
 	if (sv->n_gt < 0) sv->n_gt = 0;
 	std::sort(sv->sample_info.gt, sv->sample_info.gt+sv->n_gt);
+
+	float* f_data = NULL;
+	len = 0;
+	if (bcf_get_format_float(hdr, b, "EPR", &f_data, &len) > 0 && len > 0) {
+		sv->sample_info.epr = f_data[0];
+		free(f_data);
+	}
 
 	return sv;
 }

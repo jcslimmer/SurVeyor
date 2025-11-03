@@ -1,7 +1,7 @@
 import sys, os, argparse, pysam, timeit
 from run_classifier import Classifier
 
-VERSION = "0.7"
+VERSION = "0.11"
 
 MAX_READS = 1000
 GEN_DIST_SIZE = 100000
@@ -19,7 +19,7 @@ common_parser.add_argument('--samplename', default='', help='Name of the sample 
                                                          'If not provided, the basename of the bam/cram file will be used,'
                                                          'up until the first \'.\'')
 common_parser.add_argument('--min-sv-size', type=int, default=50, help='Min SV size.')
-common_parser.add_argument('--min-clip-len', type=int, default=15, help='Min length for a clip to be used.')
+common_parser.add_argument('--min-clip-len', type=int, default=10, help='Min length for a clip to be used.')
 common_parser.add_argument('--max-seq-error', type=float, default=0.04, help='Max sequencing error admissible on the platform used.')
 common_parser.add_argument('--max-clipped-pos-dist', type=int, default=5, help='Max distance (in bp) for two clips to be considered '
                                                                    'representing the same breakpoint.')
@@ -28,9 +28,12 @@ common_parser.add_argument('--sampling-regions', help='File in BED format contai
 common_parser.add_argument('--per-contig-stats', action='store_true',
                         help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
+common_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
+common_parser.add_argument('--tr-bed', help='BED file with tandem repetitive regions. If provided, it will be used for a more aggrestive duplicate removal.')
+common_parser.add_argument('--two-pass', action='store_true', help='Activate two-pass genotyping.')
+
 
 # SurVIndel2 specific arguments
-common_parser.add_argument('--min_size_for_depth_filtering', type=int, default=1000, help='Minimum size for depth filtering.')
 common_parser.add_argument('--min-diff-hsr', type=int, default=3, help='Minimum number of differences with the reference \
                         (considered as number of insertions, deletions and mismatches) for a read to be considered a hidden split read.')
 
@@ -44,17 +47,10 @@ call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
 call_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
-call_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
-genotype_parser.add_argument('--dedup', action='store_true', help='Remove duplicated calls from the input VCF file.')
-genotype_parser.add_argument('--resolve-incompatible', type=str,
-help='In catalogues obtained by merging many samples, there might be many similar or overlapping SVs. ' \
-    'When all of them are preferrable to the reference allele, they may all be genotyped as present, artificially increasing the number of calls. ' \
-    'This option will prevent this by keeping only the most reliable calls and removing those that violate the ploidy of the sample.')
 genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
-genotype_parser.add_argument('out_vcf_file', help='Output VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
@@ -103,7 +99,6 @@ with open(cmd_args.workdir + "/config.txt", "w") as config_file:
     config_file.write("per_contig_stats %d\n" % cmd_args.per_contig_stats)
     config_file.write("version %s\n" % VERSION)
 
-    config_file.write("min_size_for_depth_filtering %s\n" % cmd_args.min_size_for_depth_filtering)
     config_file.write("min_diff_hsr %s\n" % cmd_args.min_diff_hsr)
     config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
     config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
@@ -133,7 +128,10 @@ def reads_categorizer():
     run_cmd(read_categorizer_cmd)
 
 def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
-    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
+    if cmd_args.tr_bed:
+        compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s -T %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.tr_bed, cmd_args.workdir)
+    else:
+        compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s -R %s > %s/compare.txt" % (vcf_fname, vcf_fname, cmd_args.reference, cmd_args.workdir) 
     run_cmd(compare_cmd)
 
     with open(cmd_args.workdir + "/compare.txt") as compare_file:
@@ -141,11 +139,11 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
         with pysam.VariantFile(vcf_fname) as vcf:
             for record in vcf:
                 epr_vals[record.id] = record.samples[0].get('EPR', 0)
-                imprecise_vals[record.id] = record.info.get('IMPRECISE', False)
+                imprecise_vals[record.id] = 'IMPRECISE' in record.info
 
         removed_ids = set()
         for line in compare_file:
-            id1, id2 = line.strip().split()
+            id1, id2 = line.strip().split()[:2]
             if id1 >= id2 or id2 == "NONE": # each pair will be output twice, e.g. A B and B A. Let us process it once
                 continue
 
@@ -163,6 +161,17 @@ def deduplicate_vcf(vcf_fname, deduped_vcf_fname):
             for record in vcf:
                 if record.id not in removed_ids:
                     out_vcf.write(record)
+
+def separate_ins_to_dup(in_vcf_fname, ins_to_dup_vcf_fname, remaining_vcf_fname):
+    with pysam.VariantFile(in_vcf_fname) as in_vcf, \
+         pysam.VariantFile(ins_to_dup_vcf_fname, 'w', header=in_vcf.header) as ins_to_dup_vcf, \
+         pysam.VariantFile(remaining_vcf_fname, 'w', header=in_vcf.header) as remaining_vcf:
+        for record in in_vcf:
+            if "INS_TO_DUP" in record.info:
+                record.id = record.id[:-4] # remove the _DUP suffix
+                ins_to_dup_vcf.write(record)
+            else:
+                remaining_vcf.write(record)
 
 if cmd_args.samplename:
     sample_name = cmd_args.samplename
@@ -206,19 +215,27 @@ if cmd_args.command == 'call':
     
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     run_cmd(genotype_cmd)
-    
+
     if cmd_args.generate_training_data:
-        cp_cmd = "cp %s/intermediate_results/calls-with-fmt.vcf.gz %s/training-data.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(cp_cmd)
+        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
     if not cmd_args.ml_model:
         print("No model provided. Skipping filtering and genotyping.")
         exit(0)
 
     Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
-
+    
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
+
+    if cmd_args.two_pass:
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        run_cmd(genotype_cmd)
+
+        Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+
+        reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/calls-genotyped.reassigned.vcf.gz", sample_name)
+        run_cmd(reconcile_vcf_gt_cmd)
 
     deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
@@ -238,19 +255,34 @@ elif cmd_args.command == 'genotype':
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s" % (vcf_for_genotyping_fname, vcf_with_fmt_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     run_cmd(genotype_cmd)
 
+    if cmd_args.generate_training_data:
+        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/vcf_with_fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
+
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+
+    if cmd_args.two_pass:
+        vcf_with_fmt_reassigned_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.reassigned.vcf.gz"
+        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s --reassign-evidence" % (vcf_with_gt_fname, vcf_with_fmt_reassigned_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+        run_cmd(genotype_cmd)
+
+        vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reassigned.vcf.gz"
+        Classifier.run_classifier(vcf_with_fmt_reassigned_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
     reconcile_out_vcf = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reconciled.vcf.gz"
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.in_vcf_file, vcf_with_gt_fname, reconcile_out_vcf, sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
 
-    if cmd_args.dedup:
-        deduplicate_vcf(reconcile_out_vcf, cmd_args.out_vcf_file)
-    else:
-        cp_cmd = "cp %s %s" % (reconcile_out_vcf, cmd_args.out_vcf_file)
-        run_cmd(cp_cmd)
+    out_vcf_file = cmd_args.workdir + "/genotyped.vcf.gz"
+    cp_cmd = "cp %s %s" % (reconcile_out_vcf, out_vcf_file)
+    run_cmd(cp_cmd)
 
-    if cmd_args.resolve_incompatible:
-        resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (cmd_args.out_vcf_file, cmd_args.resolve_incompatible)
-        run_cmd(resolve_incompatible_cmd)
+    out_deduped_vcf_file = cmd_args.workdir + "/genotyped.deduped.vcf.gz"
+    deduplicate_vcf(out_vcf_file, out_deduped_vcf_file)
+
+    out_resolved_vcf_file = cmd_args.workdir + "/genotyped.resolved.vcf.gz"
+    resolve_incompatible_cmd = SURVEYOR_PATH + "/bin/resolve_incompatible_gts %s %s" % (out_vcf_file, out_resolved_vcf_file)
+    run_cmd(resolve_incompatible_cmd)
+
+    out_resolved_deduped_vcf_file = cmd_args.workdir + "/genotyped.resolved.deduped.vcf.gz"
+    deduplicate_vcf(out_resolved_vcf_file, out_resolved_deduped_vcf_file)

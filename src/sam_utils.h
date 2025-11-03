@@ -135,17 +135,20 @@ bool is_hidden_split_read(bam1_t* r, config_t config) {
 
     int mismatches = bam_aux2i(bam_aux_get(r, "NM"));
 
-    int indels = 0;
+    int indels = 0, inss = 0, dels = 0;
     uint32_t* cigar = bam_get_cigar(r);
     for (uint32_t i = 0; i < r->core.n_cigar; i++) {
         char op_chr = bam_cigar_opchr(cigar[i]);
         if (op_chr == 'D' || op_chr == 'I') {
-            mismatches -= bam_cigar_oplen(cigar[i]);
+            int oplen = bam_cigar_oplen(cigar[i]);
+            mismatches -= oplen;
             indels++;
+            if (op_chr == 'D') dels += oplen;
+            else inss += oplen;
         }
     }
 
-    return (mismatches + indels >= config.min_diff_hsr);
+    return mismatches + indels >= config.min_diff_hsr || abs(dels-inss) >= config.min_sv_size;
 }
 
 
@@ -278,6 +281,15 @@ std::string get_qual_ascii(bam1_t* r, bool fastq_seq = false) {
 	}
 	if (fastq_seq && bam_is_rev(r)) qual_ascii = std::string(qual_ascii.rbegin(), qual_ascii.rend());
 	return qual_ascii;
+}
+
+std::string get_cigar_string(bam1_t* r) {
+    std::string cigar_str;
+    uint32_t* cigar = bam_get_cigar(r);
+    for (uint32_t i = 0; i < r->core.n_cigar; i++) {
+        cigar_str += std::to_string(bam_cigar_oplen(cigar[i])) + bam_cigar_opchr(cigar[i]);
+    }
+    return cigar_str;
 }
 
 double avg_qual(bam1_t* read) {

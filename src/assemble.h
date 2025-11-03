@@ -232,6 +232,7 @@ std::vector<std::string> assemble_reads(std::vector<seq_w_pp_t>& left_stable_rea
 
 std::vector<std::string> assemble_sequences(std::string contig_name, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, StripedSmithWaterman::Aligner& harsh_aligner, config_t& config, stats_t& stats) {
+
 	std::vector<seq_w_pp_t> left_stable_read_seqs, unstable_read_seqs, right_stable_read_seqs;
 	std::unordered_set<std::string> used_ls, used_us, used_rs;
 	if (r_cluster->clip_consensus) left_stable_read_seqs.push_back({r_cluster->clip_consensus->sequence, true, false});
@@ -287,7 +288,7 @@ std::vector<std::string> assemble_sequences(std::string contig_name, std::shared
 	return assembled_sequences;
 }
 
-sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
+std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs,
 		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		std::ofstream& assembly_failed_no_seq, std::ofstream& assembly_failed_cycle_writer, std::ofstream& assembly_failed_too_many_reads_writer,
@@ -332,9 +333,9 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 
 	StripedSmithWaterman::Alignment aln;
 	std::string full_assembled_seq;
-	std::vector<sv_t*> svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
-	sv_t* chosen_ins = NULL;
-	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svlen() < config.min_sv_size) { // cannot identify an insertion, check if it is an incomplete assembly
+	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
+	std::shared_ptr<sv_t> chosen_ins = NULL;
+	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svlen() < 50) { // cannot identify an SV insertion, check if it is an incomplete assembly
 		if (assembled_sequences.size() == 1) return NULL;
 
 		extend = 2*(assembled_sequence.length() + assembled_sequences[1].length());
@@ -343,8 +344,8 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		remap_region_end = std::max(r_cluster->end, l_cluster->start)+extend;
 		if (remap_region_end >= contig_len) remap_region_end = contig_len-1;
 
-		std::vector<sv_t*> svs1 = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence + "-" + assembled_sequences[1], remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
-		std::vector<sv_t*> svs2 = detect_svs_from_junction(contig_name, contig_seq, assembled_sequences[1] + "-" + assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
+		std::vector<std::shared_ptr<sv_t>> svs1 = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence + "-" + assembled_sequences[1], remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
+		std::vector<std::shared_ptr<sv_t>> svs2 = detect_svs_from_junction(contig_name, contig_seq, assembled_sequences[1] + "-" + assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
 		bool sv1_is_ins = !svs1.empty() && svs1[0]->svtype() == "INS";
 		bool sv2_is_ins = !svs2.empty() && svs2[0]->svtype() == "INS";
 		if (sv1_is_ins && !sv2_is_ins) {
@@ -367,9 +368,9 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 		double laa_score_ratio = double(chosen_ins->left_anchor_aln->best_score)/chosen_ins->left_anchor_aln->seq_len;
 		double raa_score_ratio = double(chosen_ins->right_anchor_aln->best_score)/chosen_ins->right_anchor_aln->seq_len;
 		if (laa_score_ratio >= raa_score_ratio) {
-			std::vector<sv_t*> new_svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence + "-" + assembled_sequences[1], remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
+			std::vector<std::shared_ptr<sv_t>> new_svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence + "-" + assembled_sequences[1], remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
 			if (!new_svs.empty() && new_svs[0]->svtype() == "INS") {
-				sv_t* new_ins = new_svs[0];
+				std::shared_ptr<sv_t> new_ins = new_svs[0];
 				int sep = new_ins->ins_seq.find("-");
 				if (sep != std::string::npos && sep >= config.min_clip_len && new_ins->ins_seq.length()-sep >= config.min_clip_len &&
 					raa_score_ratio < double(new_ins->right_anchor_aln->best_score)/new_ins->right_anchor_aln->seq_len && new_ins->svlen() >= config.min_sv_size) {
@@ -378,9 +379,9 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 					}
 			}
 		} else {
-			std::vector<sv_t*> new_svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequences[1] + "-" + assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
+			std::vector<std::shared_ptr<sv_t>> new_svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequences[1] + "-" + assembled_sequence, remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, config.min_clip_len);
 			if (!new_svs.empty() && new_svs[0]->svtype() == "INS") {
-				sv_t* new_ins = new_svs[0];
+				std::shared_ptr<sv_t> new_ins = new_svs[0];
 				int sep = new_ins->ins_seq.find("-");
 				if (sep != std::string::npos && sep >= config.min_clip_len && new_ins->ins_seq.length()-sep >= config.min_clip_len &&
 					laa_score_ratio < double(new_ins->left_anchor_aln->best_score)/new_ins->left_anchor_aln->seq_len && new_ins->svlen() >= config.min_sv_size) {
@@ -474,68 +475,9 @@ sv_t* detect_de_novo_insertion(std::string& contig_name, chr_seqs_map_t& contigs
 	}
 
 	chosen_ins->source = "DE_NOVO_ASSEMBLY";
+	if (assembled_reads.size() <= 2) return NULL;
 	chosen_ins->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 	return chosen_ins;
 }
-
-struct base_score_t {
-    int freq = 0, qual = 0;
-    char base;
-
-    base_score_t(char base) : base(base) {}
-};
-bool operator < (const base_score_t& bs1, const base_score_t& bs2) {
-    if (bs1.freq != bs2.freq) return bs1.freq < bs2.freq;
-    return bs1.qual < bs2.qual;
-}
-
-std::string build_full_consensus_seq(std::vector<std::string>& seqs,
-    std::vector<uint8_t*>& quals, std::vector<hts_pos_t>& read_start_offsets) {
-    const int MAX_CONSENSUS_LEN = 100000;
-    char consensus[MAX_CONSENSUS_LEN];
-
-    std::vector<hts_pos_t> read_end_offsets;
-    hts_pos_t consensus_len = 0;
-    for (int i = 0; i < seqs.size(); i++) {
-        hts_pos_t start_offset = read_start_offsets[i];
-        hts_pos_t end_offset = start_offset + seqs[i].length() - 1;
-        read_end_offsets.push_back(end_offset);
-        consensus_len = std::max(consensus_len, end_offset+1);
-    }
-
-    int s = 0;
-    for (int i = 0; i < consensus_len; i++) {
-        while (s < seqs.size() && read_end_offsets[s] < i) s++;
-
-        base_score_t base_scores[4] = { base_score_t('A'), base_score_t('C'), base_score_t('G'), base_score_t('T') };
-        for (int j = s; j < seqs.size() && read_start_offsets[j] <= i; j++) {
-            if (read_end_offsets[j] < i) continue;
-
-            char nucl = seqs[j][i - read_start_offsets[j]];
-            uint8_t qual = quals[j][i - read_start_offsets[j]];
-            if (nucl == 'A') {
-                base_scores[0].freq++;
-                base_scores[0].qual += qual;
-            } else if (nucl == 'C') {
-                base_scores[1].freq++;
-                base_scores[1].qual += qual;
-            } else if (nucl == 'G') {
-                base_scores[2].freq++;
-                base_scores[2].qual += qual;
-            } else if (nucl == 'T') {
-                base_scores[3].freq++;
-                base_scores[3].qual += qual;
-            }
-        }
-
-        base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
-
-        consensus[i] = best_base_score.base;
-    }
-    consensus[consensus_len] = '\0';
-
-    return std::string(consensus);
-}
-
 
 #endif /* ASSEMBLE_H_ */

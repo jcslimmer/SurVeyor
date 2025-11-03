@@ -9,132 +9,87 @@
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
 
-void normalise_del(bcf1_t* vcf_record) {
+void normalise_del(std::shared_ptr<sv_t> sv) {
 
-	char* chr_seq = chr_seqs.get_seq(bcf_hdr_id2name(hdr, vcf_record->rid));
-	int end = get_sv_end(hdr, vcf_record);
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
 	// try to shorten deletion if ins_seq
-	std::string ins_seq = get_ins_seq(hdr, vcf_record);
-	std::string orig_ins_seq = ins_seq;
-
 	int start_is = 0;
-	while (start_is < ins_seq.length() && ins_seq[start_is] == chr_seq[vcf_record->pos+1]) {
+	while (start_is < sv->ins_seq.length() && sv->ins_seq[start_is] == chr_seq[sv->start+1]) {
 		start_is++;
-		vcf_record->pos++;
+		sv->start++;
 	}
-	ins_seq = ins_seq.substr(start_is);
+	sv->ins_seq = sv->ins_seq.substr(start_is);
 
-	int end_is = ins_seq.length();
-	while (end_is > 0 && ins_seq[end_is-1] == chr_seq[end]) {
+	int end_is = sv->ins_seq.length();
+	while (end_is > 0 && sv->ins_seq[end_is-1] == chr_seq[sv->end]) {
 		end_is--;
-		end--;
+		sv->end--;
 	}
-	ins_seq = ins_seq.substr(0, end_is);
+	sv->ins_seq = sv->ins_seq.substr(0, end_is);
 
-	if (ins_seq != orig_ins_seq) {
-		if (ins_seq.empty()) {
-			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", NULL);
-		} else {
-			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", ins_seq.c_str());
+	if (sv->ins_seq.empty()) {
+		while (sv->start > 0 && chr_seq[sv->start] == chr_seq[sv->end]) {
+			sv->start--;
+			sv->end--;
 		}
 	}
-
-	if (ins_seq.empty()) {
-		while (vcf_record->pos > 0 && chr_seq[vcf_record->pos] == chr_seq[end]) {
-			vcf_record->pos--;
-			end--;
-		}
-	}
-
-	int end_1based = end+1;
-	bcf_update_info_int32(hdr, vcf_record, "END", &end_1based, 1);
 }
 
-void normalise_dup(bcf1_t* vcf_record) {
+void normalise_dup(std::shared_ptr<sv_t> sv) {
 
-	std::string ins_seq = get_ins_seq(hdr, vcf_record);
-	if (!ins_seq.empty()) return;
+	if (!sv->ins_seq.empty()) return;
 
-	char* chr_seq = chr_seqs.get_seq(bcf_hdr_id2name(hdr, vcf_record->rid));
-	int end = get_sv_end(hdr, vcf_record);
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
 	int i = 0;
-	while (vcf_record->pos > 0 && chr_seq[vcf_record->pos] == chr_seq[end]) {
-		vcf_record->pos--;
-		end--;
+	while (sv->start > 0 && chr_seq[sv->start] == chr_seq[sv->end]) {
+		sv->start--;
+		sv->end--;
 		i++;
 	}
-
-	int end_1based = end+1;
-	bcf_update_info_int32(hdr, vcf_record, "END", &end_1based, 1);
 }
 
-bool normalise_ins(bcf1_t* vcf_record) {
+void normalise_ins(std::shared_ptr<sv_t> sv) {
 
-	char* chr_seq = chr_seqs.get_seq(bcf_hdr_id2name(hdr, vcf_record->rid));
-	int end = get_sv_end(hdr, vcf_record);
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
-	// try to shorten deletion if ins_seq
-	std::string ins_seq = get_ins_seq(hdr, vcf_record);
-	std::string orig_ins_seq = ins_seq;
-	std::replace(ins_seq.begin(), ins_seq.end(), ' ', '-');
-
+	// try to shorten insertion if start != end
 	int start_is = 0;
-	while (start_is < ins_seq.length() && vcf_record->pos < end && toupper(ins_seq[start_is]) == toupper(chr_seq[vcf_record->pos+1])) {
+	while (start_is < sv->ins_seq.length() && sv->start < sv->end && toupper(sv->ins_seq[start_is]) == toupper(chr_seq[sv->start+1])) {
 		start_is++;
-		vcf_record->pos++;
+		sv->start++;
 	}
-	ins_seq = ins_seq.substr(start_is);
+	sv->ins_seq = sv->ins_seq.substr(start_is);
 
-	int end_is = ins_seq.length();
-	while (end_is > 0 && vcf_record->pos < end && toupper(ins_seq[end_is-1]) == toupper(chr_seq[end])) {
+	int end_is = sv->ins_seq.length();
+	while (end_is > 0 && sv->start < sv->end && toupper(sv->ins_seq[end_is-1]) == toupper(chr_seq[sv->end])) {
 		end_is--;
-		end--;
+		sv->end--;
 	}
-	ins_seq = ins_seq.substr(0, end_is);
+	sv->ins_seq = sv->ins_seq.substr(0, end_is);
 
-	if (vcf_record->pos == end) {
-		while (vcf_record->pos > 0 && toupper(chr_seq[vcf_record->pos]) == toupper(ins_seq[ins_seq.length()-1])) {
-			for (int i = ins_seq.length()-1; i >= 1; i--) {
-				ins_seq[i] = ins_seq[i-1];
+	if (sv->start == sv->end) {
+		while (sv->start > 0 && toupper(chr_seq[sv->start]) == toupper(sv->ins_seq[sv->ins_seq.length()-1])) {
+			for (int i = sv->ins_seq.length()-1; i >= 1; i--) {
+				sv->ins_seq[i] = sv->ins_seq[i-1];
 			}
-			ins_seq[0] = toupper(chr_seq[vcf_record->pos]);
-			vcf_record->pos--;
-			end--;
+			sv->ins_seq[0] = toupper(chr_seq[sv->start]);
+			sv->start--;
+			sv->end--;
 		}
 	}
-
-	if (ins_seq != orig_ins_seq) {
-		if (ins_seq.empty()) {
-			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", NULL);
-		} else {
-			bcf_update_info_string(hdr, vcf_record, "SVINSSEQ", ins_seq.c_str());
-			if (bcf_get_info_flag(hdr, vcf_record, "INCOMPLETE_ASSEMBLY", NULL, NULL) == 1) {
-				int len = ins_seq.length();
-				bcf_update_info_int32(hdr, vcf_record, "SVLEN", &len, 1);
-			}
-		}
-	}
-
-	int end_1based = end+1;
-	bcf_update_info_int32(hdr, vcf_record, "END", &end_1based, 1);
-
-	std::string alleles = std::string(1, chr_seq[vcf_record->pos]) + "," + vcf_record->d.allele[1];
-	bcf_update_alleles_str(hdr, vcf_record, alleles.c_str());
-
-	return (vcf_record->pos >= 0 && ins_seq[ins_seq.length()-1] != '-');
 }
 
 
-void normalise(bcf1_t* vcf_record) {
-	std::string svtype = get_sv_type(hdr, vcf_record);
+void normalise(std::shared_ptr<sv_t> sv) {
+	std::string svtype = sv->svtype();
 	if (svtype == "DEL") {
-		normalise_del(vcf_record);
+		normalise_del(sv);
 	} else if (svtype == "DUP") {
-		normalise_dup(vcf_record);
+		normalise_dup(sv);
 	} else if (svtype == "INS") {
-		normalise_ins(vcf_record);
+		normalise_ins(sv);
 	}
 }
 
@@ -152,8 +107,10 @@ int main(int argc, char* argv[]) {
 
 	std::vector<bcf1_t*> normalised_vcf_records;
 	while (bcf_read(in_vcf_file, hdr, vcf_record) == 0) {
-		bcf1_t* vcf_record_norm = bcf_dup(vcf_record);
-		normalise(vcf_record_norm);
+		std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, vcf_record);
+		normalise(sv);
+		bcf1_t* vcf_record_norm = bcf_init();
+		sv2bcf(hdr, vcf_record_norm, sv.get(), chr_seqs.get_seq(sv->chr));
 		normalised_vcf_records.push_back(vcf_record_norm);
 	}
 

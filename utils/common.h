@@ -14,16 +14,16 @@ bool ends_with(const char* str, const char* suffix) {
 	return strcmp(str+(l_string-l_suffix), suffix) == 0;
 }
 
-std::vector<sv_t*> read_sv_list(const char* filename) {
-	std::vector<sv_t*> svs;
+std::vector<std::shared_ptr<sv_t>> read_sv_list(const char* filename) {
+	std::vector<std::shared_ptr<sv_t>> svs;
 	if (ends_with(filename, ".vcf.gz") || ends_with(filename, ".vcf") || ends_with(filename, ".bcf")) { // vcf format
 		htsFile* file = bcf_open(filename, "r");
 		bcf_hdr_t* hdr = bcf_hdr_read(file);
 		bcf1_t* line = bcf_init();
 		while (bcf_read(file, hdr, line) == 0) {
             try {
-                sv_t* sv = bcf_to_sv(hdr, line);
-                if (sv != NULL) {
+                std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, line);
+                if (sv != nullptr) {
                     sv->vcf_entry = bcf_dup(line);
                     svs.push_back(sv);
                 }
@@ -60,6 +60,7 @@ bool operator == (const repeat_t& r1, const repeat_t& r2) {
 }
 
 double overlap_bps(sv_t* sv1, sv_t* sv2) {
+    overlap(sv1->start, sv1->end, sv2->start, sv2->end);
 	return std::max(hts_pos_t(0), std::min(sv1->end, sv2->end)-std::max(sv1->start, sv2->start));
 }
 

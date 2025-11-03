@@ -1,6 +1,8 @@
 #ifndef SIMD_MACROS_H_
 #define SIMD_MACROS_H_
 
+#include <cstdint>
+#include <cstring>
 
 #if !defined(USE_SCALAR) && !defined(USE_SSE) && !defined(USE_AVX2) && !defined(USE_AVX512)
   #if defined(__AVX512F__)
@@ -15,23 +17,32 @@
 #endif
 
 #ifdef USE_SCALAR
-typedef int SIMD_INT;
+typedef int32_t SIMD_INT;
+
+static inline SIMD_INT load_int_unaligned(const void* p) {
+    SIMD_INT v;
+    std::memcpy(&v, p, sizeof v);  // safe for any alignment
+    return v;
+}
+static inline void store_int_unaligned(void* p, SIMD_INT v) {
+    std::memcpy(p, &v, sizeof v);
+}
 
 #define SET1_INT(x) (x)
 #define LOAD_INT(p) (*(p))
 #define STORE_INT(p, v) (*(p) = (v))
-#define LOADU_INT(p) (*(p))
-#define STOREU_INT(p, v) (*(p) = (v))
+#define LOADU_INT(p) load_int_unaligned(p)
+#define STOREU_INT(p, v) store_int_unaligned(p, v)
 #define ADD_INT(a, b) ((a) + (b))
 #define MAX_INT(a, b) std::max((a), (b))
 #define CMP_GT_INT32(a, b) ((a) > (b) ? 1 : 0)
-#define COUNT_EQUAL_BYTES(a, b) \
+#define COUNT_EQUAL_BYTES(a, b) (\
     ((a & 0xFF000000) == (b & 0xFF000000)) + \
     ((a & 0x00FF0000) == (b & 0x00FF0000)) + \
     ((a & 0x0000FF00) == (b & 0x0000FF00)) + \
-    ((a & 0x000000FF) == (b & 0x000000FF))
+    ((a & 0x000000FF) == (b & 0x000000FF)) )
 #define INT_PER_BLOCK 1
-#define BYTES_PER_BLOCK 4
+#define BYTES_PER_BLOCK (sizeof(SIMD_INT))
 
 #elif defined(USE_SSE)
 #include <immintrin.h>
@@ -62,7 +73,7 @@ typedef __m256i SIMD_INT;
 #define STOREU_INT _mm256_storeu_si256
 #define ADD_INT _mm256_add_epi32
 #define MAX_INT _mm256_max_epi32
-#define CMP_GT_INT32 _mm256_cmpgt_epi32_mask
+#define CMP_GT_INT32(a,b) _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32((a),(b))))
 #define COUNT_EQUAL_BYTES(a, b) _mm_popcnt_u32(_mm256_movemask_epi8(_mm256_cmpeq_epi8(a, b)))
 #define INT_PER_BLOCK 8
 #define BYTES_PER_BLOCK 32

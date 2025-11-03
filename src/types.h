@@ -229,6 +229,8 @@ struct sv_t {
         int indel_right_cov_highmq = 0, right_flanking_cov_highmq = 0;
         int left_anchor_cov_highmq = 0, right_anchor_cov_highmq = 0;
 
+        float epr = 0.0;
+
         std::vector<std::string> filters;
 
         sample_info_t() {

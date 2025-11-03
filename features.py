@@ -16,7 +16,7 @@ class Features:
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN']
-    
+
     reads_features_names = ['AR1', 'AR1C', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
                             'AR2', 'AR2C', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
@@ -32,9 +32,8 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF',
-                            'EXSCC1_1_IA_RATIO', 'EXSCC1_2_IA_RATIO', 'EXSCC2_1_IA_RATIO', 'EXSCC2_2_IA_RATIO',
-                            'EXSSC1_1_IA_DIFF', 'EXSSC1_2_IA_DIFF', 'EXSSC2_1_IA_DIFF', 'EXSSC2_2_IA_DIFF',
+                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF', #'EXAS_EXRS_DIFF_TO_LEN', 
+                            'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 
                             'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF', 'MDLF_OVER_MDSP', 'MDRF_OVER_MDSF', 
@@ -77,14 +76,22 @@ class Features:
 
     def get_model_name(record, max_is, read_len):
         svtype_str = Features.get_svtype(record)
-        if svtype_str == "DEL" and abs(Features.get_svlen(record)) >= max_is:
-            svtype_str += "_LARGE"
+
+        if svtype_str == "DUP" and "INS_TO_DUP" in record.info:
+            svtype_str = "INS_TO_DUP"
+            if Features.get_svlen(record) > read_len-30:
+                svtype_str += "_LARGE"
+
+        if svtype_str == "DEL":
+            if abs(Features.get_svlen(record)) >= max_is:
+                svtype_str += "_LARGE"
+            if 'EXL' not in record.samples[0]:
+                svtype_str += "_NOEXL"
         elif svtype_str == "DUP" and Features.get_svlen(record) > read_len-30:
             svtype_str += "_LARGE"
+            if 'EXL' not in record.samples[0]:
+                svtype_str += "_NOEXL"
 
-        if (Features.get_number_value(record.samples[0], 'EXL', 0) == 0 or \
-            Features.get_number_value(record.samples[0], 'EXL2', 1) == 0): # note that EXL2 should be PRESENT and 0
-            svtype_str += "_IMPRECISE"
         return svtype_str
 
     def get_number_value(info, key, default, norm_factor = 1.0):
@@ -102,7 +109,7 @@ class Features:
             return info[key]
         else:
             return default
-        
+
     def generate_id(record):
         svinsseq = Features.get_svinsseq(record)
         return f"{record.chrom}:{record.pos}-{record.stop}:{Features.get_svtype(record)}:{Features.get_svlen(record)}:{hash(svinsseq)}"
@@ -111,7 +118,18 @@ class Features:
         if "<" not in record.alts[0]:
             return record.alts[0]
         elif 'SVINSSEQ' in record.info:
-            return record.info['SVINSSEQ']
+            svinsseq = record.info['SVINSSEQ']
+            if isinstance(svinsseq, list) or isinstance(svinsseq, tuple):
+                return svinsseq[0]
+            return svinsseq
+        elif "LEFT_SVINSSEQ" in record.info or "RIGHT_SVINSSEQ" in record.info:
+            left_svinsseq = Features.get_string_value(record.info, 'LEFT_SVINSSEQ', "")
+            right_svinsseq = Features.get_string_value(record.info, 'RIGHT_SVINSSEQ', "")
+            if isinstance(left_svinsseq, list) or isinstance(left_svinsseq, tuple):
+                left_svinsseq = left_svinsseq[0]
+            if isinstance(right_svinsseq, list) or isinstance(right_svinsseq, tuple):
+                right_svinsseq = right_svinsseq[0]
+            return left_svinsseq + '-' + right_svinsseq
         return ""
 
     def get_svlen(record):
@@ -172,12 +190,10 @@ class Features:
         source_str = Features.get_string_value(info, 'SOURCE', "")
         features['START_STOP_DIST'] = record.stop - record.pos
 
-        svinsseq = ""
-        if 'SVINSSEQ' in info:
-            svinsseq = info['SVINSSEQ']
         svlen = abs(Features.get_svlen(record))
         features['SVLEN'] = math.log1p(svlen)
 
+        svinsseq = Features.get_svinsseq(record)
         svinslen = Features.get_number_value(info, 'SVINSLEN', 0)
         if svinslen == 0 and svinsseq:
             svinslen = len(svinsseq)
@@ -216,14 +232,13 @@ class Features:
         ins_prefix_base_count_ratio = [x/max(1, sum(ins_prefix_base_count)) for x in ins_prefix_base_count]
         features['MAX_INS_PREFIX_BASE_COUNT_RATIO'] = max(ins_prefix_base_count_ratio)
         features['INS_PREFIX_A_RATIO'], features['INS_PREFIX_C_RATIO'], features['INS_PREFIX_G_RATIO'], features['INS_PREFIX_T_RATIO'] = ins_prefix_base_count_ratio
-        
+
         ins_suffix_base_count = Features.get_number_value(info, 'INS_SUFFIX_BASE_COUNT', [0, 0, 0, 0])
         ins_suffix_base_count_ratio = [x/max(1, sum(ins_suffix_base_count)) for x in ins_suffix_base_count]
         features['MAX_INS_SUFFIX_BASE_COUNT_RATIO'] = max(ins_suffix_base_count_ratio)
         features['INS_SUFFIX_A_RATIO'], features['INS_SUFFIX_C_RATIO'], features['INS_SUFFIX_G_RATIO'], features['INS_SUFFIX_T_RATIO'] = ins_suffix_base_count_ratio
 
-        td = Features.get_number_value(record.samples[0], 'TD', 0)
-        features['TD'] = td
+        features['TD'] = Features.get_number_value(record.samples[0], 'TD', 0)
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         ar1c = Features.get_number_value(record.samples[0], 'AR1C', 0)
@@ -403,7 +418,7 @@ class Features:
         features['ASP2HQ_1_RATIO'], features['ASP2HQ_2_RATIO'] = asp2hq_1/max(1, asp2), asp2hq_2/max(1, asp2)
         features['ASP2mQ_1'], features['ASP2mQ_2'] = Features.get_number_value(record.samples[0], 'ASP2mQ', [Features.NAN, Features.NAN])
         features['ASP2MQ_1'], features['ASP2MQ_2'] = Features.get_number_value(record.samples[0], 'ASP2MQ', [Features.NAN, Features.NAN])
-        
+
         features['ASP1_ASP2_RATIO'] = max(asp1, asp2)/max(1, asp1+asp2)
 
         asp1span_1, asp1span_2 = Features.get_number_value(record.samples[0], 'ASP1SPAN', [0, 0])
@@ -588,6 +603,9 @@ class Features:
         features['EXAS_EXRS_RATIO'] = 0 if exrs1+exrs2 == 0 else (exas1+exas2)/(exrs1+exrs2)
         features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
 
+        affected_length = features['START_STOP_DIST'] + svinslen
+        features['EXAS_EXRS_DIFF_TO_LEN'] = features['EXAS_EXRS_DIFF']/max(1, affected_length)
+
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
         features['EXSS1_1'] = exss1_1/max_is
         features['EXSS1_2'] = exss1_2/max_is
@@ -604,10 +622,10 @@ class Features:
         exssc2_1, exssc2_2 = Features.get_number_value(record.samples[0], 'EXSSC2', [Features.NAN, Features.NAN])
         exsscia1_1, exsscia1_2 = Features.get_number_value(record.samples[0], 'EXSSCIA', [Features.NAN, Features.NAN])
         exsscia2_1, exsscia2_2 = Features.get_number_value(record.samples[0], 'EXSSC2IA', [Features.NAN, Features.NAN])
-        features['EXSCC1_1_IA_RATIO'], features['EXSCC1_2_IA_RATIO'] = exssc1_1/max(1, exsscia1_1), exssc1_2/max(1, exsscia1_2)
-        features['EXSCC2_1_IA_RATIO'], features['EXSCC2_2_IA_RATIO'] = exssc2_1/max(1, exsscia2_1), exssc2_2/max(1, exsscia2_2)
-        features['EXSSC1_1_IA_DIFF'], features['EXSSC1_2_IA_DIFF'] = (exsscia1_1-exssc1_1)/max(1, exss1_1), (exsscia1_2-exssc1_2)/max(1, exss1_2)
-        features['EXSSC2_1_IA_DIFF'], features['EXSSC2_2_IA_DIFF'] = (exsscia2_1-exssc2_1)/max(1, exss2_1), (exsscia2_2-exssc2_2)/max(1, exss2_2)
+        features['EXSSC1_IA_RATIO'] = (exssc1_1+exssc1_2)/max(1, exsscia1_1+exsscia1_2)
+        features['EXSSC2_IA_RATIO'] = (exssc2_1+exssc2_2)/max(1, exsscia2_1+exsscia2_2)
+        features['EXSSC1_IA_DIFF'] = (exsscia1_1+exsscia1_2-exssc1_1-exssc1_2)/max(1, exss1_1+exss1_2)
+        features['EXSSC2_IA_DIFF'] = (exsscia2_1+exsscia2_2-exssc2_1-exssc2_2)/max(1, exss2_1+exss2_2)
 
         feature_values = []
         for feature_name in Features.get_feature_names(model_name):

@@ -35,13 +35,15 @@ struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 	bool imprecise = false, incomplete_ins_seq = false;
     std::string sample;
 	int n_gt;
+	float epr;
 	std::vector<int> gt;
 
     sv_w_samplename_t() {}
     sv_w_samplename_t(std::shared_ptr<sv_t> sv, const std::string& sample) : sample(sample), chr(sv->chr), 
 		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq), n_gt(sv->n_gt),
-		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()) {
+		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()), epr(sv->sample_info.epr) {
 		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
+		if (incomplete_ins_seq) svlen = 0;
 	}
 
 	std::string unique_key() {
@@ -61,6 +63,34 @@ double overlap(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 	if (sv1.svtype == "INS" && sv2.svtype == "INS") return 1.0;
 	if (sv1.end == sv1.start || sv2.end == sv2.start) return 1.0;
 	return overlap(sv1.start, sv1.end, sv2.start, sv2.end)/double(std::min(sv1.end-sv1.start, sv2.end-sv2.start));
+}
+
+double len_ratio(hts_pos_t svlen1, hts_pos_t svlen2) {
+	svlen1 = abs(svlen1);
+	svlen2 = abs(svlen2);
+	if (svlen1 == 0 && svlen2 == 0) return 1.0;
+	else return double(std::min(svlen1, svlen2)) / std::max(svlen1, svlen2);
+}
+
+double len_ratio(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
+	if (sv1.svtype == "DEL" && sv2.svtype == "DEL") {
+		return len_ratio(sv1.svlen, sv2.svlen);
+	} else if (sv1.svtype == "DUP" && sv2.svtype == "DUP") return 1.0;
+	else if (sv1.svtype == "INS" && sv2.svtype == "INS") {
+		if (sv1.incomplete_ins_seq || sv2.incomplete_ins_seq) {
+			return 1.0;
+		} else {
+			return std::min(double(sv1.svlen), double(sv2.svlen)) / std::max(double(sv1.svlen), double(sv2.svlen));
+		}
+	} else if ((sv1.svtype == "INS" && sv2.svtype == "DUP") || (sv1.svtype == "DUP" && sv2.svtype == "INS")) return 1.0;
+	else if (sv1.svtype == "INV" && sv2.svtype == "INV") {
+		double sv1_len = sv1.end - sv1.start;
+		double sv2_len = sv2.end - sv2.start;
+		if (sv1_len == 0 && sv2_len == 0) return 1.0;
+		else return std::min(sv1_len, sv2_len) / std::max(sv1_len, sv2_len);
+	} else {
+		return 0.0; // not compatible
+	}
 }
 	
 
@@ -82,6 +112,7 @@ std::unordered_map<std::string, std::vector<std::shared_ptr<bcf1_t>> > clustered
 int max_prec_dist, max_imprec_dist, max_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
+double min_prec_len_ratio, min_imprec_len_ratio;
 bool overlap_for_ins;
 
 std::unordered_set<std::string> called_by;
@@ -90,19 +121,26 @@ std::mutex called_by_mtx;
 bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 	if (sv1.svtype != sv2.svtype) return false;
 
-	bool distance_ok, overlap_ok, len_diff_ok;
-
+	bool distance_ok, overlap_ok, len_diff_ok, len_ratio_ok;
+	
 	if (sv1.imprecise || sv2.imprecise) {
 		distance_ok = distance(sv1, sv2) <= max_imprec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_imprec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_imprec_len_diff;
+		len_ratio_ok = len_ratio(sv1, sv2) >= min_imprec_len_ratio;
+		std::cout << "imprecise: " << len_ratio(sv1, sv2) << std::endl;
 	} else {
 		distance_ok = distance(sv1, sv2) <= max_prec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_prec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_prec_len_diff;
+		len_ratio_ok = len_ratio(sv1, sv2) >= min_prec_len_ratio;
+		std::cout << "precise: " << len_ratio(sv1, sv2) << std::endl;
 	}
+	
+	std::cout << "Comparing " << sv1.unique_key() << " and " << sv2.unique_key() << std::endl;
+	std::cout << distance_ok << " " << overlap_ok << " " << len_diff_ok << " " << len_ratio_ok << std::endl;
 
-	return distance_ok && overlap_ok && len_diff_ok;
+	return distance_ok && overlap_ok && len_diff_ok && len_ratio_ok;
 }
 
 bool can_join_clique(std::vector<int>& neighbor_clique, std::vector<sv_w_samplename_t>& svs, int curr_idx) {
@@ -187,10 +225,12 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
 
 sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     std::unordered_map<std::string, int> counts;
+	std::unordered_map<std::string, float> eprs;
     for (sv_w_samplename_t& sv : svs) {
-        if (!sv.imprecise && !sv.incomplete_ins_seq) {
-            counts[sv.unique_key()]++;
+		if (!sv.imprecise && !sv.incomplete_ins_seq) {
+			counts[sv.unique_key()]++;
         }
+		eprs[sv.unique_key()] = sv.epr;
     }
     if (counts.empty()) { // if no precise accepts imprecise
         for (sv_w_samplename_t& sv : svs) {
@@ -201,7 +241,10 @@ sv_w_samplename_t choose_sv(std::vector<sv_w_samplename_t>& svs) {
     int max_freq = 0;
     std::string str;
     for (auto& e : counts) {
-        if (e.second > max_freq) {
+        if (e.second > max_freq || (e.second == max_freq && eprs[e.first] > eprs[str])) {
+			// mtx.lock();
+			// if (e.second == max_freq) std::cout << "Choosen " << e.first << " instead of " << str << " because of EPR " << eprs[e.first] << " vs " << eprs[str] << std::endl;
+			// mtx.unlock();
             max_freq = e.second;
             str = e.first;
         }
@@ -575,6 +618,8 @@ int main(int argc, char* argv[]) {
 					cxxopts::value<int>()->default_value("100"))
 			("S,max-len-diff-imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 					cxxopts::value<int>()->default_value("500"))
+			("l,min-len-ratio-precise", "Minimum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
+			("L,min-len-ratio-imprecise", "Minimum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
 			("i,overlap-for-ins", "Require overlap for insertions.", cxxopts::value<bool>()->default_value("false"))
 			("k,keep-all-called", "Keep all SVs, even if they have no alt alleles.", cxxopts::value<bool>()->default_value("false"))
 			("t,threads", "Maximum number of threads used.", cxxopts::value<int>()->default_value("1"))
@@ -609,6 +654,8 @@ int main(int argc, char* argv[]) {
     min_imprec_frac_overlap = parsed_args["min-overlap-imprecise"].as<double>();
     max_prec_len_diff = parsed_args["max-len-diff-precise"].as<int>();
     max_imprec_len_diff = parsed_args["max-len-diff-imprecise"].as<int>();
+	min_prec_len_ratio = parsed_args["min-len-ratio-precise"].as<double>();
+	min_imprec_len_ratio = parsed_args["min-len-ratio-imprecise"].as<double>();
     overlap_for_ins = parsed_args["overlap-for-ins"].as<bool>();
     std::string out_prefix = parsed_args["out-prefix"].as<std::string>();
     int n_threads = parsed_args["threads"].as<int>();

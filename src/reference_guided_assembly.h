@@ -240,6 +240,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		}
 	}
 
+
 	// we assembled as much as possible using guidance from the reference
 	// however, reads may be misaligned for in the case of an incomplete or rearranged reference
 	// we can try to "scaffold" the contigs using the reads that were rejected during the assembly
@@ -508,7 +509,7 @@ void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info
     bam_aux_append(read, "MS", 'i', 4, (const uint8_t*) &remap_info.score);
 }
 
-insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::string& junction_seq,
+std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::string& junction_seq,
 		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, 
 		std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
 		region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, 
@@ -518,12 +519,12 @@ insertion_t* detect_reference_guided_assembly_insertion(std::string contig_name,
 	int remap_end = std::min(l_cluster->end+50, contig_len-1);
 	if (remap_start >= remap_end) return NULL;
 
-	 std::vector<sv_t*> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
+	 std::vector<std::shared_ptr<sv_t>> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
                 remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len);
 
 	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->ins_seq.length() < config.min_sv_size) return NULL;
 
-	insertion_t* insertion = (insertion_t*) insertions[0];
+	std::shared_ptr<insertion_t> insertion = std::dynamic_pointer_cast<insertion_t>(insertions[0]);
 
 	std::shared_ptr<insertion_cluster_t> refined_r_cluster = std::make_shared<insertion_cluster_t>();
     for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {

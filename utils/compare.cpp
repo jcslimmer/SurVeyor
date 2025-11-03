@@ -17,14 +17,17 @@ chr_seqs_map_t chr_seqs;
 int max_prec_dist, max_imprec_dist, max_repeat_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
+double min_prec_len_ratio, min_imprec_len_ratio;
 std::unordered_set<std::string> bdup_ids, cdup_ids;
 
-// StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
-std::vector<sv_t*> benchmark_svs;
-std::unordered_map<std::string, std::vector<sv_t*> > called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
+std::vector<std::shared_ptr<sv_t>> benchmark_svs;
+std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
 std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
 
+StripedSmithWaterman::Aligner edit_distance_aligner(1, 0, 1, 1, false);
 bool ignore_seq = false;
+
+std::mutex mtx;
 
 bool compatible_gts(sv_t* sv1, sv_t* sv2) {
 	int min_sv1_ac = sv1->allele_count(1), min_sv2_ac = sv2->allele_count(1);
@@ -44,110 +47,240 @@ std::string get_csv_type(sv_t* sv) {
 
 int len_diff(sv_t* sv1, sv_t* sv2) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") return abs(sv1->svlen()-sv2->svlen());
-	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return abs(sv1->svlen()-sv2->svlen());
-	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") return abs((int) (sv1->svlen()-sv2->svlen()));
-	else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 0;
+	else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return 0;
+	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
+		if (sv1->incomplete_ins_seq() && sv2->incomplete_ins_seq()) {
+			return 0;
+		} else if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) {
+			sv_t* sv_full = sv1->incomplete_ins_seq() ? sv2 : sv1;
+			sv_t* sv_incmpl = sv1->incomplete_ins_seq() ? sv1 : sv2;
+			return std::max(0, (int) (sv_incmpl->ins_seq.length() - sv_full->svlen()));
+		} else {
+			return abs((int) (sv1->svlen()-sv2->svlen()));
+		}
+	} else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 0;
 	else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") return abs(sv1->svlen()-sv2->svlen());
 	else return INT32_MAX;
 }
 
-bool is_compatible_del_del(sv_t* sv1, sv_t* sv2) {
-	if (sv1->imprecise || sv2->imprecise) {
-		return  distance(sv1, sv2) <= max_imprec_dist &&
-				overlap(sv1, sv2) >= min_imprec_frac_overlap &&
-				len_diff(sv1, sv2) <= max_imprec_len_diff;
+double len_ratio(hts_pos_t svlen1, hts_pos_t svlen2) {
+	svlen1 = abs(svlen1);
+	svlen2 = abs(svlen2);
+	if (svlen1 == 0 && svlen2 == 0) return 1.0;
+	else return double(std::min(svlen1, svlen2)) / std::max(svlen1, svlen2);
+}
+
+double len_ratio(sv_t* sv1, sv_t* sv2) {
+	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") {
+		return len_ratio(sv1->svlen(), sv2->svlen());
+	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") return 1.0;
+	else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
+		if (sv1->incomplete_ins_seq() && sv2->incomplete_ins_seq()) { // if both are incomplete, we cannot compare lengths
+			return 1.0;
+		} else if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) { 
+			// if one is incomplete, we know a lower bound for its length - if it is longer than the full one, we can compute an upper bound for the ratio
+			sv_t* sv_full = sv1->incomplete_ins_seq() ? sv2 : sv1;
+			sv_t* sv_incmpl = sv1->incomplete_ins_seq() ? sv1 : sv2;
+			if (sv_incmpl->svlen() > sv_full->svlen()) {
+				return double(sv_full->svlen()) / sv_incmpl->svlen();
+			} else {
+				return 1.0;
+			}
+		} else {
+			return std::min(double(sv1->svlen()), double(sv2->svlen())) / std::max(double(sv1->svlen()), double(sv2->svlen()));
+		}
+	} else if ((sv1->svtype() == "INS" && sv2->svtype() == "DUP") || (sv1->svtype() == "DUP" && sv2->svtype() == "INS")) return 1.0;
+	else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") {
+		return std::min(double(sv1->svlen()), double(sv2->svlen())) / std::max(double(sv1->svlen()), double(sv2->svlen()));
 	} else {
-		return  distance(sv1, sv2) <= max_prec_dist &&
-				overlap(sv1, sv2) >= min_prec_frac_overlap &&
-				len_diff(sv1, sv2) <= max_prec_len_diff;
+		return 0.0; // not compatible
 	}
 }
-bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2) {
-	return is_compatible_del_del(sv1, sv2);
+
+char* generate_alt_allele(sv_t* sv, hts_pos_t start, hts_pos_t end) {
+	start = std::min(sv->start, start);
+	end = std::max(sv->end, end);
+	int len = sv->start - start + sv->ins_seq.length() + end - sv->end;
+	char* alt = new char[len+1];
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
+	strncpy(alt, chr_seq+start+1, sv->start-start);
+	strncpy(alt+sv->start-start, sv->ins_seq.c_str(), sv->ins_seq.length());
+	strncpy(alt+sv->start-start+sv->ins_seq.length(), chr_seq+sv->end+1, end-sv->end);
+	alt[len] = '\0';
+	return alt;
+}
+
+bool alt_allele_match(sv_t* sv1, sv_t* sv2, int max_score_loss) {
+	hts_pos_t start = std::min(sv1->start, sv2->start) - 100;
+	if (start < 0) start = 0;
+	hts_pos_t end = std::max(sv1->end, sv2->end) + 100;
+	if (end >= chr_seqs.get_len(sv1->chr)) end = chr_seqs.get_len(sv1->chr)-1;
+	char* alt1 = generate_alt_allele(sv1, start, end);
+	char* alt2 = generate_alt_allele(sv2, start, end);
+	int strlen1 = strlen(alt1);
+	int strlen2 = strlen(alt2);
+	StripedSmithWaterman::Alignment alignment;
+	StripedSmithWaterman::Filter filter;
+	edit_distance_aligner.Align(alt1, alt2, strlen2, filter, &alignment, 0);
+	int score_loss = std::min(strlen1, strlen2) - alignment.sw_score;
+	delete [] alt1;
+	delete [] alt2;
+	return score_loss <= max_score_loss;
+}
+
+bool is_compatible_ivals(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
+	bool imprecise_mode = sv1->imprecise || sv2->imprecise;
+	int max_dist = imprecise_mode ? max_imprec_dist : max_prec_dist;
+	if (repeat_mode) max_dist = max_repeat_dist;
+	double min_frac_overlap = imprecise_mode ? min_imprec_frac_overlap : min_prec_frac_overlap;
+	int max_len_diff = imprecise_mode ? max_imprec_len_diff : max_prec_len_diff;
+	double min_len_ratio = imprecise_mode ? min_imprec_len_ratio : min_prec_len_ratio;
+	return distance(sv1, sv2) <= max_dist &&
+			(repeat_mode || overlap(sv1, sv2) >= min_frac_overlap) &&
+			len_diff(sv1, sv2) <= max_len_diff &&
+			len_ratio(sv1, sv2) >= min_len_ratio;
+}
+
+bool is_compatible_del_del(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
+	bool imprecise_mode = sv1->imprecise || sv2->imprecise;
+	int max_dist = imprecise_mode ? max_imprec_dist : max_prec_dist;
+	if (repeat_mode) max_dist = max_repeat_dist;
+	double min_len_ratio = imprecise_mode ? min_imprec_len_ratio : min_prec_len_ratio;
+	int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
+	int max_score_loss = std::min(max_svlen, max_dist) * (1-min_len_ratio);
+	return is_compatible_ivals(sv1, sv2, repeat_mode) &&
+			alt_allele_match(sv1, sv2, max_score_loss) >= min_len_ratio;
+}
+bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
+	return is_compatible_ivals(sv1, sv2, repeat_mode);
 }
 
 bool check_ins_dup_seq(sv_t* ins_sv, sv_t* dup_sv, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
 
+	int ins_seq_len = ins_sv->ins_seq.length();
 	int max_len_diff = (ins_sv->imprecise || dup_sv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-	if (dup_sv->svlen() > ins_sv->ins_seq.length()+max_len_diff) return false;
+	double min_len_ratio = (ins_sv->imprecise || dup_sv->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+	if (dup_sv->svlen() > ins_seq_len+max_len_diff || double(ins_seq_len)/dup_sv->svlen() < min_len_ratio) return false;
+	if (dup_sv->svlen() <= 0) return false;
 
 	char* dup_seq = new char[dup_sv->end-dup_sv->start+1];
 	strncpy(dup_seq, chr_seqs.get_seq(dup_sv->chr)+dup_sv->start, dup_sv->end-dup_sv->start);
 	dup_seq[dup_sv->end-dup_sv->start] = '\0';
-	std::string ext_dup_seq = dup_seq;
-	while (ext_dup_seq.length() <= ins_sv->ins_seq.length() && ext_dup_seq.length() < UINT16_MAX) {
-		ext_dup_seq += dup_sv->ins_seq + dup_seq;
+	std::string ext_dup_seq = dup_seq + dup_sv->ins_seq;
+	int add_len = dup_sv->end - dup_sv->start + dup_sv->ins_seq.length();
+	while (ext_dup_seq.length() <= ins_seq_len && ext_dup_seq.length() < UINT16_MAX) {
+		ext_dup_seq += dup_seq + dup_sv->ins_seq;
 	}
 	delete[] dup_seq;
 
 	if (ins_sv->start < dup_sv->start) {
 		size_t rotation = dup_sv->start - ins_sv->start;
 		rotation %= dup_sv->end-dup_sv->start;
-		ext_dup_seq = ext_dup_seq.substr(rotation) + ext_dup_seq.substr(0, rotation);
+		ext_dup_seq = ext_dup_seq.substr(dup_sv->end-dup_sv->start-rotation) + ext_dup_seq.substr(0, dup_sv->end-dup_sv->start-rotation);
 	} else if (ins_sv->start > dup_sv->start) {
 		size_t rotation = ins_sv->start - dup_sv->start;
 		rotation %= dup_sv->end-dup_sv->start;
-		ext_dup_seq = ext_dup_seq.substr(dup_sv->end-dup_sv->start-rotation) + ext_dup_seq.substr(0, dup_sv->end-dup_sv->start-rotation);
+		ext_dup_seq = ext_dup_seq.substr(rotation) + ext_dup_seq.substr(0, rotation);
 	}
 
 	// ssw score is a uint16_t, so we cannot compare strings longer than that
 	StripedSmithWaterman::Filter filter;
-	if (ins_sv->ins_seq.length() > UINT16_MAX || ext_dup_seq.length() > UINT16_MAX) {
-		std::string ins_seq_prefix = ins_sv->ins_seq.substr(0, UINT16_MAX-10);
-		std::string ins_seq_suffix = ins_sv->ins_seq.substr(std::max(0, (int) ins_sv->ins_seq.length()-(UINT16_MAX-10)));
-		std::string ext_dup_seq_prefix = ext_dup_seq.substr(0, UINT16_MAX-10);
-		std::string ext_dup_seq_suffix = ext_dup_seq.substr(std::max(0, (int) ext_dup_seq.length()-(UINT16_MAX-10)));
-		aligner.Align(ins_seq_prefix.data(), ext_dup_seq_prefix.data(), ext_dup_seq_prefix.length(), filter, &alignment, 0);
-		if (alignment.query_end-alignment.query_begin < ins_seq_prefix.length()*0.8) return false;
-		aligner.Align(ins_seq_suffix.data(), ext_dup_seq_suffix.data(), ext_dup_seq_suffix.length(), filter, &alignment, 0);
-		if (alignment.query_end-alignment.query_begin < ins_seq_suffix.length()*0.8) return false;
+	std::string& smaller_seq = ins_seq_len < ext_dup_seq.length() ? ins_sv->ins_seq : ext_dup_seq;
+	std::string& larger_seq = ins_seq_len < ext_dup_seq.length() ? ext_dup_seq : ins_sv->ins_seq;
+	if (larger_seq.length() > UINT16_MAX) {
+		std::string smaller_seq_prefix = smaller_seq.substr(0, UINT16_MAX-10);
+		std::string smaller_seq_suffix = smaller_seq.substr(std::max(0, (int) smaller_seq.length()-(UINT16_MAX-10)));
+		std::string larger_seq_prefix = larger_seq.substr(0, UINT16_MAX-10);
+		std::string larger_seq_suffix = larger_seq.substr(std::max(0, (int) larger_seq.length()-(UINT16_MAX-10)));
+		aligner.Align(smaller_seq_prefix.data(), larger_seq_prefix.data(), larger_seq_prefix.length(), filter, &alignment, 0);
+		if (alignment.query_end-alignment.query_begin < smaller_seq_prefix.length()*0.8) return false;
+		aligner.Align(smaller_seq_suffix.data(), larger_seq_suffix.data(), larger_seq_suffix.length(), filter, &alignment, 0);
+		if (alignment.query_end-alignment.query_begin < smaller_seq_suffix.length()*0.8) return false;
 		return true;
 	}
 
-	aligner.Align(ins_sv->ins_seq.data(), ext_dup_seq.data(), ext_dup_seq.length(), filter, &alignment, 0);
-	return alignment.query_end-alignment.query_begin >= ins_sv->ins_seq.length()*0.8;
+	aligner.Align(smaller_seq.data(), larger_seq.data(), larger_seq.length(), filter, &alignment, 0);
+	return alignment.query_end-alignment.query_begin >= smaller_seq.length()*0.8;
 }
-bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
+bool is_compatible_ins_dup(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner, bool repeat_mode) {
 	StripedSmithWaterman::Alignment alignment;
-	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_dup_seq(sv1, sv2, aligner, alignment);
-	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_dup_seq(sv1, sv2, aligner, alignment);
-	}
+	int max_dist = (sv1->imprecise || sv2->imprecise) ? max_imprec_dist : max_prec_dist;
+	if (repeat_mode) max_dist = max_repeat_dist;
+	return distance(sv1, sv2) <= max_dist && check_ins_dup_seq(sv1, sv2, aligner, alignment);
+}
+
+bool check_cmpl_cmpl_seq(std::string& cmpl_seq1, std::string& cmpl_seq2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	std::string& query = cmpl_seq1.length() < cmpl_seq2.length() ? cmpl_seq1 : cmpl_seq2;
+	std::string& ref = cmpl_seq1.length() < cmpl_seq2.length() ? cmpl_seq2 : cmpl_seq1;
+	StripedSmithWaterman::Filter filter;
+	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
+	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
+}
+
+bool check_cmpl_incmpl_seq(std::string& cmpl_seq, std::string& incmpl_seq, bool incmpl_is_imprecise, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	int dash_pos = incmpl_seq.find('-');
+	std::string left_seq = incmpl_seq.substr(0, dash_pos);
+	std::string right_seq = incmpl_seq.substr(dash_pos+1);
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment left_aln, right_aln;
+	int max_len_diff = incmpl_is_imprecise ? max_imprec_len_diff : max_prec_len_diff;
+	left_aln.Clear();
+	right_aln.Clear();
+	aligner.Align(left_seq.data(), cmpl_seq.data(), cmpl_seq.length(), filter, &left_aln, 0);
+	aligner.Align(right_seq.data(), cmpl_seq.data(), cmpl_seq.length(), filter, &right_aln, 0);
+	if (left_aln.query_end-left_aln.query_begin+right_aln.query_end-right_aln.query_begin < incmpl_seq.length()*0.8 || 
+		left_aln.ref_begin > max_len_diff || cmpl_seq.length()-right_aln.ref_end > max_len_diff) return false;
+	return true;
+}
+
+bool check_incmpl_incmpl_seq(std::string& incmpl_seq1, std::string& incmpl_seq2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	return true;
 }
 
 bool check_ins_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
 	if (ignore_seq) return true;
-	if (sv1->ins_seq.length() > UINT16_MAX || sv2->ins_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
-
-	if (sv1->incomplete_ins_seq() || sv2->incomplete_ins_seq()) return true; // do not compare incomplete assemblies
-
+	
 	int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-	if (abs((int) (sv1->ins_seq.length()-sv2->ins_seq.length())) > max_len_diff) return false;
-
+	double min_len_ratio = (sv1->imprecise || sv2->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+	if (len_diff(sv1, sv2) > max_len_diff || len_ratio(sv1, sv2) < min_len_ratio) return false;
+	
 	sv_t* l_sv = sv1->start < sv2->start ? sv1 : sv2;
 	sv_t* r_sv = sv1->start < sv2->start ? sv2 : sv1;
 	char* extra_seq = new char[r_sv->start-l_sv->start+1];
 	strncpy(extra_seq, chr_seqs.get_seq(sv1->chr)+l_sv->start, r_sv->start-l_sv->start);
 	extra_seq[r_sv->start-l_sv->start] = '\0';
-
+	
 	std::string lsv_seq = l_sv->ins_seq + extra_seq;
 	std::string rsv_seq = extra_seq + r_sv->ins_seq;
 	delete[] extra_seq;
 
-	std::string& query = lsv_seq.length() < rsv_seq.length() ? lsv_seq : rsv_seq;
-	std::string& ref = lsv_seq.length() < rsv_seq.length() ? rsv_seq : lsv_seq;
-	StripedSmithWaterman::Filter filter;
-	aligner.Align(query.data(), ref.data(), ref.length(), filter, &alignment, 0);
-	return alignment.query_end-alignment.query_begin >= query.length()*0.8;
+	if (lsv_seq.length() > UINT16_MAX || rsv_seq.length() > UINT16_MAX) return true; // TODO: ssw score is a uint16_t, so we cannot compare strings longer than that
+
+	if (!sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq()) {
+		return check_cmpl_cmpl_seq(lsv_seq, rsv_seq, aligner, alignment);
+	} else if (l_sv->incomplete_ins_seq() && !r_sv->incomplete_ins_seq()) {
+		return check_cmpl_incmpl_seq(rsv_seq, lsv_seq, r_sv->imprecise, aligner, alignment);
+	} else if (!l_sv->incomplete_ins_seq() && r_sv->incomplete_ins_seq()) {
+		return check_cmpl_incmpl_seq(lsv_seq, rsv_seq, l_sv->imprecise, aligner, alignment);
+	} else {
+		return check_incmpl_incmpl_seq(lsv_seq, rsv_seq, aligner, alignment);
+	}
 }
 bool is_compatible_ins_ins(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
 	StripedSmithWaterman::Alignment alignment;
-	if (sv1->imprecise || sv2->imprecise) {
-		return distance(sv1, sv2) <= max_imprec_dist && check_ins_ins_seq(sv1, sv2, aligner, alignment);
+	int max_dist = (sv1->imprecise || sv2->imprecise) ? max_imprec_dist : max_prec_dist;
+	if (distance(sv1, sv2) > max_dist) return false;
+	if (!ignore_seq && !sv1->incomplete_ins_seq() && !sv2->incomplete_ins_seq() && sv1->svlen() < 1000 && sv2->svlen() < 1000) {
+		int max_len_diff = (sv1->imprecise || sv2->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
+		double min_len_ratio = (sv1->imprecise || sv2->imprecise) ? min_imprec_len_ratio : min_prec_len_ratio;
+		if (len_diff(sv1, sv2) > max_len_diff || len_ratio(sv1, sv2) < min_len_ratio) return false;
+
+		int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
+		int max_score_loss = max_svlen * (1-min_len_ratio);
+		return alt_allele_match(sv1, sv2, max_score_loss);
 	} else {
-		return distance(sv1, sv2) <= max_prec_dist && check_ins_ins_seq(sv1, sv2, aligner, alignment);
+		return check_ins_ins_seq(sv1, sv2, aligner, alignment);
 	}
 }
 
@@ -165,18 +298,18 @@ bool check_ins_seq(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner)
 }
 
 bool is_compatible_inv_inv(sv_t* sv1, sv_t* sv2) {
-	return is_compatible_del_del(sv1, sv2);
+	return is_compatible_ivals(sv1, sv2, false);
 }
 
-bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner) {
+bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner, bool repeat_mode) {
 	if (sv1->svtype() == "DEL" && sv2->svtype() == "DEL") {
-		return is_compatible_del_del(sv1, sv2);
+		return is_compatible_del_del(sv1, sv2, repeat_mode);
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "DUP") {
-		return is_compatible_dup_dup(sv1, sv2);
+		return is_compatible_dup_dup(sv1, sv2, repeat_mode);
 	} else if (sv1->svtype() == "DUP" && sv2->svtype() == "INS") {
-		return is_compatible_ins_dup(sv2, sv1, aligner);
+		return is_compatible_ins_dup(sv2, sv1, aligner, repeat_mode);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "DUP") {
-		return is_compatible_ins_dup(sv1, sv2, aligner);
+		return is_compatible_ins_dup(sv1, sv2, aligner, repeat_mode);
 	} else if (sv1->svtype() == "INS" && sv2->svtype() == "INS") {
 		return is_compatible_ins_ins(sv1, sv2, aligner);
 	} else if (sv1->svtype() == "INV" && sv2->svtype() == "INV") {
@@ -187,11 +320,11 @@ bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner)
 }
 
 struct sv_match_t {
-	sv_t* b_sv, * c_sv;
+	std::shared_ptr<sv_t> b_sv, c_sv;
 	int score = 0;
 	bool rep;
 
-	sv_match_t(sv_t* b_sv, sv_t* c_sv, bool rep, StripedSmithWaterman::Aligner& aligner) : b_sv(b_sv), c_sv(c_sv) {
+	sv_match_t(std::shared_ptr<sv_t> b_sv, std::shared_ptr<sv_t> c_sv, bool rep, StripedSmithWaterman::Aligner& aligner) : b_sv(b_sv), c_sv(c_sv) {
 		if (b_sv == NULL || c_sv == NULL) {
 			this->score = 0;
 			this->rep = rep;
@@ -203,11 +336,11 @@ struct sv_match_t {
 		int len_diff = 0;
 		if (b_sv->svtype() == "INS" && c_sv->svtype() == "INS") {
 			len_diff = abs(b_sv->svlen()-c_sv->svlen());
-			check_ins_ins_seq(b_sv, c_sv, aligner, alignment);
+			check_ins_ins_seq(b_sv.get(), c_sv.get(), aligner, alignment);
 		} else if (b_sv->svtype() == "INS" && c_sv->svtype() == "DUP") {
-			check_ins_dup_seq(b_sv, c_sv, aligner, alignment);
+			check_ins_dup_seq(b_sv.get(), c_sv.get(), aligner, alignment);
 		} else if (b_sv->svtype() == "DUP" && c_sv->svtype() == "INS") {
-			check_ins_dup_seq(c_sv, b_sv, aligner, alignment);
+			check_ins_dup_seq(c_sv.get(), b_sv.get(), aligner, alignment);
 		} else {
 			len_diff = abs(b_sv->svlen()-c_sv->svlen());
 		}
@@ -218,23 +351,23 @@ struct sv_match_t {
 			if (cigar_int_to_op(c) == 'S') right_clip = cigar_int_to_len(c);
 		}
 
-		int dist_log = log(distance(b_sv, c_sv)+1);
+		int dist_log = log(distance(b_sv.get(), c_sv.get())+1);
 		int aln_score = alignment.sw_score/std::max(1.0, double(alignment.query_end+right_clip)) * 100;
 		this->score = -len_diff - dist_log + aln_score;
 		this->rep = rep;
 	}
 };
 std::vector<sv_match_t> matches;
-std::mutex mtx;
 
 void find_match(int id, int start_idx, int end_idx) {
 
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
 
 	for (int i = start_idx; i < end_idx; i++) {
-		sv_t* bsv = benchmark_svs[i];
+		std::shared_ptr<sv_t> bsv = benchmark_svs[i];
 
-		std::vector<sv_t*>* called_svs_chr_type;
+		std::vector<std::shared_ptr<sv_t>>* called_svs_chr_type;
+		mtx.lock();
 		if (bsv->svtype() == "DEL") {
 			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
 		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
@@ -244,20 +377,22 @@ void find_match(int id, int start_idx, int end_idx) {
 		} else {
 			continue;
 		}
+		mtx.unlock();
 
 		std::vector<repeat_t> reps_containing_bsv;
-		if (reps_i[bsv->chr] != NULL) {
-			std::vector<Interval<repeat_t>> intervals_temp = reps_i[bsv->chr]->findOverlapping(bsv->start, bsv->end);
+		auto it = reps_i.find(bsv->chr);
+		if (it != reps_i.end() && it->second != nullptr) {
+			std::vector<Interval<repeat_t>> intervals_temp = it->second->findOverlapping(bsv->start, bsv->end);
 			for (auto &iv : intervals_temp) {
 				repeat_t rep = iv.value;
-				if (rep.contains(bsv)) {
+				if (rep.contains(bsv.get())) {
 					reps_containing_bsv.push_back(rep);
 				}
 			}
 		}
 
-		for (sv_t* csv : *called_svs_chr_type) {
-			if (is_compatible(bsv, csv, aligner)) {
+		for (const std::shared_ptr<sv_t>& csv : *called_svs_chr_type) {
+			if (is_compatible(bsv.get(), csv.get(), aligner, false)) {
 				sv_match_t match(bsv, csv, false, aligner);
 				mtx.lock();
 				matches.push_back(match);
@@ -265,20 +400,16 @@ void find_match(int id, int start_idx, int end_idx) {
 				continue;
 			}
 
-			if (distance(bsv, csv) > max_repeat_dist) continue;
-
-			int max_len_diff = (bsv->imprecise || csv->imprecise) ? max_imprec_len_diff : max_prec_len_diff;
-			if (len_diff(bsv, csv) <= max_len_diff) {
+			if (is_compatible(bsv.get(), csv.get(), aligner, true)) {
 				bool same_tr = false;
 				for (repeat_t& rep : reps_containing_bsv) {
-					if (rep.intersects(csv)) {
+					if (rep.intersects(csv.get())) {
 						same_tr = true;
 						break;
 					}
 				}
 
-				if (same_tr && (bsv->svtype() == "DEL" || 
-					((bsv->svtype() == "DUP" || bsv->svtype() == "INS") && check_ins_seq(bsv, csv, aligner)))) {
+				if (same_tr) {
 					sv_match_t match(bsv, csv, true, aligner);
 					mtx.lock();
 					matches.push_back(match);
@@ -287,6 +418,18 @@ void find_match(int id, int start_idx, int end_idx) {
 			}
 		}
 	}
+}
+
+std::unordered_set<std::string> find_dup_ids(std::vector<std::shared_ptr<sv_t>>& svs) {
+	std::unordered_set<std::string> seen_ids, dup_ids;
+	for (const std::shared_ptr<sv_t>& sv : svs) {
+		if (seen_ids.count(sv->id)) {
+			dup_ids.insert(sv->id);
+		} else {
+			seen_ids.insert(sv->id);
+		}
+	}
+	return dup_ids;
 }
 
 int main(int argc, char* argv[]) {
@@ -312,12 +455,12 @@ int main(int argc, char* argv[]) {
 				cxxopts::value<int>()->default_value("100"))
 		("S,max_len_diff_imprecise", "Maximum length difference allowed when at least one variant is imprecise.",
 				cxxopts::value<int>()->default_value("500"))
+		("l,min_len_ratio_precise", "Minimum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
+		("L,min_len_ratio_imprecise", "Minimum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
 		("max-repeat-dist", "Maximum distance between two variant in the same tandem repeat.", cxxopts::value<int>()->default_value("1000"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
 		("I,ignore-seq", "Only compare insertions by position.", cxxopts::value<bool>()->default_value("false"))
-		("i,force-ids", "Generate new IDs for the variants, required when variants do not have IDs or have duplicated IDs.",
-				cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("bdup-ids", "ID of benchmark SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
 		("cdup-ids", "ID of called SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
@@ -343,7 +486,7 @@ int main(int argc, char* argv[]) {
     std::string benchmark_fname = parsed_args["benchmark_file"].as<std::string>();
     benchmark_svs = read_sv_list(benchmark_fname.c_str());
     std::string called_fname = parsed_args["called_file"].as<std::string>();
-	std::vector<sv_t*> called_svs = read_sv_list(called_fname.c_str());
+	std::vector<std::shared_ptr<sv_t>> called_svs = read_sv_list(called_fname.c_str());
 	max_prec_dist = parsed_args["max_dist_precise"].as<int>();
 	max_imprec_dist = parsed_args["max_dist_imprecise"].as<int>();
 	max_repeat_dist = parsed_args["max-repeat-dist"].as<int>();
@@ -351,6 +494,8 @@ int main(int argc, char* argv[]) {
 	min_imprec_frac_overlap = parsed_args["min_overlap_imprecise"].as<double>();
 	max_prec_len_diff = parsed_args["max_len_diff_precise"].as<int>();
 	max_imprec_len_diff = parsed_args["max_len_diff_imprecise"].as<int>();
+	min_prec_len_ratio = parsed_args["min_len_ratio_precise"].as<double>();
+	min_imprec_len_ratio = parsed_args["min_len_ratio_imprecise"].as<double>();
     bool report = parsed_args["report"].as<bool>();
 	bool exclusive = parsed_args["exclusive"].as<bool>();
 	int threads = parsed_args["threads"].as<int>();
@@ -409,7 +554,7 @@ int main(int argc, char* argv[]) {
 		wrong_gts_fout.open(wrong_gts_fname);
 	}
 
-	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
+	auto is_unsupported_func = [](const std::shared_ptr<sv_t>& sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
 	// erase and count elements from benchmark_svs that are not supported
 	int n_unsupported = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_unsupported_func);
 	if (n_unsupported > 0) {
@@ -425,70 +570,57 @@ int main(int argc, char* argv[]) {
 	called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_unsupported_func), called_svs.end());
 
 	if (parsed_args["keep-all-benchmark"].as<bool>()) {
-		std::cerr << "Warning: keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
+		std::cerr << "Keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
 	} else {
-		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;});
 		if (n_ac_0 > 0) {
-			std::cerr << "Warning: excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
+			std::cerr << "Excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
 		}
-		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
+		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
 	}
 
 	if (parsed_args["keep-all-called"].as<bool>()) {
-		std::cerr << "Warning: keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
+		std::cerr << "Keeping all variants in the called file, even if they have no ALT alleles." << std::endl;
 	} else {
-		int n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;});
+		int n_ac_0 = std::count_if(called_svs.begin(), called_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;});
 		if (n_ac_0 > 0) {
-			std::cerr << "Warning: excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
+			std::cerr << "Excluded " << n_ac_0 << " variants in called file that have no ALT alleles." << std::endl;
 		}
-		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](sv_t* sv) {return sv->allele_count(1) == 0;}), called_svs.end());
+		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;}), called_svs.end());
 	}
 
 	// erase and count elements from benchmark_svs that are not PASS
 	if (!parsed_args["ignore-ft"].as<bool>()) {
-		auto is_not_pass = [](sv_t* sv) {return !sv->sample_info.is_pass();};
+		auto is_not_pass = [](const std::shared_ptr<sv_t>& sv) {return !sv->sample_info.is_pass();};
 		int n_not_pass_b = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass);
 		int n_not_pass_c = std::count_if(called_svs.begin(), called_svs.end(), is_not_pass);
 		if (n_not_pass_b > 0) {
-			std::cerr << "Warning: excluded " << n_not_pass_b << " variants in benchmark file that are not PASS." << std::endl;
+			std::cerr << "Excluded " << n_not_pass_b << " variants in benchmark file that are not PASS." << std::endl;
 		}
 		if (n_not_pass_c > 0) {
-			std::cerr << "Warning: excluded " << n_not_pass_c << " variants in called file that are not PASS." << std::endl;
+			std::cerr << "Excluded " << n_not_pass_c << " variants in called file that are not PASS." << std::endl;
 		}
 		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), is_not_pass), benchmark_svs.end());
 		called_svs.erase(std::remove_if(called_svs.begin(), called_svs.end(), is_not_pass), called_svs.end());
 			
 	}
 
-	if (parsed_args["force-ids"].as<bool>()) {
-		if (!bdup_ids.empty()) {
-			std::cerr << "Warning: --force-ids and --bdup-ids are both used. IDs of benchmark SVs will not be forced." << std::endl;
-		} else {
-			for (int j = 0; j < benchmark_svs.size(); j++) benchmark_svs[j]->id = "SV_" + std::to_string(j);
-		}
-		if (!cdup_ids.empty()) {
-			std::cerr << "Warning: --force-ids and --cdup-ids are both used. IDs of called SVs will not be forced." << std::endl;
-		} else {
-			for (int j = 0; j < called_svs.size(); j++) called_svs[j]->id = "SV_" + std::to_string(j);
+	std::unordered_set<std::string> bdup_ids = find_dup_ids(benchmark_svs);
+	std::unordered_set<std::string> cdup_ids = find_dup_ids(called_svs);
+	if (!bdup_ids.empty()) {
+		std::cerr << "Warning: found duplicate IDs in benchmark file, assigning new IDs" << std::endl;
+		for (std::shared_ptr<sv_t>& sv : benchmark_svs) {
+			if (bdup_ids.count(sv->id)) {
+				sv->id = sv->unique_key();
+			}
 		}
 	}
-
-	// if two variants have the same ID, give a warning that the user should consider --force-ids
-	std::unordered_set<std::string> benchmark_id_count, called_id_count;
-	for (sv_t* sv : benchmark_svs) {
-		if (benchmark_id_count.count(sv->id)) {
-			std::cerr << "Warning: benchmark file contains duplicated IDs. Sensitivity may not be computed correctly. Consider using --force-ids." << std::endl;
-			break;
-		} else {
-			benchmark_id_count.insert(sv->id);
-		}
-	}
-	for (sv_t* sv : called_svs) {
-		if (called_id_count.count(sv->id)) {
-			std::cerr << "Warning: called file contains duplicated IDs. Precision may not be computed correctly. Consider using --force-ids." << std::endl;
-			break;
-		} else {
-			called_id_count.insert(sv->id);
+	if (!cdup_ids.empty()) {
+		std::cerr << "Warning: found duplicate IDs in called file, assigning new IDs" << std::endl;
+		for (std::shared_ptr<sv_t>& sv : called_svs) {
+			if (cdup_ids.count(sv->id)) {
+				sv->id = sv->unique_key();
+			}
 		}
 	}
 
@@ -514,7 +646,7 @@ int main(int argc, char* argv[]) {
 		}
     }
 
-	for (sv_t* sv : called_svs) {
+	for (const std::shared_ptr<sv_t>& sv : called_svs) {
 		if (sv->svtype() == "DEL") called_dels_by_chr[sv->chr].push_back(sv);
 		else if (sv->svtype() == "INS" || sv->svtype() == "DUP") called_inss_by_chr[sv->chr].push_back(sv);
 		else if (sv->svtype() == "INV") called_invs_by_chr[sv->chr].push_back(sv);
@@ -524,7 +656,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::future<void> > futures;
 	int BLOCK_SIZE = 1;
 	for (int i = 0; i < benchmark_svs.size(); i+=BLOCK_SIZE) {
-		sv_t* bsv = benchmark_svs[i];
+		std::shared_ptr<sv_t> bsv = benchmark_svs[i];
 		std::future<void> future = thread_pool.push(find_match, i, std::min(i+BLOCK_SIZE, (int) benchmark_svs.size()));
 		futures.push_back(std::move(future));
 	}
@@ -553,7 +685,7 @@ int main(int argc, char* argv[]) {
 		b_tps.insert(match.b_sv->id);
 		c_tps.insert(match.c_sv->id);
 		accepted_matches.push_back(match);
-		if (compatible_gts(match.b_sv, match.c_sv)) {
+		if (compatible_gts(match.b_sv.get(), match.c_sv.get())) {
 			b_gt_tps.insert(match.b_sv->id);
 			c_gt_tps.insert(match.c_sv->id);
 		} else if (wrong_gts_fout.is_open()) {
@@ -562,9 +694,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
-	for (sv_t* bsv : benchmark_svs) {
+	for (const std::shared_ptr<sv_t>& bsv : benchmark_svs) {
 		if (!b_tps.count(bsv->id)) {
-			accepted_matches.push_back(sv_match_t(bsv, NULL, false, aligner));
+			accepted_matches.push_back(sv_match_t(bsv, nullptr, false, aligner));
 		}
 	}
 
@@ -574,7 +706,7 @@ int main(int argc, char* argv[]) {
 	if (!report) {
 		for (sv_match_t& match : accepted_matches) {
 			std::cout << match.b_sv->id << " " << (match.c_sv == NULL ? "NONE" : match.c_sv->id);
-			std::cout << (match.rep ? " REP" : "") << " " << (match.rep ? std::to_string(distance(match.b_sv, match.c_sv)) : "") << std::endl;
+			std::cout << (match.rep ? " REP" : "") << std::endl;
 		}
 	}
 	if (called_to_benchmark_gts_fout.is_open()) {
@@ -596,30 +728,30 @@ int main(int argc, char* argv[]) {
 
 	// count tp and fn benchmark calls, by sv type
 	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn, n_benchmark_gt_tp, n_benchmark_gt_fn;
-	for (sv_t* bsv : benchmark_svs) {
+	for (const std::shared_ptr<sv_t>& bsv : benchmark_svs) {
 		if (b_tps.count(bsv->id)) {
-			n_benchmark_tp[get_bsv_type(bsv)]++;
+			n_benchmark_tp[get_bsv_type(bsv.get())]++;
 		} else {
-			n_benchmark_fn[get_bsv_type(bsv)]++;
+			n_benchmark_fn[get_bsv_type(bsv.get())]++;
 		}
 		if (b_gt_tps.count(bsv->id)) {
-			n_benchmark_gt_tp[get_bsv_type(bsv)]++;
+			n_benchmark_gt_tp[get_bsv_type(bsv.get())]++;
 		} else {
-			n_benchmark_gt_fn[get_bsv_type(bsv)]++;
+			n_benchmark_gt_fn[get_bsv_type(bsv.get())]++;
 		}
 	}
 
 	std::unordered_map<std::string, int> n_called_tp, n_called_fp, n_called_gt_tp, n_called_gt_fp;
-	for (sv_t* csv : called_svs) {
+	for (const std::shared_ptr<sv_t>& csv : called_svs) {
 		if (c_tps.count(csv->id)) {
-			n_called_tp[get_csv_type(csv)]++;
+			n_called_tp[get_csv_type(csv.get())]++;
 		} else {
-			n_called_fp[get_csv_type(csv)]++;
+			n_called_fp[get_csv_type(csv.get())]++;
 		}
 		if (c_gt_tps.count(csv->id)) {
-			n_called_gt_tp[get_csv_type(csv)]++;
+			n_called_gt_tp[get_csv_type(csv.get())]++;
 		} else {
-			n_called_gt_fp[get_csv_type(csv)]++;
+			n_called_gt_fp[get_csv_type(csv.get())]++;
 		}
 	}
 
@@ -641,7 +773,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (fps_fout != NULL) {
-		for (sv_t* csv : called_svs) {
+		for (const std::shared_ptr<sv_t>& csv : called_svs) {
 			if (!c_tps.count(csv->id)) {
 				if (bcf_write(fps_fout, fps_hdr, csv->vcf_entry) != 0) {
 					std::cerr << "Error writing variant to file." << std::endl;

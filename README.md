@@ -3,6 +3,9 @@ An SV caller from paired-end NGS data.
 
 ## Installation
 
+**Please download the source code from the latest release, since an appropriate trained model is provided.**
+**We discourage cloning the repository, as it may not be compatible with the latest trained model.**
+
 In order to compile the code, the following are required:
 - A C and a C++ compiler are required. If the GCC suite is used, version 4.9.3 or above is required.
 - CMake (2.8 or above)
@@ -20,7 +23,7 @@ If you are compiling on the same platform as where you will execute it, you can 
 cmake -DCMAKE_BUILD_TYPE=Release -DNATIVE=ON . && make
 ```
 
-Python 3 is necessary to run SurVIndel2. Libraries NumPy (http://www.numpy.org/), PySam (https://github.com/pysam-developers/pysam) and xgboost (https://xgboost.readthedocs.io/en/stable/) are also necessary.
+Python 3 is necessary to run SurVeyor. Libraries NumPy (http://www.numpy.org/), PySam (https://github.com/pysam-developers/pysam) and xgboost (https://xgboost.readthedocs.io/en/stable/) are also necessary.
 
 Please also download trained-model.zip from the release you are using, and uncompress it in a location of your convenience.
 
@@ -30,11 +33,7 @@ SurVeyor needs a BAM/CRAM file, a (possibly empty) working directory and referen
 
 The BAM/CRAM file must be coordinate-sorted and indexed. Furthermore, the MD, MC and the MQ tag must be present for all primary alignments, when applicable.
 
-Recent versions of BWA MEM (0.7.17) will add the MC tag. The easiest (but probably not the fastest) way to add the MQ tag is to use Picard FixMateInformation 
-(http://broadinstitute.github.io/picard/command-line-overview.html#FixMateInformation) 
-```
-java -jar picard.jar FixMateInformation I=file.bam
-```
+Recent versions of BWA MEM will automatically add all the necessary tags. If you used an old version, a different aligner, or if for any reason your BAM/CRAM does not have the required tags, you can use the samtools command fixmate (for MC and MQ) and callmd (for MD) to add them.
 
 ## Denovo calling of structural variants
 
@@ -53,9 +52,9 @@ python surveyor.py call -h
 
 The basic command to genotype a set of structural variants in VCF format (IN_VCF) is
 ```
-python surveyor.py genotype --threads N_THREADS IN_VCF OUT_VCF BAM_FILE WORKDIR REFERENCE_FASTA TRAINED_MODEL
+python surveyor.py genotype --threads N_THREADS IN_VCF BAM_FILE WORKDIR REFERENCE_FASTA TRAINED_MODEL
 ```
-where OUT_VCF is the location of the output VCF containing the genotyped variants.
+The genotyped variants will be reported in genotyped.vcf.gz (version with all of the original calls) and genotyped.deduped.vcf.gz (version with duplicate calls removed).
 
 For other parameters, please see the help with
 ```

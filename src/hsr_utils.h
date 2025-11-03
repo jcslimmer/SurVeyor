@@ -8,6 +8,7 @@
 #include "../libs/IntervalTree.h"
 #include "utils.h"
 #include "sw_utils.h"
+#include "SegTree.h"
 
 int compute_left_half_Ms(bam1_t* r) {
 	int border = r->core.l_qseq/2;
@@ -20,10 +21,10 @@ int compute_left_half_Ms(bam1_t* r) {
 	for (int i = 0; i < r->core.n_cigar; i++) {
 		char op_char = bam_cigar_opchr(cigar[i]);
 		int op_len = bam_cigar_oplen(cigar[i]);
-		if (op_char == 'M') {
+		if (op_char == 'M' || op_char == '=' || op_char == 'X') {
 			left_Ms += std::min(border, qpos+op_len) - qpos;
 			qpos += op_len;
-		} else if (op_char == 'I') {
+		} else if (op_char == 'I' || op_char == 'S') {
 			qpos += op_len;
 		}
 
@@ -58,6 +59,8 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_1_diff(bam1_t* r
 				else right_diffs++;
 			}
 		} else if (c == '^') {
+			left_Ms -= m;
+			m = 0;
 			del_mode = true;
 			if (left_Ms > 0) left_diffs++;
 			else right_diffs++;
@@ -113,6 +116,8 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
             else right_diffs++;
             if (!del_mode) left_Ms--;
         } else if (c == '^') {
+			left_Ms -= m;
+			m = 0;
             del_mode = true;
         }
     }
@@ -185,8 +190,13 @@ void select_nonoverlapping_clusters(std::vector<consensus_t*>& consensuses) {
 		bool keep_consensus = true;
 		for (Interval<consensus_t*> ov_c : ov) {
 			if (ov_c.value->reads() > c->reads()) { // a higher count was found
-				keep_consensus = false;
-				break;
+				int min_overlap = std::min(c->sequence.length(), ov_c.value->sequence.length())/2;
+				suffix_prefix_aln_t spa1 = aln_suffix_prefix_perfect(ov_c.value->sequence, c->sequence, min_overlap);
+				suffix_prefix_aln_t spa2 = aln_suffix_prefix_perfect(c->sequence, ov_c.value->sequence, min_overlap);
+				if (spa1.overlap >= min_overlap || spa2.overlap >= min_overlap) {
+					keep_consensus = false;
+					break;
+				}
 			}
 		}
 
@@ -198,6 +208,29 @@ void select_nonoverlapping_clusters(std::vector<consensus_t*>& consensuses) {
 	}
 	for (consensus_t* c : to_be_deleted) delete c;
 	consensuses.swap(kept_consensuses);
+}
+
+void enforce_max_ploidy(std::vector<consensus_t*>& consensuses, int max_ploidy) {
+
+	int contig_len = 0;
+	for (consensus_t* c : consensuses) {
+		if (c->end > contig_len) contig_len = c->end;
+	}
+
+	SegTree segtree(contig_len+1);
+	std::vector<consensus_t*> retained;
+	std::sort(consensuses.begin(), consensuses.end(), [](consensus_t* c1, consensus_t* c2) {
+		return c1->reads() > c2->reads();
+	});
+	for (consensus_t* c : consensuses) {
+		if (!segtree.any_ge(c->start, c->end, max_ploidy)) {
+			segtree.add(c->start, c->end, 1);
+			retained.push_back(c);
+		} else {
+			delete c;
+		}
+	}
+	consensuses.swap(retained);
 }
 
 #endif
