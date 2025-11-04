@@ -126,6 +126,13 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 	int n = read_seqs.size();
 	std::vector<bool> visited(n);
 
+	// allocate memory for homopolymer prefix array
+	int max_read_len = 0;
+	for (std::string& s : read_seqs) {
+		if (s.length() > max_read_len) max_read_len = s.length();
+	}
+	bool* hp_prefix = new bool[max_read_len];
+
 	std::unordered_map<uint64_t, std::vector<std::pair<int,int>>> kmer_to_idx;
 	for (int i = 0; i < n; i++) {
 		uint64_t kmer = 0;
@@ -134,11 +141,12 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 		// since we are extending to the right, we are interested in checking whether s1 suffix matches s2 prefix
 		// for this reason, we skip kmers corresponding to prefixes of s2 that are shorter than min_overlap
 		std::string& seq = read_seqs[i];
+		is_homopolymer_prefix(seq.c_str(), seq.length(), hp_prefix);
 		for (int j = std::max(0, min_overlap-32); j < seq.length()-1; j++) {
 			uint64_t nv = nucl_bm[seq[j]];
 			kmer = ((kmer << 2) | nv);
 
-			if (j >= min_overlap) {
+			if (j >= min_overlap && !hp_prefix[j]) {
 				kmer_to_idx[kmer].emplace_back(i, j);
 			}
 		}
@@ -184,13 +192,11 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 			int cmp_len = p+1;
 			if (cmp_len < min_overlap || cmp_len > s1.length() || strncmp(s1.c_str()+(s1.length()-cmp_len), s2.c_str(), cmp_len) != 0) continue;
 
-			if (!is_homopolymer(s2.c_str(), cmp_len)) {
-				out_edges[curr_node]++;
-				l_adj[curr_node].push_back({j, cmp_len, cmp_len});
-				l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
-				bfs.push(j);
-				last_accepted_j = j;
-			}
+			out_edges[curr_node]++;
+			l_adj[curr_node].push_back({j, cmp_len, cmp_len});
+			l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
+			bfs.push(j);
+			last_accepted_j = j;
 		}
 	}
 }
@@ -214,12 +220,19 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 	int n = read_seqs.size();
 	std::vector<bool> visited(n);
 
-	std::unordered_map<uint64_t, std::vector<std::pair<int, int>>> kmer_to_idx;
+	// allocate memory for homopolymer prefix array
+	int max_read_len = 0;
+	for (std::string& s : read_seqs) {
+		if (s.length() > max_read_len) max_read_len = s.length();
+	}
+	bool* hp_prefix = new bool[max_read_len];
 
+	std::unordered_map<uint64_t, std::vector<std::pair<int, int>>> kmer_to_idx;
 	for (int i = 0; i < n; i++) {
 		uint64_t kmer = 0;
 
 		std::string& seq = read_seqs[i];
+		is_homopolymer_suffix(seq.c_str(), seq.length(), hp_prefix);
 		for (int j = 0; j < seq.length(); j++) {
 			if (seq.length()-j+31 < min_overlap) {
 				// let this string be s2, and the current string we are trying to extend be s1
@@ -231,8 +244,8 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 			uint64_t nv = nucl_bm[seq[j]];
 			kmer = ((kmer << 2) | nv);
 
-			if (j >= 31) {
-				kmer_to_idx[kmer].push_back({i, j});
+			if (j >= 31 && !hp_prefix[j-31]) {
+				kmer_to_idx[kmer].emplace_back(i, j);
 			}
 		}
 	}
@@ -272,13 +285,11 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 				continue;
 			}
 
-			if (!is_homopolymer(s1.c_str(), cmp_len)) {
-				out_edges[curr_node]++;
-				l_adj[curr_node].push_back({j, cmp_len, cmp_len});
-				l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
-				bfs.push(j);
-				last_accepted_j = j;
-			}
+			out_edges[curr_node]++;
+			l_adj[curr_node].push_back({j, cmp_len, cmp_len});
+			l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
+			bfs.push(j);
+			last_accepted_j = j;
 		}
 	}
 }
@@ -358,13 +369,13 @@ std::vector<ext_read_t*> get_extension_reads(std::string contig_name, std::vecto
 		std::vector<ext_read_t*> region_reads;
 		region_reads.reserve(target_ival.end-target_ival.beg+1);
 		ext_read_t* curr_read = nullptr;
-		
+
 		hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
 		while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 			if (is_unmapped(read) || !is_primary(read)) continue;
 
 			ext_read_t* ext_read = ext_read_allocator.get(read);
-			
+
 			// for same strand pairs that may be due to inversions, add a copy of the unstable end in the the correct orientation
 			// same strand is not always due to inversions (transpositions may also cause this), and we do not know which case we are dealing with
 			// therefore, when there is no clear stable end, and the read may either be the unstable end of an inversion or the stable end of a transposition,

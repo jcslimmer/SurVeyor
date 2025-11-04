@@ -293,6 +293,32 @@ bool is_homopolymer(std::string seq) {
 	return is_homopolymer(seq.data(), seq.length());
 }
 
+// hp_prefix must be allocated and of size (at least) len
+void is_homopolymer_prefix(const char* seq, int len, bool* hp_prefix) {
+    int max_idx = 0;
+    int counts[5] = {0,0,0,0,0};
+    for (int i = 0; i < len; i++) {
+        int curr_idx = nt_map[(uint8_t)seq[i]];
+        counts[curr_idx]++;
+        if (counts[curr_idx] > counts[max_idx]) {
+            max_idx = curr_idx;
+        }
+        hp_prefix[i] = (counts[max_idx] >= (i+1)*0.8);
+    }
+}
+void is_homopolymer_suffix(const char* seq, int len, bool* hp_suffix) {
+    int max_idx = 0;
+    int counts[5] = {0,0,0,0,0};
+    for (int i = len-1; i >= 0; i--) {
+        int curr_idx = nt_map[(uint8_t)seq[i]];
+        counts[curr_idx]++;
+        if (counts[curr_idx] > counts[max_idx]) {
+            max_idx = curr_idx;
+        }
+        hp_suffix[i] = (counts[max_idx] >= (len - i)*0.8);
+    }
+}
+
 void to_uppercase(char* s) {
     for (int i = 0; s[i] != '\0'; i++) {
         s[i] = toupper(s[i]);
