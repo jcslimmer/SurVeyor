@@ -1,6 +1,7 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -255,28 +256,38 @@ struct base_frequencies_t {
     }
 };
 
+// Map byte -> {0,1,2,3} for A,C,G,T, else 4.
+alignas(64)
+static const uint8_t nt_map[256] = {
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 0, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 0, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+};
+
 base_frequencies_t get_base_frequencies(const char* seq, int len) {
-    int a = 0, c = 0, g = 0, t = 0;
+    int counts[5] = {0,0,0,0,0};
     for (int i = 0; i < len; i++) {
-        char b = seq[i];
-        if (b == 'A' || b == 'a') a++;
-        else if (b == 'C' || b == 'c') c++;
-        else if (b == 'G' || b == 'g') g++;
-        else if (b == 'T' || b == 't') t++;
+        counts[nt_map[(uint8_t)seq[i]]]++;
     }
-    return base_frequencies_t(a, c, g, t);
+    // ignore counts[4] which is for non-ACGT
+    return base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
 }
 
 bool is_homopolymer(const char* seq, int len) {
-	int a = 0, c = 0, g = 0, t = 0;
-	for (int i = 0; i < len; i++) {
-		char b = std::toupper(seq[i]);
-		if (b == 'A') a++;
-		else if (b == 'C') c++;
-		else if (b == 'G') g++;
-		else if (b == 'T') t++;
-	}
-	return get_base_frequencies(seq, len).max_freq() >= 0.8;
+    return get_base_frequencies(seq, len).max_freq() >= 0.8;
 }
 bool is_homopolymer(std::string seq) {
 	return is_homopolymer(seq.data(), seq.length());

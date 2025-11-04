@@ -126,51 +126,70 @@ void build_graph_fwd(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 	int n = read_seqs.size();
 	std::vector<bool> visited(n);
 
-	std::unordered_map<uint64_t, std::set<int> > kmer_to_idx;
+	std::unordered_map<uint64_t, std::vector<std::pair<int,int>>> kmer_to_idx;
 	for (int i = 0; i < n; i++) {
 		uint64_t kmer = 0;
 
+		// let this string be s2, and the current string we are trying to extend be s1
+		// since we are extending to the right, we are interested in checking whether s1 suffix matches s2 prefix
+		// for this reason, we skip kmers corresponding to prefixes of s2 that are shorter than min_overlap
 		std::string& seq = read_seqs[i];
-		for (int j = 0; j < seq.length()-1; j++) {
+		for (int j = std::max(0, min_overlap-32); j < seq.length()-1; j++) {
 			uint64_t nv = nucl_bm[seq[j]];
 			kmer = ((kmer << 2) | nv);
 
-			if (j >= 32) {
-				kmer_to_idx[kmer].insert(i);
+			if (j >= min_overlap) {
+				kmer_to_idx[kmer].emplace_back(i, j);
 			}
 		}
+	}
+
+	// sort vectors in kmer_to_idx
+	for (auto& kv : kmer_to_idx) {
+		std::vector<std::pair<int,int>>& idxs = kv.second;
+		// sort by first ascending and second descending
+		std::sort(idxs.begin(), idxs.end(), [](const std::pair<int,int>& a, const std::pair<int,int>& b) {
+			if (a.first != b.first) return a.first < b.first;
+			return a.second > b.second;
+		});
 	}
 
 	std::queue<int> bfs;
 	for (int i : starting_idxs) bfs.push(i);
 	while (!bfs.empty()) {
-		int i = bfs.front();
+		int curr_node = bfs.front();
 		bfs.pop();
 
-		if (visited[i]) continue;
-		visited[i] = true;
+		if (visited[curr_node]) continue;
+		visited[curr_node] = true;
 
-		std::string& s1 = read_seqs[i];
+		std::string& s1 = read_seqs[curr_node];
 		uint64_t kmer = 0;
 		for (int j = s1.length()-32; j < s1.length(); j++) {
 			uint64_t nv = nucl_bm[s1[j]];
 			kmer = ((kmer << 2) | nv);
 		}
 
-		for (int j : kmer_to_idx[kmer]) {
+		int last_accepted_j = -1;
+		for (int i = 0; i < kmer_to_idx[kmer].size(); i++) {
+			int j = kmer_to_idx[kmer][i].first;
+			if (j == last_accepted_j) continue;
+
+			int p = kmer_to_idx[kmer][i].second; // position of kmer in read j
 			std::string& s2 = read_seqs[j];
 
 			if (s1 == s2) continue;
-			if (strict && read_starts[i] >= read_starts[j] && read_starts[i] != 0 && read_starts[j] != 0) continue;
+			if (strict && read_starts[curr_node] >= read_starts[j] && read_starts[curr_node] != 0 && read_starts[j] != 0) continue;
 
-			suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s1, s2, min_overlap);
-			if (spa.overlap) {
-				if (!is_homopolymer(s2.c_str(), spa.overlap)) {
-					out_edges[i]++;
-					l_adj[i].push_back({j, spa.score, spa.overlap});
-					l_adj_rev[j].push_back({i, spa.score, spa.overlap});
-					bfs.push(j);
-				}
+			int cmp_len = p+1;
+			if (cmp_len < min_overlap || cmp_len > s1.length() || strncmp(s1.c_str()+(s1.length()-cmp_len), s2.c_str(), cmp_len) != 0) continue;
+
+			if (!is_homopolymer(s2.c_str(), cmp_len)) {
+				out_edges[curr_node]++;
+				l_adj[curr_node].push_back({j, cmp_len, cmp_len});
+				l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
+				bfs.push(j);
+				last_accepted_j = j;
 			}
 		}
 	}
@@ -195,32 +214,40 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 	int n = read_seqs.size();
 	std::vector<bool> visited(n);
 
-	std::unordered_map<uint64_t, std::vector<int> > kmer_to_idx;
+	std::unordered_map<uint64_t, std::vector<std::pair<int, int>>> kmer_to_idx;
 
 	for (int i = 0; i < n; i++) {
 		uint64_t kmer = 0;
 
 		std::string& seq = read_seqs[i];
 		for (int j = 0; j < seq.length(); j++) {
+			if (seq.length()-j+31 < min_overlap) {
+				// let this string be s2, and the current string we are trying to extend be s1
+				// since we are extending to the left, we are interested in checking whether s2 suffix matches s1 prefix
+				// however, kmers beyond this point will provide overlaps < min_overlap, so we skip them
+				break;
+			}
+
 			uint64_t nv = nucl_bm[seq[j]];
 			kmer = ((kmer << 2) | nv);
 
-			if (j >= 32+1) {
-				kmer_to_idx[kmer].push_back(i);
+			if (j >= 31) {
+				kmer_to_idx[kmer].push_back({i, j});
 			}
 		}
 	}
+	// Note: vectors are already sorted by first ascending and second ascending due to the way we built them
 
 	std::queue<int> bfs;
 	for (int i : starting_idxs) bfs.push(i);
 	while (!bfs.empty()) {
-		int i = bfs.front();
+		int curr_node = bfs.front();
 		bfs.pop();
 
-		if (visited[i]) continue;
-		visited[i] = true;
+		if (visited[curr_node]) continue;
+		visited[curr_node] = true;
 
-		std::string& s1 = read_seqs[i];
+		std::string& s1 = read_seqs[curr_node];
 		if (s1.length() < 32) continue;
 
 		uint64_t kmer = 0;
@@ -229,21 +256,28 @@ void build_graph_rev(std::vector<std::string>& read_seqs, std::vector<hts_pos_t>
 			kmer = ((kmer << 2) | nv);
 		}
 
-		for (int j : kmer_to_idx[kmer]) {
+		int last_accepted_j = -1;
+		for (int i = 0; i < kmer_to_idx[kmer].size(); i++) {
+			int j = kmer_to_idx[kmer][i].first;
+			if (j == last_accepted_j) continue;
+
+			int p = kmer_to_idx[kmer][i].second; // position of kmer in read j
 			std::string& s2 = read_seqs[j];
 
 			if (s1 == s2) continue;
-			if (strict && read_starts[i] <= read_starts[j] && read_starts[i] != 0 && read_starts[j] != 0) continue;
+			if (strict && read_starts[curr_node] <= read_starts[j] && read_starts[curr_node] != 0 && read_starts[j] != 0) continue;
 
-			suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(s2, s1, min_overlap);
-			if (spa.overlap) {
-				bool spa_homopolymer = is_homopolymer(s1.c_str(), spa.overlap);
-				if (!spa_homopolymer) {
-					out_edges[i]++;
-					l_adj[i].push_back({j, spa.score, spa.overlap});
-					l_adj_rev[j].push_back({i, spa.score, spa.overlap});
-					bfs.push(j);
-				}
+			int cmp_len = s2.length()-p+31;
+			if (cmp_len < min_overlap || cmp_len > s1.length() || strncmp(s2.c_str()+(s2.length()-cmp_len), s1.c_str(), cmp_len) != 0) {
+				continue;
+			}
+
+			if (!is_homopolymer(s1.c_str(), cmp_len)) {
+				out_edges[curr_node]++;
+				l_adj[curr_node].push_back({j, cmp_len, cmp_len});
+				l_adj_rev[j].push_back({curr_node, cmp_len, cmp_len});
+				bfs.push(j);
+				last_accepted_j = j;
 			}
 		}
 	}
