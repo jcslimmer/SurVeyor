@@ -572,11 +572,11 @@ int main(int argc, char* argv[]) {
 	if (parsed_args["keep-all-benchmark"].as<bool>()) {
 		std::cerr << "Keeping all variants in the benchmark file, even if they have no ALT alleles." << std::endl;
 	} else {
-		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;});
+		int n_ac_0 = std::count_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1)+sv->missing_alleles() == 0;});
 		if (n_ac_0 > 0) {
 			std::cerr << "Excluded " << n_ac_0 << " variants in benchmark file that have no ALT alleles." << std::endl;
 		}
-		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1) == 0;}), benchmark_svs.end());
+		benchmark_svs.erase(std::remove_if(benchmark_svs.begin(), benchmark_svs.end(), [](const std::shared_ptr<sv_t>& sv) {return sv->allele_count(1)+sv->missing_alleles() == 0;}), benchmark_svs.end());
 	}
 
 	if (parsed_args["keep-all-called"].as<bool>()) {
@@ -670,17 +670,32 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
-	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps;
+	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps, c_unknown;
 
-	// sort matches by rep (false first) and then score in descending order
+	// sort matches by 
+	// 1. missing gt in the benchmark (less missing alleles first)
+	// 2. rep (false first) 
+	// 3. score in descending order
 	std::vector<sv_match_t> accepted_matches;
 	std::sort(matches.begin(), matches.end(), [](sv_match_t& a, sv_match_t& b) {
+		if (a.b_sv->missing_alleles() != b.b_sv->missing_alleles()) 
+			return a.b_sv->missing_alleles() < b.b_sv->missing_alleles();
 		if (a.rep && !b.rep) return false;
 		if (!a.rep && b.rep) return true;
 		return a.score > b.score;
 	});
+	// count tps (both in benchmark and called) from matches
+	// in exclusive mode, each sv can only be used in one match
+	// for matches where the benchmark sv has missing alleles, since the benchmark does not tell us whether the variant 
+	// is present or not, we do count the called SV it as neither a tp nor a fp, based on this match
+	// (if the called SV is matched to another benchmark SV with known genotype, it will be counted based on that match)
 	for (sv_match_t& match : matches) {
 		if (exclusive && (b_tps.count(match.b_sv->id) || c_tps.count(match.c_sv->id))) continue;
+
+		if (match.b_sv->allele_count(1) == 0 && match.b_sv->missing_alleles() > 0) {
+			c_unknown.insert(match.c_sv->id);
+			continue;
+		}
 
 		b_tps.insert(match.b_sv->id);
 		c_tps.insert(match.c_sv->id);
@@ -710,6 +725,8 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	if (called_to_benchmark_gts_fout.is_open()) {
+		// note that this reports called SVs that matched to a benchmark SV with missing genotype as ./.
+		// this is good, because these SVs are less confident, and will be ignored when training our model
 		for (sv_match_t& match : accepted_matches) {
 			if (match.c_sv != NULL) {
 				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
@@ -721,6 +738,9 @@ int main(int argc, char* argv[]) {
 				c_unchoosen_ids.insert(match.c_sv->id);
 			}
 		}
+
+		// these SVs matched to a benchmark SV, but another match for the benchmark SV was chosen instead
+		// let us reported them with ./. since they are less confident, and will be ignored when training our model
 		for (std::string id : c_unchoosen_ids) {
 			called_to_benchmark_gts_fout << id << " " << "./." << std::endl;
 		}
@@ -729,6 +749,7 @@ int main(int argc, char* argv[]) {
 	// count tp and fn benchmark calls, by sv type
 	std::unordered_map<std::string, int> n_benchmark_tp, n_benchmark_fn, n_benchmark_gt_tp, n_benchmark_gt_fn;
 	for (const std::shared_ptr<sv_t>& bsv : benchmark_svs) {
+		if (bsv->allele_count(1) == 0) continue;
 		if (b_tps.count(bsv->id)) {
 			n_benchmark_tp[get_bsv_type(bsv.get())]++;
 		} else {
@@ -746,6 +767,7 @@ int main(int argc, char* argv[]) {
 		if (c_tps.count(csv->id)) {
 			n_called_tp[get_csv_type(csv.get())]++;
 		} else {
+			if (c_unknown.count(csv->id)) continue;
 			n_called_fp[get_csv_type(csv.get())]++;
 		}
 		if (c_gt_tps.count(csv->id)) {
