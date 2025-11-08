@@ -459,9 +459,9 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 		rc(mateseq);
 		matequal = std::string(matequal.rbegin(), matequal.rend());
 		
-		harsh_aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
+		aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error, read_qual, stats.min_avg_base_qual);
-		harsh_aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
+		aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		accepted &= accept(aln, config.min_clip_len, config.max_seq_error, matequal, stats.min_avg_base_qual);
 		rc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
 	}
@@ -479,9 +479,9 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 		std::string mateseq = get_mate_seq(read.get(), mateseqs);
 		std::string matequal = get_mate_qual(read.get(), matequals);
 
-		harsh_aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
+		aligner.Align(read_seq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		bool accepted = accept(aln, config.min_clip_len, config.max_seq_error, read_qual, stats.min_avg_base_qual);
-		harsh_aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
+		aligner.Align(mateseq.c_str(), corrected_junction_seq.c_str(), corrected_junction_seq.length(), filter, &aln, 0);
 		accepted &= accept(aln, config.min_clip_len, config.max_seq_error, matequal, stats.min_avg_base_qual);
 		lc_remap_infos.push_back(remap_info_t(aln, accepted, config.min_clip_len));
 	}
