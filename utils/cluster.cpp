@@ -128,17 +128,12 @@ bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 		overlap_ok = overlap(sv1, sv2) >= min_imprec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_imprec_len_diff;
 		len_ratio_ok = len_ratio(sv1, sv2) >= min_imprec_len_ratio;
-		std::cout << "imprecise: " << len_ratio(sv1, sv2) << std::endl;
 	} else {
 		distance_ok = distance(sv1, sv2) <= max_prec_dist;
 		overlap_ok = overlap(sv1, sv2) >= min_prec_frac_overlap;
 		len_diff_ok = abs(sv1.svlen-sv2.svlen) <= max_prec_len_diff;
 		len_ratio_ok = len_ratio(sv1, sv2) >= min_prec_len_ratio;
-		std::cout << "precise: " << len_ratio(sv1, sv2) << std::endl;
 	}
-	
-	std::cout << "Comparing " << sv1.unique_key() << " and " << sv2.unique_key() << std::endl;
-	std::cout << distance_ok << " " << overlap_ok << " " << len_diff_ok << " " << len_ratio_ok << std::endl;
 
 	return distance_ok && overlap_ok && len_diff_ok && len_ratio_ok;
 }
