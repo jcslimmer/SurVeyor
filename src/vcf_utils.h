@@ -705,6 +705,10 @@ int get_sv_end(bcf_hdr_t* hdr, bcf1_t* sv) {
         return end-1; // return 0-based
     }
 
+	if (sv->d.allele[1][0] != '<') {
+		return sv->pos + strlen(sv->d.allele[0]) - 1;
+	}
+
 	if (get_sv_type(hdr, sv) == "INS") return sv->pos;
 
 	int svlen = get_sv_len(hdr, sv);
