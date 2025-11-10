@@ -27,6 +27,20 @@ Python 3 is necessary to run SurVeyor. Libraries NumPy (http://www.numpy.org/), 
 
 Please also download trained-model.zip from the release you are using, and uncompress it in a location of your convenience.
 
+## Demo
+
+You can verify that the software is running correctly using the provided demo.
+Please run (assuming trained-model/ is the location of the uncompressed model)
+```
+mkdir workdir
+python3 surveyor.py call demo/reads.bam workdir/ demo/ref.fa --ml-model trained-model/
+```
+The software should finish in a few seconds. Then, 
+```
+bcftools view -H workdir/calls-genotyped.vcf.gz --min-ac=1
+```
+should output 4 variants: two insertions, one deletion and one duplication. The expected variants are in demo/result.txt
+
 ## Data preparation
 
 SurVeyor needs a BAM/CRAM file, a (possibly empty) working directory and reference genome in FASTA format. For the genotype command, it will also require an input VCF.
