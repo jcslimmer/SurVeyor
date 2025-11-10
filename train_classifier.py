@@ -69,7 +69,6 @@ if __name__ == '__main__':
         features_names = features.Features.get_feature_names(model_name)
         importances = classifier.feature_importances_
         indices = np.argsort(importances)[::-1]
-
         with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
             for i in range(len(features_names)):
                 f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
@@ -92,6 +91,12 @@ if __name__ == '__main__':
         unique, counts = np.unique(positive_training_labels, return_counts=True)
 
         classifier.fit(positive_training_data, positive_training_labels)
+
+        importances = classifier.feature_importances_
+        indices = np.argsort(importances)[::-1]
+        with open(os.path.join(gts_outdir, model_name + ".importance.txt"), 'w') as f:
+            for i in range(len(features_names)):
+                f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
 
         model_fname = os.path.join(gts_outdir, model_name + ".ubj")
         classifier.save_model(model_fname)
