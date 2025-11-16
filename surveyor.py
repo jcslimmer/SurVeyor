@@ -1,4 +1,4 @@
-import sys, os, argparse, pysam, timeit
+import sys, os, argparse, pysam, timeit, shutil
 from run_classifier import Classifier
 
 VERSION = "0.11"
@@ -15,9 +15,6 @@ subparsers = parser.add_subparsers(dest='command', help='Commands', required=Tru
 common_parser = argparse.ArgumentParser(add_help=False)
 common_parser.add_argument('--threads', type=int, default=1, help='Number of threads to be used.')
 common_parser.add_argument('--seed', type=int, default=0, help='Seed for random sampling of genomic positions.')
-common_parser.add_argument('--samplename', default='', help='Name of the sample to be used in the VCF output.'
-                                                         'If not provided, the basename of the bam/cram file will be used,'
-                                                         'up until the first \'.\'')
 common_parser.add_argument('--min-sv-size', type=int, default=50, help='Min SV size.')
 common_parser.add_argument('--min-clip-len', type=int, default=10, help='Min length for a clip to be used.')
 common_parser.add_argument('--max-seq-error', type=float, default=0.04, help='Max sequencing error admissible on the platform used.')
@@ -47,6 +44,9 @@ call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
 call_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
+call_parser.add_argument('--samplename', default='', help='Name of the sample to be used in the VCF output.'
+                                                         'If not provided, the basename of the bam/cram file will be used,'
+                                                         'up until the first \'.\'')
 
 genotype_parser = subparsers.add_parser('genotype', parents=[common_parser], help='Genotype SVs.')
 genotype_parser.add_argument('--use-call-info', action='store_true', help='Reuse info in the workdir stored by the call commands. Assumes the workdir is the same used by the call command, and no file has been deleted.')
@@ -55,6 +55,18 @@ genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
 genotype_parser.add_argument('ml_model', help='Path to the ML model to be used for genotyping.')
+genotype_parser.add_argument('--samplename', default='', help='Name of the sample to be used in the VCF output.'
+                                                         'If not provided, the basename of the bam/cram file will be used,'
+                                                         'up until the first \'.\'')
+
+generate_training_data_parser = subparsers.add_parser('generate-training-data', parents=[common_parser], help='Generate training data for ML model starting from the workdir of a call run.')
+generate_training_data_parser.add_argument('benchmark_vcf', help='Benchmark VCF file used to assign labels to the training data.')
+generate_training_data_parser.add_argument('workdir', help='Working directory used by the call command.')
+generate_training_data_parser.add_argument('outdir', help='Output directory to store the training data.')
+generate_training_data_parser.add_argument('simple_repeat_bed', help='BED file with simple repeat regions.')
+generate_training_data_parser.add_argument('reference', help='Reference genome in FASTA format.')
+generate_training_data_parser.add_argument('samplename', help='Name of the sample used in the call command.')
+generate_training_data_parser.add_argument('--unreliable-gts', help='File with list of ID of variants with unreliable genotypes, to be set to ./1 if found')
 
 cmd_args = parser.parse_args()
 
@@ -180,53 +192,53 @@ else:
 
 if cmd_args.command == 'call':
 
-    if not cmd_args.ml_model and not cmd_args.generate_training_data:
-        print("At least one of --ml-model or --generate-training-data must be provided.")
-        exit(0)
+    # if not cmd_args.ml_model and not cmd_args.generate_training_data:
+    #     print("At least one of --ml-model or --generate-training-data must be provided.")
+    #     exit(0)
 
-    reads_categorizer()
+    # reads_categorizer()
 
-    clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-    run_cmd(clip_consensus_builder_cmd)
+    # clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
+    # run_cmd(clip_consensus_builder_cmd)
 
-    find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    run_cmd(find_svs_from_sr_consensuses_cmd)
+    # find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+    # run_cmd(find_svs_from_sr_consensuses_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    run_cmd(merge_identical_calls_cmd)
+    # merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    # run_cmd(merge_identical_calls_cmd)
 
-    dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    run_cmd(dp_clusterer)
+    # dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+    # run_cmd(dp_clusterer)
 
-    ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
-    run_cmd(ins_assembler_cmd)
+    # ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
+    # run_cmd(ins_assembler_cmd)
 
-    concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
-    run_cmd(concat_cmd)
+    # concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+    # run_cmd(concat_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    run_cmd(normalise_cmd)
+    # normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    # run_cmd(normalise_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    run_cmd(merge_identical_calls_cmd)
+    # merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    # run_cmd(merge_identical_calls_cmd)
 
-    insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
-    run_cmd(insertions_to_duplications_cmd)
+    # insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
+    # run_cmd(insertions_to_duplications_cmd)
     
-    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-    run_cmd(genotype_cmd)
+    # genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    # run_cmd(genotype_cmd)
 
-    if cmd_args.generate_training_data:
-        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
+    # if cmd_args.generate_training_data:
+    #     separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
-    if not cmd_args.ml_model:
-        print("No model provided. Skipping filtering and genotyping.")
-        exit(0)
+    # if not cmd_args.ml_model:
+    #     print("No model provided. Skipping filtering and genotyping.")
+    #     exit(0)
 
-    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+    # Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
     
-    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
-    run_cmd(reconcile_vcf_gt_cmd)
+    # reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
+    # run_cmd(reconcile_vcf_gt_cmd)
 
     if cmd_args.two_pass:
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
@@ -237,7 +249,7 @@ if cmd_args.command == 'call':
         reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/calls-genotyped.reassigned.vcf.gz", sample_name)
         run_cmd(reconcile_vcf_gt_cmd)
 
-    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
@@ -286,3 +298,49 @@ elif cmd_args.command == 'genotype':
 
     out_resolved_deduped_vcf_file = cmd_args.workdir + "/genotyped.resolved.deduped.vcf.gz"
     deduplicate_vcf(out_resolved_vcf_file, out_resolved_deduped_vcf_file)
+
+elif cmd_args.command == 'generate-training-data':
+
+    if not os.path.exists(cmd_args.workdir + "/training-data.vcf.gz"):
+        print("Error: training-data.vcf.gz not found in the workdir %s. Please make sure to run the call command with --generate-training-data first." % cmd_args.workdir)
+        exit(1)
+
+    shutil.copyfile(cmd_args.workdir + "/training-data.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".vcf.gz"))
+    shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz"))
+    shutil.copyfile(cmd_args.workdir + "/stats.txt", os.path.join(cmd_args.outdir, cmd_args.samplename + ".stats.txt"))
+
+    def has_alt_allele(gt):
+        """Return True if GT tuple has at least one ALT allele (allele index > 0)."""
+        if gt is None:
+            return False
+        for a in gt:
+            if a is not None and a > 0:
+                return True
+        return False
+    
+    updated_benchmark_vcf_path = os.path.join(cmd_args.outdir, cmd_args.samplename + "-benchmark.vcf.gz")
+    if cmd_args.unreliable_gts:
+        unreliable_ids = set()
+        with open(cmd_args.unreliable_gts) as unreliable_file:
+            for line in unreliable_file:
+                unreliable_ids.add(line.strip())
+
+        with pysam.VariantFile(cmd_args.benchmark_vcf) as benchmark_vcf, \
+             pysam.VariantFile(updated_benchmark_vcf_path, 'wz', header=benchmark_vcf.header) as updated_benchmark_vcf:
+            for record in benchmark_vcf:
+                # if the variant is in the unreliable list and has a non-ref genotype, set it to ./1
+                if record.id in unreliable_ids and has_alt_allele(record.samples[0]['GT']):
+                    record.samples[0]['GT'] = (None, 1)
+                updated_benchmark_vcf.write(record)
+    else:
+        shutil.copyfile(cmd_args.benchmark_vcf, updated_benchmark_vcf_path)
+
+    compare_cmd = SURVEYOR_PATH + "/bin/compare %s %s/training-data.vcf.gz -T %s -R %s --report -c %s -e -t %d --keep-all-called" % (
+        updated_benchmark_vcf_path,
+        cmd_args.workdir,
+        cmd_args.simple_repeat_bed,
+        cmd_args.reference,
+        os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts"),
+        cmd_args.threads
+    )
+    run_cmd(compare_cmd)
