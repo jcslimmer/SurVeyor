@@ -13,7 +13,7 @@
 void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
                 stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
-                bool reassign_evidence, std::unordered_map<std::string, std::string>& reads_to_sv_map) {
+                bool reassign_evidence, evidence_map_t* evidence_map) {
     int del_start = del->start, del_end = del->end;
 
     hts_pos_t extend = stats.read_len + 20;
@@ -119,7 +119,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
         if (alt_aln.sw_score > ref_aln_score) {
             std::string read_name = bam_get_qname(read);
-            if (reassign_evidence && reads_to_sv_map.count(read_name) && reads_to_sv_map[read_name] != del->id) continue;
+            if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, del->id)) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             alt_better_read_scores.push_back(alt_aln.sw_score);
         } else if (ref_aln_score > alt_aln.sw_score) {
@@ -246,7 +246,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
     std::string workdir, std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
-    bool reassign_evidence, std::unordered_map<std::string, std::string>* reads_to_sv_map) {
+    bool reassign_evidence, evidence_map_t* evidence_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -267,7 +267,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     std::vector<sv_t*> small_svs;  
     for (deletion_t* del : dels) {
         genotype_del(del, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, 
-            stats, config, aligner, evidence_logger, reassign_evidence, *reads_to_sv_map);
+            stats, config, aligner, evidence_logger, reassign_evidence, evidence_map);
         if (-del->svlen() >= stats.max_is) {
             large_deletions.push_back(del);
         } else {
@@ -283,7 +283,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, evidence_logger, reassign_evidence, *reads_to_sv_map, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, evidence_logger, reassign_evidence, evidence_map->read_to_sv_map, mates_nms_file);
     count_stray_pairs(contig_name, dels, bam_file, config, stats);
 }
 

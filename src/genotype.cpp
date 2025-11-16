@@ -625,16 +625,19 @@ std::unordered_map<std::string, std::string> assign_reads(std::string in_vcf_fna
     }
     hts_close(in_vcf_file);
     bcf_hdr_destroy(in_vcf_header);
+    bcf_destroy(vcf_record);
 
     std::string alt_reads_association_fname = workdir + "/alt_reads_to_sv_associations.txt";
     std::ifstream alt_reads_association_fin(alt_reads_association_fname);
-    std::string sv_id, read_name, temp;
+    std::string sv_id, read_name;
+    int score;
     std::unordered_map<std::string, std::string> read_to_sv_map;
-    std::unordered_map<std::string, float> read_to_epr_map;
-    while (alt_reads_association_fin >> sv_id >> read_name) {
+    std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
+    while (alt_reads_association_fin >> sv_id >> read_name >> score) {
         float epr = sv_epr_map[sv_id];
-        if (epr > read_to_epr_map[read_name]) {
-            read_to_epr_map[read_name] = epr; // Store the highest EPR for the read
+        std::pair<int, float> p = {score, epr};
+        if (p > read_to_score_epr_map[read_name]) {
+            read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
             read_to_sv_map[read_name] = sv_id;
         }
     }
@@ -742,11 +745,11 @@ int main(int argc, char* argv[]) {
     workdir = argv[5];
     std::string sample_name = argv[6];
 
-    std::unordered_map<std::string, std::string> reads_to_sv_map;
+    evidence_map_t* evidence_map = new evidence_map_t();
     bool reassign_evidence = false;
     if (argc > 7 && std::string(argv[7]) == "--reassign-evidence") {
+        evidence_map->load(workdir, in_vcf_fname);
         reassign_evidence = true;
-        reads_to_sv_map = assign_reads(in_vcf_fname);
     }
 
     contig_map.load(workdir);
@@ -841,7 +844,7 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
             futures.push_back(std::move(future));
         }
 
@@ -853,7 +856,7 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
             futures.push_back(std::move(future));
         }
 
@@ -865,7 +868,7 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, &reads_to_sv_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
             futures.push_back(std::move(future));
         }
 

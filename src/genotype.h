@@ -10,6 +10,7 @@
 #include "htslib/sam.h"
 #include "sam_utils.h"
 #include "types.h"
+#include "vcf_utils.h"
 
 struct evidence_logger_t {
 
@@ -35,6 +36,66 @@ struct evidence_logger_t {
 
     evidence_logger_t(const evidence_logger_t&) = delete;
     evidence_logger_t& operator=(const evidence_logger_t&) = delete;
+};
+
+struct evidence_map_t {
+    std::unordered_map<std::string, std::string> read_to_sv_map;
+
+    evidence_map_t() {}
+
+    void load(std::string workdir, std::string vcf_fname) {
+        
+        htsFile* vcf_file = bcf_open(vcf_fname.c_str(), "r");
+        if (vcf_file == NULL) {
+            throw std::runtime_error("Unable to open file " + vcf_fname + ".");
+        }
+
+        bcf_hdr_t* vcf_header = bcf_hdr_read(vcf_file);
+        if (vcf_header == NULL) {
+            throw std::runtime_error("Failed to read the VCF header.");
+        }
+
+        std::unordered_map<std::string, float> sv_epr_map;
+
+        bcf1_t* vcf_record = bcf_init();
+        while (bcf_read(vcf_file, vcf_header, vcf_record) == 0) {
+            bcf_unpack(vcf_record, BCF_UN_ALL);
+
+            std::string id = vcf_record->d.id;
+            float epr = get_sv_epr(vcf_header, vcf_record);
+            sv_epr_map[id] = epr;
+        }
+        hts_close(vcf_file);
+        bcf_hdr_destroy(vcf_header);
+        bcf_destroy(vcf_record);
+
+        std::string alt_reads_association_fname = workdir + "/alt_reads_to_sv_associations.txt";
+        std::ifstream alt_reads_association_fin(alt_reads_association_fname);
+        std::string sv_id, read_name;
+        int score;
+        std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
+        while (alt_reads_association_fin >> sv_id >> read_name >> score) {
+            float epr = sv_epr_map[sv_id];
+            std::pair<int, float> p = {score, epr};
+            if (p > read_to_score_epr_map[read_name]) {
+                // remove _DUP suffix if present
+                if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
+                    sv_id = sv_id.substr(0, sv_id.size()-4);
+                }
+                read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
+                read_to_sv_map[read_name] = sv_id;
+            }
+        }
+    }
+
+    bool is_read_assigned_to_different_sv(std::string read_name, std::string sv_id) {
+        if (!read_to_sv_map.count(read_name)) return false;
+        // remove _DUP suffix if present
+        if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
+            sv_id = sv_id.substr(0, sv_id.size()-4);
+        }
+        return read_to_sv_map[read_name] != sv_id;
+    }
 };
 
 std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std::string>& seqs);
