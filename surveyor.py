@@ -192,53 +192,53 @@ else:
 
 if cmd_args.command == 'call':
 
-    # if not cmd_args.ml_model and not cmd_args.generate_training_data:
-    #     print("At least one of --ml-model or --generate-training-data must be provided.")
-    #     exit(0)
+    if not cmd_args.ml_model and not cmd_args.generate_training_data:
+        print("At least one of --ml-model or --generate-training-data must be provided.")
+        exit(0)
 
-    # reads_categorizer()
+    reads_categorizer()
 
-    # clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
-    # run_cmd(clip_consensus_builder_cmd)
+    clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
+    run_cmd(clip_consensus_builder_cmd)
 
-    # find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    # run_cmd(find_svs_from_sr_consensuses_cmd)
+    find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+    run_cmd(find_svs_from_sr_consensuses_cmd)
 
-    # merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    # run_cmd(merge_identical_calls_cmd)
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    run_cmd(merge_identical_calls_cmd)
 
-    # dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    # run_cmd(dp_clusterer)
+    dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+    run_cmd(dp_clusterer)
 
-    # ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
-    # run_cmd(ins_assembler_cmd)
+    ins_assembler_cmd = SURVEYOR_PATH + "/bin/insertions_assembler %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
+    run_cmd(ins_assembler_cmd)
 
-    # concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
-    # run_cmd(concat_cmd)
+    concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
+    run_cmd(concat_cmd)
 
-    # normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    # run_cmd(normalise_cmd)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    run_cmd(normalise_cmd)
 
-    # merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
-    # run_cmd(merge_identical_calls_cmd)
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    run_cmd(merge_identical_calls_cmd)
 
-    # insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
-    # run_cmd(insertions_to_duplications_cmd)
+    insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
+    run_cmd(insertions_to_duplications_cmd)
     
-    # genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-    # run_cmd(genotype_cmd)
+    genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+    run_cmd(genotype_cmd)
 
-    # if cmd_args.generate_training_data:
-    #     separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
+    if cmd_args.generate_training_data:
+        separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
-    # if not cmd_args.ml_model:
-    #     print("No model provided. Skipping filtering and genotyping.")
-    #     exit(0)
+    if not cmd_args.ml_model:
+        print("No model provided. Skipping filtering and genotyping.")
+        exit(0)
 
-    # Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+    Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
     
-    # reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
-    # run_cmd(reconcile_vcf_gt_cmd)
+    reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
+    run_cmd(reconcile_vcf_gt_cmd)
 
     if cmd_args.two_pass:
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
@@ -249,7 +249,7 @@ if cmd_args.command == 'call':
         reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/calls-genotyped.reassigned.vcf.gz", sample_name)
         run_cmd(reconcile_vcf_gt_cmd)
 
-    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
@@ -307,7 +307,7 @@ elif cmd_args.command == 'generate-training-data':
 
     shutil.copyfile(cmd_args.workdir + "/training-data.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".vcf.gz"))
     shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz"))
-    shutil.copyfile(cmd_args.workdir + "/stats.txt", os.path.join(cmd_args.outdir, cmd_args.samplename + ".stats.txt"))
+    shutil.copyfile(cmd_args.workdir + "/stats.txt", os.path.join(cmd_args.outdir, cmd_args.samplename + ".stats"))
 
     def has_alt_allele(gt):
         """Return True if GT tuple has at least one ALT allele (allele index > 0)."""
@@ -344,3 +344,5 @@ elif cmd_args.command == 'generate-training-data':
         cmd_args.threads
     )
     run_cmd(compare_cmd)
+
+    os.remove(updated_benchmark_vcf_path)
