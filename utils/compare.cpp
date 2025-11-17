@@ -676,6 +676,7 @@ int main(int argc, char* argv[]) {
 	// 1. missing gt in the benchmark (less missing alleles first)
 	// 2. rep (false first) 
 	// 3. score in descending order
+	// 4. benchmark id, called id (to make sort stable)
 	std::vector<sv_match_t> accepted_matches;
 	std::sort(matches.begin(), matches.end(), [](sv_match_t& a, sv_match_t& b) {
 		if (a.b_sv->missing_alleles() != b.b_sv->missing_alleles()) 
@@ -683,8 +684,9 @@ int main(int argc, char* argv[]) {
 		if (a.rep && !b.rep) return false;
 		if (!a.rep && b.rep) return true;
 		if (a.score != b.score) return a.score > b.score;
-		return a.b_sv->id < b.b_sv->id; // just to enforce a deterministic order
+		return std::tie(a.b_sv->id, a.c_sv->id) < std::tie(b.b_sv->id, b.c_sv->id); // to make sort stable
 	});
+
 	// count tps (both in benchmark and called) from matches
 	// in exclusive mode, each sv can only be used in one match
 	// for matches where the benchmark sv has missing alleles, since the benchmark does not tell us whether the variant 
