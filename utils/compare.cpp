@@ -682,7 +682,8 @@ int main(int argc, char* argv[]) {
 			return a.b_sv->missing_alleles() < b.b_sv->missing_alleles();
 		if (a.rep && !b.rep) return false;
 		if (!a.rep && b.rep) return true;
-		return a.score > b.score;
+		if (a.score != b.score) return a.score > b.score;
+		return a.b_sv->id < b.b_sv->id; // just to enforce a deterministic order
 	});
 	// count tps (both in benchmark and called) from matches
 	// in exclusive mode, each sv can only be used in one match
