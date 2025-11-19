@@ -11,6 +11,7 @@
 #include "../libs/cptl_stl.h"
 #include "../libs/ssw.h"
 #include "common.h"
+#include "../src/sw_utils.h"
 #include "htslib/vcf.h"
 
 chr_seqs_map_t chr_seqs;
@@ -231,10 +232,14 @@ bool check_cmpl_incmpl_seq(std::string& cmpl_seq, std::string& incmpl_seq, bool 
 	aligner.Align(right_seq.data(), cmpl_seq.data(), cmpl_seq.length(), filter, &right_aln, 0);
 	if (left_aln.query_end-left_aln.query_begin+right_aln.query_end-right_aln.query_begin < incmpl_seq.length()*0.8 || 
 		left_aln.ref_begin > max_len_diff || cmpl_seq.length()-right_aln.ref_end > max_len_diff) return false;
+	// set fields required to compute match score
+	alignment.sw_score = left_aln.sw_score + right_aln.sw_score;
+	alignment.query_end = cmpl_seq.length();
 	return true;
 }
 
 bool check_incmpl_incmpl_seq(std::string& incmpl_seq1, std::string& incmpl_seq2, StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Alignment& alignment) {
+	// TODO
 	return true;
 }
 
@@ -321,7 +326,7 @@ bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner,
 
 struct sv_match_t {
 	std::shared_ptr<sv_t> b_sv, c_sv;
-	int score = 0;
+	double score = 0;
 	bool rep;
 
 	sv_match_t(std::shared_ptr<sv_t> b_sv, std::shared_ptr<sv_t> c_sv, bool rep, StripedSmithWaterman::Aligner& aligner) : b_sv(b_sv), c_sv(c_sv) {
@@ -345,14 +350,10 @@ struct sv_match_t {
 			len_diff = abs(b_sv->svlen()-c_sv->svlen());
 		}
 
-		int right_clip = 0;
-		if (alignment.cigar.size() > 0) {
-			uint32_t c = alignment.cigar[alignment.cigar.size()-1];
-			if (cigar_int_to_op(c) == 'S') right_clip = cigar_int_to_len(c);
-		}
+		int right_clip = get_right_clip_size(alignment);
 
-		int dist_log = log(distance(b_sv.get(), c_sv.get())+1);
-		int aln_score = alignment.sw_score/std::max(1.0, double(alignment.query_end+right_clip)) * 100;
+		double dist_log = log(distance(b_sv.get(), c_sv.get())+1);
+		double aln_score = alignment.sw_score/std::max(1.0, double(alignment.query_end+right_clip+1)) * 100;
 		this->score = -len_diff - dist_log + aln_score;
 		this->rep = rep;
 	}
