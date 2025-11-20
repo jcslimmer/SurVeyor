@@ -57,7 +57,6 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     bam1_t* read = bam_init1();
 
-    int same = 0;
     std::vector<std::shared_ptr<bam1_t>> alt_better_seqs, ref_better_seqs;
     std::vector<bool> alt_better_seqs_isrc, ref_better_seqs_isrc;
 
@@ -89,13 +88,17 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
             ref_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             ref_better_seqs_isrc.push_back(is_rc);
         } else {
-            same++;
+            inv->sample_info.alt_ref_equal_reads++;
+            if (read->core.qual >= config.high_confidence_mapq) {
+                inv->sample_info.alt_ref_equal_reads_highmq++;
+            }
         }
 
-        if (alt_better_seqs.size() + ref_better_seqs.size() + same > 4 * stats.get_max_depth(inv->chr)) {
+        if (alt_better_seqs.size() + ref_better_seqs.size() + inv->sample_info.alt_ref_equal_reads > 4 * stats.get_max_depth(inv->chr)) {
             alt_better_seqs.clear();
             ref_better_seqs.clear();
-            same = 0;
+            inv->sample_info.alt_ref_equal_reads = 0;
+            inv->sample_info.alt_ref_equal_reads_highmq = 0;
             inv->sample_info.too_deep = true;
             break;
         }
@@ -161,8 +164,6 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_better_seqs.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(inv->sample_info.ref_bp1.reads_info, ref_better_seqs.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
-
-    inv->sample_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;
     delete[] ref_seq;
@@ -249,7 +250,6 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
 
     bam1_t* read = bam_init1();
 
-    int same = 0;
     std::vector<std::shared_ptr<bam1_t>> alt_bp1_better_reads, alt_bp2_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
     std::vector<bool> alt_bp1_better_reads_isrc, alt_bp2_better_reads_isrc, ref_bp1_better_reads_isrc, ref_bp2_better_reads_isrc;
 
@@ -335,15 +335,19 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
                 ref_bp2_better_reads_isrc.push_back(ref_is_rc);
             }
         } else {
-            same++;
+            inv->sample_info.alt_ref_equal_reads++;
+            if (read->core.qual >= config.high_confidence_mapq) {
+                inv->sample_info.alt_ref_equal_reads_highmq++;
+            }
         }
 
-        if (alt_bp1_better_reads.size() + alt_bp2_better_reads.size() + ref_bp1_better_reads.size() + ref_bp2_better_reads.size() + same > 4 * stats.get_max_depth(inv->chr)) {
+        if (alt_bp1_better_reads.size() + alt_bp2_better_reads.size() + ref_bp1_better_reads.size() + ref_bp2_better_reads.size() + inv->sample_info.alt_ref_equal_reads > 4 * stats.get_max_depth(inv->chr)) {
             alt_bp1_better_reads.clear();
             alt_bp2_better_reads.clear();
             ref_bp1_better_reads.clear();
             ref_bp2_better_reads.clear();
-            same = 0;
+            inv->sample_info.alt_ref_equal_reads = 0;
+            inv->sample_info.alt_ref_equal_reads_highmq = 0;
             inv->sample_info.too_deep = true;
             break;
         }
@@ -480,8 +484,6 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     set_bp_consensus_info(inv->sample_info.alt_bp2.reads_info, alt_bp2_better_reads.size(), alt_bp2_better_reads_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);
     set_bp_consensus_info(inv->sample_info.ref_bp1.reads_info, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
     set_bp_consensus_info(inv->sample_info.ref_bp2.reads_info, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
-
-    inv->sample_info.alt_ref_equal_reads = same;
 
     free(regions[0]);
     free(regions[1]);

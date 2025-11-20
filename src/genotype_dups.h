@@ -57,7 +57,6 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     std::vector<std::shared_ptr<bam1_t>> ref_better_reads;
     std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_better_reads(alt_seqs.size());
     std::vector<std::vector<int>> alt_better_reads_scores(alt_seqs.size());
-    int same = 0;
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref_aln;
@@ -66,6 +65,13 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
         if (!is_samechr(read) || is_samestr(read)) continue;
+
+        // if the read is assigned to a different SV, no need to align it, just count and continue
+        std::string read_name = bam_get_qname(read);
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
+            dup->sample_info.assigned_to_other_sv_reads++;
+            continue;
+        }
 
         std::string seq;
         if (!bam_is_mrev(read)) {
@@ -91,8 +97,6 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
         
         if (best_aln_score > ref_aln.sw_score) {
-            std::string read_name = bam_get_qname(read);
-            if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) continue;
             for (int i = 0; i < alt_seqs.size(); i++) {
                 if (alt_aln_scores[i] == best_aln_score) {
                     alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -102,7 +106,10 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         } else if (best_aln_score < ref_aln.sw_score) {
             ref_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
         } else {
-            same++;
+            dup->sample_info.alt_ref_equal_reads++;
+            if (read->core.qual >= config.high_confidence_mapq) {
+                dup->sample_info.alt_ref_equal_reads_highmq++;
+            }
         }
     }
 
@@ -116,7 +123,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     if (alt_better_reads[alt_with_most_reads].size() > 20*stats.get_max_depth(dup->chr) || ref_better_reads.size() > 20*stats.get_max_depth(dup->chr)) {
         alt_better_reads[alt_with_most_reads].clear();
         ref_better_reads.clear();
-        same = 0;
+        dup->sample_info.alt_ref_equal_reads = 0;
+        dup->sample_info.alt_ref_equal_reads_highmq = 0;
         dup->sample_info.too_deep = true;
     }
 
@@ -204,8 +212,6 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
-    
-    dup->sample_info.alt_ref_equal_reads = same;
 
     delete[] ref_seq;
     for (char* alt_seq : alt_seqs) {
@@ -262,11 +268,17 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
-    int same = 0;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (get_unclipped_end(read) < dup_start || dup_end < get_unclipped_start(read)) continue;
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
+
+        // if the read is assigned to a different SV, no need to align it, just count and continue
+        std::string read_name = bam_get_qname(read);
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
+            dup->sample_info.assigned_to_other_sv_reads++;
+            continue;
+        }
 
         std::string seq;
         
@@ -280,9 +292,6 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             if (mate_endpos > dup_end+stats.max_is || mate_endpos < dup_start) continue;
             seq = get_sequence(read, true);
         }
-        
-        // align to ALT
-        aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
         // align to REF (two breakpoints)
         uint16_t ref_aln_score = 0;
@@ -307,9 +316,10 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             }
         }
 
+        // align to ALT
+        aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
+
         if (alt_aln.sw_score > ref_aln_score) {
-            std::string read_name = bam_get_qname(read);
-            if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             alt_better_reads_scores.push_back(alt_aln.sw_score);
         } else if (alt_aln.sw_score < ref_aln_score) {
@@ -320,13 +330,18 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
                 ref_bp2_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {
-            same++;
+            dup->sample_info.alt_ref_equal_reads++;
+            if (read->core.qual >= config.high_confidence_mapq) {
+                dup->sample_info.alt_ref_equal_reads_highmq++;
+            }
         }
 
-        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() + same > 4*stats.get_max_depth(dup->chr)) {
+        if (ref_bp1_better_reads.size() + ref_bp2_better_reads.size() + dup->sample_info.alt_ref_equal_reads > 4*stats.get_max_depth(dup->chr)) {
             alt_better_reads.clear();
             ref_bp1_better_reads.clear();
             ref_bp2_better_reads.clear();
+            dup->sample_info.alt_ref_equal_reads = 0;
+            dup->sample_info.alt_ref_equal_reads_highmq = 0;
             dup->sample_info.too_deep = true;
             break;
         }
@@ -427,7 +442,6 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_bp1_better_reads.size(), ref_bp1_better_reads_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp2.reads_info, ref_bp2_better_reads.size(), ref_bp2_better_reads_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
-    dup->sample_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;
 
@@ -476,7 +490,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, reassign_evidence, evidence_map->read_to_sv_map, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, false, evidence_map, mates_nms_file);
     count_stray_pairs(contig_name, dups, bam_file, config, stats);
 }
 

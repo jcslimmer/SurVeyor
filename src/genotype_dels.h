@@ -63,7 +63,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
     bam1_t* read = bam_init1();
 
-    int same = 0;
     std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
     std::vector<int> alt_better_read_scores;
 
@@ -74,8 +73,14 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         if (get_unclipped_end(read) < del_start || del_end < get_unclipped_start(read)) continue;
         if (del_start < get_unclipped_start(read) && get_unclipped_end(read) < del_end) continue;
 
-        std::string seq;
+        // if the read is assigned to a different SV, no need to align it, just count and continue
+        std::string read_name = bam_get_qname(read);
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, del->id)) {
+            del->sample_info.assigned_to_other_sv_reads++;
+            continue;
+        }
 
+        std::string seq;
         if (!is_samechr(read) || is_samestr(read)) continue;
         if (!bam_is_mrev(read)) {
             if (read->core.mpos < del_start-stats.max_is) continue; // positive mate and after deletion, potentially discordant...
@@ -90,9 +95,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
             if (mate_endpos < del_end && (abs(mate_endpos-bam_endpos(read)) > 5 || !is_right_clipped(read, config.min_clip_len))) continue;
             seq = get_sequence(read, true);
         }
-
-        // align to ALT
-        aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
 
         // align to REF (two breakpoints)
         uint16_t ref_aln_score = 0;
@@ -116,10 +118,10 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
                 increase_ref_bp2_better = true;
             }
         }
-
+        
+        // align to ALT
+        aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
         if (alt_aln.sw_score > ref_aln_score) {
-            std::string read_name = bam_get_qname(read);
-            if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, del->id)) continue;
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             alt_better_read_scores.push_back(alt_aln.sw_score);
         } else if (ref_aln_score > alt_aln.sw_score) {
@@ -130,14 +132,18 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
                 ref_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {
-            same++;
+            del->sample_info.alt_ref_equal_reads++;
+            if (read->core.qual >= config.high_confidence_mapq) {
+                del->sample_info.alt_ref_equal_reads_highmq++;
+            }
         }
 
-        if (alt_better_reads.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + same > 4 * stats.get_max_depth(del->chr)) {
+        if (alt_better_reads.size() + ref_bp1_better_seqs.size() + ref_bp2_better_seqs.size() + del->sample_info.alt_ref_equal_reads > 4 * stats.get_max_depth(del->chr)) {
             alt_better_reads.clear();
             ref_bp1_better_seqs.clear();
             ref_bp2_better_seqs.clear();
-            same = 0;
+            del->sample_info.alt_ref_equal_reads = 0;
+            del->sample_info.alt_ref_equal_reads_highmq = 0;
             del->sample_info.too_deep = true;
             break;
         }
@@ -150,9 +156,19 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
+    // for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
+    //     std::string read_name = bam_get_qname(r.get());
+    //     if (reassign_evidence) {
+    //         for (std::string& ov_id : evidence_map->get_non_chosen_svs_for_read(read_name)) {
+    //             if (ov_id != del->id) { // can happen when both reads in a pair support the SV
+
+    //             }
+    //         }
+    //     }
+    // }
+
     if (evidence_logger) evidence_logger->log_reads_associations(del->id, alt_better_reads, alt_better_read_scores);
 
-    
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         std::shared_ptr<consensus_t> alt_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0);
@@ -229,8 +245,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     set_bp_consensus_info(del->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(del->sample_info.ref_bp1.reads_info, ref_bp1_better_seqs.size(), ref_bp1_better_seqs_consistent, ref_bp1_avg_score, ref_bp1_stddev_score);
     set_bp_consensus_info(del->sample_info.ref_bp2.reads_info, ref_bp2_better_seqs.size(), ref_bp2_better_seqs_consistent, ref_bp2_avg_score, ref_bp2_stddev_score);
-    
-    del->sample_info.alt_ref_equal_reads = same;
 
     delete[] alt_seq;
     delete[] ref_bp1_seq;
@@ -283,7 +297,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_del(contig_name, dels, bam_file, config, stats);
     calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_svs, bam_file, config, stats, config.min_sv_size, true);
     std::string mates_nms_file = workdir + "/workspace/long-pairs/" + std::to_string(contig_id) + ".txt";
-    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, evidence_logger, reassign_evidence, evidence_map->read_to_sv_map, mates_nms_file);
+    calculate_ptn_ratio(contig_name, dels, bam_file, config, stats, evidence_logger, false, evidence_map, mates_nms_file);
     count_stray_pairs(contig_name, dels, bam_file, config, stats);
 }
 

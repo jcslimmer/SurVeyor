@@ -247,6 +247,18 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int er = sv->sample_info.alt_ref_equal_reads;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ER", &er, 1);
 
+    int erhq = sv->sample_info.alt_ref_equal_reads_highmq;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ERHQ", &erhq, 1);
+
+    int orr = sv->sample_info.assigned_to_other_sv_reads;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR", &orr, 1);
+
+    int orc = sv->sample_info.assigned_to_other_sv_consistent;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ORC", &orc, 1);
+
+    int orhq = sv->sample_info.assigned_to_other_sv_consistent_highmq;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ORCHQ", &orhq, 1);
+
     if (sv->sample_info.too_deep) {
         int td = 1;
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);

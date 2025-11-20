@@ -24,7 +24,7 @@ struct evidence_logger_t {
 
     void log_pair_association(const std::string& sv_id, bam1_t* pair) {
         std::lock_guard<std::mutex> lock(mtx);
-        alt_pairs_to_sv_associations << sv_id << " " << bam_get_qname(pair) << "\n";
+        alt_pairs_to_sv_associations << sv_id << " " << bam_get_qname(pair) << std::endl;
     }
 
     void log_reads_associations(std::string sv_id, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
@@ -40,6 +40,7 @@ struct evidence_logger_t {
 
 struct evidence_map_t {
     std::unordered_map<std::string, std::string> read_to_sv_map;
+    std::unordered_map<std::string, std::vector<std::string>> read_to_non_chosen_svs_map;
 
     evidence_map_t() {}
 
@@ -77,13 +78,18 @@ struct evidence_map_t {
         while (alt_reads_association_fin >> sv_id >> read_name >> score) {
             float epr = sv_epr_map[sv_id];
             std::pair<int, float> p = {score, epr};
+            // remove _DUP suffix if present
+            if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
+                sv_id = sv_id.substr(0, sv_id.size()-4);
+            }
             if (p > read_to_score_epr_map[read_name]) {
-                // remove _DUP suffix if present
-                if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
-                    sv_id = sv_id.substr(0, sv_id.size()-4);
-                }
                 read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
+                if (read_to_sv_map.count(read_name)) {
+                    read_to_non_chosen_svs_map[read_name].push_back(read_to_sv_map[read_name]);
+                }
                 read_to_sv_map[read_name] = sv_id;
+            } else {
+                read_to_non_chosen_svs_map[read_name].push_back(sv_id);
             }
         }
     }
@@ -95,6 +101,11 @@ struct evidence_map_t {
             sv_id = sv_id.substr(0, sv_id.size()-4);
         }
         return read_to_sv_map[read_name] != sv_id;
+    }
+
+    std::vector<std::string> get_non_chosen_svs_for_read(std::string read_name) {
+        if (!read_to_non_chosen_svs_map.count(read_name)) return {};
+        return read_to_non_chosen_svs_map[read_name];
     }
 };
 

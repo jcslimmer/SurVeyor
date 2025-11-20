@@ -289,6 +289,23 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ERHQ");
+	const char* erhq_tag = "##FORMAT=<ID=ERHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads supporting equally well reference and alternate allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,erhq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR");
+	const char* or_tag = "##FORMAT=<ID=OR,Number=1,Type=Integer,Description=\"Number of reads supporting the ALT allele of a different SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,or_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ORC");
+	const char* orc_tag = "##FORMAT=<ID=ORC,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the ALT allele of a different SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,orc_tag, &len));
+
+	// ORCHQ
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "ORCHQ");
+	const char* orchq_tag = "##FORMAT=<ID=ORCHQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the ALT allele of a different SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,orchq_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
     const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
     bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
