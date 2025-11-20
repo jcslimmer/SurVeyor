@@ -69,7 +69,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         // if the read is assigned to a different SV, no need to align it, just count and continue
         std::string read_name = bam_get_qname(read);
         if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
-            dup->sample_info.assigned_to_other_sv_reads++;
+            dup->sample_info.assigned_to_other_sv_bp1_reads++;
             continue;
         }
 
@@ -208,7 +208,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     alt_better_reads_consistent = find_seqs_consistent_with_ref_seq(alt_consensus_seq, alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
 
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads[alt_with_most_reads], alt_better_reads_scores[alt_with_most_reads]);
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads[alt_with_most_reads], alt_better_reads_scores[alt_with_most_reads]);
 
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_avg_score, ref_stddev_score);
@@ -276,7 +276,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         // if the read is assigned to a different SV, no need to align it, just count and continue
         std::string read_name = bam_get_qname(read);
         if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
-            dup->sample_info.assigned_to_other_sv_reads++;
+            dup->sample_info.assigned_to_other_sv_bp1_reads++;
+            dup->sample_info.assigned_to_other_sv_bp2_reads++;
             continue;
         }
 
@@ -362,7 +363,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, alt_better_reads, alt_better_reads_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads, alt_better_reads_scores);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence

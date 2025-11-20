@@ -94,17 +94,22 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         if (get_unclipped_end(read) < ins_start || ins_end < get_unclipped_start(read)) continue;
         if (ins_start < get_unclipped_start(read) && get_unclipped_end(read) < ins_end) continue;
 
-        std::string read_name = bam_get_qname(read);
-        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, ins->id)) {
-            ins->sample_info.assigned_to_other_sv_reads++;
-            continue;
-        }
-
         std::string seq = get_sequence(read);
-
+        
         // align to ALT
         aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
         aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+        
+        std::string read_name = bam_get_qname(read);
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, ins->id)) {
+            if (alt1_aln.sw_score >= alt2_aln.sw_score) {
+                ins->sample_info.assigned_to_other_sv_bp1_reads++;
+            }
+            if (alt1_aln.sw_score <= alt2_aln.sw_score) {
+                ins->sample_info.assigned_to_other_sv_bp2_reads++;
+            }
+            continue;
+        }
         
         // align to REF (two breakpoints)
         aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
@@ -167,8 +172,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
     delete[] ref_bp2_seq;
 
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp1_better_seqs, alt_bp1_better_scores);
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, alt_bp2_better_seqs, alt_bp2_better_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 1, alt_bp1_better_seqs, alt_bp1_better_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 2, alt_bp2_better_seqs, alt_bp2_better_scores);
 
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence

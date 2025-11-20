@@ -250,14 +250,25 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int erhq = sv->sample_info.alt_ref_equal_reads_highmq;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "ERHQ", &erhq, 1);
 
-    int orr = sv->sample_info.assigned_to_other_sv_reads;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR", &orr, 1);
+    int or1 = sv->sample_info.assigned_to_other_sv_bp1_reads;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1", &or1, 1);
+    
+    int or1c = sv->sample_info.assigned_to_other_sv_bp1_consistent;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1C", &or1c, 1);
+    
+    int or1chq = sv->sample_info.assigned_to_other_sv_bp1_consistent_highmq;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1CHQ", &or1chq, 1);
 
-    int orc = sv->sample_info.assigned_to_other_sv_consistent;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ORC", &orc, 1);
-
-    int orhq = sv->sample_info.assigned_to_other_sv_consistent_highmq;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "ORCHQ", &orhq, 1);
+    if (sv->sample_info.ref_bp2.reads_info.computed) { // OR2 is only relevant for SVs with RR2
+        int or2 = sv->sample_info.assigned_to_other_sv_bp2_reads;
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2", &or2, 1);
+    
+        int or2c = sv->sample_info.assigned_to_other_sv_bp2_consistent;
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2C", &or2c, 1);
+    
+        int or2chq = sv->sample_info.assigned_to_other_sv_bp2_consistent_highmq;
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2CHQ", &or2chq, 1);
+    }
 
     if (sv->sample_info.too_deep) {
         int td = 1;
@@ -845,6 +856,8 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
+
+    std::unordered_map<std::string, std::pair<int, int>> sv_or; // store {OR, ORHQ} for each SV
 
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);

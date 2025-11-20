@@ -27,10 +27,10 @@ struct evidence_logger_t {
         alt_pairs_to_sv_associations << sv_id << " " << bam_get_qname(pair) << std::endl;
     }
 
-    void log_reads_associations(std::string sv_id, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
+    void log_reads_associations(std::string sv_id, int bp_n, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
         std::lock_guard<std::mutex> lock(mtx);
         for (size_t i = 0; i < reads.size(); i++) {
-            alt_reads_to_sv_associations << sv_id << " " << bam_get_qname(reads[i].get()) << " " << scores[i] << std::endl;
+            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << bam_get_qname(reads[i].get()) << " " << scores[i] << std::endl;
         }
     }
 
@@ -40,6 +40,7 @@ struct evidence_logger_t {
 
 struct evidence_map_t {
     std::unordered_map<std::string, std::string> read_to_sv_map;
+    std::unordered_map<std::string, int> read_to_bp_map;
     std::unordered_map<std::string, std::vector<std::string>> read_to_non_chosen_svs_map;
 
     evidence_map_t() {}
@@ -73,9 +74,9 @@ struct evidence_map_t {
         std::string alt_reads_association_fname = workdir + "/alt_reads_to_sv_associations.txt";
         std::ifstream alt_reads_association_fin(alt_reads_association_fname);
         std::string sv_id, read_name;
-        int score;
+        int bp, score;
         std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
-        while (alt_reads_association_fin >> sv_id >> read_name >> score) {
+        while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
             float epr = sv_epr_map[sv_id];
             std::pair<int, float> p = {score, epr};
             // remove _DUP suffix if present
@@ -88,6 +89,7 @@ struct evidence_map_t {
                     read_to_non_chosen_svs_map[read_name].push_back(read_to_sv_map[read_name]);
                 }
                 read_to_sv_map[read_name] = sv_id;
+                read_to_bp_map[read_name] = bp;
             } else {
                 read_to_non_chosen_svs_map[read_name].push_back(sv_id);
             }

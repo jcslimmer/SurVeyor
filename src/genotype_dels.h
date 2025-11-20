@@ -76,7 +76,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         // if the read is assigned to a different SV, no need to align it, just count and continue
         std::string read_name = bam_get_qname(read);
         if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, del->id)) {
-            del->sample_info.assigned_to_other_sv_reads++;
+            del->sample_info.assigned_to_other_sv_bp1_reads++;
+            del->sample_info.assigned_to_other_sv_bp2_reads++;
             continue;
         }
 
@@ -156,18 +157,18 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    // for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
-    //     std::string read_name = bam_get_qname(r.get());
-    //     if (reassign_evidence) {
-    //         for (std::string& ov_id : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-    //             if (ov_id != del->id) { // can happen when both reads in a pair support the SV
+    for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
+        std::string read_name = bam_get_qname(r.get());
+        if (reassign_evidence) {
+            for (std::string& ov_id : evidence_map->get_non_chosen_svs_for_read(read_name)) {
+                if (ov_id != del->id) { // can happen when both reads in a pair support the SV
 
-    //             }
-    //         }
-    //     }
-    // }
+                }
+            }
+        }
+    }
 
-    if (evidence_logger) evidence_logger->log_reads_associations(del->id, alt_better_reads, alt_better_read_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(del->id, 1, alt_better_reads, alt_better_read_scores);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence

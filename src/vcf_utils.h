@@ -287,28 +287,45 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "ER");
     const char* er_tag = "##FORMAT=<ID=ER,Number=1,Type=Integer,Description=\"Number of reads supporting equally well reference and alternate allele.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,er_tag, &len));
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, er_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "ERHQ");
 	const char* erhq_tag = "##FORMAT=<ID=ERHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads supporting equally well reference and alternate allele.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,erhq_tag, &len));
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, erhq_tag, &len));
 
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR");
-	const char* or_tag = "##FORMAT=<ID=OR,Number=1,Type=Integer,Description=\"Number of reads supporting the ALT allele of a different SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,or_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR1");
+	const char* or1_tag = "##FORMAT=<ID=OR1,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or1_tag, &len));
 
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "ORC");
-	const char* orc_tag = "##FORMAT=<ID=ORC,Number=1,Type=Integer,Description=\"Number of consistent reads supporting the ALT allele of a different SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,orc_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR2");
+	const char* or2_tag = "##FORMAT=<ID=OR2,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or2_tag, &len));
 
-	// ORCHQ
-	bcf_hdr_remove(hdr, BCF_HL_FMT, "ORCHQ");
-	const char* orchq_tag = "##FORMAT=<ID=ORCHQ,Number=1,Type=Integer,Description=\"Number of high-quality consistent reads supporting the ALT allele of a different SV.\">";
-	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,orchq_tag, &len));
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR1C");
+	const char* or1c_tag = "##FORMAT=<ID=OR1C,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 1 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV, and are consistent reads.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or1c_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR2C");
+	const char* or2c_tag = "##FORMAT=<ID=OR2C,Number=1,Type=Integer,Description=\"Number of reads supporting the breakpoint 2 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV, and are consistent reads.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or2c_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR1CHQ");
+	const char* or1chq_tag = "##FORMAT=<ID=OR1CHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads supporting the breakpoint 1 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV, and are consistent reads.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or1chq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR2CHQ");
+	const char* or2chq_tag = "##FORMAT=<ID=OR2CHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads supporting the breakpoint 2 of the ALT allele of this SV, "
+			"yet better support the ALT allele of a different SV, and are consistent reads.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or2chq_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "TD");
     const char* nc_tag = "##FORMAT=<ID=TD,Number=1,Type=Integer,Description=\"The variant region is too deep to be genotyped reliably.\">";
-    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,nc_tag, &len));
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, nc_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_FMT, "MINSIZE");
     const char* minsize_tag = "##FORMAT=<ID=MINSIZE,Number=1,Type=Integer,Description=\"Minimum size of the event calculated based on insert size distribution."
