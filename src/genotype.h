@@ -41,7 +41,7 @@ struct evidence_logger_t {
 struct evidence_map_t {
     std::unordered_map<std::string, std::string> read_to_sv_map;
     std::unordered_map<std::string, int> read_to_bp_map;
-    std::unordered_map<std::string, std::vector<std::string>> read_to_non_chosen_svs_map;
+    std::unordered_map<std::string, std::vector<std::pair<std::string, int>>> read_to_non_chosen_svs_map;
 
     evidence_map_t() {}
 
@@ -86,12 +86,12 @@ struct evidence_map_t {
             if (p > read_to_score_epr_map[read_name]) {
                 read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
                 if (read_to_sv_map.count(read_name)) {
-                    read_to_non_chosen_svs_map[read_name].push_back(read_to_sv_map[read_name]);
+                    read_to_non_chosen_svs_map[read_name].push_back({read_to_sv_map[read_name], read_to_bp_map[read_name]});
                 }
                 read_to_sv_map[read_name] = sv_id;
                 read_to_bp_map[read_name] = bp;
             } else {
-                read_to_non_chosen_svs_map[read_name].push_back(sv_id);
+                read_to_non_chosen_svs_map[read_name].push_back({sv_id, bp});
             }
         }
     }
@@ -105,11 +105,37 @@ struct evidence_map_t {
         return read_to_sv_map[read_name] != sv_id;
     }
 
-    std::vector<std::string> get_non_chosen_svs_for_read(std::string read_name) {
+    std::vector<std::pair<std::string, int>> get_non_chosen_svs_for_read(std::string read_name) {
         if (!read_to_non_chosen_svs_map.count(read_name)) return {};
         return read_to_non_chosen_svs_map[read_name];
     }
 };
+
+std::mutex orc_mtx;
+
+void increase_orc_supp(sv_t::sample_info_t& sample_info, int bp_n, bool hq) {
+    std::lock_guard<std::mutex> lock(orc_mtx);
+    if (bp_n == 1) {
+        sample_info.assigned_to_other_sv_bp1_consistent++;
+        if (hq) {
+            sample_info.assigned_to_other_sv_bp1_consistent_highmq++;
+        }
+    } else if (bp_n == 2) {
+        sample_info.assigned_to_other_sv_bp2_consistent++;
+        if (hq) {
+            sample_info.assigned_to_other_sv_bp2_consistent_highmq++;
+        }
+    }
+}
+
+void increase_orc(std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map, std::string sv_id, int bp_n, bool hq) {
+    if (!sv_map.count(sv_id)) return;
+    increase_orc_supp(sv_map[sv_id]->sample_info, bp_n, hq);
+
+    sv_id += "_DUP";
+    if (!sv_map.count(sv_id)) return;
+    increase_orc_supp(sv_map[sv_id]->sample_info, bp_n, hq);
+}
 
 std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std::string>& seqs);
 std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<bool> revcomp_read, std::string& consensus_seq, double& avg_score, double& stddev_score);

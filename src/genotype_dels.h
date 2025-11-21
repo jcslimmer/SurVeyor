@@ -13,7 +13,7 @@
 void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
                 stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
-                bool reassign_evidence, evidence_map_t* evidence_map) {
+                bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
     int del_start = del->start, del_end = del->end;
 
     hts_pos_t extend = stats.read_len + 20;
@@ -157,12 +157,12 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
+    if (reassign_evidence) {
     for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
         std::string read_name = bam_get_qname(r.get());
-        if (reassign_evidence) {
-            for (std::string& ov_id : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov_id != del->id) { // can happen when both reads in a pair support the SV
-
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
+                if (ov.first != del->id) { // can happen when both reads in a pair support the SV
+                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
                 }
             }
         }
@@ -261,7 +261,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
     std::string workdir, std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
-    bool reassign_evidence, evidence_map_t* evidence_map) {
+    bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>* sv_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -282,7 +282,7 @@ void genotype_dels(int id, std::string contig_name, char* contig_seq, int contig
     std::vector<sv_t*> small_svs;  
     for (deletion_t* del : dels) {
         genotype_del(del, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, 
-            stats, config, aligner, evidence_logger, reassign_evidence, evidence_map);
+            stats, config, aligner, evidence_logger, reassign_evidence, evidence_map, *sv_map);
         if (-del->svlen() >= stats.max_is) {
             large_deletions.push_back(del);
         } else {

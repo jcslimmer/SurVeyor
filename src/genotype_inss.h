@@ -8,8 +8,8 @@
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
                 stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
-                bool reassign_evidence, evidence_map_t* evidence_map) {
-    
+                bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
+
     hts_pos_t ins_start = ins->start, ins_end = ins->end;
 
 	hts_pos_t extend = stats.read_len + 20;
@@ -159,6 +159,25 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     delete[] alt_bp1_seq;
     auto alt_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, std::vector<bool>(), alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
     delete[] alt_bp2_seq;
+
+    if (reassign_evidence) {
+    for (std::shared_ptr<bam1_t>& r : alt_bp1_better_seqs_consistent) {
+        std::string read_name = bam_get_qname(r.get());
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
+                if (ov.first != ins->id) { // can happen when both reads in a pair support the SV
+                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
+                }
+            }
+        }
+    for (std::shared_ptr<bam1_t>& r : alt_bp2_better_seqs_consistent) {
+        std::string read_name = bam_get_qname(r.get());
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
+                if (ov.first != ins->id) { // can happen when both reads in a pair support the SV
+                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
+                }
+            }
+        }
+    }
 
     char* ref_bp1_seq = new char[ref_bp1_len+1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
@@ -337,7 +356,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     bcf_hdr_t* in_vcf_header, bcf_hdr_t* out_vcf_header, stats_t stats, config_t config, contig_map_t& contig_map,
     bam_pool_t* bam_pool, std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
     std::vector<double>* global_crossing_isize_dist, evidence_logger_t* evidence_logger,
-    bool reassign_evidence, evidence_map_t* evidence_map) {
+    bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>* sv_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
@@ -354,7 +373,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
              
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
     for (insertion_t* ins : inss) { 
-        genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, evidence_map);
+        genotype_ins(ins, bam_file, candidate_reads_for_extension_itree, *mateseqs_w_mapq_chr, contig_seq, contig_len, stats, config, aligner, evidence_logger, reassign_evidence, evidence_map, *sv_map);
     }
 
     for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;

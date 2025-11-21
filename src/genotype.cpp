@@ -816,12 +816,14 @@ int main(int argc, char* argv[]) {
     std::unordered_map<std::string, std::vector<std::shared_ptr<duplication_t>>> dups_by_chr;
     std::unordered_map<std::string, std::vector<std::shared_ptr<insertion_t>>> inss_by_chr;
     std::unordered_map<std::string, std::vector<std::shared_ptr<inversion_t>>> invs_by_chr;
+    std::unordered_map<std::string, std::shared_ptr<sv_t>> sv_map;
     while (bcf_read(in_vcf_file, in_vcf_header, vcf_record) == 0) {
         std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_header, vcf_record);
         if (sv == nullptr) {
             std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
             continue;
         }
+        sv_map[sv->id] = sv;
 
         sv->vcf_entry = bcf_dup(vcf_record);
         if (sv->svtype() == "DEL") {
@@ -857,8 +859,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
 
-    std::unordered_map<std::string, std::pair<int, int>> sv_or; // store {OR, ORHQ} for each SV
-
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
@@ -869,7 +869,8 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, 
+                    evidence_logger, reassign_evidence, evidence_map, &sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -881,7 +882,8 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist,
+                    evidence_logger, reassign_evidence, evidence_map, &sv_map);
             futures.push_back(std::move(future));
         }
 
@@ -893,7 +895,8 @@ int main(int argc, char* argv[]) {
             }
             std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
                     chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map);
+                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger,
+                    reassign_evidence, evidence_map, &sv_map);
             futures.push_back(std::move(future));
         }
 
