@@ -30,7 +30,6 @@ class Features:
                             'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C']
 
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
-                            'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
                             'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF', 'EXAS_EXRS_DIFF_TO_LEN',
                             'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
@@ -606,14 +605,10 @@ class Features:
         features['EXAS_EXRS_DIFF_TO_LEN'] = features['EXAS_EXRS_DIFF']/max(1, affected_length)
 
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
-        features['EXSS1_1'] = exss1_1/max_is
-        features['EXSS1_2'] = exss1_2/max_is
         features['EXSS1_RATIO1'] = exss1_1/max(1, exl1)
         features['EXSS1_RATIO2'] = exss1_2/max(1, exl1)
 
         exss2_1, exss2_2 = Features.get_number_value(record.samples[0], 'EXSS2', [0, 0])
-        features['EXSS2_1'] = exss2_1/max_is
-        features['EXSS2_2'] = exss2_2/max_is
         features['EXSS2_RATIO1'] = exss2_1/max(1, exl2)
         features['EXSS2_RATIO2'] = exss2_2/max(1, exl2)
 
