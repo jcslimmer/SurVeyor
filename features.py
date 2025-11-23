@@ -32,7 +32,7 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF', 'EXAS_EXRS_DIFF_TO_LEN',
+                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF_TO_LEN',
                             'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF',
@@ -591,19 +591,23 @@ class Features:
         features['mEXL'] = min(exl1/(max_is+read_len), exl2/(max_is+read_len))
         features['EXL'] = features['MEXL'] + features['mEXL']
 
-        exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0, max(1, exl1))
-        exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0, max(1, exl2))
-        features['MEXAS'] = max(exas1, exas2)
-        features['mEXAS'] = min(exas1, exas2)
+        exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0)
+        exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0)
+        exas1_scaled = exas1/(max(1, exl1))
+        exas2_scaled = exas2/(max(1, exl2))
+        features['MEXAS'] = max(exas1_scaled, exas2_scaled)
+        features['mEXAS'] = min(exas1_scaled, exas2_scaled)
 
-        exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0, max(1, exl1))
-        exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0, max(1, exl2))
+        exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0)
+        exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0)
+        exrs1_scaled = exrs1/(max(1, exl1))
+        exrs2_scaled = exrs2/(max(1, exl2))
 
-        features['EXAS_EXRS_RATIO'] = 0 if exrs1+exrs2 == 0 else (exas1+exas2)/(exrs1+exrs2)
+        features['EXAS_EXRS_RATIO'] = 0 if exrs1_scaled+exrs2_scaled == 0 else (exas1_scaled+exas2_scaled)/(exrs1_scaled+exrs2_scaled)
         features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
 
         affected_length = features['START_STOP_DIST'] + svinslen
-        features['EXAS_EXRS_DIFF_TO_LEN'] = features['EXAS_EXRS_DIFF']/max(1, affected_length)
+        features['EXAS_EXRS_DIFF_TO_LEN'] = (exas1-exrs1+exas2-exrs2)/max(1, affected_length)
 
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
         features['EXSS1_1'] = exss1_1/(max_is+read_len)
