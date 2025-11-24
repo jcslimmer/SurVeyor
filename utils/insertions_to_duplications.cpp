@@ -37,6 +37,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<std::shared_ptr<sv_t>> svs;
     std::unordered_set<std::string> new_dup_ids;
+    std::unordered_map<std::string, int> unique_key_to_idx;
     while (bcf_read(in_vcf_file, hdr, b) == 0) {
         std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, b);
         if (sv == nullptr) continue;
@@ -77,6 +78,7 @@ int main(int argc, char* argv[]) {
                     new_dup = std::make_shared<duplication_t>(contig_name, anchor_aln->start, anchor_aln->end, "", nullptr, nullptr, anchor_aln, anchor_aln);
                     new_dup->id = sv->id + "_DUP";
                     new_dup->source = sv->source;
+                    new_dup->ins_to_dup_similarity = max_score / double(ins_seq.length() * 1);
                     new_dup_ids.insert(new_dup->id);
                 }
             }
@@ -90,6 +92,16 @@ int main(int argc, char* argv[]) {
             new_dup->n_gt = 0;
             delete[] new_dup->sample_info.gt;
             new_dup->sample_info.gt = NULL;
+            std::string unique_key = new_dup->unique_key();
+            if (unique_key_to_idx.count(unique_key)) {
+                std::shared_ptr<duplication_t> prev_dup = std::dynamic_pointer_cast<duplication_t>(svs[unique_key_to_idx[unique_key]]);
+                if (new_dup->ins_to_dup_similarity > prev_dup->ins_to_dup_similarity) {
+                    svs[unique_key_to_idx[unique_key]] = new_dup;
+                } else {
+                    continue;
+                }
+            }
+            unique_key_to_idx[unique_key] = svs.size();
             svs.push_back(new_dup);
         }
     }
