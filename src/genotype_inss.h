@@ -99,9 +99,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         // align to ALT
         aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
         aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
-        
-        std::string read_name = bam_get_qname(read);
-        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, ins->id)) {
+
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read, ins->id)) {
             if (alt1_aln.sw_score >= alt2_aln.sw_score) {
                 ins->sample_info.assigned_to_other_sv_bp1_reads++;
             }
@@ -160,21 +159,24 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     auto alt_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_bp2_seq, alt_bp2_better_seqs, std::vector<bool>(), alt_bp2_consensus_seq, alt_bp2_avg_score, alt_bp2_stddev_score);
     delete[] alt_bp2_seq;
 
-    if (reassign_evidence) {
-    for (std::shared_ptr<bam1_t>& r : alt_bp1_better_seqs_consistent) {
-        std::string read_name = bam_get_qname(r.get());
-            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov.first != ins->id) { // can happen when both reads in a pair support the SV
-                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
-                }
+    if (reassign_evidence) {  // increment ORC counters for other SVs that lost support from these reads
+        std::vector<bam1_t*> alt_better_seqs_consistent;
+        std::unordered_set<std::string> seen;
+        for (const auto& r : alt_bp1_better_seqs_consistent) {
+            if (!seen.count(read_name_with_suffix(r.get()))) {
+                seen.insert(read_name_with_suffix(r.get()));
+                alt_better_seqs_consistent.push_back(r.get());
             }
         }
-    for (std::shared_ptr<bam1_t>& r : alt_bp2_better_seqs_consistent) {
-        std::string read_name = bam_get_qname(r.get());
-            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov.first != ins->id) { // can happen when both reads in a pair support the SV
-                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
-                }
+        for (const auto& r : alt_bp2_better_seqs_consistent) {
+            if (!seen.count(read_name_with_suffix(r.get()))) {
+                seen.insert(read_name_with_suffix(r.get()));
+                alt_better_seqs_consistent.push_back(r.get());
+            }
+        }
+        for (bam1_t* r : alt_better_seqs_consistent) {
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(r)) {
+                increase_orc(sv_map, ov.first, ov.second, get_mq(r) >= config.high_confidence_mapq);
             }
         }
     }

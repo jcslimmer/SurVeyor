@@ -12,6 +12,19 @@
 #include "types.h"
 #include "vcf_utils.h"
 
+std::string read_name_with_suffix(bam1_t* read) {
+    std::string read_name = bam_get_qname(read);
+    read_name += (is_first_read(read) ? "/1" : "/2");
+    return read_name;
+}
+
+std::string remove_svid_dup_suffix(const std::string& sv_id) {
+    if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
+        return sv_id.substr(0, sv_id.size()-4);
+    }
+    return sv_id;
+}
+
 struct evidence_logger_t {
 
     std::ofstream alt_reads_to_sv_associations, alt_pairs_to_sv_associations;
@@ -30,7 +43,8 @@ struct evidence_logger_t {
     void log_reads_associations(std::string sv_id, int bp_n, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
         std::lock_guard<std::mutex> lock(mtx);
         for (size_t i = 0; i < reads.size(); i++) {
-            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << bam_get_qname(reads[i].get()) << " " << scores[i] << std::endl;
+            bam1_t* read = reads[i].get();
+            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << read_name_with_suffix(read) << " " << scores[i] << std::endl;
         }
     }
 
@@ -79,10 +93,7 @@ struct evidence_map_t {
         while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
             float epr = sv_epr_map[sv_id];
             std::pair<int, float> p = {score, epr};
-            // remove _DUP suffix if present
-            if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
-                sv_id = sv_id.substr(0, sv_id.size()-4);
-            }
+            sv_id = remove_svid_dup_suffix(sv_id); // we avoid INS and INS_TO_DUP from stealing each other's reads
             if (p > read_to_score_epr_map[read_name]) {
                 read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
                 if (read_to_sv_map.count(read_name)) {
@@ -94,18 +105,27 @@ struct evidence_map_t {
                 read_to_non_chosen_svs_map[read_name].push_back({sv_id, bp});
             }
         }
+
+        for (auto& kv : read_to_sv_map) {
+            std::string read_name = kv.first;
+            std::string sv_id = kv.second;
+            // remove sv_id from non-chosen svs if it is there
+            auto& vec = read_to_non_chosen_svs_map[read_name];
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const std::pair<std::string, int>& p) {
+                return p.first == sv_id;
+            }), vec.end());
+        }
     }
 
-    bool is_read_assigned_to_different_sv(std::string read_name, std::string sv_id) {
+    bool is_read_assigned_to_different_sv(bam1_t* read, std::string sv_id) {
+        std::string read_name = read_name_with_suffix(read);
         if (!read_to_sv_map.count(read_name)) return false;
-        // remove _DUP suffix if present
-        if (sv_id.size() > 4 && sv_id.substr(sv_id.size()-4) == "_DUP") {
-            sv_id = sv_id.substr(0, sv_id.size()-4);
-        }
+        sv_id = remove_svid_dup_suffix(sv_id);
         return read_to_sv_map[read_name] != sv_id;
     }
 
-    std::vector<std::pair<std::string, int>> get_non_chosen_svs_for_read(std::string read_name) {
+    std::vector<std::pair<std::string, int>> get_non_chosen_svs_for_read(bam1_t* read) {
+        std::string read_name = read_name_with_suffix(read);
         if (!read_to_non_chosen_svs_map.count(read_name)) return {};
         return read_to_non_chosen_svs_map[read_name];
     }

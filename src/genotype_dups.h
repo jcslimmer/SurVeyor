@@ -67,8 +67,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (!is_samechr(read) || is_samestr(read)) continue;
 
         // if the read is assigned to a different SV, no need to align it, just count and continue
-        std::string read_name = bam_get_qname(read);
-        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read, dup->id)) {
             dup->sample_info.assigned_to_other_sv_bp1_reads++;
             continue;
         }
@@ -208,13 +207,10 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     alt_better_reads_consistent = find_seqs_consistent_with_ref_seq(alt_consensus_seq, alt_better_reads_consistent, alt_avg_score, alt_stddev_score);
 
-    if (reassign_evidence) {
-    for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
-        std::string read_name = bam_get_qname(r.get());
-            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov.first != dup->id) { // can happen when both reads in a pair support the SV
-                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
-                }
+    if (reassign_evidence) { // increment ORC counters for other SVs that lost support from these reads
+        for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(r.get())) {
+                increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
             }
         }
     }
@@ -285,8 +281,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (dup_start < get_unclipped_start(read) && get_unclipped_end(read) < dup_end) continue;
 
         // if the read is assigned to a different SV, no need to align it, just count and continue
-        std::string read_name = bam_get_qname(read);
-        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, dup->id)) {
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read, dup->id)) {
             dup->sample_info.assigned_to_other_sv_bp1_reads++;
             dup->sample_info.assigned_to_other_sv_bp2_reads++;
             continue;
@@ -374,13 +369,10 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (reassign_evidence) {
-    for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
-        std::string read_name = bam_get_qname(r.get());
-            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov.first != dup->id) { // can happen when both reads in a pair support the SV
-                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
-                }
+    if (reassign_evidence) { // increment ORC counters for other SVs that lost support from these reads
+        for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(r.get())) {
+                increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
             }
         }
     }

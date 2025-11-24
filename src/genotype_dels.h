@@ -74,8 +74,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         if (del_start < get_unclipped_start(read) && get_unclipped_end(read) < del_end) continue;
 
         // if the read is assigned to a different SV, no need to align it, just count and continue
-        std::string read_name = bam_get_qname(read);
-        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read_name, del->id)) {
+        if (reassign_evidence && evidence_map->is_read_assigned_to_different_sv(read, del->id)) {
             del->sample_info.assigned_to_other_sv_bp1_reads++;
             del->sample_info.assigned_to_other_sv_bp2_reads++;
             continue;
@@ -157,13 +156,10 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
 
-    if (reassign_evidence) {
-    for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
-        std::string read_name = bam_get_qname(r.get());
-            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(read_name)) {
-                if (ov.first != del->id) { // can happen when both reads in a pair support the SV
-                    increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
-                }
+    if (reassign_evidence) { // increment ORC counters for other SVs that lost support from these reads
+        for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
+            for (std::pair<std::string, int>& ov : evidence_map->get_non_chosen_svs_for_read(r.get())) {
+                increase_orc(sv_map, ov.first, ov.second, get_mq(r.get()) >= config.high_confidence_mapq);
             }
         }
     }
