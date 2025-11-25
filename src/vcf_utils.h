@@ -216,10 +216,34 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
     bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT");
     const char* labc_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the left anchor region of the SV.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc_tag, &len));
-	
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT_50");
+	const char* labc50_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT_50,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 50 bp of the left anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc50_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT_100");
+	const char* labc100_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT_100,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 100 bp of the left anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc100_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "LEFT_ANCHOR_BASE_COUNT_500");
+	const char* labc500_tag = "##INFO=<ID=LEFT_ANCHOR_BASE_COUNT_500,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 500 bp of the left anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,labc500_tag, &len));
+
     bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT");
 	const char* rabc_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the right anchor region of the SV.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT_50");
+	const char* rabc50_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT_50,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 50 bp of the right anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc50_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT_100");
+	const char* rabc100_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT_100,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 100 bp of the right anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc100_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_INFO, "RIGHT_ANCHOR_BASE_COUNT_500");
+	const char* rabc500_tag = "##INFO=<ID=RIGHT_ANCHOR_BASE_COUNT_500,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 500 bp of the right anchor region of the SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,rabc500_tag, &len));
 
     bcf_hdr_remove(hdr, BCF_HL_INFO, "SV_REF_PREFIX_BASE_COUNT");
 	const char* svrefpbc_tag = "##INFO=<ID=SV_REF_PREFIX_BASE_COUNT,Number=4,Type=Integer,Description=\"Number of As, Cs, Gs, and Ts in the first 5000 bp of the reference region of the SV (if the SV affects less than 5000 bp, the whole SV is considered).\">";

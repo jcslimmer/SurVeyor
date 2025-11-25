@@ -286,6 +286,30 @@ base_frequencies_t get_base_frequencies(const char* seq, int len) {
     return base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
 }
 
+std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> get_base_frequencies_50_100_500(const char* seq, int len) {
+    int counts[5] = {0,0,0,0,0};
+
+    int end = std::min(len, 50);
+    for (int i = 0; i < end; i++) {
+        counts[nt_map[(uint8_t)seq[i]]]++;
+    }
+    base_frequencies_t bf50 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+    
+    int end100 = std::min(len, 100);
+    for (int i = 50; i < end100; i++) {
+        counts[nt_map[(uint8_t)seq[i]]]++;
+    }
+    base_frequencies_t bf100 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+    
+    int end500 = std::min(len, 500);
+    for (int i = 100; i < end500; i++) {
+        counts[nt_map[(uint8_t)seq[i]]]++;
+    }
+    base_frequencies_t bf500 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+    
+    return std::make_tuple(bf50, bf100, bf500);
+}
+
 bool is_homopolymer(const char* seq, int len) {
     return get_base_frequencies(seq, len).max_freq() >= 0.8;
 }

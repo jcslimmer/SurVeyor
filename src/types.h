@@ -328,54 +328,6 @@ struct sv_t {
         return ac;
     }
 
-    base_frequencies_t get_left_anchor_base_freqs(char* chr_seq) {
-        if (left_anchor_base_freqs.empty()) {
-            left_anchor_base_freqs = get_base_frequencies(chr_seq+left_anchor_aln->start, left_anchor_aln->end-left_anchor_aln->start);
-        }
-        return left_anchor_base_freqs;
-    }
-    base_frequencies_t get_right_anchor_base_freqs(char* chr_seq) {
-        if (right_anchor_base_freqs.empty()) {
-            right_anchor_base_freqs = get_base_frequencies(chr_seq+right_anchor_aln->start, right_anchor_aln->end-right_anchor_aln->start);
-        }
-        return right_anchor_base_freqs;
-    }
-
-    base_frequencies_t get_prefix_ref_base_freqs(char* chr_seq) {
-        if (prefix_ref_base_freqs.empty()) {
-            prefix_ref_base_freqs = get_base_frequencies(chr_seq+start, std::min(end-start, hts_pos_t(5000)));
-        }
-        return prefix_ref_base_freqs;
-    }
-    base_frequencies_t get_suffix_ref_base_freqs(char* chr_seq) {
-        if (suffix_ref_base_freqs.empty()) {
-            suffix_ref_base_freqs = get_base_frequencies(chr_seq+std::max(start, end-5000), std::min(end-start, hts_pos_t(5000)));
-        }
-        return suffix_ref_base_freqs;
-    }
-
-    base_frequencies_t get_ins_prefix_base_freqs() {
-        if (ins_prefix_base_freqs.empty()) {
-            int d = ins_seq.find("-");
-            std::string ins_seq_fh = ins_seq.substr(0, d);
-            ins_prefix_base_freqs = get_base_frequencies(ins_seq_fh.c_str(), ins_seq_fh.length());
-        }
-        return ins_prefix_base_freqs;
-    }
-
-    base_frequencies_t get_ins_suffix_base_freqs() {
-        if (ins_suffix_base_freqs.empty()) {
-            int d = ins_seq.find("-");
-            if (d == std::string::npos) {
-                ins_suffix_base_freqs = get_ins_prefix_base_freqs();
-            } else {
-                std::string ins_seq_sh = ins_seq.substr(d+1);
-                ins_suffix_base_freqs = get_base_frequencies(ins_seq_sh.c_str(), ins_seq_sh.length());
-            }
-        }
-        return ins_suffix_base_freqs;
-    }
-
     virtual ~sv_t() {
         bcf_destroy1(vcf_entry);
     }
