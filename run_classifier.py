@@ -15,7 +15,13 @@ class Classifier:
                 if record_id in svid_to_gt:
                     gt = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
                     max_is, read_len = features.get_stat(stats, 'max_is', record.chrom), features.get_stat(stats, 'read_len', record.chrom)
-                    if features.Features.get_model_name(record, max_is, read_len) in ("DUP_LARGE", "DUP_LARGE_IMPRECISE"):
+                    rr1c = features.Features.get_number_value(record.samples[0], 'RR1C', 0)
+                    rr2c = features.Features.get_number_value(record.samples[0], 'RR2C', 0)
+                    or1c = features.Features.get_number_value(record.samples[0], 'OR1C', 0)
+                    or2c = features.Features.get_number_value(record.samples[0], 'OR2C', 0)
+                    if features.Features.get_model_name(record, max_is, read_len) in ("DUP_LARGE", "DUP_LARGE_IMPRECISE") or \
+                        or1c + or2c > rr1c + rr2c + 3:
+                        # for large duplications, and for likely multi-allelic duplications, only output ./1 genotypes
                         if gt[1] == 1:
                             gt = (None, 1)
                     record.samples[0]['GT'] = gt
