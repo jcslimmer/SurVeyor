@@ -20,7 +20,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     if (dup_end > contig_len) {
         dup_end = contig_len;
     }
-    
+
     hts_pos_t ref_start = std::max(hts_pos_t(0), dup_start-extend), ref_end = std::min(dup_end+extend, contig_len);
 	hts_pos_t ref_len = ref_end - ref_start;
 	char* ref_seq = new char[ref_len + 1];
@@ -244,8 +244,10 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 	// all ranges will be start-inclusive and end-exclusive, i.e. [a,b)
 
 	hts_pos_t ref_bp1_start = std::max(hts_pos_t(0), dup_start-extend), ref_bp1_end = std::min(dup_start+extend, contig_len);
+    hts_pos_t ref_bp1_pos = dup_start - ref_bp1_start;
 	hts_pos_t ref_bp1_len = ref_bp1_end - ref_bp1_start;
 	hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), dup_end-extend), ref_bp2_end = std::min(dup_end+extend, contig_len);
+	hts_pos_t ref_bp2_pos = dup_end - ref_bp2_start;
 	hts_pos_t ref_bp2_len = ref_bp2_end - ref_bp2_start;
 
 	// build alt allele
@@ -315,10 +317,10 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
             aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
             ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
-            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+            if (ref1_aln.sw_score >= ref2_aln.sw_score && ref1_aln.ref_begin <= ref_bp1_pos && ref1_aln.ref_end >= ref_bp1_pos) {
                 increase_ref_bp1_better = true;
             }
-            if (ref2_aln.sw_score >= ref1_aln.sw_score) {
+            if (ref2_aln.sw_score >= ref1_aln.sw_score && ref2_aln.ref_begin <= ref_bp2_pos && ref2_aln.ref_end >= ref_bp2_pos) {
                 increase_ref_bp2_better = true;
             }
         }

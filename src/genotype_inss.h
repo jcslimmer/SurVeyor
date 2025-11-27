@@ -68,8 +68,10 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     }
 
     hts_pos_t ref_bp1_start = alt_start, ref_bp1_end = std::min(ins_start+extend, contig_len);
+    hts_pos_t ref_bp1_pos = ins_start - ref_bp1_start;
     hts_pos_t ref_bp1_len = ref_bp1_end - ref_bp1_start;
     hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), ins_end-extend), ref_bp2_end = alt_end;
+    hts_pos_t ref_bp2_pos = ins_end - ref_bp2_start;
     hts_pos_t ref_bp2_len = ref_bp2_end - ref_bp2_start;
 
     std::stringstream l_region, r_region;
@@ -126,10 +128,10 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
                 alt_bp2_better_scores.push_back(alt2_aln.sw_score);
             }
         } else if (alt_aln.sw_score < ref_aln.sw_score) {
-            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+            if (ref1_aln.sw_score >= ref2_aln.sw_score && ref1_aln.ref_begin <= ref_bp1_pos && ref1_aln.ref_end >= ref_bp1_pos) {
                 ref_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
-            } 
-            if (ref1_aln.sw_score <= ref2_aln.sw_score) {
+            }
+            if (ref1_aln.sw_score <= ref2_aln.sw_score && ref2_aln.ref_begin <= ref_bp2_pos && ref2_aln.ref_end >= ref_bp2_pos) {
                 ref_bp2_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             }
         } else {

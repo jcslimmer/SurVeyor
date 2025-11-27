@@ -30,8 +30,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     // all ranges will be start-inclusive and end-exclusive, i.e. [a,b)
     hts_pos_t alt_start = std::max(hts_pos_t(0), del_start-extend);
     hts_pos_t alt_end = std::min(del_end+extend, contig_len);
-    int alt_lh_len = del_start-alt_start, alt_rh_len = alt_end-del_end;
-    int alt_len = alt_lh_len + del->ins_seq.length() + alt_rh_len;
+    hts_pos_t alt_lh_len = del_start-alt_start, alt_rh_len = alt_end-del_end;
+    hts_pos_t alt_len = alt_lh_len + del->ins_seq.length() + alt_rh_len;
     char* alt_seq = new char[alt_len + 1];
     strncpy(alt_seq, contig_seq+alt_start, alt_lh_len);
     strncpy(alt_seq+alt_lh_len, del->ins_seq.c_str(), del->ins_seq.length());
@@ -39,14 +39,16 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     alt_seq[alt_len] = 0;
 
     // extract ref alleles - will be useful for consensus generation
-    int ref_bp1_start = alt_start, ref_bp1_end = std::min(del_start+extend, contig_len);
-    int ref_bp1_len = ref_bp1_end - ref_bp1_start;
+    hts_pos_t ref_bp1_start = alt_start, ref_bp1_end = std::min(del_start+extend, contig_len);
+    hts_pos_t ref_bp1_pos = del_start - ref_bp1_start;
+    hts_pos_t ref_bp1_len = ref_bp1_end - ref_bp1_start;
     char* ref_bp1_seq = new char[ref_bp1_len + 1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
     ref_bp1_seq[ref_bp1_len] = 0;
 
-    int ref_bp2_start = std::max(hts_pos_t(0), del_end-extend), ref_bp2_end = alt_end;
-    int ref_bp2_len = ref_bp2_end - ref_bp2_start;
+    hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), del_end-extend), ref_bp2_end = alt_end;
+    hts_pos_t ref_bp2_pos = del_end - ref_bp2_start;
+    hts_pos_t ref_bp2_len = ref_bp2_end - ref_bp2_start;
     char* ref_bp2_seq = new char[ref_bp2_len + 1];
     strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
     ref_bp2_seq[ref_bp2_len] = 0;
@@ -111,10 +113,10 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
             aligner.Align(seq.c_str(), ref_bp1_seq, ref_bp1_len, filter, &ref1_aln, 0);
             aligner.Align(seq.c_str(), ref_bp2_seq, ref_bp2_len, filter, &ref2_aln, 0);
             ref_aln_score = ref1_aln.sw_score >= ref2_aln.sw_score ? ref1_aln.sw_score : ref2_aln.sw_score;
-            if (ref1_aln.sw_score >= ref2_aln.sw_score) {
+            if (ref1_aln.sw_score >= ref2_aln.sw_score && ref1_aln.ref_begin <= ref_bp1_pos && ref1_aln.ref_end >= ref_bp1_pos) {
                 increase_ref_bp1_better = true;
             }
-            if (ref2_aln.sw_score >= ref1_aln.sw_score) {
+            if (ref2_aln.sw_score >= ref1_aln.sw_score && ref2_aln.ref_begin <= ref_bp2_pos && ref2_aln.ref_end >= ref_bp2_pos) {
                 increase_ref_bp2_better = true;
             }
         }
