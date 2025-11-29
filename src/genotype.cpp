@@ -962,7 +962,9 @@ int main(int argc, char* argv[]) {
     	if (dups_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dups_by_chr[contig_name].begin(), dups_by_chr[contig_name].end());
     	if (inss_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), inss_by_chr[contig_name].begin(), inss_by_chr[contig_name].end());
         if (invs_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), invs_by_chr[contig_name].begin(), invs_by_chr[contig_name].end());
-    	std::sort(contig_svs.begin(), contig_svs.end(), [](const std::shared_ptr<sv_t>& sv1, const std::shared_ptr<sv_t>& sv2) {return sv1->start < sv2->start;});
+    	std::sort(contig_svs.begin(), contig_svs.end(), [](const std::shared_ptr<sv_t>& sv1, const std::shared_ptr<sv_t>& sv2) {
+            return std::tie(sv1->start, sv1->end, sv1->id) < std::tie(sv2->start, sv2->end, sv2->id);
+        });
 
 		for (auto& sv : contig_svs) {
 			// bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
