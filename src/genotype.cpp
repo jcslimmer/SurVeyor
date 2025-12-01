@@ -287,10 +287,8 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2CHQ", &or2chq, 1);
     }
 
-    if (sv->sample_info.too_deep) {
-        int td = 1;
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);
-    }
+    int td = sv->sample_info.too_deep;
+    bcf_update_format_int32(out_hdr, sv->vcf_entry, "TD", &td, 1);
 
     int median_depths[] = {sv->sample_info.left_flanking_cov, sv->sample_info.indel_left_cov, sv->sample_info.indel_right_cov, sv->sample_info.right_flanking_cov};
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "MD", median_depths, 4);
@@ -878,55 +876,68 @@ int main(int argc, char* argv[]) {
 
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
+        
         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
-        for (int i = 0; i < dels.size(); i += BLOCK_SIZE) {
-            std::vector<deletion_t*> block_dels;
-            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)dels.size()); j++) {
-                block_dels.push_back(dels[j].get());
+        std::vector<deletion_t*> block_dels;
+        for (int i = 0; i < dels.size(); i++) {
+            if (!reassign_evidence || dels[i]->allele_count(1) > 0) {
+                block_dels.push_back(dels[i].get());
             }
-            std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
-                    chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config, 
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist, 
-                    evidence_logger, reassign_evidence, evidence_map, &sv_map);
-            futures.push_back(std::move(future));
+            if (block_dels.size() == BLOCK_SIZE || (i == dels.size()-1 && !block_dels.empty())) {
+                std::future<void> future = thread_pool.push(genotype_dels, contig_name, chr_seqs.get_seq(contig_name),
+                        chr_seqs.get_len(contig_name), block_dels, in_vcf_header, out_vcf_header, stats, config,
+                        contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist,
+                        evidence_logger, reassign_evidence, evidence_map, &sv_map);
+                futures.push_back(std::move(future));
+                block_dels.clear();
+            }
         }
 
         std::vector<std::shared_ptr<duplication_t>>& dups = dups_by_chr[contig_name];
-        for (int i = 0; i < dups.size(); i += BLOCK_SIZE) {
-            std::vector<duplication_t*> block_dups;
-            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)dups.size()); j++) {
-                block_dups.push_back(dups[j].get());
+        std::vector<duplication_t*> block_dups;
+        for (int i = 0; i < dups.size(); i++) {
+            if (!reassign_evidence || dups[i]->allele_count(1) > 0) {
+                block_dups.push_back(dups[i].get());
             }
-            std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
-                    chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist,
-                    evidence_logger, reassign_evidence, evidence_map, &sv_map);
-            futures.push_back(std::move(future));
+            if (block_dups.size() == BLOCK_SIZE || (i == dups.size()-1 && !block_dups.empty())) {
+                std::future<void> future = thread_pool.push(genotype_dups, contig_name, chr_seqs.get_seq(contig_name),
+                        chr_seqs.get_len(contig_name), block_dups, in_vcf_header, out_vcf_header, stats, config,
+                        contig_map, bam_pool, &mateseqs_w_mapq[contig_id], workdir, &global_crossing_isize_dist,
+                        evidence_logger, reassign_evidence, evidence_map, &sv_map);
+                futures.push_back(std::move(future));
+                block_dups.clear();
+            }
         }
 
         std::vector<std::shared_ptr<insertion_t>>& inss = inss_by_chr[contig_name];
-        for (int i = 0; i < inss.size(); i += BLOCK_SIZE) {
-            std::vector<insertion_t*> block_inss;
-            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)inss.size()); j++) {
-                block_inss.push_back(inss[j].get());
+        std::vector<insertion_t*> block_inss;
+        for (int i = 0; i < inss.size(); i++) {
+            if (!reassign_evidence || inss[i]->allele_count(1) > 0) {
+                block_inss.push_back(inss[i].get());
             }
-            std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
-                    chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger,
-                    reassign_evidence, evidence_map, &sv_map);
-            futures.push_back(std::move(future));
+            if (block_inss.size() == BLOCK_SIZE || (i == inss.size()-1 && !block_inss.empty())) {
+                std::future<void> future = thread_pool.push(genotype_inss, contig_name, chr_seqs.get_seq(contig_name),
+                        chr_seqs.get_len(contig_name), block_inss, in_vcf_header, out_vcf_header, stats, config,
+                        contig_map, bam_pool, &mateseqs_w_mapq[contig_id], &global_crossing_isize_dist, evidence_logger,
+                        reassign_evidence, evidence_map, &sv_map);
+                futures.push_back(std::move(future));
+                block_inss.clear();
+            }
         }
 
         std::vector<std::shared_ptr<inversion_t>>& invs = invs_by_chr[contig_name];
+        std::vector<inversion_t*> block_invs;
         for (int i = 0; i < invs.size(); i += BLOCK_SIZE) {
-            std::vector<inversion_t*> block_invs;
-            for (int j = i; j < std::min(i + BLOCK_SIZE, (int)invs.size()); j++) {
-                block_invs.push_back(invs[j].get());
+            if (!reassign_evidence) {
+                block_invs.push_back(invs[i].get());
             }
-            std::future<void> future = thread_pool.push(genotype_invs, contig_name, chr_seqs.get_seq(contig_name),
-                    chr_seqs.get_len(contig_name), block_invs, in_vcf_header, out_vcf_header, stats, config,
-                    contig_map, bam_pool, &mateseqs_w_mapq[contig_id]);
-            futures.push_back(std::move(future));
+            if (block_invs.size() == BLOCK_SIZE || (i == invs.size()-1 && !block_invs.empty())) {
+                std::future<void> future = thread_pool.push(genotype_invs, contig_name, chr_seqs.get_seq(contig_name),
+                        chr_seqs.get_len(contig_name), block_invs, in_vcf_header, out_vcf_header, stats, config,
+                        contig_map, bam_pool, &mateseqs_w_mapq[contig_id]);
+                futures.push_back(std::move(future));
+                block_invs.clear();
+            }
         }
     }
     thread_pool.stop(true);
@@ -943,14 +954,14 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
-    if (reassign_evidence) {
-        for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
-            std::string contig_name = contig_map.get_name(contig_id);
-            std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
-            clear_invalid_stat_tests(in_vcf_header, dels);
-            rebalance_covs(in_vcf_header, dels);
-        }
-    }
+    // if (reassign_evidence) {
+    //     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+    //         std::string contig_name = contig_map.get_name(contig_id);
+    //         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
+    //         clear_invalid_stat_tests(in_vcf_header, dels);
+    //         rebalance_covs(in_vcf_header, dels);
+    //     }
+    // }
 
     // print contigs in vcf order
     int n_seqs;
@@ -967,9 +978,11 @@ int main(int argc, char* argv[]) {
         });
 
 		for (auto& sv : contig_svs) {
-			// bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
-			// bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            update_record(in_vcf_header, out_vcf_header, sv.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
+			bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
+			bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
+            if (!reassign_evidence || sv->allele_count(1) > 0) {
+                update_record(in_vcf_header, out_vcf_header, sv.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
+            }
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
 				throw std::runtime_error("Failed to write VCF record to " + out_vcf_fname);
 			}
