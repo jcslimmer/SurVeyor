@@ -89,9 +89,12 @@ struct evidence_map_t {
         std::ifstream alt_reads_association_fin(alt_reads_association_fname);
         std::string sv_id, read_name;
         int bp, score;
+        // For each read, keep only the best association
+        // Criteria for best: predicted as existing, highest score, highest EPR
         std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
         while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
             float epr = sv_epr_map[sv_id];
+            if (epr < 0.5) continue; // only consider SVs predicted as existing
             std::pair<int, float> p = {score, epr};
             sv_id = remove_svid_dup_suffix(sv_id); // we avoid INS and INS_TO_DUP from stealing each other's reads
             if (p > read_to_score_epr_map[read_name]) {
