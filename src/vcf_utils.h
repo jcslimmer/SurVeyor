@@ -425,6 +425,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
 	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "HOPR");
+	const char* hopr_tag = "##FORMAT=<ID=HOPR,Number=1,Type=Float,Description=\"Probability of an existing SV to be homozygous, according to the ML model.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, hopr_tag, &len));
 }
 
 bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
