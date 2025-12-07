@@ -406,7 +406,7 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
         const char* s1_suffix = s1.data()+i;
         const char* s2_prefix = s2.data();
 		int max_acceptable_mm = sp_len * max_seq_error;
-		int mismatches = std::min(number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len, std::min(max_acceptable_mm, max_mismatches)), std::min(max_acceptable_mm, max_mismatches));
+		int mismatches = number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len, std::min(max_acceptable_mm, max_mismatches));
 		int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
         if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
             best_score = score;

@@ -118,6 +118,8 @@ void remove_marked_consensuses(std::vector<std::shared_ptr<consensus_t>>& consen
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shared_ptr<consensus_t>>& rc_consensuses, std::vector<std::shared_ptr<consensus_t>>& lc_consensuses,
 		StripedSmithWaterman::Aligner& aligner) {
 
+	if (rc_consensuses.empty() || lc_consensuses.empty()) return;
+
 	std::vector<std::shared_ptr<sv_t>> local_svs;
 
 	auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
