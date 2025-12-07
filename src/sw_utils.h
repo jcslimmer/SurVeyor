@@ -43,117 +43,177 @@ size_t lcm(size_t a, size_t b) {
     return a * b / gcd(a, b);
 }
 
-int* smith_waterman_gotoh(const char* ref, int ref_len, const char* read, int read_len,
+// Reference implementation of Smith-Waterman-Gotoh algorithm for validation
+int* smith_waterman_gotoh_scalar_reference(
+	const char* ref, int ref_len, 
+    const char* query, int query_len,
+    int match_score, int mismatch_penalty, 
+    int gap_open, int gap_extend) {
+		
+	// Using a very small number for -Infinity, but safe from underflow when adding gap costs
+	const int NEG_INF = -1e9; 
+    
+	if (query_len <= 0 || ref_len <= 0) return nullptr;
+
+    std::vector<std::vector<int>> H(ref_len + 1, std::vector<int>(query_len + 1, 0));
+    std::vector<std::vector<int>> RG(ref_len + 1, std::vector<int>(query_len + 1, NEG_INF));
+    std::vector<std::vector<int>> QG(ref_len + 1, std::vector<int>(query_len + 1, NEG_INF));
+
+    int* prefix_scores = (int*)calloc((size_t)query_len, sizeof(int));
+    if (!prefix_scores) return nullptr;
+
+    for (int i = 1; i <= ref_len; ++i) {
+        for (int j = 1; j <= query_len; ++j) {
+            
+            // 1. Calculate Scores
+            int score = (ref[i-1] == query[j-1]) ? match_score : mismatch_penalty;
+            int diagonal_val = H[i-1][j-1] + score;
+
+            // RG (Vertical): Gap in Query (Deletion)
+            int open_vertical   = H[i-1][j] + gap_open;
+            int extend_vertical = RG[i-1][j] + gap_extend;
+            RG[i][j] = std::max(open_vertical, extend_vertical);
+
+            // QG (Horizontal): Gap in Ref (Insertion)
+            int open_horizontal   = H[i][j-1] + gap_open;
+            int extend_horizontal = QG[i][j-1] + gap_extend;
+            QG[i][j] = std::max(open_horizontal, extend_horizontal);
+
+            // 2. Update H (Propagating Score)
+            // Mathematically, H must include ALL paths to propagate correctly to future cells.
+            int val = std::max(diagonal_val, RG[i][j]);
+            val = std::max(val, QG[i][j]);
+            val = std::max(val, 0); 
+            H[i][j] = val;
+
+            // 3. Update Prefix Score (Reporting Score)
+            // MATCHING FAST CODE BEHAVIOR:
+            // Your Fast code updates prefix_scores using 'H_curr'. 
+            // In the Fast code, 'H_curr' is calculated as max(Match, RG). 
+            // It does NOT include QG (which is calculated later in the scalar loop).
+            
+            // Therefore, to reproduce the Fast Code's result, we must exclude QG here.
+            
+            int reportable_score = std::max(diagonal_val, RG[i][j]); // Exclude QG[i][j]
+            reportable_score = std::max(reportable_score, 0);
+            
+            prefix_scores[j-1] = std::max(prefix_scores[j-1], reportable_score);
+        }
+    }
+
+    return prefix_scores;
+}
+
+// This function returns that an array such that the i-th element is the best local alignment score of query[0..i] against ref. 
+// The exception is that we are NOT interested in alignments that end in a gap in the query, so those are not considered.
+SW_SCORE_INT_16* smith_waterman_gotoh(const char* ref, int ref_len, const char* query, int query_len,
 		int match_score, int mismatch_penalty, int gap_open, int gap_extend) {
 
-	const int INF = 1000000;
-
-	// turn read_len+1 into a multiple of INT_PER_BLOCK
-	int read_len_rounded = (read_len+1+INT_PER_BLOCK-1)/INT_PER_BLOCK*INT_PER_BLOCK;
+	// turn query_len+1 into a multiple of INT_PER_BLOCK
+	int query_len_rounded = (query_len+INT_PER_BLOCK_16-1)/INT_PER_BLOCK_16*INT_PER_BLOCK_16;
 
 	const char* alphabet = "NACGT";
 	const int alphabet_size = strlen(alphabet);
 
-	int* H = NULL;
-	int* E = NULL;
-	int* F = NULL;
-	int* prefix_scores = NULL;
+	// H[i][j] = the best local alignment score ending at position i of the reference and j of the query.
+	SW_SCORE_INT_16* H = NULL;
 
-	int** profile = new int*[alphabet_size];
-	size_t alignment = lcm(BYTES_PER_BLOCK, sizeof(void*));
-	int p1 = posix_memalign(reinterpret_cast<void**>(&H), alignment, 2*read_len_rounded * sizeof(int));
-	int p2 = posix_memalign(reinterpret_cast<void**>(&E), alignment, 2*read_len_rounded * sizeof(int));
-	int p3 = posix_memalign(reinterpret_cast<void**>(&F), alignment, 2*read_len_rounded * sizeof(int));
-	int p4 = posix_memalign(reinterpret_cast<void**>(&prefix_scores), alignment, read_len_rounded * sizeof(int));
+	// RG[i][j] = the best local alignment score ending at position i of the reference and j of the query, with a gap in the reference.
+	SW_SCORE_INT_16* RG = NULL;
+
+	// QG[i][j] = the best local alignment score ending at position i of the reference and j of the query, with a gap in the query.
+	SW_SCORE_INT_16* QG = NULL;
+
+	SW_SCORE_INT_16* prefix_scores = NULL;
+
+	SW_SCORE_INT_16** profile = new SW_SCORE_INT_16*[alphabet_size];
+	size_t alignment = lcm(BYTES_PER_BLOCK_16, sizeof(void*));
+	int stride = query_len_rounded + INT_PER_BLOCK_16;
+	int p1 = posix_memalign(reinterpret_cast<void**>(&H), alignment, 2*(stride * sizeof(SW_SCORE_INT_16)));
+	int p2 = posix_memalign(reinterpret_cast<void**>(&RG), alignment, 2*(stride * sizeof(SW_SCORE_INT_16)));
+	int p3 = posix_memalign(reinterpret_cast<void**>(&QG), alignment, 2*(stride * sizeof(SW_SCORE_INT_16)));
+	int p4 = posix_memalign(reinterpret_cast<void**>(&prefix_scores), alignment, stride * sizeof(SW_SCORE_INT_16));
 	int p5 = 0;
 	for (int i = 0; i < alphabet_size; i++) {
-		p5 += posix_memalign(reinterpret_cast<void**>(&profile[i]), alignment, read_len_rounded * sizeof(int));
+		p5 += posix_memalign(reinterpret_cast<void**>(&profile[i]), alignment, stride * sizeof(SW_SCORE_INT_16));
 		profile[i][0] = 0;
-		for (int j = 1; j <= read_len; j++) {
-			profile[i][j] = (read[j-1] == alphabet[i]) ? match_score : mismatch_penalty;
+		for (int j = 1; j <= query_len; j++) {
+			profile[i][j] = (query[j-1] == alphabet[i]) ? match_score : mismatch_penalty;
 		}
-		for (int j = read_len+1; j < read_len_rounded; j++) {
-			profile[i][j] = 0;
-		}
+		std::fill(profile[i]+query_len+1, profile[i]+query_len_rounded+1, 0);
 	}
 	if (p1 || p2 || p3 || p4 || p5) {
-		std::cerr << "Error allocating aligned memory of size " << (2*read_len_rounded * sizeof(int)) << std::endl;
+		std::cerr << "Error allocating aligned memory of size " << (2*query_len_rounded * sizeof(SW_SCORE_INT_16)) << std::endl;
 	}
 
-	int* H_prev = H, *H_curr = H+read_len_rounded;
-	int* E_prev = E, *E_curr = E+read_len_rounded;
-	int* F_prev = F, *F_curr = F+read_len_rounded;
+	SW_SCORE_INT_16* H_prev = H, *H_curr = H+stride;
+	SW_SCORE_INT_16* RG_prev = RG, *RG_curr = RG+stride;
+	SW_SCORE_INT_16* QG_prev = QG, *QG_curr = QG+stride;
 
-	std::fill(H_prev, H_prev+read_len_rounded, 0);
-	std::fill(E_prev, E_prev+read_len_rounded, 0);
-	std::fill(F_prev, F_prev+read_len_rounded, 0);
-	H_curr[0] = F_curr[0] = E_curr[0] = 0;
+	std::fill(H_prev, H_prev+stride, 0);
+	std::fill(RG_prev, RG_prev+stride, 0);
+	std::fill(QG_prev, QG_prev+stride, 0);
+	H_curr[0] = QG_curr[0] = RG_curr[0] = 0;
 
-	SIMD_INT gap_open_v = SET1_INT(gap_open);
-	SIMD_INT gap_open_v_pos = SET1_INT(-gap_open);
-	SIMD_INT gap_extend_v = SET1_INT(gap_extend);
-	SIMD_INT zero_v = SET1_INT(0);
+	SIMD_INT_16 gap_open_v = SET1_INT_16(gap_open);
+	SIMD_INT_16 gap_open_v_pos = SET1_INT_16(-gap_open);
+	SIMD_INT_16 gap_extend_v = SET1_INT_16(gap_extend);
+	SIMD_INT_16 zero_v = SET1_INT_16(0);
 
-	std::fill(prefix_scores, prefix_scores+read_len, 0);
+	std::fill(prefix_scores, prefix_scores+stride, 0);
 	for (int i = 1; i <= ref_len; i++) {
-		for (int j = 0; j < read_len_rounded; j += INT_PER_BLOCK) {
-			SIMD_INT H_up_v = LOAD_INT((SIMD_INT*)&H_prev[j]);
-			SIMD_INT E_up_v = LOAD_INT((SIMD_INT*)&E_prev[j]);
-			SIMD_INT F_up_v = LOAD_INT((SIMD_INT*)&F_prev[j]);
-			SIMD_INT m1 = ADD_INT(gap_open_v, MAX_INT(H_up_v, F_up_v));
-			SIMD_INT E_curr_v = MAX_INT(m1, ADD_INT(gap_extend_v, E_up_v));
-			STORE_INT((SIMD_INT*)&E_curr[j], E_curr_v);
-		}
-
-		int* ref_profile = profile[0];
+		SW_SCORE_INT_16* ref_profile = profile[0];
 		switch (ref[i-1]) {
 			case 'A': ref_profile = profile[1]; break;
 			case 'C': ref_profile = profile[2]; break;
 			case 'G': ref_profile = profile[3]; break;
 			case 'T': ref_profile = profile[4]; break;
 		}
-		for (int j = 1; j <= read_len_rounded-INT_PER_BLOCK; j += INT_PER_BLOCK) {
-			SIMD_INT H_diag_v = LOAD_INT((SIMD_INT*)&H_prev[j-1]);
-			SIMD_INT F_diag_v = LOAD_INT((SIMD_INT*)&F_prev[j-1]);
-			SIMD_INT E_diag_v = LOAD_INT((SIMD_INT*)&E_prev[j-1]);
-			SIMD_INT m1 = MAX_INT(H_diag_v, F_diag_v);
-			m1 = MAX_INT(m1, E_diag_v);
-			SIMD_INT H_curr_v = MAX_INT(m1, zero_v);
 
-			SIMD_INT profile_curr = LOADU_INT((SIMD_INT*)&ref_profile[j]);
-			H_curr_v = ADD_INT(H_curr_v, profile_curr);
+		for (int j = 0; j < query_len_rounded; j += INT_PER_BLOCK_16) {
+			SIMD_INT_16 H_up_v = LOAD_INT_16((SIMD_INT_16*)&H_prev[j]);
+			SIMD_INT_16 RG_up_v = LOAD_INT_16((SIMD_INT_16*)&RG_prev[j]);
+			SIMD_INT_16 QG_up_v = LOAD_INT_16((SIMD_INT_16*)&QG_prev[j]);
+			SIMD_INT_16 max_H_QG = MAX_INT_16(H_up_v, QG_up_v);
+			SIMD_INT_16 max_H_QG_w_gap_open = ADD_INT_16(gap_open_v, max_H_QG);
+			SIMD_INT_16 RG_w_gap_extend = ADD_INT_16(gap_extend_v, RG_up_v);
+			SIMD_INT_16 E_curr_v = MAX_INT_16(max_H_QG_w_gap_open, RG_w_gap_extend);
+			STORE_INT_16((SIMD_INT_16*)&RG_curr[j], E_curr_v);
 
-			STOREU_INT((SIMD_INT*)&H_curr[j], H_curr_v);
+			SIMD_INT_16 max_H_QG_RG = MAX_INT_16(max_H_QG, RG_up_v);
+			SIMD_INT_16 H_curr_v = MAX_INT_16(max_H_QG_RG, zero_v);
 
-			SIMD_INT prefix_v = LOAD_INT((SIMD_INT*)&prefix_scores[j-1]);
-			prefix_v = MAX_INT(prefix_v, H_curr_v);
-			STORE_INT((SIMD_INT*)&prefix_scores[j-1], prefix_v);
-		}
-		for (int j = read_len_rounded-INT_PER_BLOCK; j < read_len_rounded; j++) {
-			H_curr[j] = ref_profile[j] + max(H_prev[j-1], F_prev[j-1], E_prev[j-1], 0);
-			prefix_scores[j] = std::max(prefix_scores[j], H_curr[j]);
-		}
+			SIMD_INT_16 profile_curr = LOADU_INT_16((SIMD_INT_16*)&ref_profile[j+1]);
+			H_curr_v = ADD_INT_16(H_curr_v, profile_curr);
 
-		int j = 0;
-		for (; j < read_len_rounded; j += INT_PER_BLOCK) {
-			SIMD_INT H_curr_v = LOAD_INT((SIMD_INT*)&H_curr[j]);
-			auto cmp = CMP_GT_INT32(H_curr_v, gap_open_v_pos);
-			if (cmp) break;
-			STORE_INT((SIMD_INT*)&F_curr[j], zero_v);
-		}
-		if (j == 0) j = 1;
-		for (; j <= read_len; j++) {
-			F_curr[j] = std::max(gap_open + H_curr[j-1], gap_extend + F_curr[j-1]);
+			SIMD_INT_16 prefix_v = LOAD_INT_16((SIMD_INT_16*)&prefix_scores[j]);
+			prefix_v = MAX_INT_16(prefix_v, H_curr_v);
+			STOREU_INT_16((SIMD_INT_16*)&H_curr[j+1], H_curr_v);
+			STORE_INT_16((SIMD_INT_16*)&prefix_scores[j], prefix_v);
+
+			// we can skip the scalar QG computation if 
+			// 1) all elements in the block are <= -gap_extend (therefore no point in further extending that gap); and
+			// 2) all elements in the block in H, previous row, are <= -gap_open (therefore opening a new gap makes no sense)
+			if (QG_curr[j] > -gap_extend || H_curr[j] > -gap_open || CMP_GT_INT_16_EXCEPT_LAST(H_curr_v, gap_open_v_pos)) {
+				alignas(BYTES_PER_BLOCK_16) SW_SCORE_INT_16 temp_h[INT_PER_BLOCK_16];
+				STORE_INT_16((SIMD_INT_16*)temp_h, ADD_INT_16(H_curr_v, gap_open_v));
+				QG_curr[j+1] = std::max(gap_open + H_curr[j], gap_extend + QG_curr[j]);
+				for (int k = 1; k < INT_PER_BLOCK_16; k++) {
+					QG_curr[j+k+1] = std::max(temp_h[k-1], (SW_SCORE_INT_16)(gap_extend + QG_curr[j+k]));
+				}
+			} else {
+				STOREU_INT_16((SIMD_INT_16*)&QG_curr[j+1], zero_v);
+			}
 		}
 
 		std::swap(H_prev, H_curr);
-		std::swap(E_prev, E_curr);
-		std::swap(F_prev, F_curr);
+		std::swap(RG_prev, RG_curr);
+		std::swap(QG_prev, QG_curr);
 	}
 
 	free(H);
-	free(E);
-	free(F);
+	free(RG);
+	free(QG);
 	for (int i = 0; i < alphabet_size; i++) free(profile[i]);
 	delete[] profile;
 
@@ -312,18 +372,18 @@ suffix_prefix_aln_t aln_suffix_prefix_perfect(const std::string& s1, const std::
 int number_of_mismatches_fast(const char* s1, const char* s2, int len, int max_mismatches) {
 	// count number of mismatches between the first len characters of s1 and s2
 	int n_mismatches = 0;
-    SIMD_INT* s1_it = (SIMD_INT*) s1;
-    SIMD_INT* s2_it = (SIMD_INT*) s2;
-    int scaled_len = len/BYTES_PER_BLOCK;
+    SIMD_INT_16* s1_it = (SIMD_INT_16*) s1;
+    SIMD_INT_16* s2_it = (SIMD_INT_16*) s2;
+    int scaled_len = len/BYTES_PER_BLOCK_16;
     for (int i = 0; i < scaled_len; i++) {
-        SIMD_INT n1 = LOADU_INT(s1_it);
-        SIMD_INT n2 = LOADU_INT(s2_it);
-        n_mismatches += BYTES_PER_BLOCK - COUNT_EQUAL_BYTES(n1, n2);
+        SIMD_INT_16 n1 = LOADU_INT_16(s1_it);
+        SIMD_INT_16 n2 = LOADU_INT_16(s2_it);
+        n_mismatches += BYTES_PER_BLOCK_16 - COUNT_EQUAL_BYTES_16(n1, n2);
         s1_it++;
         s2_it++;
 		if (n_mismatches > max_mismatches) return n_mismatches;
     }
-    for (int i = scaled_len*BYTES_PER_BLOCK; i < len; i++) {
+    for (int i = scaled_len*BYTES_PER_BLOCK_16; i < len; i++) {
         if (s1[i] != s2[i]) n_mismatches++;
     }
     return n_mismatches;
@@ -346,10 +406,8 @@ suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int matc
         const char* s1_suffix = s1.data()+i;
         const char* s2_prefix = s2.data();
 		int max_acceptable_mm = sp_len * max_seq_error;
-		int mismatches = number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len, std::min(max_acceptable_mm, max_mismatches));
-
-        int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
-
+		int mismatches = std::min(number_of_mismatches_fast(s1_suffix, s2_prefix, sp_len, std::min(max_acceptable_mm, max_mismatches)), std::min(max_acceptable_mm, max_mismatches));
+		int score = (sp_len-mismatches)*match_score + mismatches*mismatch_score;
         if (best_score < score && mismatches <= max_acceptable_mm && mismatches <= max_mismatches) {
             best_score = score;
             best_aln_mismatches = mismatches;
@@ -433,7 +491,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 	int sep = junction_seq.find("-");
 	std::string prefix_junction_seq = sep == std::string::npos ? junction_seq : junction_seq.substr(0, sep);
-    int* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_remap_lh_len, prefix_junction_seq.c_str(), prefix_junction_seq.length(), 1, -4, -6, -1);
+
+	SW_SCORE_INT_16* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_remap_lh_len, prefix_junction_seq.c_str(), prefix_junction_seq.length(), 1, -4, -6, -1);
 
     char ref_rh_cstr[100000];
     for (int i = 0; i < ref_remap_rh_len; i++) {
@@ -447,14 +506,15 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 	std::string suffix_junction_seq = sep == std::string::npos ? junction_seq : junction_seq.substr(sep+1);
     std::string suffix_junction_seq_rev = std::string(suffix_junction_seq.rbegin(), suffix_junction_seq.rend());
-    int* suffix_scores = smith_waterman_gotoh(ref_rh_cstr_rev, ref_remap_rh_len, suffix_junction_seq_rev.c_str(), suffix_junction_seq_rev.length(), 1, -4, -6, -1);
+    SW_SCORE_INT_16* suffix_scores = smith_waterman_gotoh(ref_rh_cstr_rev, ref_remap_rh_len, suffix_junction_seq_rev.c_str(), suffix_junction_seq_rev.length(), 1, -4, -6, -1);
 	int suffix_begin = sep == std::string::npos ? 0 : sep+1;
 
-    int max_score = 0, best_i = 0, best_j = 0;
+    SW_SCORE_INT_16 max_score = 0;
+	int best_i = 0, best_j = 0;
 	for (int i = min_clip_len; i < prefix_junction_seq.length()-min_clip_len; i++) {
-        int prefix_score = prefix_scores[i-1]; // score of the best aln of [0..i-1]
+        SW_SCORE_INT_16 prefix_score = prefix_scores[i-1]; // score of the best aln of [0..i-1]
         for (int j = std::max(i, suffix_begin); j <= junction_seq.length()-min_clip_len; j++) {
-            int suffix_score = suffix_scores[junction_seq.length()-j-1]; // score of the best aln of [j..junction_seq.length()-1]
+            SW_SCORE_INT_16 suffix_score = suffix_scores[junction_seq.length()-j-1]; // score of the best aln of [j..junction_seq.length()-1]
             // note that we want the score of the suffix of length junction_seq.length()-j, 
             // so we need to subtract 1 because suffix_scores[n] is the score of the best suffix of length n+1
             if (prefix_score + suffix_score > max_score) {
@@ -551,10 +611,11 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else { // length of ALT > REF, insertion
-			// If we are detecting a small insertion with a microhomology, try to realign the whole junction sequence
+			// If we are detecting a small insertion with a microhomology, we try to realign the whole junction sequence
 			// This is because split alignments that support duplications have an unfair advantage compared to regular insertions,
 			// since the inserted sequence is also aligned to the sequence. This can lead to suboptimal duplications being called instead of correct insertions
-			if (prefix_mh_len > 0 && overlap(ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end) > 0 && middle_part.length() <= 50) {
+			// Furthermore, for complex small insertions (i.e., left bp < right bp), we can sometimes obtain a simpler representation this way
+			if ((prefix_mh_len > 0 || left_bp < right_bp) && overlap(ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end) > 0 && middle_part.length() <= 50) {
 				hts_pos_t remap_start = std::min(ref_remap_lh_start, ref_remap_rh_start);
 				hts_pos_t remap_end = std::max(ref_remap_lh_end, ref_remap_rh_end);
 				hts_pos_t remap_len = remap_end - remap_start;
@@ -613,7 +674,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 
 		overlap = spa.overlap;
 		mismatch_rate = spa.mismatch_rate();
-		
+
 		StripedSmithWaterman::Filter filter;
 		StripedSmithWaterman::Alignment aln_rh, aln_lh;
 		
@@ -713,9 +774,9 @@ std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq
 	if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
 
 	if (!leftmost_consensus->left_clipped) {
-		int* fwd_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_lh_start, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
+		SW_SCORE_INT_16* fwd_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_lh_start, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
 		rc(full_junction_seq);
-		int* revc_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
+		SW_SCORE_INT_16* revc_prefix_scores = smith_waterman_gotoh(contig_seq+ref_remap_rh_start, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq.c_str(), full_junction_seq.length(), 1, -4, -6, -1);
 
 		int max_score = 0, best_i = 0, best_j = 0;
 		for (int i = min_clip_len; i < full_junction_seq.length()-min_clip_len; i++) {
@@ -757,7 +818,7 @@ std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq
 		for (int i = 0; i < ref_remap_lh_end-ref_remap_lh_start; i++) {
 			ref_remap_lh_rev[i] = std::toupper(contig_seq[ref_remap_lh_end-1-i]);
 		} ref_remap_lh_rev[ref_remap_lh_end-ref_remap_lh_start] = '\0';
-		int* revc_suffix_scores = smith_waterman_gotoh(ref_remap_lh_rev, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
+		SW_SCORE_INT_16* revc_suffix_scores = smith_waterman_gotoh(ref_remap_lh_rev, ref_remap_lh_end-ref_remap_lh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
 		
 		rc(full_junction_seq);
 		full_junction_seq_rev = std::string(full_junction_seq.rbegin(), full_junction_seq.rend());
@@ -765,7 +826,7 @@ std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq
 		for (int i = 0; i < ref_remap_rh_end-ref_remap_rh_start; i++) {
 			ref_remap_rh_rev[i] = std::toupper(contig_seq[ref_remap_rh_end-1-i]);
 		} ref_remap_rh_rev[ref_remap_rh_end-ref_remap_rh_start] = '\0';
-		int* fwd_suffix_scores = smith_waterman_gotoh(ref_remap_rh_rev, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
+		SW_SCORE_INT_16* fwd_suffix_scores = smith_waterman_gotoh(ref_remap_rh_rev, ref_remap_rh_end-ref_remap_rh_start, full_junction_seq_rev.c_str(), full_junction_seq_rev.length(), 1, -4, -6, -1);
 
 		int max_score = 0, best_i = 0, best_j = 0;
 		for (int i = min_clip_len; i < full_junction_seq.length()-min_clip_len; i++) {
