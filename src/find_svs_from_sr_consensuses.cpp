@@ -115,19 +115,42 @@ void remove_marked_consensuses(std::vector<std::shared_ptr<consensus_t>>& consen
 	consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), nullptr), consensuses.end());
 }
 
+auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
+	return c1->is_hsr && c2->is_hsr ? 50 : 2*config.min_clip_len;
+};
+auto max_seq_error_f = [](consensus_t* c1, consensus_t* c2) {
+	return c1->is_hsr && c2->is_hsr ? 0 : config.max_seq_error;
+};
+
+void find_svs_from_consensuses_pair(std::shared_ptr<consensus_t> c1_consensus, std::shared_ptr<consensus_t> c2_consensus,
+	std::string contig_name, StripedSmithWaterman::Aligner& aligner,
+	std::vector<std::shared_ptr<breakend_t>>& bnds_lf, std::vector<std::shared_ptr<breakend_t>>& bnds_rf,
+	pair_w_score_t ps,
+	std::vector<std::shared_ptr<sv_t>>& svs) {
+
+	if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
+		std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
+		std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
+		std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
+		if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
+			return;
+		}
+		bnd->source = "2SR";
+		svs.push_back(bnd);
+	} else {
+		int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
+		double max_mm_rate = max_seq_error_f(c1_consensus.get(), c2_consensus.get());
+		svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
+			aligner, min_overlap, config.min_clip_len, max_mm_rate);
+	}
+}
+
 void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shared_ptr<consensus_t>>& rc_consensuses, std::vector<std::shared_ptr<consensus_t>>& lc_consensuses,
 		StripedSmithWaterman::Aligner& aligner) {
 
 	if (rc_consensuses.empty() || lc_consensuses.empty()) return;
 
 	std::vector<std::shared_ptr<sv_t>> local_svs;
-
-	auto min_overlap_f = [](consensus_t* c1, consensus_t* c2) {
-		return c1->is_hsr && c2->is_hsr ? 50 : 2*config.min_clip_len;
-	};
-	auto max_seq_error_f = [](consensus_t* c1, consensus_t* c2) {
-		return c1->is_hsr && c2->is_hsr ? 0 : config.max_seq_error;
-	};
 
 	int initial_rc_consensus_size = rc_consensuses.size();
 	int initial_lc_consensus_size = lc_consensuses.size();
@@ -293,33 +316,14 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 
 	for (pair_w_score_t& ps : consensuses_scored_pairs) {
 
-		std::shared_ptr<consensus_t> c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
-		std::shared_ptr<consensus_t> c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
 		if (used_c1 || used_c2) continue;
 
+		std::shared_ptr<consensus_t> c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
+		std::shared_ptr<consensus_t> c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
 		std::vector<std::shared_ptr<sv_t>> svs;
-		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
-			std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
-			std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
-			std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
-			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
-				continue;
-			}
-			bnd->source = "2SR";
-			svs.push_back(bnd);
-			if (c1_consensus->left_clipped) {
-				bnds_lf.push_back(bnd);
-			} else {
-				bnds_rf.push_back(bnd);
-			}
-		} else {
-			int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
-			double max_mm_rate = max_seq_error_f(c1_consensus.get(), c2_consensus.get());
-			svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
-				aligner, min_overlap, config.min_clip_len, max_mm_rate);
-		}
+		find_svs_from_consensuses_pair(c1_consensus, c2_consensus, contig_name, aligner, bnds_lf, bnds_rf, ps, svs);
 
 		if (svs.empty()) continue;
 
@@ -329,6 +333,16 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 		else used_consensus_rc[ps.c2_idx] = true;
 
 		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
+	}
+
+	for (std::shared_ptr<sv_t>& sv : local_svs) {
+		if (sv->svtype() != "BND") continue;
+		std::shared_ptr<breakend_t> bnd = std::dynamic_pointer_cast<breakend_t>(sv);
+		if (bnd->left_facing) {
+			bnds_lf.push_back(bnd);
+		} else {
+			bnds_rf.push_back(bnd);
+		}
 	}
 
 	// detect inversions from ss clusters
@@ -366,7 +380,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 			} else {
 				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
 				auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
-				bnd = std::make_shared<breakend_t>(contig_name, c->la_start, c->ra_start, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, '-');
+				bnd = std::make_shared<breakend_t>(contig_name, c->la_start, c->ra_start, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, true);
 				bnd->imprecise = true;
 			}
 
@@ -406,7 +420,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 				if (left_anchor_aln->end > right_anchor_aln->end) {
 					std::swap(left_anchor_aln, right_anchor_aln);
 				}
-				bnd = std::make_shared<breakend_t>(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, '+');
+				bnd = std::make_shared<breakend_t>(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, false);
 				bnd->imprecise = true;
 			}
 

@@ -617,10 +617,10 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	std::string alt_allele = std::string(1, chr_seq[sv->start]);
 	if (sv->svtype() == "BND") {
 		breakend_t* bnd = (breakend_t*) sv;
-		if (bnd->direction == '+') {
-			alt_allele = std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
-		} else {
+		if (bnd->left_facing) {
 			alt_allele = std::string("[") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "[" + ref_allele;
+		} else {
+			alt_allele = std::string("]") + bcf_seqname(hdr, bcf_entry) + ":" + std::to_string(bnd->end+1) + "]" + ref_allele; 
 		}
 	} else if (sv->svtype() == "DEL" && sv->end-sv->start <= 100) {
 		ref_allele += std::string(chr_seq + sv->start + 1, sv->end-sv->start);
@@ -906,13 +906,11 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		size_t colon_pos = alt.find(':');
 		size_t pos_start = colon_pos + 1, pos_end = alt.find_last_of("[]");
     	hts_pos_t pos2 = std::stoi(alt.substr(pos_start, pos_end-pos_start));
-		char dir;
-		if (alt[pos_end] == ']') {
-			dir = '+';
-		} else if (alt[pos_end] == '[') {
-			dir = '-';
+		bool left_facing = false;
+		if (alt[pos_end] == '[') {
+			left_facing = true;
 		}
-		sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, dir);
+		sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, left_facing);
 	} else {
 		return NULL;
 	}

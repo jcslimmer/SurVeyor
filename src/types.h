@@ -360,12 +360,12 @@ struct insertion_t : sv_t {
 };
 
 struct breakend_t : sv_t {
-    char direction;
+    bool left_facing;
     
     breakend_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, 
         std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus, 
-        std::shared_ptr<anchor_aln_t> left_anchor_aln, std::shared_ptr<anchor_aln_t> right_anchor_aln, char direction) :
-    sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln), direction(direction) {}
+        std::shared_ptr<anchor_aln_t> left_anchor_aln, std::shared_ptr<anchor_aln_t> right_anchor_aln, 
+        bool left_facing) : sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln), left_facing(left_facing) {}
 
     std::string svtype() { return "BND"; }
     hts_pos_t svlen() { return 0; }
