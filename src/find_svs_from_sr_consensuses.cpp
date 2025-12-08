@@ -122,31 +122,35 @@ auto max_seq_error_f = [](consensus_t* c1, consensus_t* c2) {
 	return c1->is_hsr && c2->is_hsr ? 0 : config.max_seq_error;
 };
 
-void find_svs_from_consensuses_pair(std::shared_ptr<consensus_t> c1_consensus, std::shared_ptr<consensus_t> c2_consensus,
-	std::string contig_name, StripedSmithWaterman::Aligner& aligner,
-	std::vector<std::shared_ptr<breakend_t>>& bnds_lf, std::vector<std::shared_ptr<breakend_t>>& bnds_rf,
-	pair_w_score_t ps,
-	std::vector<std::shared_ptr<sv_t>>& svs) {
-
-	if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
-		std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
-		std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
-		std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
-		if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
-			return;
+void find_svs_from_consensuses_pair(int id, std::string contig_name, 
+	std::vector<std::shared_ptr<consensus_t>>& lc_consensuses, std::vector<std::shared_ptr<consensus_t>>& rc_consensuses,
+	std::vector<pair_w_score_t>& consensuses_scored_pairs, size_t start_idx, size_t end_idx,
+	StripedSmithWaterman::Aligner& aligner, std::vector<std::vector<std::shared_ptr<sv_t>>>& svs_by_pair) {
+	
+	for (size_t pair_idx = start_idx; pair_idx < end_idx; pair_idx++) {
+		pair_w_score_t& ps = consensuses_scored_pairs[pair_idx];
+		std::shared_ptr<consensus_t> c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
+		std::shared_ptr<consensus_t> c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
+		if (c1_consensus->left_clipped == c2_consensus->left_clipped) {
+			std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
+			std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
+			std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
+			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
+				return;
+			}
+			bnd->source = "2SR";
+			svs_by_pair[pair_idx].push_back(bnd);
+		} else {
+			int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
+			double max_mm_rate = max_seq_error_f(c1_consensus.get(), c2_consensus.get());
+			svs_by_pair[pair_idx] = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
+				aligner, min_overlap, config.min_clip_len, max_mm_rate);
 		}
-		bnd->source = "2SR";
-		svs.push_back(bnd);
-	} else {
-		int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
-		double max_mm_rate = max_seq_error_f(c1_consensus.get(), c2_consensus.get());
-		svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
-			aligner, min_overlap, config.min_clip_len, max_mm_rate);
 	}
 }
 
-void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shared_ptr<consensus_t>>& rc_consensuses, std::vector<std::shared_ptr<consensus_t>>& lc_consensuses,
-		StripedSmithWaterman::Aligner& aligner) {
+void find_indels_from_rc_lc_pairs(std::string contig_name, 
+	std::vector<std::shared_ptr<consensus_t>>& rc_consensuses, std::vector<std::shared_ptr<consensus_t>>& lc_consensuses, ctpl::thread_pool& thread_pool) {
 
 	if (rc_consensuses.empty() || lc_consensuses.empty()) return;
 
@@ -314,25 +318,31 @@ void find_indels_from_rc_lc_pairs(std::string contig_name, std::vector<std::shar
 	std::vector<std::shared_ptr<breakend_t>> bnds_lf, bnds_rf;
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
 
-	for (pair_w_score_t& ps : consensuses_scored_pairs) {
+	const int block_size = 50;
+	std::vector<std::future<void>> futures;
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+	std::vector<std::vector<std::shared_ptr<sv_t>>> svs_by_pair(consensuses_scored_pairs.size());
+	for (size_t i = 0; i < consensuses_scored_pairs.size(); i += block_size) {
+		size_t end_idx = std::min(i + block_size, consensuses_scored_pairs.size());
+		std::future<void> future = thread_pool.push(find_svs_from_consensuses_pair, contig_name, std::ref(lc_consensuses), std::ref(rc_consensuses), 
+			std::ref(consensuses_scored_pairs), i, end_idx, std::ref(aligner), std::ref(svs_by_pair));
+		futures.push_back(std::move(future));
+	}
+	for (auto& future : futures) future.get();
 
+	for (size_t i = 0; i < consensuses_scored_pairs.size(); i++) {
+		pair_w_score_t& ps = consensuses_scored_pairs[i];
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
 		if (used_c1 || used_c2) continue;
 
-		std::shared_ptr<consensus_t> c1_consensus = ps.c1_lc ? lc_consensuses[ps.c1_idx] : rc_consensuses[ps.c1_idx]; // in rc/lc pairs, this is rc
-		std::shared_ptr<consensus_t> c2_consensus = ps.c2_lc ? lc_consensuses[ps.c2_idx] : rc_consensuses[ps.c2_idx]; // in rc/lc pairs, this is lc
-		std::vector<std::shared_ptr<sv_t>> svs;
-		find_svs_from_consensuses_pair(c1_consensus, c2_consensus, contig_name, aligner, bnds_lf, bnds_rf, ps, svs);
-
-		if (svs.empty()) continue;
+		local_svs.insert(local_svs.end(), svs_by_pair[i].begin(), svs_by_pair[i].end());
+		if (svs_by_pair[i].empty()) continue;
 
 		if (ps.c1_lc) used_consensus_lc[ps.c1_idx] = true;
 		else used_consensus_rc[ps.c1_idx] = true;
 		if (ps.c2_lc) used_consensus_lc[ps.c2_idx] = true;
 		else used_consensus_rc[ps.c2_idx] = true;
-
-		local_svs.insert(local_svs.end(), svs.begin(), svs.end());
 	}
 
 	for (std::shared_ptr<sv_t>& sv : local_svs) {
@@ -577,10 +587,9 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
     std::sort(lc_sr_consensuses.begin(), lc_sr_consensuses.end(), consensus_cmp);
 }
 
-void find_indels_from_paired_consensuses(int id, int contig_id, std::string contig_name, 
-	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq) {
-
-	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+void find_indels_from_paired_consensuses(int contig_id, std::string contig_name, 
+	std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq,
+	ctpl::thread_pool& thread_pool) {
 
 	mtx.lock();
 	std::vector<std::shared_ptr<consensus_t>>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
@@ -588,14 +597,14 @@ void find_indels_from_paired_consensuses(int id, int contig_id, std::string cont
 	std::vector<std::shared_ptr<consensus_t>>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
 	std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
-
+	
 	std::vector<std::shared_ptr<consensus_t>> rc_consensuses, lc_consensuses;
 	rc_consensuses.insert(rc_consensuses.end(), rc_sr_consensuses.begin(), rc_sr_consensuses.end());
 	rc_consensuses.insert(rc_consensuses.end(), rc_hsr_consensuses.begin(), rc_hsr_consensuses.end());
 	lc_consensuses.insert(lc_consensuses.end(), lc_sr_consensuses.begin(), lc_sr_consensuses.end());
 	lc_consensuses.insert(lc_consensuses.end(), lc_hsr_consensuses.begin(), lc_hsr_consensuses.end());
-
-	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_consensuses, aligner);
+		
+	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_consensuses, thread_pool);
 
     /* == Deal with unpaired consensuses == */
 	mtx.lock();
@@ -774,14 +783,8 @@ int main(int argc, char* argv[]) {
     ctpl::thread_pool finding_indels_thread_pool(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::string contig_name = contig_map.get_name(contig_id);
-        std::future<void> future = finding_indels_thread_pool.push(find_indels_from_paired_consensuses, contig_id, contig_name, &mateseqs_w_mapq[contig_id]);
-        futures.push_back(std::move(future));
+		find_indels_from_paired_consensuses(contig_id, contig_name, &mateseqs_w_mapq[contig_id], finding_indels_thread_pool);
     }
-    finding_indels_thread_pool.stop(true);
-    for (size_t i = 0; i < futures.size(); i++) {
-        futures[i].get();
-    }
-    futures.clear();
 
 	elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count();
 	std::cout << "Indels found in " << elapsed_time << " seconds" << std::endl;
