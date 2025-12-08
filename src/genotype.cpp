@@ -927,8 +927,8 @@ int main(int argc, char* argv[]) {
 
         std::vector<std::shared_ptr<inversion_t>>& invs = invs_by_chr[contig_name];
         std::vector<inversion_t*> block_invs;
-        for (int i = 0; i < invs.size(); i += BLOCK_SIZE) {
-            if (!reassign_evidence) {
+        for (int i = 0; i < invs.size(); i++) {
+            if (!reassign_evidence || invs[i]->allele_count(1) > 0) {
                 block_invs.push_back(invs[i].get());
             }
             if (block_invs.size() == BLOCK_SIZE || (i == invs.size()-1 && !block_invs.empty())) {
