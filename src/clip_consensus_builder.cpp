@@ -324,7 +324,9 @@ std::vector<int> select_reads_by_kmer(std::vector<std::string>& seqs, std::vecto
 
     // select pos that maximizes the product of the frequencies of the 1st and 2nd most frequent kmers
     // select most frequent kmer at that pos as mandatory kmer
-    uint32_t chosen_kmer = 0, chosen_pos = 0, chosen_freq = 0;
+    int chosen_pos = 0;
+    uint32_t chosen_kmer = 0, chosen_freq = 0;
+    uint32_t chosen_freq2 = 0;
     for (int i = 0; i < kmer_counts_by_pos.size(); i++) {
         // find 1st and 2nd most frequent kmers
         std::sort(kmer_counts_by_pos[i].begin(), kmer_counts_by_pos[i].end(), [](const std::pair<uint32_t, int>& p1, const std::pair<uint32_t, int>& p2) {
@@ -332,28 +334,35 @@ std::vector<int> select_reads_by_kmer(std::vector<std::string>& seqs, std::vecto
         });
 
         int kmer1_freq = kmer_counts_by_pos[i].empty() ? 0 : kmer_counts_by_pos[i][0].second;
-        int kmer2_freq = kmer_counts_by_pos[i].size() <= 1 ? 0 : kmer_counts_by_pos[i][1].second;
+        int kmer2_freq = kmer_counts_by_pos[i].size() <= 1 ? 1 : kmer_counts_by_pos[i][1].second;
         if (kmer1_freq*kmer2_freq > chosen_freq) {
-            chosen_freq = kmer1_freq*kmer2_freq;
-            chosen_kmer = kmer_counts_by_pos[i][0].first;
             chosen_pos = i;
+            chosen_freq = kmer1_freq*kmer2_freq;
+            chosen_freq2 = kmer2_freq;
+            chosen_kmer = kmer_counts_by_pos[i][0].first;
         }
     }
 
     std::vector<int> selected_idxs;
-    for (int i = 0; i < seqs.size(); i++) {
-        std::string& seq = seqs[i];
-        if (seq.length() < K) continue;
-
-        uint32_t kmer = 0;
-        int kmer_start = chosen_pos - K + 1 - read_start_offsets[i], kmer_end = chosen_pos - read_start_offsets[i];
-        if (kmer_start < 0 || kmer_end >= seq.length()) continue;
-        for (int j = kmer_start; j <= kmer_end; j++) {
-            kmer = ((kmer << 2) | nucl_bm[seq[j]]);
-        }
-
-        if (kmer == chosen_kmer) {
+    if (chosen_freq2 < 3) { // if not enough reads to form a 2nd cluster, select all the reads
+        for (int i = 0; i < seqs.size(); i++) {
             selected_idxs.push_back(i);
+        }
+    } else {
+        for (int i = 0; i < seqs.size(); i++) {
+            std::string& seq = seqs[i];
+            if (seq.length() < K) continue;
+
+            uint32_t kmer = 0;
+            int kmer_start = chosen_pos - K + 1 - read_start_offsets[i], kmer_end = chosen_pos - read_start_offsets[i];
+            if (kmer_start < 0 || kmer_end >= seq.length()) continue;
+            for (int j = kmer_start; j <= kmer_end; j++) {
+                kmer = ((kmer << 2) | nucl_bm[seq[j]]);
+            }
+
+            if (kmer == chosen_kmer) {
+                selected_idxs.push_back(i);
+            }
         }
     }
     return selected_idxs;
@@ -476,12 +485,12 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
 
     while (clipped.size() >= 3) {
         std::vector<bool> accepted;
-        std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted);
+        std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted);
         if (consensus_seq == "") return consensuses;
 
         int accepted_reads_n = std::count(accepted.begin(), accepted.end(), true);
         if (accepted_reads_n < 3) {
-            consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted);
+            consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted);
         }
 
         std::vector<bam_redux_t*> accepted_reads, rejected_reads;
@@ -690,7 +699,7 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
         for (bam_redux_t* r : cluster_v) delete r;
     }
     for (bam1_t* r : lc_cluster) bam_destroy1(r);
-    
+
     close_samFile(bam_file);
     bam_destroy1(read);
     hts_itr_destroy(iter);
