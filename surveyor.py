@@ -7,6 +7,15 @@ MAX_READS = 1000
 GEN_DIST_SIZE = 100000
 MAX_ACCEPTABLE_IS = 20000
 
+def valid_min_sv_size(arg):
+    try:
+        sv_size = int(arg)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Value must be an integer.")
+    if sv_size < 20:
+        raise argparse.ArgumentTypeError("Value must be at least 20.")
+    return sv_size
+
 parser = argparse.ArgumentParser(description='SurVeyor, an SV caller.')
 parser.add_argument('--version', action='version', version="SurVeyor v%s" % VERSION, help='Print version number.')
 
@@ -15,7 +24,7 @@ subparsers = parser.add_subparsers(dest='command', help='Commands', required=Tru
 common_parser = argparse.ArgumentParser(add_help=False)
 common_parser.add_argument('--threads', type=int, default=1, help='Number of threads to be used.')
 common_parser.add_argument('--seed', type=int, default=0, help='Seed for random sampling of genomic positions.')
-common_parser.add_argument('--min-sv-size', type=int, default=50, help='Min SV size.')
+common_parser.add_argument('--min-sv-size', type=valid_min_sv_size, default=50, help='Min SV size.')
 common_parser.add_argument('--min-clip-len', type=int, default=10, help='Min length for a clip to be used.')
 common_parser.add_argument('--max-seq-error', type=float, default=0.04, help='Max sequencing error admissible on the platform used.')
 common_parser.add_argument('--max-clipped-pos-dist', type=int, default=5, help='Max distance (in bp) for two clips to be considered '
@@ -25,7 +34,6 @@ common_parser.add_argument('--sampling-regions', help='File in BED format contai
 common_parser.add_argument('--per-contig-stats', action='store_true',
                         help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
-common_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 common_parser.add_argument('--tr-bed', help='BED file with tandem repetitive regions. If provided, it will be used for a more aggrestive duplicate removal.')
 common_parser.add_argument('--two-pass', action='store_true', help='Activate two-pass genotyping.')
 
@@ -43,6 +51,7 @@ call_parser = subparsers.add_parser('call', parents=[common_parser], help='Call 
 call_parser.add_argument('bam_file', help='Input bam file.')
 call_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 call_parser.add_argument('reference', help='Reference genome in FASTA format.')
+call_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
 call_parser.add_argument('--ml-model', help='Path to the ML model to be used for filtering and genotyping.')
 call_parser.add_argument('--samplename', default='', help='Name of the sample to be used in the VCF output.'
                                                          'If not provided, the basename of the bam/cram file will be used,'
@@ -54,7 +63,8 @@ genotype_parser.add_argument('in_vcf_file', help='Input VCF file.')
 genotype_parser.add_argument('bam_file', help='Input bam file.')
 genotype_parser.add_argument('workdir', help='Working directory for Surveyor to use.')
 genotype_parser.add_argument('reference', help='Reference genome in FASTA format.')
-genotype_parser.add_argument('ml_model', help='Path to the ML model to be used for genotyping.')
+genotype_parser.add_argument('--generate-training-data', action='store_true', help='Generate data needed to train a genotyping ML model.')
+genotype_parser.add_argument('--ml-model', help='Path to the ML model to be used for genotyping.')
 genotype_parser.add_argument('--samplename', default='', help='Name of the sample to be used in the VCF output.'
                                                          'If not provided, the basename of the bam/cram file will be used,'
                                                          'up until the first \'.\'')
@@ -194,7 +204,14 @@ if cmd_args.command == 'call':
 
     if not cmd_args.ml_model and not cmd_args.generate_training_data:
         print("At least one of --ml-model or --generate-training-data must be provided.")
-        exit(0)
+        exit(1)
+
+    if not cmd_args.ml_model:
+        print("No model provided. Genotyped variants will not be output.")
+
+        if cmd_args.two_pass:
+            print("Error: --two-pass requires --ml-model to be provided.")
+            exit(1)
 
     reads_categorizer()
 
@@ -203,6 +220,7 @@ if cmd_args.command == 'call':
 
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     run_cmd(find_svs_from_sr_consensuses_cmd)
+    exit(0)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     run_cmd(merge_identical_calls_cmd)
@@ -224,7 +242,7 @@ if cmd_args.command == 'call':
 
     insertions_to_duplications_cmd = SURVEYOR_PATH + "/bin/insertions_to_duplications %s/intermediate_results/calls-raw.vcf.gz %s/intermediate_results/calls-for-genotyping.vcf.gz %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference, cmd_args.workdir)
     run_cmd(insertions_to_duplications_cmd)
-    
+
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
     run_cmd(genotype_cmd)
 
@@ -232,17 +250,20 @@ if cmd_args.command == 'call':
         separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
     if not cmd_args.ml_model:
-        print("No model provided. Skipping filtering and genotyping.")
+        print("No model provided. Skipping the classification step.")
         exit(0)
 
     Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
-    
+
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.vcf.gz", cmd_args.workdir + "/calls-genotyped.vcf.gz", sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
 
     if cmd_args.two_pass:
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
         run_cmd(genotype_cmd)
+
+        if cmd_args.generate_training_data:
+            separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/training-data.reassigned.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.reassigned.vcf.gz")
 
         Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
@@ -252,6 +273,17 @@ if cmd_args.command == 'call':
     deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
+
+    if not cmd_args.ml_model and not cmd_args.generate_training_data:
+        print("At least one of --ml-model or --generate-training-data must be provided.")
+        exit(1)
+
+    if not cmd_args.ml_model:
+        print("No model provided. Genotyped variants will not be output.")
+
+        if cmd_args.two_pass:
+            print("Error: --two-pass requires --ml-model to be provided.")
+            exit(1)
 
     check_duplicate_ids_cmd = SURVEYOR_PATH + "/bin/check_duplicate_ids %s" % cmd_args.in_vcf_file
     run_cmd(check_duplicate_ids_cmd, "Error: Duplicate IDs found in the input VCF file. Please remove duplicates before running the genotype command.")
@@ -270,6 +302,10 @@ elif cmd_args.command == 'genotype':
     if cmd_args.generate_training_data:
         separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/vcf_with_fmt.vcf.gz", cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.vcf.gz")
 
+    if not cmd_args.ml_model:
+        print("No model provided. Skipping the classification step.")
+        exit(0)
+
     vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.vcf.gz"
     Classifier.run_classifier(vcf_with_fmt_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
 
@@ -277,6 +313,9 @@ elif cmd_args.command == 'genotype':
         vcf_with_fmt_reassigned_fname = cmd_args.workdir + "/intermediate_results/vcf_with_fmt.reassigned.vcf.gz"
         genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s --reassign-evidence" % (vcf_with_gt_fname, vcf_with_fmt_reassigned_fname, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
         run_cmd(genotype_cmd)
+    
+        if cmd_args.generate_training_data:
+            separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/vcf_with_fmt.reassigned.vcf.gz", cmd_args.workdir + "/training-data.reassigned.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.reassigned.vcf.gz")
 
         vcf_with_gt_fname = cmd_args.workdir + "/intermediate_results/vcf_with_gt.reassigned.vcf.gz"
         Classifier.run_classifier(vcf_with_fmt_reassigned_fname, vcf_with_gt_fname, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
@@ -309,6 +348,30 @@ elif cmd_args.command == 'generate-training-data':
     shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz"))
     shutil.copyfile(cmd_args.workdir + "/stats.txt", os.path.join(cmd_args.outdir, cmd_args.samplename + ".stats"))
 
+    # if  training-data.reassigned.vcf.gz and training-data.reassigned.INS_TO_DUP.vcf.gz are present,
+    # mark unreliable genotypes in the benchmark variants where FMT/AR1 or FMT/AR2 is different between 
+    # the non-reassigned and reassigned training data
+    unreliable_cids = set()
+    if os.path.exists(cmd_args.workdir + "/training-data.reassigned.vcf.gz") and \
+       os.path.exists(cmd_args.workdir + "/training-data.reassigned.INS_TO_DUP.vcf.gz"):
+        with pysam.VariantFile(cmd_args.workdir + "/training-data.vcf.gz") as original_vcf, \
+             pysam.VariantFile(cmd_args.workdir + "/training-data.reassigned.vcf.gz") as reassigned_vcf:
+            for orig_record, reassigned_record in zip(original_vcf, reassigned_vcf):
+                if orig_record.id != reassigned_record.id:
+                    print("Error: Variant IDs do not match between training-data.vcf.gz and training-data.reassigned.vcf.gz")
+                    print("Found %s and %s" % (orig_record.id, reassigned_record.id))
+                    exit(1)
+                if 'AR1' in orig_record.samples[0]:
+                    o_a1 = orig_record.samples[0]['AR1']
+                    r_a1 = reassigned_record.samples[0]['AR1']
+                    if o_a1 > 0 and r_a1/o_a1 <= 0.9:
+                        unreliable_cids.add(orig_record.id)
+                if 'AR2' in orig_record.samples[0] and orig_record.samples[0]['AR2'] != reassigned_record.samples[0]['AR2']:
+                    o_a2 = orig_record.samples[0]['AR2']
+                    r_a2 = reassigned_record.samples[0]['AR2']
+                    if o_a2 > 0 and r_a2/o_a2 <= 0.9:
+                        unreliable_cids.add(orig_record.id)
+
     def has_alt_allele(gt):
         """Return True if GT tuple has at least one ALT allele (allele index > 0)."""
         if gt is None:
@@ -317,19 +380,19 @@ elif cmd_args.command == 'generate-training-data':
             if a is not None and a > 0:
                 return True
         return False
-    
+
     updated_benchmark_vcf_path = os.path.join(cmd_args.outdir, cmd_args.samplename + "-benchmark.vcf.gz")
     if cmd_args.unreliable_gts:
-        unreliable_ids = set()
+        unreliable_bids = set()
         with open(cmd_args.unreliable_gts) as unreliable_file:
             for line in unreliable_file:
-                unreliable_ids.add(line.strip())
+                unreliable_bids.add(line.strip())
 
         with pysam.VariantFile(cmd_args.benchmark_vcf) as benchmark_vcf, \
              pysam.VariantFile(updated_benchmark_vcf_path, 'wz', header=benchmark_vcf.header) as updated_benchmark_vcf:
             for record in benchmark_vcf:
                 # if the variant is in the unreliable list and has a non-ref genotype, set it to ./1
-                if record.id in unreliable_ids and has_alt_allele(record.samples[0]['GT']):
+                if record.id in unreliable_bids and has_alt_allele(record.samples[0]['GT']):
                     record.samples[0]['GT'] = (None, 1)
                 updated_benchmark_vcf.write(record)
     else:
@@ -340,9 +403,21 @@ elif cmd_args.command == 'generate-training-data':
         cmd_args.workdir,
         cmd_args.simple_repeat_bed,
         cmd_args.reference,
-        os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts"),
+        os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts.tmp"),
         cmd_args.threads
     )
     run_cmd(compare_cmd)
 
     os.remove(updated_benchmark_vcf_path)
+
+    final_gts_path = os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts")
+    with open(os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts.tmp")) as tmp_gts_file, \
+         open(final_gts_path, 'w') as final_gts_file:
+        for line in tmp_gts_file:
+            id, gt = line.strip().split()
+            if id in unreliable_cids and "1" in gt:
+                print(id, gt, "-> ./1")
+                gt = "./1"
+            final_gts_file.write("%s %s\n" % (id, gt))
+
+    os.remove(os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts.tmp"))
