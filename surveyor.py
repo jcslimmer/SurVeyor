@@ -412,7 +412,6 @@ elif cmd_args.command == 'generate-training-data':
         for line in tmp_gts_file:
             id, gt = line.strip().split()
             if id in unreliable_cids and "1" in gt:
-                print(id, gt, "-> ./1")
                 gt = "./1"
             final_gts_file.write("%s %s\n" % (id, gt))
 
