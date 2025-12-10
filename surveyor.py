@@ -216,7 +216,6 @@ if cmd_args.command == 'call':
 
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     run_cmd(find_svs_from_sr_consensuses_cmd)
-    exit(0)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     run_cmd(merge_identical_calls_cmd)
