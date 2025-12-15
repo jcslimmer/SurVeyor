@@ -195,7 +195,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         alt_seq[lh_len+rh_len+del->ins_seq.length()] = 0;
 
         // align to ref+SV
-        aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+rh_len, filter, &alt_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+del->ins_seq.length()+rh_len, filter, &alt_aln, 0);
 
         // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt_aln.ref_begin);
@@ -225,7 +225,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         if (rbp_start < 0) rbp_start = 0;
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
-    
+
         del->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         del->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
         del->sample_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);

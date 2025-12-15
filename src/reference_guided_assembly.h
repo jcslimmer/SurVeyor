@@ -23,7 +23,16 @@ void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWater
 
 	for (int i = 0; i < alns.size(); i++) {
 		for (int j = i+1; j < alns.size() && get_unclipped_end(alns[i].second)-get_unclipped_start(alns[j].second) >= config.min_clip_len; j++) {
-			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, config.min_clip_len);
+			int min_overlap = config.min_clip_len;
+			// In principle, the suffix-prefix alignment should be the same as the overlap between the two alignments on the reference
+			// This may not be the case if there are insertions or deletions in between the reads. However, in that case,
+			// we expect the first read to be clipped on the right and/or the second read to be clipped on the left.
+			if (!is_right_clipped(alns[i].second) && !is_left_clipped(alns[j].second)) {
+				int unclipped_i_end = get_unclipped_end(alns[i].second);
+				int unclipped_j_start = get_unclipped_start(alns[j].second);
+				min_overlap = std::max(min_overlap, unclipped_i_end - unclipped_j_start);
+			}
+			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, min_overlap);
 			if (spa.overlap) {
 				out_edges[i]++;
 				l_adj[i].push_back({j, spa.score, spa.overlap});
