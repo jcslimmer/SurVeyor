@@ -458,7 +458,8 @@ std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std
     std::vector<std::string> consensus_seqs; 
     
     consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
-    
+    consensus_seqs.push_back("");
+
     std::vector<seq_w_pp_t> seqs_w_pp, temp3, temp4;
     for (std::string& seq : seqs) {
         seqs_w_pp.push_back({seq, true, true});
@@ -500,24 +501,31 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     std::vector<int> chosen_seqs_idxs;
     double cum_score = 0;
     std::vector<double> aln_scores;
-    for (std::string cseq : consensus_seqs) {
+    int separation = 0;
+    int chosen_cseq_idx = -1;
+    for (int i = 0; i < consensus_seqs.size(); i++) {
+        std::string cseq = consensus_seqs[i];
+        if (cseq.empty()) {
+            separation = i;
+            continue;
+        }
         std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
         std::vector<int> curr_seqs_idxs;
         double curr_cum_score = 0;
         std::vector<double> curr_aln_scores;
-        for (int i = 0; i < reads.size(); i++) {
-            std::shared_ptr<bam1_t> read = reads[i];
+        for (int j = 0; j < reads.size(); j++) {
+            std::shared_ptr<bam1_t> read = reads[j];
             std::string seq = get_sequence(read.get());
-            if (revcomp_read[i]) rc(seq);
+            if (revcomp_read[j]) rc(seq);
 
             harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
             
             double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
             if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
                 curr_alns.push_back(aln);
-                curr_seqs_idxs.push_back(i);
+                curr_seqs_idxs.push_back(j);
                 curr_consistent_reads.push_back(read);
                 curr_cum_score += double(aln.sw_score)/seq.length();
                 curr_aln_scores.push_back(double(aln.sw_score)/seq.length());
@@ -525,7 +533,8 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
                 curr_end_positions.push_back(aln.ref_end);
             }
         }
-
+        
+        curr_cum_score /= log(cseq.length());
         if (curr_cum_score > cum_score) {
             consistent_reads = curr_consistent_reads;
             chosen_seqs_idxs = curr_seqs_idxs;
@@ -535,6 +544,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             end_positions = curr_end_positions;
             alns = curr_alns;
             consensus_seq = cseq;
+            chosen_cseq_idx = i;
         }
     }
     std::sort(start_positions.begin(), start_positions.end());
