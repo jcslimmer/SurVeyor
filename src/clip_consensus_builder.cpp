@@ -708,6 +708,8 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
 
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
+    filter_redundant(rc_consensuses);
+    filter_redundant(lc_consensuses);
     select_nonoverlapping_clusters(rc_consensuses);
     select_nonoverlapping_clusters(lc_consensuses);
     enforce_max_ploidy(rc_consensuses, 2);
@@ -741,7 +743,8 @@ int main(int argc, char* argv[]) {
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
         hts_pos_t contig_len = contigs.get_len(contig_name);
-        std::future<void> future = thread_pool.push(build_sr_consensuses, contig_id, contig_name, contig_len);
+        std::future<void> future;
+        future = thread_pool.push(build_sr_consensuses, contig_id, contig_name, contig_len);
         futures.push_back(std::move(future));
         future = thread_pool.push(build_hsr_consensuses, contig_id, contig_name, contig_len);
         futures.push_back(std::move(future));

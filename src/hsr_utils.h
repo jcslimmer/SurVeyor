@@ -178,6 +178,33 @@ void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vec
     consensuses.swap(retained);
 }
 
+// Remove consensues that are completely contained within another consensues and their sequence is a substring of the other consensus
+void filter_redundant(std::vector<consensus_t*>& consensuses) {
+	std::vector<consensus_t*> sorted = consensuses;
+	std::sort(sorted.begin(), sorted.end(), [](const consensus_t* c1, const consensus_t* c2) {
+		return c1->start < c2->start || (c1->start == c2->start && c1->end > c2->end);
+	});
+	
+	std::vector<bool> to_delete(sorted.size(), false);
+	for (int i = 0; i < sorted.size(); i++) {
+		if (to_delete[i]) continue;
+		for (int j = i+1; j < sorted.size(); j++) {
+			if (to_delete[j]) continue;
+			if (sorted[j]->start > sorted[i]->end) break;
+			if (sorted[j]->end <= sorted[i]->end) {
+				// j is contained within i
+				if (sorted[i]->sequence.find(sorted[j]->sequence) != std::string::npos) {
+					to_delete[j] = true;
+				}
+			}
+		}
+	}
+	consensuses.clear();
+	for (int i = 0; i < sorted.size(); i++) {
+		if (!to_delete[i]) consensuses.push_back(sorted[i]);
+	}
+}
+
 void select_nonoverlapping_clusters(std::vector<consensus_t*>& consensuses) {
 	// for overlapping pairs, keep the ones with higher count
 	std::vector<consensus_t*> to_be_deleted;
