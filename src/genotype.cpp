@@ -241,7 +241,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     }
 
     // update FORMAT fields
-    bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->sample_info.gt, sv->n_gt);
+    bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->sample_info.gt.data(), sv->sample_info.gt.size());
 
     reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "A", 1);
     reset_record_bp_consensus_info(out_hdr, sv->vcf_entry, "A", 2);

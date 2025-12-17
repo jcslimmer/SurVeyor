@@ -165,31 +165,31 @@ void add_stray_pairs_headers(bcf_hdr_t* hdr, int bp_number) {
 			"Number of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dHQ", 1, "Integer",
+			"%cSP%dHQ", 2, "Integer",
 			"Number of high-quality pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dmQ", 1, "Integer",
+			"%cSP%dmQ", 2, "Integer",
 			"Minimum mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dMQ", 1, "Integer",
+			"%cSP%dMQ", 2, "Integer",
 			"Maximum mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dAQ", 1, "Float",
+			"%cSP%dAQ", 2, "Float",
 			"Average mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dSQ", 1, "Float",
+			"%cSP%dSQ", 2, "Float",
 			"Standard deviation of mapping quality of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dNMA", 1, "Float",
+			"%cSP%dNMA", 2, "Float",
 			"Average NM (non-matches) of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		},
 		{
-			"%cSP%dNMS", 1, "Float",
+			"%cSP%dNMS", 2, "Float",
 			"Standard deviation of NM (non-matches) of pairs around the %s in the %s allele that are discordant and yet do not support the SV."
 		}
 	};
@@ -693,7 +693,7 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
-	bcf_update_genotypes(hdr, bcf_entry, sv->sample_info.gt, sv->n_gt);
+	bcf_update_genotypes(hdr, bcf_entry, sv->sample_info.gt.data(), sv->sample_info.gt.size());
 
 	if (sv->incomplete_ins_seq()) {
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
@@ -817,6 +817,51 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	}
 
 	return "";
+}
+
+void copy_all_fmt(bcf_hdr_t* hdr, bcf1_t* src, bcf1_t* dest) {
+    bcf_unpack(src, BCF_UN_FMT);
+
+    int i;
+    for (i = 0; i < src->n_fmt; i++) {
+        bcf_fmt_t* fmt = &src->d.fmt[i];
+        const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, fmt->id);
+        int res = 0;
+
+        if (fmt->type == BCF_BT_FLOAT) {
+            float *vals = NULL;
+            int n_vals = 0;
+            // Read values (HTSlib handles memory allocation)
+            if (bcf_get_format_float(hdr, src, key, &vals, &n_vals) >= 0) {
+                bcf_update_format_float(hdr, dest, key, vals, n_vals);
+                free(vals);
+            }
+        } else if (fmt->type == BCF_BT_CHAR) {
+            char** vals = NULL; // Array of strings
+            int n_vals = 0;
+            // Note: bcf_get_format_string allocates an array of pointers
+            if (bcf_get_format_string(hdr, src, key, &vals, &n_vals) >= 0) {
+                // n_vals here is the number of samples
+                bcf_update_format_string(hdr, dest, key, (const char**)vals, bcf_hdr_nsamples(hdr));
+                // bcf_get_format_string allocates two blocks: vals and vals[0]
+                free(vals[0]); 
+                free(vals);
+            }
+        } else {
+            // Handle all Integer types (INT8, INT16, INT32) via INT32 interface
+            int32_t* vals = NULL;
+            int n_vals = 0;
+            if (bcf_get_format_int32(hdr, src, key, &vals, &n_vals) >= 0) {
+                // Special handling for Genotype (GT) fields
+                if (strcmp(key, "GT") == 0) {
+                     bcf_update_genotypes(hdr, dest, vals, n_vals);
+                } else {
+                     bcf_update_format_int32(hdr, dest, key, vals, n_vals);
+                }
+                free(vals);
+            }
+        }
+    }
 }
 
 float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
@@ -944,10 +989,16 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (filter != "PASS") sv->sample_info.filters.push_back(token);
 	}
 
-	int n = 0;
-	sv->n_gt = bcf_get_genotypes(hdr, b, &(sv->sample_info.gt), &n);
-	if (sv->n_gt < 0) sv->n_gt = 0;
-	std::sort(sv->sample_info.gt, sv->sample_info.gt+sv->n_gt);
+	int n_gt = 0;
+	int* gt = NULL;
+	n_gt = bcf_get_genotypes(hdr, b, &gt, &n_gt);
+	sv->sample_info.gt.clear();
+	if (n_gt < 0) n_gt = 0;
+	for (int i = 0; i < n_gt; i++) {
+		sv->sample_info.gt.push_back(gt[i]);
+	}
+	free(gt);
+	std::sort(sv->sample_info.gt.begin(), sv->sample_info.gt.end());
 
 	float* f_data = NULL;
 	len = 0;

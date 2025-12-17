@@ -19,7 +19,7 @@
 
 std::mutex mtx;
 
-const std::string VERSION = "1.0";
+const std::string VERSION = "0.12";
 
 std::unordered_map<std::string, int> sample2id;
 std::vector<std::string> sample_names;
@@ -34,21 +34,24 @@ struct sv_w_samplename_t { // minimal SV representation for memory efficiency
 	std::string ins_seq, ins_seq_inferred;
 	bool imprecise = false, incomplete_ins_seq = false;
     std::string sample;
-	int n_gt;
 	float epr;
 	std::vector<int> gt;
 
     sv_w_samplename_t() {}
     sv_w_samplename_t(std::shared_ptr<sv_t> sv, const std::string& sample) : sample(sample), chr(sv->chr), 
-		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq), n_gt(sv->n_gt),
+		svtype(sv->svtype()), svlen(sv->svlen()), ins_seq(sv->ins_seq), ins_seq_inferred(sv->inferred_ins_seq),
 		start(sv->start), end(sv->end), imprecise(sv->imprecise), incomplete_ins_seq(sv->incomplete_ins_seq()), epr(sv->sample_info.epr) {
-		gt.assign(sv->sample_info.gt, sv->sample_info.gt + sv->n_gt);
+		gt = sv->sample_info.gt;
 		if (incomplete_ins_seq) svlen = 0;
 	}
 
 	std::string unique_key() {
         return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype + ":" + ins_seq;
     }
+
+	int ploidy() {
+		return gt.size();
+	}
 };
 
 int distance(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
@@ -332,9 +335,9 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 
 		int sv_ploidy = 0;
 		for (sv_w_samplename_t& sv : clique_svs) {
-			if (sv_ploidy < sv.n_gt) sv_ploidy = sv.n_gt;
+			if (sv_ploidy < sv.ploidy()) sv_ploidy = sv.ploidy();
 		}
-		for (sv_w_samplename_t& sv : clique_svs) if (sv.n_gt != sv_ploidy) { // all SVs being clustered must have same ploidy
+		for (sv_w_samplename_t& sv : clique_svs) if (sv.ploidy() != sv_ploidy) { // all SVs being clustered must have same ploidy
 			mtx.lock();
 			std::cerr << clique_svs[0].sample << "," << clique_svs[0].id << " and " << sv.sample << "," << sv.id << " have different ploidy." << std::endl;
 			mtx.unlock();
@@ -461,12 +464,12 @@ bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set
 	const char* ic_sv_tag = "##FORMAT=<ID=IC,Number=.,Type=String,Description=\"Whether the original insertion had an incomplete assembly. "
 				"T is TRUE and F is FALSE.\">";
 
-	std::string cmd_tag = "##SurVClustererCommand=" + command;
+	std::string cmd_tag = "##SurVeyorCommand=" + command;
 	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, cmd_tag.c_str(), &len));
 
 	auto now = std::chrono::system_clock::now();
 	std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-	std::string version_tag = "##SurVClustererVersion=" + VERSION + "; Date=" + std::ctime(&now_time);
+	std::string version_tag = "##SurVeyorVersion=" + VERSION + "; Date=" + std::ctime(&now_time);
 	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, version_tag.c_str(), &len));
 
 	for (std::string s : called_by) {
@@ -475,7 +478,7 @@ bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set
 	}
 
 	std::stringstream clustered_by_ss;
-	clustered_by_ss << "##clusteredBy=SurVClusterer " << VERSION << "; ";
+	clustered_by_ss << "##clusteredBy=SurVeyor " << VERSION << "; ";
 	clustered_by_ss << "max-dist-precise: " << max_prec_dist << "; ";
 	clustered_by_ss << "max-dist-imprecise: " << max_imprec_dist << "; ";
 	clustered_by_ss << "min-overlap-precise: " << min_prec_frac_overlap << "; ";

@@ -202,7 +202,7 @@ struct sv_t {
     struct sample_info_t {
         static const int NOT_COMPUTED = -1;
 
-        int* gt;
+        std::vector<int> gt;
 
         bp_consensus_info_t alt_bp1, alt_bp2;
         bp_consensus_info_t ref_bp1, ref_bp2;
@@ -236,12 +236,7 @@ struct sv_t {
         std::vector<std::string> filters;
 
         sample_info_t() {
-            gt = (int*)malloc(sizeof(int));
-            gt[0] = bcf_gt_unphased(1);
-        }
-
-        ~sample_info_t() {
-            free(gt);
+            gt.push_back(bcf_gt_unphased(1));
         }
 
         bool is_pass() {
@@ -249,7 +244,6 @@ struct sv_t {
         }
     } sample_info;
 
-    int n_gt = 1;
     bcf1_t* vcf_entry = NULL;
 
     sv_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, 
@@ -305,7 +299,7 @@ struct sv_t {
 
     std::string print_gt() {
         std::stringstream ss;
-        for (int i = 0; i < n_gt; i++) {
+        for (int i = 0; i < sample_info.gt.size(); i++) {
             if (i > 0) ss << "/";
             ss << (bcf_gt_is_missing(sample_info.gt[i]) ? "." : std::to_string(bcf_gt_allele(sample_info.gt[i])));
         }
@@ -314,7 +308,7 @@ struct sv_t {
 
     int allele_count(int allele) {
         int ac = 0;
-        for (int i = 0; i < n_gt; i++) {
+        for (int i = 0; i < sample_info.gt.size(); i++) {
             if (!bcf_gt_is_missing(sample_info.gt[i])) ac += (bcf_gt_allele(sample_info.gt[i]) == allele);
         }
         return ac;
@@ -322,7 +316,7 @@ struct sv_t {
 
     int missing_alleles() {
         int ac = 0;
-        for (int i = 0; i < n_gt; i++) {
+        for (int i = 0; i < sample_info.gt.size(); i++) {
             ac += bcf_gt_is_missing(sample_info.gt[i]);
         }
         return ac;

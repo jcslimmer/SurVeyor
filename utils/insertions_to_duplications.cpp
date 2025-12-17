@@ -84,14 +84,10 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        sv->n_gt = 0;
-        delete[] sv->sample_info.gt;
-        sv->sample_info.gt = NULL;
+        sv->sample_info.gt.clear();
         svs.push_back(sv);
         if (new_dup != NULL) {
-            new_dup->n_gt = 0;
-            delete[] new_dup->sample_info.gt;
-            new_dup->sample_info.gt = NULL;
+            new_dup->sample_info.gt.clear();
             std::string unique_key = new_dup->unique_key();
             if (unique_key_to_idx.count(unique_key)) {
                 std::shared_ptr<duplication_t> prev_dup = std::dynamic_pointer_cast<duplication_t>(svs[unique_key_to_idx[unique_key]]);

@@ -586,17 +586,12 @@ void genotype_invs(int id, std::string contig_name, char* contig_seq, int contig
         double reads_ptn = fail_sr ? 0 : std::min(reads_ptn1, reads_ptn2);
 
         double ptn = std::max(pairs_ptn, reads_ptn);
-        inv->n_gt = 2;
-        inv->sample_info.gt = (int*) malloc(2*sizeof(int));
         if (ptn >= 0.75) {
-            inv->sample_info.gt[0] = bcf_gt_unphased(1);
-            inv->sample_info.gt[1] = bcf_gt_unphased(1);
+            inv->sample_info.gt = {bcf_gt_unphased(1), bcf_gt_unphased(1)};
         } else if (ptn <= 0.25) {
-            inv->sample_info.gt[0] = bcf_gt_unphased(0);
-            inv->sample_info.gt[1] = bcf_gt_unphased(0);
+            inv->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(0)};
         } else {
-            inv->sample_info.gt[0] = bcf_gt_unphased(0);
-            inv->sample_info.gt[1] = bcf_gt_unphased(1);
+            inv->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(1)};
         }
     }
 }
