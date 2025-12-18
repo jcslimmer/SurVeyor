@@ -13,6 +13,7 @@
 
 std::mutex mtx;
 config_t config;
+stats_t stats;
 std::string workdir, workspace;
 chr_seqs_map_t contigs;
 
@@ -708,10 +709,10 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
 
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
-    filter_redundant(rc_consensuses);
-    filter_redundant(lc_consensuses);
-    select_nonoverlapping_clusters(rc_consensuses);
-    select_nonoverlapping_clusters(lc_consensuses);
+    filter_fully_contained(rc_consensuses);
+    filter_fully_contained(lc_consensuses);
+    merge_overlapping_clusters(rc_consensuses, stats.read_len/2);
+    merge_overlapping_clusters(lc_consensuses, stats.read_len/2);
     enforce_max_ploidy(rc_consensuses, 2);
     enforce_max_ploidy(lc_consensuses, 2);
 
@@ -735,6 +736,7 @@ int main(int argc, char* argv[]) {
 
     contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
+    stats.parse(workdir + "/stats.txt", config.per_contig_stats);
 
     contigs.read_fasta_into_map(reference_fname);
 

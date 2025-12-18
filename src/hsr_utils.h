@@ -2,6 +2,7 @@
 #define HSR_UTILS_H
 
 #include <algorithm>
+#include <unordered_set>
 #include <htslib/sam.h>
 
 #include "../libs/ssw_cpp.h"
@@ -191,7 +192,7 @@ void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vec
 }
 
 // Remove consensues that are completely contained within another consensues and their sequence is a substring of the other consensus
-void filter_redundant(std::vector<consensus_t*>& consensuses) {
+void filter_fully_contained(std::vector<consensus_t*>& consensuses) {
 	std::vector<consensus_t*> sorted = consensuses;
 	std::sort(sorted.begin(), sorted.end(), [](const consensus_t* c1, const consensus_t* c2) {
 		return c1->start < c2->start || (c1->start == c2->start && c1->end > c2->end);
@@ -218,36 +219,116 @@ void filter_redundant(std::vector<consensus_t*>& consensuses) {
 	}
 }
 
-void select_nonoverlapping_clusters(std::vector<consensus_t*>& consensuses) {
-	// for overlapping pairs, keep the ones with higher count
-	std::vector<consensus_t*> to_be_deleted;
-	std::vector<Interval<consensus_t*> > rc_iv;
-	for (consensus_t* c : consensuses) rc_iv.push_back(Interval<consensus_t*>(c->start, c->end, c));
-	IntervalTree<consensus_t*> rc_it(rc_iv);
-	std::vector<consensus_t*> kept_consensuses;
-	for (consensus_t* c : consensuses) {
-		std::vector<Interval<consensus_t*> > ov = rc_it.findOverlapping(c->start, c->end);
-		bool keep_consensus = true;
-		for (Interval<consensus_t*> ov_c : ov) {
-			if (ov_c.value->reads() > c->reads()) { // a higher count was found
-				int min_overlap = std::min(c->sequence.length(), ov_c.value->sequence.length())/2;
-				suffix_prefix_aln_t spa1 = aln_suffix_prefix_perfect(ov_c.value->sequence, c->sequence, min_overlap);
-				suffix_prefix_aln_t spa2 = aln_suffix_prefix_perfect(c->sequence, ov_c.value->sequence, min_overlap);
-				if (spa1.overlap >= min_overlap || spa2.overlap >= min_overlap) {
-					keep_consensus = false;
-					break;
-				}
+// c1 is assumed to be to the left of c2, and neither cluster is not fully contained within the other
+void merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consensus_t* target, std::string& c1_seq, std::string& c2_seq, int overlap) {
+	target->breakpoint = c1->left_clipped ? c1->breakpoint : c2->breakpoint;
+	target->start = c1->start;
+	target->end = c2->end;
+	target->sequence = c1_seq + c2_seq.substr(overlap);
+	target->fwd_reads = c1->fwd_reads + c2->fwd_reads;
+	target->rev_reads = c1->rev_reads + c2->rev_reads;
+	target->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+	target->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
+	if (c1->left_clipped) {
+		target->remap_boundary = std::max(c1->remap_boundary, c2->remap_boundary);
+	} else {
+		target->remap_boundary = std::min(c1->remap_boundary, c2->remap_boundary);
+	}
+	target->lowq_prefix = c1->lowq_prefix;;
+	target->lowq_suffix = c2->lowq_suffix;
+}
+
+bool merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consensus_t* target, int min_overlap) {
+	// only merge if the overlap is at least half of the length of the shorter consensus
+	hts_pos_t overlap = c1->end - c2->start;
+	if (overlap < (int) std::min(c1->sequence.length(), c2->sequence.length())/2) return false;
+	
+	hts_pos_t c1_hq_end = c1->end - c1->lowq_suffix;
+	hts_pos_t c2_hq_start = c2->start + c2->lowq_prefix;
+	hts_pos_t hq_overlap = c1_hq_end - c2_hq_start;
+	std::string c1_hq_seq = c1->sequence.substr(0, c1->sequence.length()-c1->lowq_suffix);
+	std::string c2_hq_seq = c2->sequence.substr(c2->lowq_prefix);
+	int min_hq_seq_len = std::min(c1_hq_seq.length(), c2_hq_seq.length());
+	if (hq_overlap >= min_hq_seq_len/2 && hq_overlap < min_hq_seq_len) { // first, try to see if the high quality parts are compatible
+		suffix_prefix_aln_t spa_hq = aln_suffix_prefix_perfect(c1_hq_seq, c2_hq_seq, min_overlap);
+		if (spa_hq.overlap) {
+			merge_overlapping_pair_of_clusters(c1, c2, target, c1_hq_seq, c2_hq_seq, spa_hq.overlap);
+			return true;
+		}
+	}
+	
+	suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(c1->sequence, c2->sequence, min_overlap); // then, try the whole sequences
+	if (spa.overlap) {
+		merge_overlapping_pair_of_clusters(c1, c2, target, c1->sequence, c2->sequence, spa.overlap);
+		return true;
+	}
+	return false;
+}
+
+// This only applies to HSR consensuses
+void merge_overlapping_clusters(std::vector<consensus_t*>& consensuses, int min_overlap) {
+
+	if (consensuses.empty()) return;
+
+	std::vector<consensus_t*> sorted_by_start = consensuses;
+	std::sort(sorted_by_start.begin(), sorted_by_start.end(), [](const consensus_t* c1, const consensus_t* c2) {
+		return c1->start < c2->start;
+	});
+
+	std::vector<consensus_t*> sorted_by_end = consensuses;
+	std::sort(sorted_by_end.begin(), sorted_by_end.end(), [](const consensus_t* c1, const consensus_t* c2) {
+		return c1->end < c2->end;
+	});
+
+	std::unordered_map<consensus_t*, int> start_pos, end_pos;
+	for (int i = 0; i < sorted_by_start.size(); i++) {
+		start_pos[sorted_by_start[i]] = i;
+		end_pos[sorted_by_end[i]] = i;
+	}
+
+	std::vector<consensus_t*> sorted_by_reads = consensuses;
+	std::sort(sorted_by_reads.begin(), sorted_by_reads.end(), [](consensus_t* c1, consensus_t* c2) {
+		return c1->reads() > c2->reads();
+	});
+
+	std::unordered_set<consensus_t*> removed;
+	for (int i = 0; i < sorted_by_reads.size(); i++) {
+		consensus_t* c = sorted_by_reads[i];
+		if (removed.count(c) > 0) continue;
+
+		int e_pos = end_pos[c];
+		for (int j = e_pos-1; j >= 0; j--) {
+			consensus_t* o = sorted_by_end[j];
+			if (removed.count(o) > 0) continue;
+			if (o->end < c->start) break;
+			if (o->start >= c->start || o->end == c->end) continue; // o is fully contained within c
+
+			if (merge_overlapping_pair_of_clusters(o, c, c, min_overlap)) {
+				removed.insert(o);
+				std::swap(sorted_by_start[start_pos[o]], sorted_by_start[start_pos[c]]);
+				std::swap(start_pos[o], start_pos[c]);
+				// end positions do not change
 			}
 		}
 
-		if (keep_consensus) {
-			kept_consensuses.push_back(c);
-		} else {
-			to_be_deleted.push_back(c);
+		int s_pos = start_pos[c];
+		for (int j = s_pos+1; j < sorted_by_start.size(); j++) {
+			consensus_t* o = sorted_by_start[j];
+			if (removed.count(o) > 0) continue;
+			if (o->start > c->end) break;
+			if (o->start == c->start || o->end <= c->end) continue; // o is fully contained within c
+			
+			if (merge_overlapping_pair_of_clusters(c, o, c, min_overlap)) {
+				removed.insert(o);
+				std::swap(sorted_by_end[end_pos[o]], sorted_by_end[end_pos[c]]);
+				std::swap(end_pos[o], end_pos[c]);
+				// start positions do not change
+			}
 		}
 	}
-	for (consensus_t* c : to_be_deleted) delete c;
-	consensuses.swap(kept_consensuses);
+
+	consensuses.erase(std::remove_if(consensuses.begin(), consensuses.end(),
+		[&removed](consensus_t* c){ return removed.count(c) > 0; }), consensuses.end());
 }
 
 void enforce_max_ploidy(std::vector<consensus_t*>& consensuses, int max_ploidy) {
