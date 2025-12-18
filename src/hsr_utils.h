@@ -155,6 +155,9 @@ std::pair<int, int> compute_left_and_right_differences(bam1_t* r, bool indel_as_
 	}
 }
 
+// If the high quality (i.e., supported by >= 3 reads) part of the consensus sequence aligns too well to the reference,
+// it probably means that the differences were due to sequencing errors in the individual reads and they corrected each other
+// during consensus building. We filter out such consensuses.
 void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vector<consensus_t*>& consensuses, config_t config) {
     std::vector<consensus_t*> retained;
 
@@ -166,11 +169,20 @@ void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vec
 		if (ref_start < 0) ref_start = 0;
 		if (ref_end > contig_len) ref_end = contig_len;
         aligner.Align(c->sequence.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &aln, 0);
-        int differences = std::count(aln.cigar_string.begin(), aln.cigar_string.end(), 'D') +
-                          std::count(aln.cigar_string.begin(), aln.cigar_string.end(), 'I') + 
-						  aln.mismatches;
-        if ((aln.sw_score < c->sequence.length()*2 && differences >= config.min_diff_hsr) || is_clipped(aln)) {
-            retained.push_back(c);
+		int dops = 0, dbases = 0, iops = 0, ibases = 0, xbases = 0;
+		for (uint32_t op : aln.cigar) {
+			char opchar = cigar_int_to_op(op);
+			int oplen = cigar_int_to_len(op);
+			if (opchar == 'D') {
+				dops++;
+				dbases += oplen;
+			} else if (opchar == 'I') {
+				iops++;
+				ibases += oplen;
+			} else if (opchar == 'X') xbases += oplen;
+		}
+        if (dops + iops + xbases >= config.min_diff_hsr || abs(ibases-dbases) >= config.min_sv_size || is_clipped(aln)) {
+			retained.push_back(c);
         } else {
         	delete c;
         }
@@ -193,7 +205,8 @@ void filter_redundant(std::vector<consensus_t*>& consensuses) {
 			if (sorted[j]->start > sorted[i]->end) break;
 			if (sorted[j]->end <= sorted[i]->end) {
 				// j is contained within i
-				if (sorted[i]->sequence.find(sorted[j]->sequence) != std::string::npos) {
+				std::string highq_seq = sorted[j]->sequence.substr(sorted[j]->lowq_prefix, sorted[j]->sequence.length()-sorted[j]->lowq_prefix-sorted[j]->lowq_suffix);
+				if (sorted[i]->sequence.find(highq_seq) != std::string::npos) {
 					to_delete[j] = true;
 				}
 			}

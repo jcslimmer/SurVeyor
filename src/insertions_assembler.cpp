@@ -89,8 +89,8 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
     if (regions.empty()) {
 		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
-
-		if (ins != NULL) {
+                
+        if (ins != NULL) {
 			mtx.lock();
             insertions.push_back(ins);
 			mtx.unlock();
@@ -126,7 +126,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 				aligner_to_base, harsh_aligner, kept, config, stats);
 
 		if (ins != NULL) {
-			mtx.lock();
+            mtx.lock();
             insertions.push_back(ins);
 			mtx.unlock();
 			return true;
@@ -327,6 +327,7 @@ void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distan
 
         std::shared_ptr<insertion_cluster_t> c1 = cc_v_distance.c1;
         std::shared_ptr<insertion_cluster_t> c2 = cc_v_distance.c2;
+
         if (c1->cluster->used || c2->cluster->used) continue;
 
         // remap clusters
@@ -366,14 +367,14 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         while (std::getline(clipped_fin, line)) {
             std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line, false);
             if (consensus->left_clipped) {
-                consensus->start += consensus->lowq_clip_portion;
-                consensus->clip_len -= consensus->lowq_clip_portion;
-                consensus->sequence = consensus->sequence.substr(consensus->lowq_clip_portion);
+                consensus->start += consensus->lowq_prefix;
+                consensus->clip_len -= consensus->lowq_prefix;
+                consensus->sequence = consensus->sequence.substr(consensus->lowq_prefix);
                 lc_consensuses.push_back(consensus);
             } else {
-                consensus->end -= consensus->lowq_clip_portion;
-                consensus->clip_len -= consensus->lowq_clip_portion;
-                consensus->sequence = consensus->sequence.substr(0, consensus->sequence.length()-consensus->lowq_clip_portion);
+                consensus->end -= consensus->lowq_suffix;
+                consensus->clip_len -= consensus->lowq_suffix;
+                consensus->sequence = consensus->sequence.substr(0, consensus->sequence.length()-consensus->lowq_suffix);
                 rc_consensuses.push_back(consensus);
             }
         }

@@ -555,10 +555,10 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
     hts_pos_t left_bp = left_anchor_end, right_bp = right_anchor_start - 1; 
 	if (right_bp < 0) right_bp = 0; // this can be -1, if the duplication starts at the beginning of the contig. 
 	/* The VCF specification says: "For simple insertions and deletions in which either the REF or one of the ALT alleles 
-		would otherwise be null/empty, the REF and ALT Strings must include the base before the event (which must be reflected 
-		in the POS field), unless the event occurs at position 1 on the contig in which case it must include the base after 
-		the event"
-		However, I am not sure what the base "after the event" is in the case of a duplication. I will report 1 in the VCF (meaning 0 here) for now */
+	would otherwise be null/empty, the REF and ALT Strings must include the base before the event (which must be reflected 
+	in the POS field), unless the event occurs at position 1 on the contig in which case it must include the base after 
+	the event"
+	However, I am not sure what the base "after the event" is in the case of a duplication. I will report 1 in the VCF (meaning 0 here) for now */
 	auto left_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(left_anchor_start, left_anchor_end, left_part.length(), left_part_aln.sw_score);
 	auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(right_anchor_start, right_anchor_end, right_part.length(), right_part_aln.sw_score);
 
@@ -664,8 +664,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		std::string lc_consensus_seq = lc_consensus->sequence;
 		suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
 		if (spa.overlap < min_overlap || is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
-			rc_consensus_seq = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_clip_portion);
-			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_clip_portion);
+			rc_consensus_seq = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_suffix);
+			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_prefix);
 			spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
 			if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
 				return std::vector<std::shared_ptr<sv_t>>();

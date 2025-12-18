@@ -17,7 +17,7 @@ struct consensus_t {
     int fwd_reads, rev_reads;
     uint8_t max_mapq;
     hts_pos_t remap_boundary;
-    int clip_len, lowq_clip_portion;
+    int clip_len, lowq_prefix, lowq_suffix;
     int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
     bool is_hsr = false;
 	bool extended_to_left = false, extended_to_right = false;
@@ -27,16 +27,16 @@ struct consensus_t {
 
     consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
                 const std::string& sequence, int fwd_reads, int rev_reads, int clip_len, uint8_t max_mapq, 
-                hts_pos_t remap_boundary, int lowq_clip_portion)
+                hts_pos_t remap_boundary, int lowq_prefix, int lowq_suffix)
                 : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
                 sequence(sequence), fwd_reads(fwd_reads), rev_reads(rev_reads), clip_len(clip_len), max_mapq(max_mapq), 
-                remap_boundary(remap_boundary), lowq_clip_portion(lowq_clip_portion) {}
-    
+                remap_boundary(remap_boundary), lowq_prefix(lowq_prefix), lowq_suffix(lowq_suffix) {}
+
     consensus_t(std::string& line, bool is_hsr) : is_hsr(is_hsr) {
         std::stringstream ss(line);
         char dir;
         int max_mapq_int;
-        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads >> max_mapq_int >> remap_boundary >> lowq_clip_portion;
+        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads >> max_mapq_int >> remap_boundary >> lowq_prefix >> lowq_suffix;
         left_clipped = dir == 'L';
         max_mapq = (uint8_t) max_mapq_int;
         if (is_hsr) {
@@ -49,7 +49,7 @@ struct consensus_t {
     std::string to_string() {
         std::stringstream ss;
         ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";
-        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_clip_portion;
+        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_prefix << " " << lowq_suffix;
         return ss.str();
     }
 

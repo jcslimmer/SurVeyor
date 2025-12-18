@@ -535,10 +535,10 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
             hts_pos_t remove_from_end = get_end_offset(accepted_reads[2], accepted_reads[0]);
 
             int clip_len = left_clipped ? breakpoint-start : end-breakpoint;
-            int lowq_clip_portion = left_clipped ? remove_from_start : remove_from_end;
+            int lowq_prefix = remove_from_start, lowq_suffix = remove_from_end;
 
-            consensus_t* consensus = new consensus_t(left_clipped, start, breakpoint, end, consensus_seq, 
-                fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_clip_portion);
+            consensus_t* consensus = new consensus_t(left_clipped, start, breakpoint, end, consensus_seq,
+                fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_prefix, lowq_suffix);
             consensuses.push_back(consensus);
         }
         clipped.swap(rejected_reads);

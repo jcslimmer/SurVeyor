@@ -887,7 +887,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_UB", &data, &len);
 	if (len > 0) {
-		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0, 0);
 	}
 	free(data);
 
@@ -896,7 +896,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	len = 0;
 	bcf_get_info_int32(hdr, b, "REMAP_LB", &data, &len);
 	if (len > 0) {
-		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0);
+		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0, 0);
 	}
 	free(data);
 
