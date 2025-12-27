@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
 
 	for (std::string& id : ids_sorted) {
 		std::shared_ptr<sv_t> sv = sv_entries[id];
-		sv2bcf(in_vcf_hdr, b, sv.get(), chr_seqs.get_seq(sv->chr));
+		sv2bcf(in_vcf_hdr, b, sv.get(), chr_seqs.get_seq(sv->chr), false);
 		if (bcf_write(out_vcf_file, in_vcf_hdr, b) != 0) {
 			throw std::runtime_error("Failed to write to " + out_vcf_fname + ".");
 		}

@@ -445,10 +445,12 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
-	std::string junction_seq, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {
+	std::string junction_seq, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {	
+	
 	std::vector<std::shared_ptr<sv_t>> svs;
     hts_pos_t current_pos = ref_start + aln.ref_begin;
 	hts_pos_t junction_pos = 0;
+	std::vector<snp_t> snps;
 
 	for (int i = 0; i < aln.cigar.size(); i++) {
 		uint32_t c = aln.cigar[i];
@@ -465,6 +467,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 		} else if (op == 'I') {
 			std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, current_pos-1, current_pos-1, ins_seq, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
+		} else if (op == 'X') {
+			char alt_base = junction_seq[junction_pos];
+			snps.push_back(snp_t(current_pos, alt_base));
 		}
 
         if (op != 'I' && op != 'S') {
@@ -474,6 +479,21 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 			junction_pos += op_length;
 		}
     }
+
+	for (snp_t& snp : snps) {
+		int min_dist = INT32_MAX;
+		sv_t* best_sv = nullptr;
+		for (auto& sv : svs) {
+			int dist = std::min(abs((int)snp.pos - (int)sv->start), abs((int)snp.pos - (int)sv->end));
+			if (dist < min_dist) {
+				min_dist = dist;
+				best_sv = sv.get();
+			}
+		}
+		if (best_sv && min_dist <= 20) {
+			best_sv->aux_snps.push_back(snp);
+		}
+	}
 
 	return svs;
 }

@@ -529,6 +529,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ia_tag = "##INFO=<ID=INCOMPLETE_ASSEMBLY,Number=0,Type=Flag,Description=\"The inserted sequence is too long, and it could not be fully assembled using short reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ia_tag, &len));
 
+	const char* aux_snps_tag = "##INFO=<ID=AUX_SNPS,Number=1,Type=String,Description=\"Auxiliary SNPs supporting the variant.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, aux_snps_tag, &len));
+
 	// add ALT
 	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));
@@ -699,6 +702,18 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 		bcf_update_info_flag(hdr, bcf_entry, "INCOMPLETE_ASSEMBLY", "", 1);
 	}
 
+	// auxiliary SNPs
+	std::string aux_snps_str;
+	for (const auto& snp : sv->aux_snps) {
+		if (!aux_snps_str.empty()) {
+			aux_snps_str += ",";
+		}
+		aux_snps_str += std::to_string(snp.pos+1) + ":" + snp.alt_base;
+	}
+	if (!aux_snps_str.empty()) {
+		bcf_update_info_string(hdr, bcf_entry, "AUX_SNPS", aux_snps_str.c_str());
+	}
+
 	if (sv->svtype() == "DEL") {
 		if (!for_gt) {
 			deletion_t* del = (deletion_t*) sv;
@@ -819,6 +834,55 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	return "";
 }
 
+void copy_all_info(bcf_hdr_t* hdr, bcf1_t* src, bcf1_t* dest) {
+    bcf_unpack(src, BCF_UN_INFO);
+
+	for (int i = 0; i < src->n_info; ++i) {
+        bcf_info_t* info = &src->d.info[i];
+        
+        // Get the string tag (key) from the header using the internal ID
+        const char *key = bcf_hdr_int2id(hdr, BCF_DT_ID, info->key);
+        if (!key) continue;
+
+        switch (info->type) {
+            case BCF_HT_INT: {
+                int32_t *vals = NULL; 
+                int nvals = 0;
+                if (bcf_get_info_int32(hdr, src, key, &vals, &nvals) > 0) {
+                    bcf_update_info_int32(hdr, dest, key, vals, nvals);
+                }
+                free(vals);
+                break;
+            }
+            case BCF_HT_REAL: {
+                float *vals = NULL; 
+                int nvals = 0;
+                if (bcf_get_info_float(hdr, src, key, &vals, &nvals) > 0) {
+                    bcf_update_info_float(hdr, dest, key, vals, nvals);
+                }
+                free(vals);
+                break;
+            }
+            case BCF_HT_STR: {
+                char *vals = NULL; 
+                int nvals = 0;
+                if (bcf_get_info_string(hdr, src, key, &vals, &nvals) > 0) {
+                    // bcf_update_info_string expects a single null-terminated string
+                    bcf_update_info_string(hdr, dest, key, vals);
+                }
+                free(vals);
+                break;
+            }
+            case BCF_HT_FLAG: {
+                bcf_update_info_flag(hdr, dest, key, NULL, 1);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
 void copy_all_fmt(bcf_hdr_t* hdr, bcf1_t* src, bcf1_t* dest) {
     bcf_unpack(src, BCF_UN_FMT);
 
@@ -841,9 +905,7 @@ void copy_all_fmt(bcf_hdr_t* hdr, bcf1_t* src, bcf1_t* dest) {
             int n_vals = 0;
             // Note: bcf_get_format_string allocates an array of pointers
             if (bcf_get_format_string(hdr, src, key, &vals, &n_vals) >= 0) {
-                // n_vals here is the number of samples
                 bcf_update_format_string(hdr, dest, key, (const char**)vals, bcf_hdr_nsamples(hdr));
-                // bcf_get_format_string allocates two blocks: vals and vals[0]
                 free(vals[0]); 
                 free(vals);
             }
@@ -876,6 +938,18 @@ float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
     return -1.0;
 }
 
+std::vector<int> get_bcf_gt(bcf_hdr_t *hdr, bcf1_t *b) {
+	int ngt = 0;
+	int* gt_arr = NULL;
+	std::vector<int> gt_vector;
+	if (bcf_get_genotypes(hdr, b, &gt_arr, &ngt) > 0) {
+		for (int i = 0; i < ngt; i++) {
+			gt_vector.push_back(gt_arr[i]);
+		}
+	}
+	free(gt_arr);
+	return gt_vector;
+}
 
 std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 
@@ -969,6 +1043,18 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	}
 	free(s_data);
 
+	s_data = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "AUX_SNPS", (void**) &s_data, &len);
+	if (len > 0) {
+		std::istringstream ss(s_data);
+		std::string snp_str;
+		while (std::getline(ss, snp_str, ',')) {
+			sv->aux_snps.push_back(snp_t(snp_str));
+		}
+	}
+	free(s_data);
+
 	sv->id = b->d.id;
 	sv->source = get_sv_info_str(hdr, b, "SOURCE");
 
@@ -989,15 +1075,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (filter != "PASS") sv->sample_info.filters.push_back(token);
 	}
 
-	int n_gt = 0;
-	int* gt = NULL;
-	n_gt = bcf_get_genotypes(hdr, b, &gt, &n_gt);
-	sv->sample_info.gt.clear();
-	if (n_gt < 0) n_gt = 0;
-	for (int i = 0; i < n_gt; i++) {
-		sv->sample_info.gt.push_back(gt[i]);
-	}
-	free(gt);
+	sv->sample_info.gt = get_bcf_gt(hdr, b);
 	std::sort(sv->sample_info.gt.begin(), sv->sample_info.gt.end());
 
 	float* f_data = NULL;
@@ -1051,6 +1129,25 @@ int count_alt_alleles(bcf_hdr_t* hdr, bcf1_t* sv) {
     }
     free(gt);
     return count;
+}
+
+bcf1_t* generate_snp(bcf_hdr_t* hdr, std::string chr, hts_pos_t pos, char ref_base, char alt_base, 
+	std::string sv_id, std::vector<int>& gt) {
+
+	bcf1_t* vcf_record = bcf_init();
+	vcf_record->rid = bcf_hdr_name2id(hdr, chr.c_str());
+	vcf_record->pos = pos; // 0-based position
+	vcf_record->d.id = strdup(sv_id.c_str());
+
+	std::string ref_allele(1, ref_base);
+	std::string alt_allele(1, alt_base);
+	const char* alleles[] = {ref_allele.c_str(), alt_allele.c_str()};
+	bcf_update_alleles(hdr, vcf_record, alleles, 2);
+
+	bcf_update_genotypes(hdr, vcf_record, gt.data(), gt.size());
+
+	return vcf_record;
+
 }
 
 #endif /* VCF_UTILS_H */

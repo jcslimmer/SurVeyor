@@ -13,6 +13,7 @@
 struct consensus_t {
     bool left_clipped;
     hts_pos_t start, breakpoint, end;
+    hts_pos_t orig_start, orig_end;
     std::string sequence;
     int fwd_reads, rev_reads;
     uint8_t max_mapq;
@@ -29,6 +30,7 @@ struct consensus_t {
                 const std::string& sequence, int fwd_reads, int rev_reads, int clip_len, uint8_t max_mapq, 
                 hts_pos_t remap_boundary, int lowq_prefix, int lowq_suffix)
                 : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
+                orig_start(start), orig_end(end),
                 sequence(sequence), fwd_reads(fwd_reads), rev_reads(rev_reads), clip_len(clip_len), max_mapq(max_mapq), 
                 remap_boundary(remap_boundary), lowq_prefix(lowq_prefix), lowq_suffix(lowq_suffix) {}
 
@@ -37,6 +39,8 @@ struct consensus_t {
         char dir;
         int max_mapq_int;
         ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads >> max_mapq_int >> remap_boundary >> lowq_prefix >> lowq_suffix;
+        orig_start = start;
+        orig_end = end;
         left_clipped = dir == 'L';
         max_mapq = (uint8_t) max_mapq_int;
         if (is_hsr) {
@@ -127,8 +131,20 @@ struct consensus_t {
     }
 };
 
+struct snp_t {
+    hts_pos_t pos;
+    char alt_base;
+
+    snp_t(hts_pos_t pos, char alt_base) : pos(pos), alt_base(alt_base) {}
+    snp_t(std::string& snp_str) {
+        size_t colon_pos = snp_str.find(':');
+        pos = std::stoll(snp_str.substr(0, colon_pos)) - 1;
+        alt_base = snp_str[colon_pos+1];
+    }
+};
+
 struct sv_t {
-    
+
     struct anchor_aln_t {
         hts_pos_t start, end;
         int seq_len;
@@ -152,6 +168,7 @@ struct sv_t {
 
     std::shared_ptr<anchor_aln_t> left_anchor_aln, right_anchor_aln;
     std::shared_ptr<consensus_t> rc_consensus, lc_consensus;
+    std::vector<snp_t> aux_snps;
 
     std::string source;
     bool imprecise = false;
@@ -271,11 +288,16 @@ struct sv_t {
     }
 
     std::string unique_key() {
-        return chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;
+        std::string key = chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;
+        for (const auto& snp : aux_snps) {
+            key += ":" + std::to_string(snp.pos+1) + "," + snp.alt_base;
+        }
+        return key;
     }
 
     virtual std::string svtype() = 0;
-    virtual hts_pos_t svlen() = 0;
+    virtual hts_pos_t svlen() = 0; // this reflects the SVLEN field in VCF (4.3 and below)
+    virtual hts_pos_t svsize() = 0; // this is for filtering, and it is the max number of bases affected either on the ref or in the alt
 
     std::string left_anchor_aln_string() {
         if (left_anchor_aln == NULL) return "NA";
@@ -344,6 +366,7 @@ struct duplication_t : sv_t {
 
     std::string svtype() { return "DUP"; }
     hts_pos_t svlen() { return end - start + ins_seq.length(); }
+    hts_pos_t svsize() { return end - start; }
 };
 
 struct insertion_t : sv_t {
@@ -351,6 +374,7 @@ struct insertion_t : sv_t {
 
     std::string svtype() { return "INS"; }
     hts_pos_t svlen() { return ins_seq.length() - (end-start); }
+    hts_pos_t svsize() { return ins_seq.length(); }
 };
 
 struct breakend_t : sv_t {
@@ -363,6 +387,7 @@ struct breakend_t : sv_t {
 
     std::string svtype() { return "BND"; }
     hts_pos_t svlen() { return 0; }
+    hts_pos_t svsize() { return end - start; }
 };
 
 struct inversion_t : sv_t {
@@ -388,6 +413,7 @@ struct inversion_t : sv_t {
         }
         return (inv_end-inv_start) - (end-start);
     }
+    hts_pos_t svsize() { return end - start; }
 
     bool is_left_facing() {
         return source[source.length()-2] == 'L';
