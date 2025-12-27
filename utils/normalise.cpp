@@ -194,6 +194,8 @@ void left_align_ins(std::shared_ptr<sv_t> sv) {
 
 
 void left_align(std::shared_ptr<sv_t> sv) {
+	if (!sv->aux_indels.empty()) return; // this may be complicated, let us skip for now
+
 	std::string svtype = sv->svtype();
 	simplify(sv);
 	if (svtype == "DEL") {

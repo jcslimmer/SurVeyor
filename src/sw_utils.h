@@ -445,8 +445,8 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
-	std::string junction_seq, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {	
-	
+	std::string junction_seq, int min_sv_size, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {	
+
 	std::vector<std::shared_ptr<sv_t>> svs;
     hts_pos_t current_pos = ref_start + aln.ref_begin;
 	hts_pos_t junction_pos = 0;
@@ -480,17 +480,45 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 		}
     }
 
+	std::vector<std::shared_ptr<sv_t>> main_svs; // SVs that are at least min_sv_size
+	std::vector<std::shared_ptr<sv_t>> aux_svs;  // SVs that are smaller than min_sv_size
+	for (auto& sv : svs) {
+		if (sv->svsize() >= min_sv_size) {
+			main_svs.push_back(sv);
+		} else {
+			aux_svs.push_back(sv);
+		}
+	}
+
+	// associate small SVs to the closest main SV within 30 bp
+	svs = main_svs;
+	for (auto& sv : aux_svs) {
+		int min_dist = INT32_MAX;
+		sv_t* best_sv = nullptr;
+		for (auto& main_sv : main_svs) {
+			int dist = std::min(abs((int)sv->start - (int)main_sv->end), abs((int)sv->end - (int)main_sv->start));
+			if (dist < min_dist) {
+				min_dist = dist;
+				best_sv = main_sv.get();
+			}
+		}
+		if (best_sv && min_dist <= 30) {
+			best_sv->aux_indels.push_back(sv);
+		}
+	}
+
+	// associate SNPs to the closest main SV within 30 bp
 	for (snp_t& snp : snps) {
 		int min_dist = INT32_MAX;
 		sv_t* best_sv = nullptr;
-		for (auto& sv : svs) {
+		for (auto& sv : main_svs) {
 			int dist = std::min(abs((int)snp.pos - (int)sv->start), abs((int)snp.pos - (int)sv->end));
 			if (dist < min_dist) {
 				min_dist = dist;
 				best_sv = sv.get();
 			}
 		}
-		if (best_sv && min_dist <= 20) {
+		if (best_sv && min_dist <= 30) {
 			best_sv->aux_snps.push_back(snp);
 		}
 	}
@@ -499,7 +527,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
-                    hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len) {
+                    hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len, int min_sv_size) {
 
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
     hts_pos_t ref_remap_rh_len = ref_remap_rh_end - ref_remap_rh_start;
@@ -643,7 +671,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 				StripedSmithWaterman::Alignment aln;
 				aligner.Align(junction_seq.c_str(), contig_seq + remap_start, remap_len, filter, &aln, 0);
 				if (!is_left_clipped(aln, min_clip_len) && !is_right_clipped(aln, min_clip_len)) {
-					return detect_svs_from_aln(aln, contig_name, remap_start, junction_seq);
+					return detect_svs_from_aln(aln, contig_name, remap_start, junction_seq, min_sv_size);
 				}
 			}
 
@@ -655,13 +683,13 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
-	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part);
+	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part, min_sv_size);
 	for (const auto& sv : extra_svs) {
 		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
 		}
 	}
-	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part);
+	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part, min_sv_size);
 	for (const auto& sv : extra_svs) {
 		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
@@ -672,7 +700,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
 					std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus,
-					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error) {
+					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error, int min_sv_size) {
 
 	std::string consensus_junction_seq;
 	hts_pos_t ref_remap_lh_start = 0, ref_remap_lh_end = 0, ref_remap_rh_start = 0, ref_remap_rh_end = 0;
@@ -745,7 +773,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		return std::vector<std::shared_ptr<sv_t>>();
 	}
 
-	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len);
+	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, 
+		ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len, min_sv_size);
 	for (const auto& sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;

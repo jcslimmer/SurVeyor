@@ -168,6 +168,7 @@ struct sv_t {
 
     std::shared_ptr<anchor_aln_t> left_anchor_aln, right_anchor_aln;
     std::shared_ptr<consensus_t> rc_consensus, lc_consensus;
+    std::vector<std::shared_ptr<sv_t>> aux_indels;
     std::vector<snp_t> aux_snps;
 
     std::string source;
@@ -292,6 +293,9 @@ struct sv_t {
         for (const auto& snp : aux_snps) {
             key += ":" + std::to_string(snp.pos+1) + "," + snp.alt_base;
         }
+        for (const auto& sv : aux_indels) {
+            key += ":" + sv->unique_key();
+        }
         return key;
     }
 
@@ -358,6 +362,7 @@ struct deletion_t : sv_t {
 
     std::string svtype() { return "DEL"; }
     hts_pos_t svlen() { return start - end + ins_seq.length(); }
+    hts_pos_t svsize() { return end - start; }
 };
 
 struct duplication_t : sv_t {
@@ -366,7 +371,7 @@ struct duplication_t : sv_t {
 
     std::string svtype() { return "DUP"; }
     hts_pos_t svlen() { return end - start + ins_seq.length(); }
-    hts_pos_t svsize() { return end - start; }
+    hts_pos_t svsize() { return end - start + ins_seq.length(); }
 };
 
 struct insertion_t : sv_t {

@@ -529,6 +529,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* ia_tag = "##INFO=<ID=INCOMPLETE_ASSEMBLY,Number=0,Type=Flag,Description=\"The inserted sequence is too long, and it could not be fully assembled using short reads.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, ia_tag, &len));
 
+	const char* aux_indels_tag = "##INFO=<ID=AUX_INDELS,Number=1,Type=String,Description=\"Auxiliary indels supporting the variant.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, aux_indels_tag, &len));
+
 	const char* aux_snps_tag = "##INFO=<ID=AUX_SNPS,Number=1,Type=String,Description=\"Auxiliary SNPs supporting the variant.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, aux_snps_tag, &len));
 
@@ -681,7 +684,9 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 			bcf_update_info_int32(hdr, bcf_entry, "SVINSLEN", &int_conv, 1);
 		}
 	}
-	bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
+	if (!sv->source.empty()) {
+		bcf_update_info_string(hdr, bcf_entry, "SOURCE", sv->source.c_str());
+	}
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
 	}
@@ -712,6 +717,18 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	}
 	if (!aux_snps_str.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "AUX_SNPS", aux_snps_str.c_str());
+	}
+
+	// auxiliary indels
+	std::string aux_indels_str;
+	for (const auto& indel : sv->aux_indels) {
+		if (!aux_indels_str.empty()) {
+			aux_indels_str += ",";
+		}
+		aux_indels_str += std::to_string(indel->start+1) + ":" + std::to_string(indel->end+1) + ":" + indel->ins_seq;
+	}
+	if (!aux_indels_str.empty()) {
+		bcf_update_info_string(hdr, bcf_entry, "AUX_INDELS", aux_indels_str.c_str());
 	}
 
 	if (sv->svtype() == "DEL") {
@@ -1051,6 +1068,30 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		std::string snp_str;
 		while (std::getline(ss, snp_str, ',')) {
 			sv->aux_snps.push_back(snp_t(snp_str));
+		}
+	}
+	free(s_data);
+
+	s_data = NULL;
+	len = 0;
+	bcf_get_info_string(hdr, b, "AUX_INDELS", (void**) &s_data, &len);
+	if (len > 0) {
+		std::istringstream ss(s_data);
+		std::string indel_str;
+		while (std::getline(ss, indel_str, ',')) {
+			// parse start:end:ins_seq
+			std::istringstream indel_ss(indel_str);
+			std::string start_str, end_str, ins_seq;
+			std::getline(indel_ss, start_str, ':');
+			std::getline(indel_ss, end_str, ':');
+			std::getline(indel_ss, ins_seq, ':');
+			hts_pos_t start = std::stoll(start_str);
+			hts_pos_t end = std::stoll(end_str);
+			if (start == end) {
+				sv->aux_indels.push_back(std::make_shared<insertion_t>(bcf_seqname_safe(hdr, b), start-1, end-1, ins_seq, nullptr, nullptr, nullptr, nullptr));
+			} else {
+				sv->aux_indels.push_back(std::make_shared<deletion_t>(bcf_seqname_safe(hdr, b), start-1, end-1, ins_seq, nullptr, nullptr, nullptr, nullptr));
+			}
 		}
 	}
 	free(s_data);

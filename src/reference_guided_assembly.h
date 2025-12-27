@@ -529,9 +529,9 @@ std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::str
 	if (remap_start >= remap_end) return NULL;
 
 	 std::vector<std::shared_ptr<sv_t>> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
-                remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len);
+                remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len, config.min_sv_size);
 
-	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->ins_seq.length() < config.min_sv_size) return NULL;
+	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->svsize() < config.min_sv_size) return NULL;
 
 	std::shared_ptr<insertion_t> insertion = std::dynamic_pointer_cast<insertion_t>(insertions[0]);
 

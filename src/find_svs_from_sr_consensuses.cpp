@@ -135,7 +135,7 @@ void find_svs_from_consensuses_pair(int id, std::string contig_name,
 			std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
 			std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
 			std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
-			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == NULL || bnd->svsize() < config.min_sv_size) {
 				return;
 			}
 			bnd->source = "2SR";
@@ -144,7 +144,7 @@ void find_svs_from_consensuses_pair(int id, std::string contig_name,
 			int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
 			double max_mm_rate = max_seq_error_f(c1_consensus.get(), c2_consensus.get());
 			svs_by_pair[pair_idx] = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
-				aligner, min_overlap, config.min_clip_len, max_mm_rate);
+				aligner, min_overlap, config.min_clip_len, max_mm_rate, config.min_sv_size);
 		}
 	}
 }
@@ -394,7 +394,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 				bnd->imprecise = true;
 			}
 
-			if (bnd == nullptr || bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == nullptr || bnd->svsize() < config.min_sv_size) {
 				continue;
 			}
 			bnd->source = "DP";
@@ -434,7 +434,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 				bnd->imprecise = true;
 			}
 
-			if (bnd == NULL || bnd->end-bnd->start < config.min_sv_size) {
+			if (bnd == NULL || bnd->svsize() < config.min_sv_size) {
 				continue;
 			}
 			bnd->source = "DP";
@@ -494,7 +494,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 		inv->inv_end = inv_end;
 		inv->source = bnd_rf->source + "-" + bnd_lf->source;
 		inv->imprecise = imprecise;
-		if (inv->inv_end-inv->inv_start >= config.min_sv_size) {
+		if (inv->svsize() >= config.min_sv_size) {
 			local_svs.push_back(inv);
 		}
 	}
@@ -597,13 +597,14 @@ void find_indels_from_paired_consensuses(int contig_id, std::string contig_name,
 	std::vector<std::shared_ptr<consensus_t>>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
 	std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
-	
+
 	std::vector<std::shared_ptr<consensus_t>> rc_consensuses, lc_consensuses;
 	rc_consensuses.insert(rc_consensuses.end(), rc_sr_consensuses.begin(), rc_sr_consensuses.end());
 	rc_consensuses.insert(rc_consensuses.end(), rc_hsr_consensuses.begin(), rc_hsr_consensuses.end());
 	lc_consensuses.insert(lc_consensuses.end(), lc_sr_consensuses.begin(), lc_sr_consensuses.end());
 	lc_consensuses.insert(lc_consensuses.end(), lc_hsr_consensuses.begin(), lc_hsr_consensuses.end());
-		
+
+	/* == Find indels from paired consensuses == */
 	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_consensuses, thread_pool);
 
     /* == Deal with unpaired consensuses == */
@@ -627,9 +628,9 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 		
 		std::vector<std::shared_ptr<sv_t>> svs;
 		if (!consensus->left_clipped) {
-			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0);
+			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, 0.0, config.min_sv_size);
 		} else if (consensus->left_clipped) {
-			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0);
+			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, 0.0, config.min_sv_size);
 		}
 
 		if (!svs.empty()) {
@@ -862,10 +863,7 @@ int main(int argc, char* argv[]) {
 					inv->source = sv->source;
 					svs[i] = inv;
 				}
-			} else if (svs[i]->svtype() == "DEL" && svs[i]->end-svs[i]->start < config.min_sv_size) {
-				svs[i] = nullptr;
-			} else if ((svs[i]->svtype() == "DUP" && svs[i]->svlen() < config.min_sv_size) || 
-					   (svs[i]->svtype() == "INS" && svs[i]->ins_seq.length() < config.min_sv_size)) {
+			} else if (svs[i]->svsize() < config.min_sv_size) {
 				svs[i] = nullptr;
 			}
 		}
