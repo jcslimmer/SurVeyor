@@ -468,8 +468,10 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 			std::shared_ptr<sv_t> sv = std::make_shared<insertion_t>(contig_name, current_pos-1, current_pos-1, ins_seq, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else if (op == 'X') {
-			char alt_base = junction_seq[junction_pos];
-			snps.push_back(snp_t(current_pos, alt_base));
+			for (int j = 0; j < op_length; j++) {	
+				char alt_base = junction_seq[junction_pos+j];
+				snps.push_back(snp_t(current_pos+j, alt_base));
+			}
 		}
 
         if (op != 'I' && op != 'S') {
