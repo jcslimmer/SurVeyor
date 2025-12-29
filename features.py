@@ -116,7 +116,9 @@ class Features:
 
     def generate_id(record):
         svinsseq = Features.get_svinsseq(record)
-        return f"{record.chrom}:{record.pos}-{record.stop}:{Features.get_svtype(record)}:{Features.get_svlen(record)}:{hash(svinsseq)}"
+        aux_snps = Features.get_string_value(record.info, 'AUX_SNPS', "")
+        aux_indels = Features.get_string_value(record.info, 'AUX_INDELS', "")
+        return f"{record.chrom}:{record.pos}-{record.stop}:{Features.get_svtype(record)}:{Features.get_svlen(record)}:{hash(svinsseq)}:{aux_snps}:{aux_indels}"
 
     def get_svinsseq(record):
         if "<" not in record.alts[0]:
