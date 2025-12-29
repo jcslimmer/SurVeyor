@@ -490,7 +490,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 		}
 	}
 
-	// associate small SVs to the closest main SV within 30 bp
+	// associate small SVs to the closest main SV within 50 bp
 	svs = main_svs;
 	for (auto& sv : aux_svs) {
 		int min_dist = INT32_MAX;
@@ -502,12 +502,12 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 				best_sv = main_sv.get();
 			}
 		}
-		if (best_sv && min_dist <= 30) {
+		if (best_sv && min_dist <= 50) {
 			best_sv->aux_indels.push_back(sv);
 		}
 	}
 
-	// associate SNPs to the closest main SV within 30 bp
+	// associate SNPs to the closest main SV within 50 bp
 	for (snp_t& snp : snps) {
 		int min_dist = INT32_MAX;
 		sv_t* best_sv = nullptr;
@@ -518,7 +518,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 				best_sv = sv.get();
 			}
 		}
-		if (best_sv && min_dist <= 30) {
+		if (best_sv && min_dist <= 50) {
 			best_sv->aux_snps.push_back(snp);
 		}
 	}

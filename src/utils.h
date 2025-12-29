@@ -167,6 +167,9 @@ double stddev(std::vector<T>& v) {
 }
 
 template<typename T>
+inline T max(T a, T b, T c) { return std::max(a, std::max(b,c)); }
+
+template<typename T>
 inline T max(T a, T b, T c, T d) { return std::max(std::max(a,b), std::max(c,d)); }
 
 bool file_exists(std::string& fname) {
