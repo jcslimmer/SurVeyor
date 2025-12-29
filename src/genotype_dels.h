@@ -10,6 +10,67 @@
 
 #include "genotype.h"
 
+
+char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_len, 
+    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps) {
+    
+    std::sort(aux_indels.begin(), aux_indels.end(), [](std::shared_ptr<sv_t>& a, std::shared_ptr<sv_t>& b) {
+        return a->start < b->start;
+    });
+    std::sort(aux_snps.begin(), aux_snps.end(), [](snp_t& a, snp_t& b) {
+        return a.pos < b.pos;
+    });
+
+    int curr_snp_idx = aux_snps.size()-1, curr_indel_idx = aux_indels.size()-1;
+    while (curr_snp_idx >= 0 && aux_snps[curr_snp_idx].pos >= hap_end) curr_snp_idx--;
+    while (curr_indel_idx >= 0 && aux_indels[curr_indel_idx]->end >= hap_end) curr_indel_idx--;
+        
+    char* hap_seq = new char[hap_len + 1];
+    std::fill(hap_seq, hap_seq + hap_len, 'N');
+    hap_seq[hap_len] = '\0';
+    
+    hts_pos_t remaining_hap_len = hap_len;
+    while (hap_end > 0 && remaining_hap_len > 0) {
+        hts_pos_t copy_start = hap_end - remaining_hap_len + 1;
+        if (copy_start < 0) copy_start = 0;
+        hts_pos_t next_snp_pos = (curr_snp_idx >= 0) ? aux_snps[curr_snp_idx].pos : -10;
+        hts_pos_t next_indel_end = (curr_indel_idx >= 0) ? aux_indels[curr_indel_idx]->end : -10;
+
+        copy_start = max(copy_start, next_snp_pos+1, next_indel_end+1);
+        hts_pos_t copy_len = hap_end - copy_start + 1;
+
+        strncpy(hap_seq + remaining_hap_len - copy_len, chrom_seq + copy_start, copy_len);
+        remaining_hap_len -= copy_len;
+        hap_end -= copy_len;
+
+        if (next_snp_pos+1 == copy_start && remaining_hap_len > 0) { // we insert the SNP
+            hap_seq[remaining_hap_len-1] = aux_snps[curr_snp_idx].alt_base;
+            remaining_hap_len--;
+            hap_end--;
+            curr_snp_idx--;
+        } else if (next_indel_end+1 == copy_start) { // we insert the indel
+            std::shared_ptr<sv_t> indel = aux_indels[curr_indel_idx];
+            if (indel->svtype() == "DEL") {
+                hap_end = indel->start;
+            } else if (indel->svtype() == "INS") {
+                int ins_len = indel->ins_seq.length();
+                if (ins_len > remaining_hap_len) ins_len = remaining_hap_len;
+                strncpy(hap_seq + (remaining_hap_len - ins_len), indel->ins_seq.c_str() + (indel->ins_seq.length() - ins_len), ins_len);
+                remaining_hap_len -= ins_len;
+            }
+            curr_indel_idx--;
+        }
+    }
+    if (remaining_hap_len > 0) {
+        // move the sequence to the start
+        for (hts_pos_t i = 0; i < hap_len-remaining_hap_len; i++) {
+            hap_seq[i] = hap_seq[i+remaining_hap_len];
+        }
+        hap_seq[hap_len-remaining_hap_len] = '\0';
+    }
+    return hap_seq;
+}
+
 void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
                 stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
@@ -28,15 +89,18 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     del_start++; del_end++;
 
     // all ranges will be start-inclusive and end-exclusive, i.e. [a,b)
+    char* lh_seq = generate_haplotype_left(contig_seq, del_start-1, extend, del->aux_indels, del->aux_snps);
     hts_pos_t alt_start = std::max(hts_pos_t(0), del_start-extend);
     hts_pos_t alt_end = std::min(del_end+extend, contig_len);
     hts_pos_t alt_lh_len = del_start-alt_start, alt_rh_len = alt_end-del_end;
+    alt_lh_len = strlen(lh_seq);
     hts_pos_t alt_len = alt_lh_len + del->ins_seq.length() + alt_rh_len;
     char* alt_seq = new char[alt_len + 1];
-    strncpy(alt_seq, contig_seq+alt_start, alt_lh_len);
+    strncpy(alt_seq, lh_seq, alt_lh_len);
     strncpy(alt_seq+alt_lh_len, del->ins_seq.c_str(), del->ins_seq.length());
     strncpy(alt_seq+alt_lh_len+del->ins_seq.length(), contig_seq+del_end, alt_rh_len);
     alt_seq[alt_len] = 0;
+    delete[] lh_seq;
 
     // extract ref alleles - will be useful for consensus generation
     hts_pos_t ref_bp1_start = alt_start, ref_bp1_end = std::min(del_start+extend, contig_len);
@@ -180,16 +244,18 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.hq_alt_rext_reads = alt_consensus->hq_right_ext_reads;
         alt_consensus_seq = alt_consensus->sequence;
         
+        char* lh_seq = generate_haplotype_left(contig_seq, del->start-1, alt_consensus_seq.length(), del->aux_indels, del->aux_snps);
         hts_pos_t lh_start = del->start-alt_consensus_seq.length();
         if (lh_start < 0) lh_start = 0;
         hts_pos_t lh_len = del->start-lh_start;
+        lh_len = strlen(lh_seq);
         hts_pos_t rh_end = del->end+alt_consensus_seq.length();
         if (rh_end > contig_len) rh_end = contig_len;
         hts_pos_t rh_len = rh_end-del->end;
     
         delete[] alt_seq;
         alt_seq = new char[lh_len + rh_len + del->ins_seq.length() + 1];
-        strncpy(alt_seq, contig_seq+lh_start, lh_len);
+        strncpy(alt_seq, lh_seq, lh_len);
         strncpy(alt_seq+lh_len, del->ins_seq.c_str(), del->ins_seq.length());
         strncpy(alt_seq+lh_len+del->ins_seq.length(), contig_seq+del->end, rh_len);
         alt_seq[lh_len+rh_len+del->ins_seq.length()] = 0;
