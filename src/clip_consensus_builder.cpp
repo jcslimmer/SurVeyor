@@ -473,6 +473,20 @@ std::string build_full_consensus_seq(std::vector<bam_redux_t*>& clipped, bool le
     return consensus_seq;
 }
 
+void dedup_cluster(std::vector<bam_redux_t*>& cluster) {
+    std::unordered_map<std::string, int> seen;
+    std::vector<bam_redux_t*> unique_cluster;
+    for (bam_redux_t* r : cluster) {
+        std::string key = r->get_sequence() + " " + std::to_string(r->mstart);
+        int count = seen[key];
+        if (count == 0 || (count == 1 && r->mapq >= config.high_confidence_mapq)) {
+            unique_cluster.push_back(r);
+            seen[key]++;
+        }
+    }
+    cluster.swap(unique_cluster);
+}
+
 std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_redux_t*> clipped, bool left_clipped) {
 
     std::vector<consensus_t*> consensuses;
@@ -483,6 +497,8 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
         return r1->unclipped_start() < r2->unclipped_start();
     });
     if (clipped[0]->unclipped_start() < 0) return consensuses;
+
+    dedup_cluster(clipped);
 
     while (clipped.size() >= 3) {
         std::vector<bool> accepted;
