@@ -556,7 +556,7 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 		std::ifstream sr_consensuses_fin(sr_consensuses_fname);
 		std::string line;
 		while (std::getline(sr_consensuses_fin, line)) {
-			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line, false);
+			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
 			if (consensus->left_clipped) {
 				lc_sr_consensuses.push_back(consensus);
 			} else {
@@ -570,7 +570,7 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
 		std::string line;
 		while (std::getline(hsr_consensuses_fin, line)) {
-			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line, true);
+			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
 			if (consensus->left_clipped) {
 				lc_hsr_consensuses.push_back(consensus);
 			} else {

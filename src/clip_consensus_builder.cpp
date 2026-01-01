@@ -92,6 +92,71 @@ struct bam_redux_t {
     }
 };
 
+struct sync_hts_reader_t {
+    open_samFile_t* file1 = nullptr,* file2 = nullptr;
+    std::vector<open_samFile_t*> files;
+    hts_itr_t* iter1 = nullptr,* iter2 = nullptr;
+    std::vector<hts_itr_t*> iters;
+    int read_len;
+    
+    struct cmp_reads {
+        bool operator()(bam1_t* r1, bam1_t* r2) {
+            return get_unclipped_start(r1) > get_unclipped_start(r2);
+        }
+    };
+    std::priority_queue<bam1_t*, std::vector<bam1_t*>, cmp_reads> read_queue;
+
+    sync_hts_reader_t(std::vector<std::string> fnames, std::string region, int read_len) : read_len(read_len) {
+        bam1_t* read = bam_init1();
+        for (std::string fname : fnames) {
+            if (!file_exists(fname)) continue;
+            open_samFile_t* file = open_samFile(fname, true);
+            hts_itr_t* iter = sam_itr_querys(file->idx, file->header, region.c_str());
+            if (sam_itr_next(file->file, iter, read) >= 0) {
+                read_queue.push(bam_dup1(read));
+            }
+            files.push_back(file);
+            iters.push_back(iter);
+        }
+        bam_destroy1(read);
+        fill_reads();
+    }
+
+    void fill_reads() {
+        bam1_t* read = bam_init1();
+        for (size_t i = 0; i < files.size(); i++) {
+            open_samFile_t* file = files[i];
+            hts_itr_t* iter = iters[i];
+            while (sam_itr_next(file->file, iter, read) >= 0) {
+                read_queue.push(bam_dup1(read));
+                if (read->core.pos-read_len > get_unclipped_start(read_queue.top())) break;
+            }
+        }
+        bam_destroy1(read);
+    }
+
+    bool next_read(bam1_t*& next_read) {
+        if (read_queue.empty()) return false;
+        next_read = read_queue.top();
+        read_queue.pop();
+        fill_reads();
+        return true;
+    }
+
+    ~sync_hts_reader_t() {
+        while (!read_queue.empty()) {
+            bam_destroy1(read_queue.top());
+            read_queue.pop();
+        }
+        for (hts_itr_t* iter : iters) {
+            sam_itr_destroy(iter);
+        }
+        for (open_samFile_t* file : files) {
+            close_samFile(file);
+        }
+    }
+};
+
 std::pair<int, int> get_dels_ins_in_first_n_chars(std::vector<uint32_t>& cigar, int n) {
 
     if (n < 0) return {0, 0};
@@ -487,19 +552,22 @@ void dedup_cluster(std::vector<bam_redux_t*>& cluster) {
     cluster.swap(unique_cluster);
 }
 
-std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_redux_t*> clipped, bool left_clipped) {
+std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::vector<bam_redux_t*> clipped, bool left_clipped) {
 
-    std::vector<consensus_t*> consensuses;
-
-    if (clipped.size() <= 2) return consensuses;
-
+    
+    if (clipped.size() <= 2) return {};
+    if (clipped.size() > 20*stats.get_max_depth(contig_name)) {
+        return {};
+    }
+    
     std::sort(clipped.begin(), clipped.end(), [](bam_redux_t* r1, bam_redux_t* r2) {
         return r1->unclipped_start() < r2->unclipped_start();
     });
-    if (clipped[0]->unclipped_start() < 0) return consensuses;
-
+    if (clipped[0]->unclipped_start() < 0) return {};
+    
     dedup_cluster(clipped);
-
+    
+    std::vector<consensus_t*> consensuses;
     while (clipped.size() >= 3) {
         std::vector<bool> accepted;
         std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted);
@@ -540,6 +608,42 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
                 }
             }
 
+            std::unordered_map<hts_pos_t, int> start_counts, end_counts;
+            for (bam_redux_t* r : accepted_reads) {
+                if (r->left_clip_size >= config.min_clip_len) start_counts[r->start]++; // weight clipped reads more than hsr
+                if (r->right_clip_size >= config.min_clip_len) end_counts[r->end]++;
+            }
+            bool is_hsr = true;
+            if (left_clipped) {
+                // breakpoint is the most common r->start among accepted reads. If ties, choose the smallest
+                int max_count = 0;
+                for (auto& p : start_counts) {
+                    if (p.second > max_count || (p.second == max_count && p.first < breakpoint)) {
+                        max_count = p.second;
+                        breakpoint = p.first;
+                    }
+                }
+                if (!max_count) {
+                    breakpoint = start;
+                } else if (max_count >= 3) {
+                    is_hsr = false;
+                }
+            } else {
+                // breakpoint is the most common r->end among accepted reads. If ties, choose the largest
+                int max_count = 0;
+                for (auto& p : end_counts) {
+                    if (p.second > max_count || (p.second == max_count && p.first > breakpoint)) {
+                        max_count = p.second;
+                        breakpoint = p.first;
+                    }
+                }
+                if (!max_count) {
+                    breakpoint = end;
+                } else if (max_count >= 3) {
+                    is_hsr = false;
+                }
+            }
+
             // rebuild consensus sequence using only accepted reads
             consensus_seq = build_full_consensus_seq(accepted_reads, left_clipped, false, accepted); 
 
@@ -552,10 +656,12 @@ std::vector<consensus_t*> build_full_consensus(int contig_id, std::vector<bam_re
             hts_pos_t remove_from_end = get_end_offset(accepted_reads[2], accepted_reads[0]);
 
             int clip_len = left_clipped ? breakpoint-start : end-breakpoint;
+            if (is_hsr) clip_len = 0;
             int lowq_prefix = remove_from_start, lowq_suffix = remove_from_end;
 
             consensus_t* consensus = new consensus_t(left_clipped, start, breakpoint, end, consensus_seq,
                 fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_prefix, lowq_suffix);
+            consensus->is_hsr = is_hsr;
             consensuses.push_back(consensus);
         }
         clipped.swap(rejected_reads);
@@ -598,39 +704,48 @@ void build_sr_consensuses(int id, int contig_id, std::string contig_name, hts_po
     close_samFile(bam_file);
 
     std::vector<consensus_t*> full_consensuses;
-    std::vector<bam_redux_t*> curr_candidate_cluster;
+    std::deque<bam_redux_t*> curr_candidate_cluster;
 
-    auto lc_same_cluster = [](bam_redux_t* r1, bam_redux_t* r2) {return abs(r1->start-r2->start) <= config.max_clipped_pos_dist;};
+    auto is_same_cluster = [](bam_redux_t* r1, bam_redux_t* r2) {
+        return overlap(r1->unclipped_start(), r1->unclipped_end(), r2->unclipped_start(), r2->unclipped_end()) >=
+            std::min(r1->seq_len(), r2->seq_len())/2;
+    };
+    std::sort(lc_reads.begin(), lc_reads.end(), [](bam_redux_t* r1, bam_redux_t* r2) { return r1->unclipped_start() < r2->unclipped_start(); });
     if (!lc_reads.empty()) {
         for (bam_redux_t* lc_read : lc_reads) {
-            if (!curr_candidate_cluster.empty() &&
-            !lc_same_cluster(curr_candidate_cluster[0], lc_read)) { // candidate cluster complete
-                std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, curr_candidate_cluster, true);
-                curr_candidate_cluster.clear();
+            if (!curr_candidate_cluster.empty() && !is_same_cluster(curr_candidate_cluster[0], lc_read)) { // candidate cluster complete
+                std::vector<bam_redux_t*> cluster_v(curr_candidate_cluster.begin(), curr_candidate_cluster.end());
+                std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, true);
                 full_consensuses.insert(full_consensuses.end(), consensuses.begin(), consensuses.end());            
+            }
+            while (!curr_candidate_cluster.empty() && !is_same_cluster(curr_candidate_cluster.front(), lc_read)) {
+                curr_candidate_cluster.pop_front();
             }
             curr_candidate_cluster.push_back(lc_read);
         }
         // process last cluster
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, curr_candidate_cluster, true);
+        std::vector<bam_redux_t*> cluster_v(curr_candidate_cluster.begin(), curr_candidate_cluster.end());
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, true);
         curr_candidate_cluster.clear();
         full_consensuses.insert(full_consensuses.end(), consensuses.begin(), consensuses.end());
     }
 
-    auto rc_same_cluster = [](bam_redux_t* r1, bam_redux_t* r2) {return abs(r1->end-r2->end) <= config.max_clipped_pos_dist;};
-    sort(rc_reads.begin(), rc_reads.end(), [](bam_redux_t* r1, bam_redux_t* r2) { return r1->end < r2->end; });
+    sort(rc_reads.begin(), rc_reads.end(), [](bam_redux_t* r1, bam_redux_t* r2) { return r1->unclipped_start() < r2->unclipped_start(); });
     if (!rc_reads.empty()) {
         for (bam_redux_t* rc_read : rc_reads) {
-            if (!curr_candidate_cluster.empty() &&
-            !rc_same_cluster(curr_candidate_cluster[0], rc_read)) { // candidate cluster complete
-                std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, curr_candidate_cluster, false);
-                curr_candidate_cluster.clear();
+            if (!curr_candidate_cluster.empty() && !is_same_cluster(curr_candidate_cluster[0], rc_read)) { // candidate cluster complete
+                std::vector<bam_redux_t*> cluster_v(curr_candidate_cluster.begin(), curr_candidate_cluster.end());
+                std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, false);
                 full_consensuses.insert(full_consensuses.end(), consensuses.begin(), consensuses.end());
+            }
+            while (!curr_candidate_cluster.empty() && !is_same_cluster(curr_candidate_cluster.front(), rc_read)) {
+                curr_candidate_cluster.pop_front();
             }
             curr_candidate_cluster.push_back(rc_read);
         }
         // process last cluster
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, curr_candidate_cluster, false);
+        std::vector<bam_redux_t*> cluster_v(curr_candidate_cluster.begin(), curr_candidate_cluster.end());
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, false);
         curr_candidate_cluster.clear();
         full_consensuses.insert(full_consensuses.end(), consensuses.begin(), consensuses.end());
     }
@@ -658,10 +773,17 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
     bam1_t* read = bam_init1();
 
+    auto is_same_cluster = [](bam1_t* r1, bam1_t* r2) {
+        return overlap(get_unclipped_start(r1), get_unclipped_end(r1), get_unclipped_start(r2), get_unclipped_end(r2)) >=
+            std::min(r1->core.l_qseq, r2->core.l_qseq)/2;
+    };
+
+    sync_hts_reader_t sync_reader({bam_fname}, contig_name, stats.read_len);
+
     // divide soft-clipped reads into left-clipped and right-clipped
     std::deque<bam1_t*> lc_cluster, rc_cluster;
     std::vector<consensus_t*> rc_consensuses, lc_consensuses;
-    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+    while (sync_reader.next_read(read)) {
 
         if (is_mate_unmapped(read)) continue; // TODO: should I keep this?
 
@@ -674,13 +796,12 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
         std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
 
         if (cluster.size() >= 3 && bam_endpos(cluster.front())-read->core.pos < read->core.l_qseq/2) {
-
             std::vector<bam_redux_t*> cluster_v;
 			for (bam1_t* r : cluster) cluster_v.push_back(new bam_redux_t(r));
-			std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, lc_clipped);
+			std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, lc_clipped);
 			for (consensus_t* consensus : consensuses) {
 				consensus->is_hsr = true;
-				consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+				consensus->clip_len = 0;
 				if (lc_clipped) lc_consensuses.push_back(consensus);
                 else rc_consensuses.push_back(consensus);
 			}
@@ -695,10 +816,10 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     if (rc_cluster.size() >= 3) {
         std::vector<bam_redux_t*> cluster_v;
         for (bam1_t* r : rc_cluster) cluster_v.push_back(new bam_redux_t(r));
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, false);
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, false);
         for (auto consensus : consensuses) {
             consensus->is_hsr = true;
-            consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+            consensus->clip_len = 0;
             rc_consensuses.push_back(consensus);
         }
         for (bam_redux_t* r : cluster_v) delete r;
@@ -707,10 +828,10 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     if (lc_cluster.size() >= 3) {
         std::vector<bam_redux_t*> cluster_v;
         for (bam1_t* r : lc_cluster) cluster_v.push_back(new bam_redux_t(r));
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_id, cluster_v, true);
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, true);
         for (auto consensus : consensuses) {
             consensus->is_hsr = true;
-            consensus->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+            consensus->clip_len = 0;
             lc_consensuses.push_back(consensus);
         }
         for (bam_redux_t* r : cluster_v) delete r;
@@ -744,6 +865,101 @@ void build_hsr_consensuses(int id, int contig_id, std::string contig_name, hts_p
     clip_fout.close();
 }
 
+void build_joint_consensuses(int id, int contig_id, std::string contig_name, hts_pos_t contig_len) {
+
+    std::string bam_hsr_fname = workdir + "/workspace/hsr/" + std::to_string(contig_id) + ".bam";
+    std::string bam_sr_fname = workdir + "/workspace/clipped/" + std::to_string(contig_id) + ".bam";
+	if (!file_exists(bam_hsr_fname) && !file_exists(bam_sr_fname)) return;
+
+    sync_hts_reader_t sync_reader({bam_hsr_fname, bam_sr_fname}, contig_name, stats.read_len);
+    
+    // divide soft-clipped reads into left-clipped and right-clipped
+    std::deque<bam1_t*> lc_cluster, rc_cluster;
+    std::vector<consensus_t*> rc_consensuses, lc_consensuses;
+    auto is_same_cluster = [](bam1_t* r1, bam1_t* r2) {
+        return overlap(get_unclipped_start(r1), get_unclipped_end(r1), get_unclipped_start(r2), get_unclipped_end(r2)) >= r2->core.l_qseq/2;
+    };
+
+    bam1_t* read = bam_init1();
+    while (sync_reader.next_read(read)) {
+
+        if (!is_clipped(read, config.min_clip_len) && is_mate_unmapped(read)) continue; // TODO: should I keep this?
+
+        std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
+        if (left_and_right_diffs.first == left_and_right_diffs.second) {
+            left_and_right_diffs = compute_left_and_right_differences(read, false);
+        }
+
+        bool lc_clipped;
+        if (is_clipped(read, config.min_clip_len)) {
+            lc_clipped = is_left_clipped(read, config.min_clip_len);
+        } else {
+            lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
+        }
+        std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
+
+        if (cluster.size() >= 3 && !is_same_cluster(cluster.front(), read)) {
+            std::vector<bam_redux_t*> cluster_v;
+			for (bam1_t* r : cluster) cluster_v.push_back(new bam_redux_t(r));
+			std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, lc_clipped);
+			for (consensus_t* consensus : consensuses) {
+				if (lc_clipped) lc_consensuses.push_back(consensus);
+                else rc_consensuses.push_back(consensus);
+			}
+			for (bam_redux_t* r : cluster_v) delete r;
+        }
+        while (!cluster.empty() && !is_same_cluster(cluster.front(), read)) {
+            bam_destroy1(cluster.front());
+            cluster.pop_front();
+        }
+        cluster.push_back(bam_dup1(read));
+    }
+    if (rc_cluster.size() >= 3) {
+        std::vector<bam_redux_t*> cluster_v;
+        for (bam1_t* r : rc_cluster) cluster_v.push_back(new bam_redux_t(r));
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, false);
+        for (auto consensus : consensuses) {
+            rc_consensuses.push_back(consensus);
+        }
+        for (bam_redux_t* r : cluster_v) delete r;
+    }
+    for (bam1_t* r : rc_cluster) bam_destroy1(r);
+    if (lc_cluster.size() >= 3) {
+        std::vector<bam_redux_t*> cluster_v;
+        for (bam1_t* r : lc_cluster) cluster_v.push_back(new bam_redux_t(r));
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster_v, true);
+        for (auto consensus : consensuses) {
+            lc_consensuses.push_back(consensus);
+        }
+        for (bam_redux_t* r : cluster_v) delete r;
+    }
+    for (bam1_t* r : lc_cluster) bam_destroy1(r);
+
+    bam_destroy1(read);
+
+    if (lc_consensuses.empty() && rc_consensuses.empty()) return;
+
+    filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
+    filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
+    filter_fully_contained(rc_consensuses);
+    filter_fully_contained(lc_consensuses);
+    merge_overlapping_clusters(rc_consensuses, stats.read_len/2);
+    merge_overlapping_clusters(lc_consensuses, stats.read_len/2);
+    enforce_max_ploidy(rc_consensuses, 2);
+    enforce_max_ploidy(lc_consensuses, 2);
+
+    std::vector<consensus_t*> all_consensuses;
+    all_consensuses.insert(all_consensuses.end(), rc_consensuses.begin(), rc_consensuses.end());
+    all_consensuses.insert(all_consensuses.end(), lc_consensuses.begin(), lc_consensuses.end());
+
+    std::ofstream clip_fout(workspace + "/joint_consensuses/" + std::to_string(contig_id) + ".txt");
+    for (consensus_t* consensus : all_consensuses) {
+        clip_fout << consensus->to_string() << std::endl;
+        delete consensus;
+    }
+    clip_fout.close();
+}
+
 int main(int argc, char* argv[]) {
     workdir = argv[1];
     workspace = workdir + "/workspace";
@@ -756,8 +972,8 @@ int main(int argc, char* argv[]) {
 
     contigs.read_fasta_into_map(reference_fname);
 
-    ctpl::thread_pool thread_pool(config.threads);
     std::vector<std::future<void> > futures;
+    ctpl::thread_pool thread_pool(config.threads);
     for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
         std::string contig_name = contig_map.get_name(contig_id);
         hts_pos_t contig_len = contigs.get_len(contig_name);
@@ -768,6 +984,21 @@ int main(int argc, char* argv[]) {
         futures.push_back(std::move(future));
     }
     thread_pool.stop(true);
+    for (size_t i = 0; i < futures.size(); i++) {
+        futures[i].get();
+    }
+    futures.clear();
+    exit(0);
+
+    ctpl::thread_pool thread_pool2(config.threads);
+    for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
+        std::string contig_name = contig_map.get_name(contig_id);
+        hts_pos_t contig_len = contigs.get_len(contig_name);
+        std::future<void> future;
+        future = thread_pool2.push(build_joint_consensuses, contig_id, contig_name, contig_len);
+        futures.push_back(std::move(future));
+    }
+    thread_pool2.stop(true);
     for (size_t i = 0; i < futures.size(); i++) {
         futures[i].get();
     }

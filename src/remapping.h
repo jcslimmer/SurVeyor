@@ -260,7 +260,7 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
     remap_info_t rc_remap_info, lc_remap_info;
 
     // map the clips (if available)
-    if (r_cluster->clip_consensus) {
+    if (r_cluster->clip_consensus && r_cluster->clip_consensus->clip_len >= config.min_clip_len) {
         std::string s = r_cluster->clip_consensus->clip_sequence();
         if (do_rc) rc(s);
         remap_info_t remap_info = remap_seq(region_ptr, region.end-region.start, s, aligner, filter, config.min_clip_len);
@@ -273,7 +273,7 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
         }
         rc_remap_info = remap_info;
     }
-    if (l_cluster->clip_consensus) {
+    if (l_cluster->clip_consensus && l_cluster->clip_consensus->clip_len >= config.min_clip_len) {
         std::string s = l_cluster->clip_consensus->clip_sequence();
         if (do_rc) rc(s);
         remap_info_t remap_info = remap_seq(region_ptr, region.end-region.start, s, aligner, filter, config.min_clip_len);
@@ -477,7 +477,7 @@ std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, std::
     for (region_t region : regions) {
         char* contig_seq = contigs.get_seq(contig_map.get_name(region.contig_id));
         compute_score(region, contig_seq, r_cluster, l_cluster, mateseqs, NULL, NULL,
-                      aligner, permissive_aligner, is_rc, config, stats);
+            aligner, permissive_aligner, is_rc, config, stats);
     }
     std::sort(regions.begin(), regions.end(), std::greater<region_t>());
 

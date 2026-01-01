@@ -365,15 +365,21 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         std::ifstream clipped_fin(clip_consensus_fname);
         std::string line;
         while (std::getline(clipped_fin, line)) {
-            std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line, false);
+            std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
             if (consensus->left_clipped) {
                 consensus->start += consensus->lowq_prefix;
-                consensus->clip_len -= consensus->lowq_prefix;
+                if (consensus->breakpoint < consensus->start) {
+                    consensus->breakpoint = consensus->start;
+                }
+                consensus->clip_len = consensus->breakpoint - consensus->start;
                 consensus->sequence = consensus->sequence.substr(consensus->lowq_prefix);
                 lc_consensuses.push_back(consensus);
             } else {
                 consensus->end -= consensus->lowq_suffix;
-                consensus->clip_len -= consensus->lowq_suffix;
+                if (consensus->breakpoint > consensus->end) {
+                    consensus->breakpoint = consensus->end;
+                }
+                consensus->clip_len = consensus->end - consensus->breakpoint;
                 consensus->sequence = consensus->sequence.substr(0, consensus->sequence.length()-consensus->lowq_suffix);
                 rc_consensuses.push_back(consensus);
             }

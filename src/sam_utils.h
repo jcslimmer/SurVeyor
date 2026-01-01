@@ -63,6 +63,9 @@ bool is_right_clipped(bam1_t* r, int min_clip_len) {
 	if (is_unmapped(r)) return false;
     return get_right_clip_size(r) >= min_clip_len;
 }
+bool is_clipped(bam1_t* r, int min_clip_len) {
+    return is_left_clipped(r, min_clip_len) || is_right_clipped(r, min_clip_len);
+}
 
 hts_pos_t get_unclipped_start(bam1_t* r) {
     return r->core.pos - get_left_clip_size(r);
@@ -264,8 +267,6 @@ static const char nucl2chr[16] = {
     0, 'A', 'C', 0, 'G', 0, 0, 0, 'T', 0, 0, 0, 0, 0, 0, 'N'
 };
 char get_base(const uint8_t* seq, int i) {
-    // char nucl2chr[16];
-    // nucl2chr[1] = 'A'; nucl2chr[2] = 'C'; nucl2chr[4] = 'G'; nucl2chr[8] = 'T'; nucl2chr[15] = 'N';
     return nucl2chr[bam_seqi(seq, i)];
 }
 std::string get_sequence(bam1_t* r, bool fastq_seq = false) {

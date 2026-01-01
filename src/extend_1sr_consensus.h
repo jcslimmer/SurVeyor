@@ -530,7 +530,7 @@ void extend_consensus_to_right(std::shared_ptr<consensus_t> consensus, IntervalT
 	}
 
 	if (!consensus->left_clipped) {
-		if (consensus->clip_len != consensus_t::UNKNOWN_CLIP_LEN) {
+		if (consensus->clip_len != 0) {
 			consensus->clip_len += ext_consensus.length() - consensus->sequence.length();
 		}
 	} else {
@@ -609,7 +609,7 @@ void extend_consensus_to_left(std::shared_ptr<consensus_t> consensus, IntervalTr
 	}
 
 	if (consensus->left_clipped) {
-		if (consensus->clip_len != consensus_t::UNKNOWN_CLIP_LEN) {
+		if (consensus->clip_len != 0) {
 			consensus->clip_len += ext_consensus.length() - consensus->sequence.length();
 		}
 	} else {

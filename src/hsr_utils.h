@@ -227,7 +227,7 @@ void merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consen
 	target->sequence = c1_seq + c2_seq.substr(overlap);
 	target->fwd_reads = c1->fwd_reads + c2->fwd_reads;
 	target->rev_reads = c1->rev_reads + c2->rev_reads;
-	target->clip_len = consensus_t::UNKNOWN_CLIP_LEN;
+	target->clip_len = 0;
 	target->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
 	if (c1->left_clipped) {
 		target->remap_boundary = std::max(c1->remap_boundary, c2->remap_boundary);

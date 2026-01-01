@@ -24,7 +24,6 @@ struct consensus_t {
 	bool extended_to_left = false, extended_to_right = false;
 
     static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
-    static const int UNKNOWN_CLIP_LEN = INT16_MAX;
 
     consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
                 const std::string& sequence, int fwd_reads, int rev_reads, int clip_len, uint8_t max_mapq, 
@@ -34,26 +33,24 @@ struct consensus_t {
                 sequence(sequence), fwd_reads(fwd_reads), rev_reads(rev_reads), clip_len(clip_len), max_mapq(max_mapq), 
                 remap_boundary(remap_boundary), lowq_prefix(lowq_prefix), lowq_suffix(lowq_suffix) {}
 
-    consensus_t(std::string& line, bool is_hsr) : is_hsr(is_hsr) {
+    consensus_t(std::string& line) {
         std::stringstream ss(line);
         char dir;
         int max_mapq_int;
-        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads >> max_mapq_int >> remap_boundary >> lowq_prefix >> lowq_suffix;
+        ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads
+           >> max_mapq_int >> remap_boundary >> lowq_prefix >> lowq_suffix >> is_hsr;
         orig_start = start;
         orig_end = end;
         left_clipped = dir == 'L';
         max_mapq = (uint8_t) max_mapq_int;
-        if (is_hsr) {
-            clip_len = UNKNOWN_CLIP_LEN;
-        } else {
-            clip_len = left_clipped ? breakpoint - start : end - breakpoint;
-        }
+        clip_len = left_clipped ? breakpoint - start : end - breakpoint;
     }
 
     std::string to_string() {
         std::stringstream ss;
         ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";
-        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_prefix << " " << lowq_suffix;
+        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_prefix << " " << lowq_suffix << " ";
+        ss << is_hsr;
         return ss.str();
     }
 
@@ -119,8 +116,6 @@ struct consensus_t {
             return breakpoint;
         }
     }
-
-    int anchor_len() { return sequence.length() - clip_len; }
 
     std::string clip_sequence() {
         if (left_clipped) {
