@@ -134,6 +134,7 @@ bool is_mate_clipped(bam1_t* r) {
 }
 
 bool is_hidden_split_read(bam1_t* r, config_t config) {
+    if (!is_samechr(r)) return false;
 	if (is_left_clipped(r, config.min_clip_len) || is_right_clipped(r, config.min_clip_len)) return false;
 
     int mismatches = bam_aux2i(bam_aux_get(r, "NM"));

@@ -551,12 +551,13 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 	std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
 	mtx.unlock();
 
-	std::string sr_consensuses_fname = workdir + "/workspace/sr_consensuses/" + std::to_string(contig_id) + ".txt";
+	std::string sr_consensuses_fname = workdir + "/workspace/consensuses/" + std::to_string(contig_id) + ".txt";
 	if (file_exists(sr_consensuses_fname)) {
 		std::ifstream sr_consensuses_fin(sr_consensuses_fname);
 		std::string line;
 		while (std::getline(sr_consensuses_fin, line)) {
 			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
+			if (consensus->is_hsr) continue;
 			if (consensus->left_clipped) {
 				lc_sr_consensuses.push_back(consensus);
 			} else {
@@ -565,12 +566,13 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 		}
 	}
 
-	std::string hsr_consensuses_fname = workdir + "/workspace/hsr_consensuses/" + std::to_string(contig_id) + ".txt";
+	std::string hsr_consensuses_fname = workdir + "/workspace/consensuses/" + std::to_string(contig_id) + ".txt";
 	if (file_exists(hsr_consensuses_fname)) {
 		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
 		std::string line;
 		while (std::getline(hsr_consensuses_fin, line)) {
 			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
+			if (!consensus->is_hsr) continue;
 			if (consensus->left_clipped) {
 				lc_hsr_consensuses.push_back(consensus);
 			} else {

@@ -224,7 +224,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 		}
 
         if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) {
-			if (!sr_writer) sr_writer = open_writer(workspace + "/clipped/" + std::to_string(contig_id) + ".bam", bam_file->header);
+			if (!sr_writer) sr_writer = open_writer(workspace + "/sr/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
 			int ok = sam_write1(sr_writer, bam_file->header, read);
 			if (ok < 0) throw "Failed to write to " + std::string(sr_writer->fn);

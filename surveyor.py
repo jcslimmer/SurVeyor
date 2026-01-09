@@ -126,7 +126,7 @@ mkdir(cmd_args.workdir + "/intermediate_results")
 def reads_categorizer():
     mkdir(cmd_args.workdir)
     mkdir(cmd_args.workdir + "/workspace")
-    mkdir(cmd_args.workdir + "/workspace/clipped")
+    mkdir(cmd_args.workdir + "/workspace/sr")
     mkdir(cmd_args.workdir + "/workspace/hsr")
     mkdir(cmd_args.workdir + "/workspace/fwd-stable")
     mkdir(cmd_args.workdir + "/workspace/rev-stable")
@@ -134,8 +134,7 @@ def reads_categorizer():
     mkdir(cmd_args.workdir + "/workspace/outward-pairs")
     mkdir(cmd_args.workdir + "/workspace/same-strand")
     mkdir(cmd_args.workdir + "/workspace/mateseqs")
-    mkdir(cmd_args.workdir + "/workspace/sr_consensuses")
-    mkdir(cmd_args.workdir + "/workspace/hsr_consensuses")
+    mkdir(cmd_args.workdir + "/workspace/consensuses")
 
     with open("%s/contig_map" % cmd_args.workdir, "w") as contig_map:
         bam_file = pysam.AlignmentFile(cmd_args.bam_file, reference_filename=cmd_args.reference)
