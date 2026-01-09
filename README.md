@@ -1,5 +1,5 @@
 # SurVeyor
-An SV caller from paired-end NGS data.
+An SV caller from paired-end NGS data. SurVeyor can detect deletions, tandem duplications, insertions and inversions that are 50 base pairs or longer using WGS paired-end sequencing data.
 
 ## Installation
 
