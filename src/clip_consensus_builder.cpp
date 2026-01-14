@@ -360,12 +360,12 @@ std::vector<int> select_reads_by_kmer(std::vector<std::string>& seqs, std::vecto
 }
 
 // vector<int> contains the number of mismatches for each read, negative if the read is rejected, non-negative if accepted
-std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1_t*>& clipped, std::vector<hts_pos_t>& read_start_offsets,
+std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1_t*>& reads, std::vector<hts_pos_t>& read_start_offsets,
                          bool left_clipped) {
 
-    std::vector<int> accepted(clipped.size(), 0);
-    for (int i = 0; i < clipped.size(); i++) {
-        bam1_t* r = clipped[i];
+    std::vector<int> accepted(reads.size(), 0);
+    for (int i = 0; i < reads.size(); i++) {
+        bam1_t* r = reads[i];
         hts_pos_t offset = read_start_offsets[i];
         int mm = 0;
         
@@ -415,8 +415,6 @@ std::string build_full_consensus_seq(std::deque<bam1_t*>& clipped, bool left_cli
         seqs.push_back(get_sequence(r));
         quals.push_back(bam_get_qual(r));
     }
-
-    std::vector<bool> forbidden(clipped.size(), false);
 
     std::deque<bam1_t*> selected_clipped;
     std::vector<int> selected_idxs;
@@ -489,7 +487,7 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
     if (get_unclipped_start(clipped[0]) < 0) return {};
 
     dedup_cluster(clipped);
-    
+
     std::vector<consensus_t*> consensuses;
     while (clipped.size() >= 3) {
         std::vector<bool> accepted;
@@ -506,7 +504,19 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
             else rejected_reads.push_back(clipped[i]);
         }
 
-        if (accepted_reads.empty()) return consensuses;
+        if (accepted_reads.empty()) {
+            // there are noisy regions where reads are clipped due to noisy tails, and they "drown" correct HSRs
+            // from creating a meaningful consensus. If possible, try removing them
+            const auto old_size = clipped.size();
+            clipped.erase(std::remove_if(clipped.begin(), clipped.end(), [](bam1_t* r) {
+                return is_left_clipped(r, config.min_clip_len) || is_right_clipped(r, config.min_clip_len);
+            }), clipped.end());
+            if (clipped.size() == old_size) {
+                return consensuses;
+            } else {
+                continue;
+            }
+        }
 
         if (accepted_reads.size() >= 3) {
             hts_pos_t start = get_unclipped_start(accepted_reads[0]), end = 0;
@@ -615,10 +625,7 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         } else if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) {
             lc_clipped = get_left_clip_size(read) >= get_right_clip_size(read);
         } else if (is_hidden_split_read(read, config)) {
-            std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, true);
-            if (left_and_right_diffs.first == left_and_right_diffs.second) {
-                left_and_right_diffs = compute_left_and_right_differences(read, false);
-            }
+            std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, false);
             lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
         } else {
             continue;
@@ -648,8 +655,6 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     }
     for (bam1_t* r : lc_cluster) bam_destroy1(r);
 
-    if (lc_consensuses.empty() && rc_consensuses.empty()) return;
-
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
     filter_fully_contained(rc_consensuses);
@@ -658,6 +663,8 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     merge_overlapping_clusters(lc_consensuses, stats.read_len/2);
     enforce_max_ploidy(rc_consensuses, 4);
     enforce_max_ploidy(lc_consensuses, 4);
+
+    if (lc_consensuses.empty() && rc_consensuses.empty()) return;
 
     std::vector<consensus_t*> all_consensuses;
     all_consensuses.insert(all_consensuses.end(), lc_consensuses.begin(), lc_consensuses.end());
