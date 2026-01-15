@@ -35,7 +35,7 @@ chr_seqs_map_t chr_seqs;
 contig_map_t contig_map;
 
 std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>> > svs_by_chr;
-std::unordered_map<std::string, std::vector<std::shared_ptr<consensus_t>> > rc_sr_consensuses_by_chr, lc_sr_consensuses_by_chr, rc_hsr_consensuses_by_chr, lc_hsr_consensuses_by_chr;
+std::unordered_map<std::string, std::vector<std::shared_ptr<consensus_t>> > rc_consensuses_by_chr, lc_consensuses_by_chr;
 std::unordered_map<std::string, std::vector<std::shared_ptr<consensus_t>> > unpaired_consensuses_by_chr;
 
 std::unordered_map<std::string, std::vector<std::shared_ptr<cluster_t>> > ss_clusters_by_chr;
@@ -545,10 +545,8 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
     hts_pos_t remap_boundary;
 
 	mtx.lock();
-	std::vector<std::shared_ptr<consensus_t>>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
+	std::vector<std::shared_ptr<consensus_t>>& rc_consensuses = rc_consensuses_by_chr[contig_name];
+	std::vector<std::shared_ptr<consensus_t>>& lc_consensuses = lc_consensuses_by_chr[contig_name];
 	mtx.unlock();
 
 	std::string sr_consensuses_fname = workdir + "/workspace/consensuses/" + std::to_string(contig_id) + ".txt";
@@ -557,26 +555,10 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 		std::string line;
 		while (std::getline(sr_consensuses_fin, line)) {
 			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
-			if (consensus->is_hsr) continue;
 			if (consensus->left_clipped) {
-				lc_sr_consensuses.push_back(consensus);
+				lc_consensuses.push_back(consensus);
 			} else {
-				rc_sr_consensuses.push_back(consensus);
-			}
-		}
-	}
-
-	std::string hsr_consensuses_fname = workdir + "/workspace/consensuses/" + std::to_string(contig_id) + ".txt";
-	if (file_exists(hsr_consensuses_fname)) {
-		std::ifstream hsr_consensuses_fin(hsr_consensuses_fname);
-		std::string line;
-		while (std::getline(hsr_consensuses_fin, line)) {
-			std::shared_ptr<consensus_t> consensus = std::make_shared<consensus_t>(line);
-			if (!consensus->is_hsr) continue;
-			if (consensus->left_clipped) {
-				lc_hsr_consensuses.push_back(consensus);
-			} else {
-				rc_hsr_consensuses.push_back(consensus);
+				rc_consensuses.push_back(consensus);
 			}
 		}
 	}
@@ -585,8 +567,8 @@ void read_consensuses(int id, int contig_id, std::string contig_name) {
 	auto consensus_cmp = [](std::shared_ptr<consensus_t> c1, std::shared_ptr<consensus_t> c2) {
 		return c1->breakpoint < c2->breakpoint;
 	};
-    std::sort(rc_sr_consensuses.begin(), rc_sr_consensuses.end(), consensus_cmp);
-    std::sort(lc_sr_consensuses.begin(), lc_sr_consensuses.end(), consensus_cmp);
+	std::sort(rc_consensuses.begin(), rc_consensuses.end(), consensus_cmp);
+	std::sort(lc_consensuses.begin(), lc_consensuses.end(), consensus_cmp);
 }
 
 void find_indels_from_paired_consensuses(int contig_id, std::string contig_name, 
@@ -594,17 +576,9 @@ void find_indels_from_paired_consensuses(int contig_id, std::string contig_name,
 	ctpl::thread_pool& thread_pool) {
 
 	mtx.lock();
-	std::vector<std::shared_ptr<consensus_t>>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
-	std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
+	std::vector<std::shared_ptr<consensus_t>>& rc_consensuses = rc_consensuses_by_chr[contig_name];
+	std::vector<std::shared_ptr<consensus_t>>& lc_consensuses = lc_consensuses_by_chr[contig_name];
 	mtx.unlock();
-
-	std::vector<std::shared_ptr<consensus_t>> rc_consensuses, lc_consensuses;
-	rc_consensuses.insert(rc_consensuses.end(), rc_sr_consensuses.begin(), rc_sr_consensuses.end());
-	rc_consensuses.insert(rc_consensuses.end(), rc_hsr_consensuses.begin(), rc_hsr_consensuses.end());
-	lc_consensuses.insert(lc_consensuses.end(), lc_sr_consensuses.begin(), lc_sr_consensuses.end());
-	lc_consensuses.insert(lc_consensuses.end(), lc_hsr_consensuses.begin(), lc_hsr_consensuses.end());
 
 	/* == Find indels from paired consensuses == */
 	find_indels_from_rc_lc_pairs(contig_name, rc_consensuses, lc_consensuses, thread_pool);
@@ -744,28 +718,16 @@ int main(int argc, char* argv[]) {
 	for (size_t contig_id = 0; contig_id < contig_map.size(); contig_id++) {
 		std::future<void> future;
 		std::string contig_name = contig_map.get_name(contig_id);
-		std::vector<std::shared_ptr<consensus_t>>& rc_sr_consensuses = rc_sr_consensuses_by_chr[contig_name];
-		for (int i = 0; i < rc_sr_consensuses.size(); i += block_size) {
-			int start = i, end = std::min(i+block_size, (int) rc_sr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_sr_consensuses, contig_name, start, end, false);
+		std::vector<std::shared_ptr<consensus_t>>& rc_consensuses = rc_consensuses_by_chr[contig_name];
+		for (int i = 0; i < rc_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) rc_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
-		std::vector<std::shared_ptr<consensus_t>>& lc_sr_consensuses = lc_sr_consensuses_by_chr[contig_name];
-		for (int i = 0; i < lc_sr_consensuses.size(); i += block_size) {
-			int start = i, end = std::min(i+block_size, (int) lc_sr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_sr_consensuses, contig_name, start, end, false);
-			futures.push_back(std::move(future));
-		}
-		std::vector<std::shared_ptr<consensus_t>>& rc_hsr_consensuses = rc_hsr_consensuses_by_chr[contig_name];
-		for (int i = 0; i < rc_hsr_consensuses.size(); i += block_size) {
-			int start = i, end = std::min(i+block_size, (int) rc_hsr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &rc_hsr_consensuses, contig_name, start, end, false);
-			futures.push_back(std::move(future));
-		}
-		std::vector<std::shared_ptr<consensus_t>>& lc_hsr_consensuses = lc_hsr_consensuses_by_chr[contig_name];
-		for (int i = 0; i < lc_hsr_consensuses.size(); i += block_size) {
-			int start = i, end = std::min(i+block_size, (int) lc_hsr_consensuses.size());
-			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_hsr_consensuses, contig_name, start, end, false);
+		std::vector<std::shared_ptr<consensus_t>>& lc_consensuses = lc_consensuses_by_chr[contig_name];
+		for (int i = 0; i < lc_consensuses.size(); i += block_size) {
+			int start = i, end = std::min(i+block_size, (int) lc_consensuses.size());
+			future = extend_consensuses_thread_pool.push(extend_consensuses, &lc_consensuses, contig_name, start, end, false);
 			futures.push_back(std::move(future));
 		}
 	}

@@ -509,6 +509,8 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             separation = i;
             continue;
         }
+        if (cseq == "HAS_CYCLE") continue;
+
         std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
@@ -521,9 +523,11 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             if (revcomp_read[j]) rc(seq);
 
             harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
-            
+
             double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-            if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+            int left_clip_size = aln.query_begin;
+            int right_clip_size = seq.length() - aln.query_end - 1;
+            if (mismatch_rate <= config.max_seq_error && left_clip_size < config.min_clip_len && right_clip_size < config.min_clip_len) {
                 curr_alns.push_back(aln);
                 curr_seqs_idxs.push_back(j);
                 curr_consistent_reads.push_back(read);
@@ -884,13 +888,15 @@ int main(int argc, char* argv[]) {
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
 
+    const double MIN_EPR = 0.30;
+
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
         
         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
         std::vector<deletion_t*> block_dels;
         for (int i = 0; i < dels.size(); i++) {
-            if (!reassign_evidence || dels[i]->allele_count(1) > 0) {
+            if (!reassign_evidence || dels[i]->sample_info.epr >= MIN_EPR) {
                 block_dels.push_back(dels[i].get());
             }
             if (block_dels.size() == BLOCK_SIZE || (i == dels.size()-1 && !block_dels.empty())) {
@@ -906,7 +912,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::shared_ptr<duplication_t>>& dups = dups_by_chr[contig_name];
         std::vector<duplication_t*> block_dups;
         for (int i = 0; i < dups.size(); i++) {
-            if (!reassign_evidence || dups[i]->allele_count(1) > 0) {
+            if (!reassign_evidence || dups[i]->sample_info.epr >= MIN_EPR) {
                 block_dups.push_back(dups[i].get());
             }
             if (block_dups.size() == BLOCK_SIZE || (i == dups.size()-1 && !block_dups.empty())) {
@@ -922,7 +928,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::shared_ptr<insertion_t>>& inss = inss_by_chr[contig_name];
         std::vector<insertion_t*> block_inss;
         for (int i = 0; i < inss.size(); i++) {
-            if (!reassign_evidence || inss[i]->allele_count(1) > 0) {
+            if (!reassign_evidence || inss[i]->sample_info.epr >= MIN_EPR) {
                 block_inss.push_back(inss[i].get());
             }
             if (block_inss.size() == BLOCK_SIZE || (i == inss.size()-1 && !block_inss.empty())) {
@@ -938,7 +944,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::shared_ptr<inversion_t>>& invs = invs_by_chr[contig_name];
         std::vector<inversion_t*> block_invs;
         for (int i = 0; i < invs.size(); i++) {
-            if (!reassign_evidence || invs[i]->allele_count(1) > 0) {
+            if (!reassign_evidence || invs[i]->sample_info.epr >= MIN_EPR) {
                 block_invs.push_back(invs[i].get());
             }
             if (block_invs.size() == BLOCK_SIZE || (i == invs.size()-1 && !block_invs.empty())) {
@@ -990,7 +996,7 @@ int main(int argc, char* argv[]) {
 		for (auto& sv : contig_svs) {
 			bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
 			bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            if (!reassign_evidence || sv->allele_count(1) > 0) {
+            if (!reassign_evidence || sv->sample_info.epr >= MIN_EPR) {
                 update_record(in_vcf_header, out_vcf_header, sv.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
             }
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
