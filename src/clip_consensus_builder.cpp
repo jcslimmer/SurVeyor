@@ -316,26 +316,28 @@ std::vector<int> select_reads_by_kmer(std::vector<std::string>& seqs, std::vecto
     // select pos that maximizes the product of the frequencies of the 1st and 2nd most frequent kmers
     // select most frequent kmer at that pos as mandatory kmer
     int chosen_pos = 0;
-    uint32_t chosen_kmer = 0, chosen_freq = 0;
-    uint32_t chosen_freq2 = 0;
+    uint32_t chosen_kmer = 0;
+    uint32_t chosen_freq1 = 0, chosen_freq2 = 0;
     for (int i = 0; i < kmer_counts_by_pos.size(); i++) {
         // find 1st and 2nd most frequent kmers
         std::sort(kmer_counts_by_pos[i].begin(), kmer_counts_by_pos[i].end(), [](const std::pair<uint32_t, int>& p1, const std::pair<uint32_t, int>& p2) {
             return p1.second > p2.second;
         });
 
-        int kmer1_freq = kmer_counts_by_pos[i].empty() ? 0 : kmer_counts_by_pos[i][0].second;
+        if (kmer_counts_by_pos[i].empty()) continue;
+        int kmer1_freq = kmer_counts_by_pos[i][0].second;
         int kmer2_freq = kmer_counts_by_pos[i].size() <= 1 ? 1 : kmer_counts_by_pos[i][1].second;
-        if (kmer1_freq*kmer2_freq > chosen_freq) {
+        if (kmer1_freq*kmer2_freq > chosen_freq1*chosen_freq2 || 
+            kmer1_freq*kmer2_freq == chosen_freq1*chosen_freq2 && kmer2_freq > chosen_freq2) {
             chosen_pos = i;
-            chosen_freq = kmer1_freq*kmer2_freq;
+            chosen_freq1 = kmer1_freq;
             chosen_freq2 = kmer2_freq;
             chosen_kmer = kmer_counts_by_pos[i][0].first;
         }
     }
 
     std::vector<int> selected_idxs;
-    if (chosen_freq2 < 3) { // if not enough reads to form a 2nd cluster, select all the reads
+    if (chosen_freq1 < 3) { // if not enough reads to form a cluster, select all the reads
         for (int i = 0; i < seqs.size(); i++) {
             selected_idxs.push_back(i);
         }
@@ -497,6 +499,7 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
         if (accepted_reads_n < 3) {
             consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted);
         }
+        accepted_reads_n = std::count(accepted.begin(), accepted.end(), true);
 
         std::deque<bam1_t*> accepted_reads, rejected_reads;
         for (size_t i = 0; i < clipped.size(); i++) {
@@ -504,7 +507,7 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
             else rejected_reads.push_back(clipped[i]);
         }
 
-        if (accepted_reads.empty()) {
+        if (accepted_reads.size() < 3) {
             // there are noisy regions where reads are clipped due to noisy tails, and they "drown" correct HSRs
             // from creating a meaningful consensus. If possible, try removing them
             const auto old_size = clipped.size();

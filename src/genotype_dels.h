@@ -247,8 +247,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         char* lh_seq = generate_haplotype_left(contig_seq, del->start-1, alt_consensus_seq.length(), del->aux_indels, del->aux_snps);
         hts_pos_t lh_start = del->start-alt_consensus_seq.length();
         if (lh_start < 0) lh_start = 0;
-        hts_pos_t lh_len = del->start-lh_start;
-        lh_len = strlen(lh_seq);
+        hts_pos_t lh_len = strlen(lh_seq);
         hts_pos_t rh_end = del->end+alt_consensus_seq.length();
         if (rh_end > contig_len) rh_end = contig_len;
         hts_pos_t rh_len = rh_end-del->end;

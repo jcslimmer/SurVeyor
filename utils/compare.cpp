@@ -123,7 +123,9 @@ bool alt_allele_match(sv_t* sv1, sv_t* sv2, int max_score_loss) {
 	StripedSmithWaterman::Alignment alignment;
 	StripedSmithWaterman::Filter filter;
 	edit_distance_aligner.Align(alt1, alt2, strlen2, filter, &alignment, 0);
-	int score_loss = std::min(strlen1, strlen2) - alignment.sw_score;
+	int left_clip = std::max(alignment.ref_begin, alignment.query_begin);
+	int right_clip = std::max(strlen1 - (alignment.query_end + 1), strlen2 - (alignment.ref_end + 1));
+	int score_loss = std::min(strlen1, strlen2) - alignment.sw_score + left_clip + right_clip;
 	delete [] alt1;
 	delete [] alt2;
 	return score_loss <= max_score_loss;
@@ -143,14 +145,18 @@ bool is_compatible_ivals(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
 }
 
 bool is_compatible_del_del(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
+	if (distance(sv1, sv2) > max_repeat_dist) return false;
 	bool imprecise_mode = sv1->imprecise || sv2->imprecise;
 	int max_dist = imprecise_mode ? max_imprec_dist : max_prec_dist;
-	if (repeat_mode) max_dist = max_repeat_dist;
 	double min_len_ratio = imprecise_mode ? min_imprec_len_ratio : min_prec_len_ratio;
 	int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
-	int max_score_loss = std::min(max_svlen, max_dist) * (1-min_len_ratio);
-	return is_compatible_ivals(sv1, sv2, repeat_mode) &&
-			alt_allele_match(sv1, sv2, max_score_loss) >= min_len_ratio;
+	int max_score_loss = std::min(int(max_svlen * (1-min_len_ratio)), max_dist);
+	if (sv1->svsize() <= 50) { // for small deletions, only check that they produce similar alt alleles
+		return alt_allele_match(sv1, sv2, max_score_loss);
+	} else { // for large deletions, perform interval-based comparison first since alt allele generation is expensive
+		return is_compatible_ivals(sv1, sv2, repeat_mode) &&
+				alt_allele_match(sv1, sv2, max_score_loss);
+	}
 }
 bool is_compatible_dup_dup(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
 	return is_compatible_ivals(sv1, sv2, repeat_mode);
@@ -351,7 +357,6 @@ struct sv_match_t {
 		}
 
 		int right_clip = get_right_clip_size(alignment);
-
 		double dist_log = log(distance(b_sv.get(), c_sv.get())+1);
 		double aln_score = alignment.sw_score/std::max(1.0, double(alignment.query_end+right_clip+1)) * 100;
 		this->score = -len_diff - dist_log + aln_score;
@@ -362,7 +367,7 @@ std::vector<sv_match_t> matches;
 
 void find_match(int id, int start_idx, int end_idx) {
 
-	StripedSmithWaterman::Aligner aligner(1,4,6,1,false);
+	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
 	for (int i = start_idx; i < end_idx; i++) {
 		std::shared_ptr<sv_t> bsv = benchmark_svs[i];

@@ -16,8 +16,8 @@ bcf_hdr_t* hdr;
 std::vector<bcf1_t*> normalised_vcf_records;
 std::mutex mtx;
 
-std::vector<std::shared_ptr<sv_t>> atomize_del(std::shared_ptr<sv_t> sv) {
-	if (sv->ins_seq.empty()) return {sv};
+void atomize_del(std::shared_ptr<sv_t> sv) {
+	if (sv->ins_seq.empty()) return;
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
@@ -26,48 +26,46 @@ std::vector<std::shared_ptr<sv_t>> atomize_del(std::shared_ptr<sv_t> sv) {
 	deleted_seq[sv->end - sv->start] = '\0';
 
 	// if deleted sequence contains sv->ins_seq as a substring, split into two smaller deletions
-	std::vector<std::shared_ptr<sv_t>> atoms;
-	atoms.push_back(sv);
-
 	char* pos_ptr = strstr(deleted_seq, sv->ins_seq.c_str());
-	if (sv->ins_seq.length() == 1) { // DEL + SNP
+	if (pos_ptr) {
+		// Create two new SVs for the split deletions
+		hts_pos_t sv1_start = sv->start;
+		hts_pos_t sv1_end = sv->start + (pos_ptr - deleted_seq);
+		hts_pos_t sv2_start = sv->start + (pos_ptr - deleted_seq) + sv->ins_seq.length();
+		hts_pos_t sv2_end = sv->end;
+		if (sv1_end-sv1_start >= sv2_end-sv2_start) {
+			sv->end = sv1_end;
+			std::shared_ptr<sv_t> sv2 = std::make_shared<deletion_t>(sv->chr, sv2_start, sv2_end, "", nullptr, nullptr, nullptr, nullptr);
+			sv->aux_indels.push_back(sv2);
+		} else {
+			sv->start = sv2_start;
+			std::shared_ptr<sv_t> sv1 = std::make_shared<deletion_t>(sv->chr, sv1_start, sv1_end, "", nullptr, nullptr, nullptr, nullptr);
+			sv->aux_indels.push_back(sv1);
+		}
+		sv->ins_seq = "";
+	} else if (sv->ins_seq.length() == 1) { // DEL + SNP
 		hts_pos_t snp_pos = sv->end;
 		char ref_base = chr_seq[snp_pos];
 		char alt_base = sv->ins_seq[0];
-		bcf1_t* snp_record = generate_snp(hdr, sv->chr, snp_pos, ref_base, alt_base, sv->id + ".snp", sv->sample_info.gt);
-		copy_all_fmt(hdr, sv->vcf_entry, snp_record);
-		mtx.lock();
-		normalised_vcf_records.push_back(snp_record);
-		mtx.unlock();
+		snp_t snp(snp_pos, alt_base);
+		sv->aux_snps.push_back(snp);
 
 		sv->end--;
 		sv->ins_seq = "";
-	} else if (pos_ptr) {
-		// Create two new SVs for the split deletions
-		hts_pos_t sv2_start = sv->start + (pos_ptr - deleted_seq) + sv->ins_seq.length();
-		std::shared_ptr<sv_t> sv2 = std::make_shared<deletion_t>(sv->chr, sv2_start, sv->end, "", nullptr, nullptr, sv->left_anchor_aln, sv->right_anchor_aln);
-		sv2->sample_info = sv->sample_info;
-		sv2->id = sv->id + ".2";
-		sv2->source = sv->source;
-		sv2->vcf_entry = bcf_dup(sv->vcf_entry);
-		atoms.push_back(sv2);
-	
-		hts_pos_t sv1_end = sv->start + (pos_ptr - deleted_seq);
-		sv->end = sv1_end;
-		sv->ins_seq = "";
 	}
 	delete[] deleted_seq;
-	return atoms;
 }
 
-std::vector<std::shared_ptr<sv_t>> atomize(int id, std::shared_ptr<sv_t> sv) {
+void atomize(int id, std::shared_ptr<sv_t> sv) {
 	std::string svtype = sv->svtype();
-	if (svtype == "DEL") {
-		return atomize_del(sv);
+	if (svtype == "DEL" && sv->svsize() <= 50) { 
+		// only atomize small deletions
+		// splitting large deletions can create problems to the current genotyping algorithm
+		// especially when calculating features like discordant pairs or read depth
+		atomize_del(sv);
 	} else if (svtype == "INS") {
 		// atomize_ins(sv);
 	}
-	return {sv};
 }
 
 void simplify_del(std::shared_ptr<sv_t> sv) {
@@ -121,17 +119,24 @@ void simplify(std::shared_ptr<sv_t> sv) {
 
 void left_align_del(std::shared_ptr<sv_t> sv) {
 
+	if (!sv->ins_seq.empty()) return;
+
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
 	for (snp_t snp : sv->aux_snps) {
 		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 
-	if (sv->ins_seq.empty()) {
-		while (sv->start > 0 && chr_seq[sv->start] == chr_seq[sv->end]) {
-			sv->start--;
-			sv->end--;
+	hts_pos_t limit = 0; // we cannot left-align past this position
+	for (std::shared_ptr<sv_t> indel : sv->aux_indels) {
+		if (indel->end <= sv->start) {
+			limit = std::max(limit, indel->end); 
 		}
+	}
+
+	while (sv->start > limit && chr_seq[sv->start] == chr_seq[sv->end]) {
+		sv->start--;
+		sv->end--;
 	}
 
 	for (snp_t snp : sv->aux_snps) {
@@ -146,6 +151,7 @@ void left_align_del(std::shared_ptr<sv_t> sv) {
 void left_align_dup(std::shared_ptr<sv_t> sv) {
 
 	if (!sv->ins_seq.empty()) return;
+	if (!sv->aux_indels.empty()) return; // this may be complicated, let us skip for now
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
@@ -165,6 +171,8 @@ void left_align_dup(std::shared_ptr<sv_t> sv) {
 }
 
 void left_align_ins(std::shared_ptr<sv_t> sv) {
+
+	if (!sv->aux_indels.empty()) return; // this may be complicated, let us skip for now
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
@@ -194,10 +202,7 @@ void left_align_ins(std::shared_ptr<sv_t> sv) {
 
 
 void left_align(std::shared_ptr<sv_t> sv) {
-	if (!sv->aux_indels.empty()) return; // this may be complicated, let us skip for now
-
 	std::string svtype = sv->svtype();
-	simplify(sv);
 	if (svtype == "DEL") {
 		left_align_del(sv);
 	} else if (svtype == "DUP") {
@@ -212,7 +217,6 @@ int main(int argc, char* argv[]) {
 	std::string in_vcf_fname = argv[1];
 	std::string out_vcf_fname = argv[2];
 	std::string reference_fname = argv[3];
-	bool do_atomize = argc > 4 && std::string(argv[4]) == "-a";
 
 	chr_seqs.read_fasta_into_map(reference_fname);
 
@@ -229,20 +233,12 @@ int main(int argc, char* argv[]) {
 		}
 		sv->vcf_entry = bcf_dup(vcf_record);
 		simplify(sv);
+		atomize(0, sv);
+		left_align(sv);
 		svs.push_back(sv);
 	}
 
-	if (do_atomize) {
-		std::vector<std::shared_ptr<sv_t>> atomized_svs;
-		for (auto& sv : svs) {
-			std::vector<std::shared_ptr<sv_t>> atom_svs = atomize(0, sv);
-			atomized_svs.insert(atomized_svs.end(), atom_svs.begin(), atom_svs.end());
-		}
-		svs = atomized_svs;
-	}
-
 	for (const auto& sv : svs) {
-		left_align(sv);
 		bcf1_t* vcf_record_norm = bcf_init();
 		sv2bcf(hdr, vcf_record_norm, sv.get(), chr_seqs.get_seq(sv->chr));
 		copy_all_fmt(hdr, sv->vcf_entry, vcf_record_norm);
