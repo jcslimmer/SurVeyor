@@ -28,6 +28,9 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     hts_pos_t ins_lh_len = std::min(extend, (hts_pos_t) ins->ins_seq.length());
 	hts_pos_t ins_rh_len = ins_lh_len;
 
+    char* lf_seq = generate_haplotype_left(contig_seq, ins_start-1, extend, ins->aux_indels, ins->aux_snps);
+    alt_lf_len = strlen(lf_seq);
+
     char* alt_bp1_seq;
     int alt_bp1_len;
     if (ins_lh_len < extend) {
@@ -36,14 +39,14 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         int extra = std::min(extend-ins_lh_len, (hts_pos_t) alt_rf_len); // there may not be enough bp if near the end of contig
         alt_bp1_len = alt_lf_len + ins_lh_len + extra;
         alt_bp1_seq = new char[alt_bp1_len+1];
-        strncpy(alt_bp1_seq, contig_seq+alt_start, alt_lf_len);
+        strncpy(alt_bp1_seq, lf_seq, alt_lf_len);
         strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_lh_len);
         strncpy(alt_bp1_seq+alt_lf_len+ins_lh_len, contig_seq+ins_end, extra);
         alt_bp1_seq[alt_bp1_len] = 0;
     } else {
         alt_bp1_len = alt_lf_len + ins_lh_len;
         alt_bp1_seq = new char[alt_bp1_len+1];
-        strncpy(alt_bp1_seq, contig_seq+alt_start, alt_lf_len);
+        strncpy(alt_bp1_seq, lf_seq, alt_lf_len);
         strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_lh_len);
         alt_bp1_seq[alt_bp1_len] = 0;
     }
@@ -55,7 +58,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         int extra = std::min(extend-ins_rh_len, (hts_pos_t) alt_lf_len); // there may not be enough bp if near the start of contig
         alt_bp2_len = extra + ins_rh_len + alt_rf_len;
         alt_bp2_seq = new char[alt_bp2_len+1];
-        strncpy(alt_bp2_seq, contig_seq+ins_start - extra, extra);
+        strncpy(alt_bp2_seq, lf_seq+(alt_lf_len - extra), extra);
         strncpy(alt_bp2_seq+extra, ins->ins_seq.c_str(), ins_rh_len);
         strncpy(alt_bp2_seq+extra+ins_rh_len, contig_seq+ins_end, alt_rf_len);
         alt_bp2_seq[alt_bp2_len] = 0;
@@ -232,18 +235,20 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         if (ref_bp1_end > contig_len) ref_bp1_end = contig_len;
         aligner.Align(alt_bp1_consensus_seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
 
-        alt_bp1_seq = new char[2*alt_bp1_consensus_seq.length()+1];
-        strncpy(alt_bp1_seq, contig_seq+ref_bp1_start, ins->start-ref_bp1_start);
+        char* lf_seq = generate_haplotype_left(contig_seq, ins->start-1, alt_bp1_consensus_seq.length(), ins->aux_indels, ins->aux_snps);
+        int alt_lf_len = strlen(lf_seq);
+        alt_bp1_seq = new char[alt_lf_len+alt_bp1_consensus_seq.length()+1];
+        strncpy(alt_bp1_seq, lf_seq, alt_lf_len);
         int ins_seq_portion_len = std::min(ins->ins_seq.length(), alt_bp1_consensus_seq.length());
-        strncpy(alt_bp1_seq+ins->start-ref_bp1_start, ins->ins_seq.c_str(), ins_seq_portion_len);
+        strncpy(alt_bp1_seq+alt_lf_len, ins->ins_seq.c_str(), ins_seq_portion_len);
         int extra_len = alt_bp1_consensus_seq.length() - ins->ins_seq.length();
         if (extra_len > 0) {
             if (ins->end+extra_len > contig_len) extra_len = contig_len-ins->end;
-            strncpy(alt_bp1_seq+ins->start-ref_bp1_start+ins_seq_portion_len, contig_seq+ins->end, extra_len);
+            strncpy(alt_bp1_seq+alt_lf_len+ins_seq_portion_len, contig_seq+ins->end, extra_len);
         } else {
             extra_len = 0;
         }
-        int alt_bp1_seq_len = ins->start-ref_bp1_start + ins_seq_portion_len + extra_len;
+        int alt_bp1_seq_len = alt_lf_len + ins_seq_portion_len + extra_len;
         alt_bp1_seq[alt_bp1_seq_len] = 0;
 
         aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_seq_len, filter, &alt1_aln, 0);

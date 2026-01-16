@@ -92,8 +92,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     char* lh_seq = generate_haplotype_left(contig_seq, del_start-1, extend, del->aux_indels, del->aux_snps);
     hts_pos_t alt_start = std::max(hts_pos_t(0), del_start-extend);
     hts_pos_t alt_end = std::min(del_end+extend, contig_len);
-    hts_pos_t alt_lh_len = del_start-alt_start, alt_rh_len = alt_end-del_end;
-    alt_lh_len = strlen(lh_seq);
+    hts_pos_t alt_lh_len = strlen(lh_seq), alt_rh_len = alt_end-del_end;
     hts_pos_t alt_len = alt_lh_len + del->ins_seq.length() + alt_rh_len;
     char* alt_seq = new char[alt_len + 1];
     strncpy(alt_seq, lh_seq, alt_lh_len);
