@@ -444,8 +444,11 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 	return best_alns;
 }
 
+// sometimes, we call this function after finding a main SV to find additional SVs. 
+// In such case, we use main_sv to assign auxiliary SNPs and indels that would be otherwise lost or assigned to other SVs
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
-	std::string junction_seq, int min_sv_size, int match_score = 1, int mismatch_score = -4, int gap_open_score = -6, int gap_extend_score = -1) {	
+	std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, int lowq_junction_prefix, int lowq_junction_suffix) {
+		// do not find aux SNPs in low-quality regions of the junction sequence
 
 	std::vector<std::shared_ptr<sv_t>> svs;
     hts_pos_t current_pos = ref_start + aln.ref_begin;
@@ -470,7 +473,10 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 		} else if (op == 'X') {
 			for (int j = 0; j < op_length; j++) {	
 				char alt_base = junction_seq[junction_pos+j];
-				snps.push_back(snp_t(current_pos+j, alt_base));
+				if (junction_pos+j >= lowq_junction_prefix && 
+					junction_pos+j < (junction_seq.length() - lowq_junction_suffix)) {
+					snps.push_back(snp_t(current_pos+j, alt_base));
+				}
 			}
 		}
 
@@ -491,9 +497,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 			aux_svs.push_back(sv);
 		}
 	}
+	if (main_sv != nullptr) main_svs.push_back(main_sv); // add the provided main SV, if any
 
 	// associate small SVs to the closest main SV within 50 bp
-	svs = main_svs;
 	for (auto& sv : aux_svs) {
 		int min_dist = INT32_MAX;
 		sv_t* best_sv = nullptr;
@@ -528,8 +534,10 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 	return svs;
 }
 
-std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end,
-                    hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, StripedSmithWaterman::Aligner& aligner, int min_clip_len, int min_sv_size) {
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, 
+		hts_pos_t ref_remap_lh_start, hts_pos_t ref_remap_lh_end, hts_pos_t ref_remap_rh_start, hts_pos_t ref_remap_rh_end, 
+		StripedSmithWaterman::Aligner& aligner, int min_clip_len, int min_sv_size, int lowq_junction_prefix = 0, int lowq_junction_suffix = 0) {
+		// do not find aux SNPs in low-quality regions of the junction sequence
 
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
     hts_pos_t ref_remap_rh_len = ref_remap_rh_end - ref_remap_rh_start;
@@ -672,8 +680,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 				StripedSmithWaterman::Filter filter;
 				StripedSmithWaterman::Alignment aln;
 				aligner.Align(junction_seq.c_str(), contig_seq + remap_start, remap_len, filter, &aln, 0);
-				if (!is_left_clipped(aln, min_clip_len) && !is_right_clipped(aln, min_clip_len)) {
-					return detect_svs_from_aln(aln, contig_name, remap_start, junction_seq, min_sv_size);
+				if (!is_clipped(aln, min_clip_len)) {
+					return detect_svs_from_aln(aln, contig_name, remap_start, junction_seq, min_sv_size, nullptr, lowq_junction_prefix, lowq_junction_suffix);
 				}
 			}
 
@@ -685,13 +693,13 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
 	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
-	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part, min_sv_size);
+	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part, min_sv_size, svs[0], lowq_junction_prefix, lowq_junction_suffix);
 	for (const auto& sv : extra_svs) {
 		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
 		}
 	}
-	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part, min_sv_size);
+	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part, min_sv_size, svs[0], lowq_junction_prefix, lowq_junction_suffix);
 	for (const auto& sv : extra_svs) {
 		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
 			svs.push_back(sv);
@@ -708,6 +716,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 	hts_pos_t ref_remap_lh_start = 0, ref_remap_lh_end = 0, ref_remap_rh_start = 0, ref_remap_rh_end = 0;
 	int overlap = 0;
 	double mismatch_rate = 0.0;
+	int lowq_junction_prefix = 0, lowq_junction_suffix = 0;
 
 	if (rc_consensus != NULL && lc_consensus != NULL) {
 		std::string rc_consensus_seq = rc_consensus->sequence;
@@ -743,6 +752,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		ref_remap_rh_end = lc_consensus->breakpoint + consensus_junction_seq.length();
 		if (ref_remap_rh_start < 0) ref_remap_rh_start = 0;
 		if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
+
+		lowq_junction_prefix = rc_consensus->lowq_prefix;;
+		lowq_junction_suffix = lc_consensus->lowq_suffix;
 	} else if (rc_consensus != NULL) {
 		consensus_junction_seq = rc_consensus->sequence;
 
@@ -757,6 +769,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		}
 		ref_remap_rh_start = std::max(ref_remap_rh_start, hts_pos_t(0));
 		ref_remap_rh_end = std::min(ref_remap_rh_end, contig_len);
+
+		lowq_junction_prefix = rc_consensus->lowq_prefix;
+		lowq_junction_suffix = rc_consensus->lowq_suffix;
 	} else if (lc_consensus != NULL) {
 		consensus_junction_seq = lc_consensus->sequence;
 
@@ -771,12 +786,15 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 
 		ref_remap_rh_start = std::max(hts_pos_t(0), lc_consensus->start - (int) lc_consensus->sequence.length());
 		ref_remap_rh_end = std::min(lc_consensus->end + (int) lc_consensus->sequence.length(), contig_len);
+
+		lowq_junction_prefix = lc_consensus->lowq_prefix;;
+		lowq_junction_suffix = lc_consensus->lowq_suffix;
 	} else {
 		return std::vector<std::shared_ptr<sv_t>>();
 	}
 
 	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, consensus_junction_seq, ref_remap_lh_start, 
-		ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len, min_sv_size);
+		ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end, aligner, min_clip_len, min_sv_size, lowq_junction_prefix, lowq_junction_suffix);
 	for (const auto& sv : svs) {
 		sv->rc_consensus = rc_consensus;
 		sv->lc_consensus = lc_consensus;
