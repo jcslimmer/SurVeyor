@@ -200,7 +200,8 @@ bool operator < (const base_score_t& bs1, const base_score_t& bs2) {
     return bs1.qual < bs2.qual;
 }
 
-std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector<uint8_t*>& quals, std::vector<hts_pos_t> read_start_offsets) {
+std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector<uint8_t*>& quals, 
+    std::vector<hts_pos_t> read_start_offsets, int& lowq_prefix, int& lowq_suffix) {
 
     // if not already sorted, sort by start offset
     if (!std::is_sorted(read_start_offsets.begin(), read_start_offsets.end())) {
@@ -238,6 +239,8 @@ std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector
     }
 
     int s = 0;
+    lowq_prefix = 0, lowq_suffix = 0;
+    bool low_prefix_done = false;
     for (int i = 0; i < consensus_len; i++) {
         while (s < seqs.size() && read_end_offsets[s] < i) s++;
 
@@ -247,19 +250,20 @@ std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector
 
             char nucl = seqs[j][i - read_start_offsets[j]];
             uint8_t qual = quals[j][i - read_start_offsets[j]];
-            if (nucl == 'A') {
-                base_scores[0].freq++;
-                base_scores[0].qual += qual;
-            } else if (nucl == 'C') {
-                base_scores[1].freq++;
-                base_scores[1].qual += qual;
-            } else if (nucl == 'G') {
-                base_scores[2].freq++;
-                base_scores[2].qual += qual;
-            } else if (nucl == 'T') {
-                base_scores[3].freq++;
-                base_scores[3].qual += qual;
+            base_scores[nt_map[(uint8_t)nucl]].freq++;
+            base_scores[nt_map[(uint8_t)nucl]].qual += qual;
+        }
+
+        // determine length of low-quality prefix and suffix, i.e., positions with less than 3 supporting reads
+        if (base_scores[0].freq + base_scores[1].freq + base_scores[2].freq + base_scores[3].freq < 3) {
+            // not enough coverage
+            if (!low_prefix_done) {
+                lowq_prefix++;
+            } else if (lowq_suffix == 0) {
+                lowq_suffix = consensus_len - i;
             }
+        } else {
+            low_prefix_done = true;
         }
 
         base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
@@ -407,7 +411,7 @@ std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1
 }
 
 std::string build_full_consensus_seq(std::deque<bam1_t*>& clipped, bool left_clipped, bool use_kmer_selection,
-                                     std::vector<bool>& accepted) {
+                                     std::vector<bool>& accepted, int& lowq_prefix, int& lowq_suffix) {
 
     std::vector<std::string> seqs;
     std::vector<uint8_t*> quals;
@@ -447,7 +451,7 @@ std::string build_full_consensus_seq(std::deque<bam1_t*>& clipped, bool left_cli
         for (int i = 0; i < clipped.size(); i++) selected_idxs[i] = i;
     }
 
-    std::string consensus_seq = build_full_consensus_seq(seqs, quals, read_start_offsets);
+    std::string consensus_seq = build_full_consensus_seq(seqs, quals, read_start_offsets, lowq_prefix, lowq_suffix);
 
     std::vector<int> selected_accepted = find_accepted_reads(consensus_seq, selected_clipped, read_start_offsets, left_clipped);
 
@@ -493,11 +497,12 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
     std::vector<consensus_t*> consensuses;
     while (clipped.size() >= 3) {
         std::vector<bool> accepted;
-        std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted);
+        int lowq_prefix, lowq_suffix;
+        std::string consensus_seq = build_full_consensus_seq(clipped, left_clipped, true, accepted, lowq_prefix, lowq_suffix);
 
         int accepted_reads_n = std::count(accepted.begin(), accepted.end(), true);
         if (accepted_reads_n < 3) {
-            consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted);
+            consensus_seq = build_full_consensus_seq(clipped, left_clipped, false, accepted, lowq_prefix, lowq_suffix);
         }
         accepted_reads_n = std::count(accepted.begin(), accepted.end(), true);
 
@@ -583,19 +588,10 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
             }
 
             // rebuild consensus sequence using only accepted reads
-            consensus_seq = build_full_consensus_seq(accepted_reads, left_clipped, false, accepted);
-
-            // these bps have support from only one or two reads, so they are prone to errors
-            hts_pos_t remove_from_start = get_start_offset(accepted_reads[0], accepted_reads[2]);
-            
-            sort(accepted_reads.begin(), accepted_reads.end(), [](bam1_t* r1, bam1_t* r2) {
-                return get_unclipped_end(r1) > get_unclipped_end(r2);
-            });
-            hts_pos_t remove_from_end = get_end_offset(accepted_reads[2], accepted_reads[0]);
+            consensus_seq = build_full_consensus_seq(accepted_reads, left_clipped, false, accepted, lowq_prefix, lowq_suffix);
             
             int clip_len = left_clipped ? breakpoint-start : end-breakpoint;
             if (is_hsr) clip_len = 0;
-            int lowq_prefix = remove_from_start, lowq_suffix = remove_from_end;
 
             consensus_t* consensus = new consensus_t(left_clipped, start, breakpoint, end, consensus_seq,
                 fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_prefix, lowq_suffix);
