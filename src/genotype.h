@@ -173,4 +173,10 @@ void release_mates(int contig_id);
 IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string contig_name, hts_pos_t contig_len, std::vector<hts_pair_pos_t> target_ivals, open_samFile_t* bam_file,
                                                                   std::vector<ext_read_t*>& candidate_reads_for_extension);
 
+
+char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_len, 
+    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps);
+char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t hap_start, hts_pos_t hap_len,
+    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps);
+
 #endif // GENOTYPE_H
