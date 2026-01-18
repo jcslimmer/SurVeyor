@@ -759,7 +759,7 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
 		if (sv->d.allele[1][0] == '<') {
 			std::string alt = sv->d.allele[1];
 			return alt.substr(1, alt.length()-2);
-		} else if (is_genomic_string(sv->d.allele[0]) && is_genomic_string(sv->d.allele[1])) {
+		} else {
 			int ref_len = strlen(sv->d.allele[0]);
 			int alt_len = strlen(sv->d.allele[1]);
 			return (alt_len > ref_len) ? "INS" : "DEL";

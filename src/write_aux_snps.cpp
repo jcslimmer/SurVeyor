@@ -87,10 +87,34 @@ int main(int argc, char* argv[]) {
             // remove INFO/AUX_INDELS from the original record
             bcf_update_info_string(in_vcf_hdr, b, "AUX_INDELS", NULL);
         }
+        free(s_data);
     }
 
     std::sort(vcf_records.begin(), vcf_records.end(),
         [](const bcf1_t* b1, const bcf1_t* b2) { return std::tie(b1->rid, b1->pos) < std::tie(b2->rid, b2->pos); });
+
+    for (int i = 0; i < vcf_records.size(); i++) {
+        std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_hdr, vcf_records[i]);
+        for (int j = i+1; j < vcf_records.size(); j++) {
+            if (sv->start != vcf_records[j]->pos) break;
+
+            std::shared_ptr<sv_t> sv2 = bcf_to_sv(in_vcf_hdr, vcf_records[j]);
+            if (sv->chr == sv2->chr && sv->end == sv2->end && sv->ins_seq == sv2->ins_seq) {
+                // if both 1/1
+                std::vector<int> gt1 = get_bcf_gt(in_vcf_hdr, vcf_records[i]);
+                std::vector<int> gt2 = get_bcf_gt(in_vcf_hdr, vcf_records[j]);
+                if (gt1.size() == 2 && gt2.size() == 2 && (bcf_gt_allele(gt1[0])+bcf_gt_allele(gt1[1]) >= 1 && bcf_gt_allele(gt2[0])+bcf_gt_allele(gt2[1]) >= 1)) {
+                    // set vcf_records[j] to ./.
+                    int missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
+                    bcf_update_genotypes(in_vcf_hdr, vcf_records[j], missing_gt, 2);
+
+                    // set vcf_records[i] to 1/1
+                    int hom_gt[2] = { bcf_gt_unphased(1), bcf_gt_unphased(1) };
+                    bcf_update_genotypes(in_vcf_hdr, vcf_records[i], hom_gt, 2);
+                }
+            }
+        }
+    }
 
     for (bcf1_t* vcf_record : vcf_records) {
         if (bcf_write(out_vcf_file, in_vcf_hdr, vcf_record) != 0) {

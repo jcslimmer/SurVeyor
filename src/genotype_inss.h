@@ -346,7 +346,6 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         ins->sample_info.alt_consensus2_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt2_aln);
         ins->sample_info.alt_consensus2_split_score1 = query_lh_aln_score.first;
         ins->sample_info.alt_consensus2_split_score2 = query_rh_aln_score.first;
-        std::cout << alt2_aln.cigar_string << "\n";
 
         ins->right_anchor_aln->start = ins_end;
         ins->right_anchor_aln->end = ins_end + rf_aln_rlen;
