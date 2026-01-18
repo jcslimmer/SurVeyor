@@ -123,7 +123,7 @@ void left_align_del(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
-	for (snp_t snp : sv->aux_snps) {
+	for (snp_t& snp : sv->aux_snps) {
 		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 
@@ -139,7 +139,7 @@ void left_align_del(std::shared_ptr<sv_t> sv) {
 		sv->end--;
 	}
 
-	for (snp_t snp : sv->aux_snps) {
+	for (snp_t& snp : sv->aux_snps) {
 		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 
@@ -176,7 +176,7 @@ void left_align_ins(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
-	for (snp_t snp : sv->aux_snps) {
+	for (snp_t& snp : sv->aux_snps) {
 		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 
@@ -191,7 +191,7 @@ void left_align_ins(std::shared_ptr<sv_t> sv) {
 		}
 	}
 
-	for (snp_t snp : sv->aux_snps) {
+	for (snp_t& snp : sv->aux_snps) {
 		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 
