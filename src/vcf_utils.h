@@ -831,7 +831,7 @@ std::string get_ins_seq(bcf_hdr_t* hdr, bcf1_t* sv) {
 	// LEFT_SVINSSEQ + "-" + RIGHT_SVINSSEQ, if they exist
 	std::string left_ins_seq = get_sv_info_str(hdr, sv, "LEFT_SVINSSEQ");
 	std::string right_ins_seq = get_sv_info_str(hdr, sv, "RIGHT_SVINSSEQ");
-	if (!left_ins_seq.empty() && !right_ins_seq.empty()) {
+	if (!left_ins_seq.empty() || !right_ins_seq.empty()) {
 		return left_ins_seq + "-" + right_ins_seq;
 	}
 

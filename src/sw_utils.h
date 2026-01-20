@@ -446,12 +446,14 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 
 // sometimes, we call this function after finding a main SV to find additional SVs. 
 // In such case, we use main_sv to assign auxiliary SNPs and indels that would be otherwise lost or assigned to other SVs
-std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
-	std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, int lowq_junction_prefix, int lowq_junction_suffix) {
-		// do not find aux SNPs in low-quality regions of the junction sequence
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(hts_pos_t ref_begin, hts_pos_t ref_end, int aln_score,
+	StripedSmithWaterman::Alignment& aln, 
+	std::string contig_name, std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, 
+	int lowq_junction_prefix, int lowq_junction_suffix) {
+	// do not find aux SNPs in low-quality regions of the junction sequence
 
 	std::vector<std::shared_ptr<sv_t>> svs;
-    hts_pos_t current_pos = ref_start + aln.ref_begin;
+    hts_pos_t current_pos = ref_begin;
 	hts_pos_t junction_pos = 0;
 	std::vector<snp_t> snps;
 
@@ -462,8 +464,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 
 		hts_pos_t start = current_pos-1, end = (op == 'D') ? current_pos+op_length-1 : current_pos;
 		std::string ins_seq = (op == 'I') ? junction_seq.substr(junction_pos, op_length) : "";
-		auto left_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(ref_start+aln.ref_begin, start, junction_pos, aln.sw_score);
-		auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(end, ref_start+aln.ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln.sw_score);
+		auto left_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(ref_begin, start, junction_pos, aln_score);
+		auto right_part_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(end, ref_end, junction_seq.length()-junction_pos-ins_seq.length(), aln_score);
 		if (op == 'D') {
 			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, start, end, "", nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
@@ -532,6 +534,12 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Ali
 	}
 
 	return svs;
+}
+
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
+	std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, int lowq_junction_prefix, int lowq_junction_suffix) {
+	return detect_svs_from_aln(ref_start + aln.ref_begin, ref_start + aln.ref_end, aln.sw_score, aln, contig_name,
+		junction_seq, min_sv_size, main_sv, lowq_junction_prefix, lowq_junction_suffix);
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, 
@@ -691,20 +699,57 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 		svs[0]->mh_len = prefix_mh_len;
 	}
 
-	hts_pos_t forbidden_zone_start = std::min(left_anchor_end, right_anchor_start);
-	hts_pos_t forbidden_zone_end = std::max(left_anchor_end, right_anchor_start);
-	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part, min_sv_size, svs[0], lowq_junction_prefix, lowq_junction_suffix);
+	std::vector<std::shared_ptr<sv_t>> extra_svs = detect_svs_from_aln(left_part_aln, contig_name, ref_remap_lh_start, left_part, min_sv_size, svs[0], lowq_junction_prefix, 0);
 	for (const auto& sv : extra_svs) {
-		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
+		if (sv->end <= svs[0]->start) {
 			svs.push_back(sv);
 		}
 	}
-	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part, min_sv_size, svs[0], lowq_junction_prefix, lowq_junction_suffix);
+	// left_part_aln can only contain aux indels and SNPs that are to the left of the main SV
+	// delete sv->aux_indels and sv->aux_snps that are >= svs[0]->start
+	svs[0]->aux_indels.erase(std::remove_if(svs[0]->aux_indels.begin(), svs[0]->aux_indels.end(),
+		[svs](std::shared_ptr<sv_t> sv) {
+			return sv->end > svs[0]->start;
+		}), svs[0]->aux_indels.end());
+	svs[0]->aux_snps.erase(std::remove_if(svs[0]->aux_snps.begin(), svs[0]->aux_snps.end(),
+		[svs](snp_t snp) {
+			return snp.pos > svs[0]->start;
+		}), svs[0]->aux_snps.end());
+
+	// we need to apply the same (but reversed) filtering to the right part
+	// i.e., right_part_aln can only contain aux indels and SNPs that are to the right of the main SV
+	// so we temporarily remove left part aux indels and SNPs
+	std::vector<std::shared_ptr<sv_t>> backup_aux_indels;
+	backup_aux_indels.swap(svs[0]->aux_indels);
+	std::vector<snp_t> backup_aux_snps;
+	backup_aux_snps.swap(svs[0]->aux_snps);
+
+	extra_svs = detect_svs_from_aln(right_part_aln, contig_name, ref_remap_rh_start, right_part, min_sv_size, svs[0], 0, lowq_junction_suffix);
 	for (const auto& sv : extra_svs) {
-		if (!overlap(forbidden_zone_start, forbidden_zone_end, sv->start, sv->end)) {
+		if (sv->start >= svs[0]->end) {
 			svs.push_back(sv);
 		}
 	}
+	svs[0]->aux_indels.erase(std::remove_if(svs[0]->aux_indels.begin(), svs[0]->aux_indels.end(),
+		[svs](std::shared_ptr<sv_t> sv) {
+			return sv->start <= svs[0]->end;
+		}), svs[0]->aux_indels.end());
+	svs[0]->aux_snps.erase(std::remove_if(svs[0]->aux_snps.begin(), svs[0]->aux_snps.end(),
+		[svs](snp_t snp) {
+			return snp.pos <= svs[0]->end;
+		}), svs[0]->aux_snps.end());
+	
+	// restore left part aux indels and SNPs
+	svs[0]->aux_indels.insert(svs[0]->aux_indels.end(), backup_aux_indels.begin(), backup_aux_indels.end());
+	svs[0]->aux_snps.insert(svs[0]->aux_snps.end(), backup_aux_snps.begin(), backup_aux_snps.end());
+
+	std::sort(svs[0]->aux_indels.begin(), svs[0]->aux_indels.end(), [](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) {
+		return a->start < b->start;
+	});
+	std::sort(svs[0]->aux_snps.begin(), svs[0]->aux_snps.end(), [](const snp_t& a, const snp_t& b) {
+		return a.pos < b.pos;
+	});
+
     return svs;
 }
 
