@@ -9,7 +9,7 @@ def valid_min_sv_size(arg):
     except ValueError:
         raise argparse.ArgumentTypeError("Value must be an integer.")
     if sv_size < 10:
-        raise argparse.ArgumentTypeError("Value must be at least 20.")
+        raise argparse.ArgumentTypeError("Value must be at least 10.")
     return sv_size
 
 parser = argparse.ArgumentParser(description='SurVeyor, an SV caller.')
@@ -255,35 +255,32 @@ if cmd_args.command == 'call':
     write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s/intermediate_results/calls-with-gt.reconciled.vcf.gz %s/calls-genotyped.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     run_cmd(write_aux_snps_cmd)
 
-    _20_to_50_cmd = "bcftools view -i 'SVLEN>=-50 && SVLEN<=50 && SVTYPE!=\"BND\" && SVTYPE!=\"INV\"' %s/calls-genotyped.vcf.gz -Oz -o %s/calls-genotyped.20to50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-    run_cmd(_20_to_50_cmd)
-
-    _geq50_cmd = "bcftools view -i 'SVLEN<=-50 || SVLEN>=50 || SVLEN==\".\"' %s/calls-genotyped.vcf.gz -Oz -o %s/calls-genotyped.geq50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-    run_cmd(_geq50_cmd)
-
     if cmd_args.two_pass:
-        genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-fmt.reassigned.vcf.gz %s %s %s %s --reassign-evidence" % (cmd_args.workdir, cmd_args.workdir, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
-        run_cmd(genotype_cmd)
+        cp_cmd = "cp %s/intermediate_results/calls-with-gt.vcf.gz %s/intermediate_results/calls-with-gt.iter0.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
+        run_cmd(cp_cmd)
+
+        N_ITERS = 2
+        for i in range(1, N_ITERS+1):
+            prev_iter_gt_file = cmd_args.workdir + "/intermediate_results/calls-with-gt.iter%d.vcf.gz" % (i-1)
+            next_iter_fmt_file = cmd_args.workdir + "/intermediate_results/calls-with-fmt.iter%d.vcf.gz" % i
+            genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s %s %s %s %s %s --reassign-evidence" % (prev_iter_gt_file, next_iter_fmt_file, cmd_args.bam_file, cmd_args.reference, cmd_args.workdir, sample_name)
+            run_cmd(genotype_cmd)
+
+            next_iter_gt_file = cmd_args.workdir + "/intermediate_results/calls-with-gt.iter%d.vcf.gz" % i
+            Classifier.run_classifier(next_iter_fmt_file, next_iter_gt_file, cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
+
+        final_iter_fmt_file = next_iter_fmt_file
+        final_iter_gt_file = next_iter_gt_file
 
         if cmd_args.generate_training_data:
-            separate_ins_to_dup(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/training-data.reassigned.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.reassigned.vcf.gz")
+            separate_ins_to_dup(final_iter_fmt_file, cmd_args.workdir + "/training-data.reassigned.INS_TO_DUP.vcf.gz", cmd_args.workdir + "/training-data.reassigned.vcf.gz")
 
-        Classifier.run_classifier(cmd_args.workdir + "/intermediate_results/calls-with-fmt.reassigned.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/stats.txt", cmd_args.ml_model)
-
-        reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.vcf.gz", cmd_args.workdir + "/intermediate_results/calls-with-gt.reassigned.reconciled.vcf.gz", sample_name)
+        reconciled_file = final_iter_gt_file.replace(".vcf.gz", ".reconciled.vcf.gz")
+        reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (cmd_args.workdir + "/intermediate_results/calls-raw.vcf.gz", final_iter_gt_file, reconciled_file, sample_name)
         run_cmd(reconcile_vcf_gt_cmd)
 
-        write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s/intermediate_results/calls-with-gt.reassigned.reconciled.vcf.gz %s/calls-genotyped.reassigned.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+        write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s %s/calls-genotyped.reassigned.vcf.gz %s" % (reconciled_file, cmd_args.workdir, cmd_args.reference)
         run_cmd(write_aux_snps_cmd)
-
-        _20_to_50_cmd = "bcftools view -i '(SVLEN>=-50 && SVLEN<=50 && SVTYPE!=\"BND\") || ID~\"SNP\" || ID~\"INDEL\"' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.20to50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_20_to_50_cmd)
-
-        _20_to_100_cmd = "bcftools view -i '(SVLEN>=-100 && SVLEN<=100 && SVTYPE!=\"BND\") || ID~\"SNP\" || ID~\"INDEL\"' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.20to100.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_20_to_100_cmd)
-
-        _geq50_cmd = "bcftools view -i 'SVLEN<=-50 || SVLEN>=50 || SVLEN==\".\"' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.geq50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_geq50_cmd)
 
     # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
