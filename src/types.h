@@ -283,8 +283,9 @@ struct sv_t {
         return lc_consensus->remap_boundary;
     }
 
-    std::string unique_key() {
+    std::string unique_key(bool include_aux = true) {
         std::string key = chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;
+        if (!include_aux) return key;
         for (const auto& snp : aux_snps) {
             key += ":" + std::to_string(snp.pos+1) + "," + snp.alt_base;
         }

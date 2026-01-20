@@ -210,7 +210,7 @@ if cmd_args.command == 'call':
 
     reads_categorizer()
 
-    clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s" % (cmd_args.workdir, cmd_args.reference)
+    clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s %s" % (cmd_args.workdir, cmd_args.reference, sample_name)
     run_cmd(clip_consensus_builder_cmd)
 
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)

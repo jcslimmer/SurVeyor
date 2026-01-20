@@ -834,6 +834,18 @@ int main(int argc, char* argv[]) {
 		svs.erase(std::remove(svs.begin(), svs.end(), nullptr), svs.end());
 	}
 
+	// Input read_svs, i.e., SVs detected from read alignments directly
+	std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> read_svs_by_chr;
+
+	std::string sv_vcf_fname = workdir + "/intermediate_results/read_svs.vcf.gz";
+	htsFile* sv_vcf_file = bcf_open(sv_vcf_fname.c_str(), "r");
+	bcf_hdr_t* sv_vcf_header = bcf_hdr_read(sv_vcf_file);
+	bcf1_t* bcf_entry = bcf_init();
+	while (bcf_read(sv_vcf_file, sv_vcf_header, bcf_entry) == 0) {
+		std::shared_ptr<sv_t> sv = bcf_to_sv(sv_vcf_header, bcf_entry);
+		read_svs_by_chr[sv->chr].push_back(sv);
+	}
+
     // create VCF out files
 	bcf_hdr_t* out_vcf_header = generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
     std::string out_vcf_fname = workdir + "/intermediate_results/sr.vcf.gz";
@@ -848,10 +860,22 @@ int main(int argc, char* argv[]) {
 		throw std::runtime_error("Failed to write the VCF header to " + out_dp_inv_vcf_fname + ".");
 	}
 
-    bcf1_t* bcf_entry = bcf_init();
 	std::unordered_map<std::string, int> svtype_id;
-    for (std::string& contig_name : chr_seqs.ordered_contigs) {
+    for (const std::string& contig_name : chr_seqs.ordered_contigs) {
 		std::vector<std::shared_ptr<sv_t>>& svs = svs_by_chr[contig_name];
+
+		// merge with read_svs
+		auto& read_svs = read_svs_by_chr[contig_name];
+		std::unordered_set<std::string> svs_unique_keys;
+		for (std::shared_ptr<sv_t> sv : svs) {
+			svs_unique_keys.insert(sv->unique_key(false));
+		}
+		for (std::shared_ptr<sv_t> sv : read_svs) {
+			if (svs_unique_keys.count(sv->unique_key(false)) == 0) {
+				svs.push_back(sv);
+			}
+		}
+
 		std::sort(svs.begin(), svs.end(), [](std::shared_ptr<sv_t> sv1, std::shared_ptr<sv_t> sv2) {
 			return std::tie(sv1->start, sv1->end) < std::tie(sv2->start, sv2->end);
 		});

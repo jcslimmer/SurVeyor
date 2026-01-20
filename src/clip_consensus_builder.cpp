@@ -3,10 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
+#include <unordered_map>
 
 #include "htslib/sam.h"
 #include "sam_utils.h"
+#include "sw_utils.h"
 #include "hsr_utils.h"
+#include "vcf_utils.h"
 #include "utils.h"
 #include "assemble.h"
 #include "../libs/cptl_stl.h"
@@ -16,6 +20,8 @@ config_t config;
 stats_t stats;
 std::string workdir, workspace;
 chr_seqs_map_t contigs;
+
+std::unordered_map<std::string, int> detected_svs_count;
 
 struct sync_hts_reader_t {
     open_samFile_t* file1 = nullptr,* file2 = nullptr;
@@ -607,6 +613,7 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     
     std::ofstream clip_fout(clip_fname);
     std::deque<bam1_t*> lc_cluster, rc_cluster;
+    std::deque<bool> lc_used_for_consensus, rc_used_for_consensus;
 
     auto is_same_cluster = [](bam1_t* r1, bam1_t* r2) {
     return overlap(get_unclipped_start(r1), get_unclipped_end(r1), get_unclipped_start(r2), get_unclipped_end(r2)) >=
@@ -631,16 +638,32 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         }
 
         std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
+        std::deque<bool>& used_for_consensus = lc_clipped ? lc_used_for_consensus : rc_used_for_consensus;
         if (cluster.size() >= 3 && !is_same_cluster(cluster.front(), read)) { // candidate cluster complete
             std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster, lc_clipped);
+            if (!consensuses.empty()) {
+                std::fill(used_for_consensus.begin(), used_for_consensus.end(), true);
+            }
+
             if (lc_clipped) lc_consensuses.insert(lc_consensuses.end(), consensuses.begin(), consensuses.end());
             else rc_consensuses.insert(rc_consensuses.end(), consensuses.begin(), consensuses.end());
         }
         while (!cluster.empty() && !is_same_cluster(cluster.front(), read)) {
+            if (!used_for_consensus.front() && cluster.front()->core.qual >= config.high_confidence_mapq) {
+                // read was not used to build any consensus, try and detect variants from it
+                std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(cluster.front(), contig_name, get_sequence(cluster.front()), config.min_sv_size, nullptr, 0, 0);
+                mtx.lock();
+                for (auto& sv : svs) {
+                    detected_svs_count[sv->unique_key(false)]++;
+                }
+                mtx.unlock();
+            }
             bam_destroy1(cluster.front());
             cluster.pop_front();
+            used_for_consensus.pop_front();
         }
         cluster.push_back(read);
+        used_for_consensus.push_back(false);
     }
 
     if (rc_cluster.size() >= 3) {
@@ -686,6 +709,7 @@ int main(int argc, char* argv[]) {
     workspace = workdir + "/workspace";
 
     std::string reference_fname = argv[2];
+    std::string sample_name = argv[3];
 
     contig_map_t contig_map(workdir);
     config.parse(workdir + "/config.txt");
@@ -709,4 +733,61 @@ int main(int argc, char* argv[]) {
     for (size_t i = 0; i < futures.size(); i++) {
         futures[i].get();
     }
+
+    // Write detected SVs to VCF
+    std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> svs_by_chr;
+    for (auto& p : detected_svs_count) {
+        if (p.second >= 3) {
+            const std::string& sv_str = p.first;
+            std::string chr, insseq, svtype;
+            hts_pos_t start, end;
+            size_t pos1 = sv_str.find(':');
+            size_t pos2 = sv_str.find(':', pos1+1);
+            size_t pos3 = sv_str.find(':', pos2+1);
+            size_t pos4 = sv_str.find(':', pos3+1);
+            chr = sv_str.substr(0, pos1);
+            start = std::stol(sv_str.substr(pos1+1, pos2-pos1-1));
+            end = std::stol(sv_str.substr(pos2+1, pos3-pos2-1));
+            svtype = sv_str.substr(pos3+1, pos4-pos3-1);
+            insseq = sv_str.substr(pos4+1);
+
+            if (svtype == "DEL") {
+                std::shared_ptr<deletion_t> del = std::make_shared<deletion_t>(chr, start, end, "", nullptr, nullptr, nullptr, nullptr);
+                svs_by_chr[chr].push_back(del);
+            } else if (svtype == "INS") {
+                std::shared_ptr<insertion_t> ins = std::make_shared<insertion_t>(chr, start, end, insseq, nullptr, nullptr, nullptr, nullptr);
+                svs_by_chr[chr].push_back(ins);
+            }
+        }
+    }
+
+    std::string full_cmd_fname = workdir + "/call_cmd.txt";
+	std::ifstream full_cmd_fin(full_cmd_fname);
+	std::string full_cmd_str;
+	std::getline(full_cmd_fin, full_cmd_str);
+    
+    bcf_hdr_t* sv_vcf_header = generate_vcf_header(contigs, sample_name, config, full_cmd_str);
+    std::string sv_vcf_fname = workdir + "/intermediate_results/read_svs.vcf.gz";
+    htsFile* sv_vcf_fout = hts_open(sv_vcf_fname.c_str(), "wz");
+    if (bcf_hdr_write(sv_vcf_fout, sv_vcf_header) != 0) {
+        throw std::runtime_error("Failed to write to " + sv_vcf_fname + ".");
+    }
+
+    bcf1_t* sv_vcf_record = bcf_init();
+    for (const std::string& contig_name : contigs.ordered_contigs) {
+        std::vector<std::shared_ptr<sv_t>>& svs = svs_by_chr[contig_name];
+        std::sort(svs.begin(), svs.end(), [](const std::shared_ptr<sv_t>& sv1, const std::shared_ptr<sv_t>& sv2) {
+            return sv1->start < sv2->start;
+        });
+        for (const auto& sv : svs) {
+            sv2bcf(sv_vcf_header, sv_vcf_record, sv.get(), contigs.get_seq(sv->chr));
+            if (bcf_write(sv_vcf_fout, sv_vcf_header, sv_vcf_record) != 0) {
+                throw std::runtime_error("Failed to write to " + sv_vcf_fname + ".");
+            }
+        }
+    }
+
+    bcf_close(sv_vcf_fout);
+    bcf_destroy(sv_vcf_record);
+    bcf_hdr_destroy(sv_vcf_header);
 }

@@ -446,8 +446,8 @@ std::vector<StripedSmithWaterman::Alignment> get_best_alns(char* contig_seq, hts
 
 // sometimes, we call this function after finding a main SV to find additional SVs. 
 // In such case, we use main_sv to assign auxiliary SNPs and indels that would be otherwise lost or assigned to other SVs
-std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(hts_pos_t ref_begin, hts_pos_t ref_end, int aln_score,
-	StripedSmithWaterman::Alignment& aln, 
+// cigar is in the SSW library format
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(std::vector<uint32_t>& cigar, hts_pos_t ref_begin, hts_pos_t ref_end, int aln_score,
 	std::string contig_name, std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, 
 	int lowq_junction_prefix, int lowq_junction_suffix) {
 	// do not find aux SNPs in low-quality regions of the junction sequence
@@ -457,8 +457,8 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(hts_pos_t ref_begin, hts_
 	hts_pos_t junction_pos = 0;
 	std::vector<snp_t> snps;
 
-	for (int i = 0; i < aln.cigar.size(); i++) {
-		uint32_t c = aln.cigar[i];
+	for (int i = 0; i < cigar.size(); i++) {
+		uint32_t c = cigar[i];
         int op_length = cigar_int_to_len(c);
         char op = cigar_int_to_op(c);
 
@@ -533,13 +533,26 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(hts_pos_t ref_begin, hts_
 		}
 	}
 
-	return svs;
+	return main_svs;
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(StripedSmithWaterman::Alignment& aln, std::string contig_name, hts_pos_t ref_start,
 	std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, int lowq_junction_prefix, int lowq_junction_suffix) {
-	return detect_svs_from_aln(ref_start + aln.ref_begin, ref_start + aln.ref_end, aln.sw_score, aln, contig_name,
+	return detect_svs_from_aln(aln.cigar, ref_start + aln.ref_begin, ref_start + aln.ref_end, aln.sw_score, contig_name,
 		junction_seq, min_sv_size, main_sv, lowq_junction_prefix, lowq_junction_suffix);
+}
+
+std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(bam1_t* read, std::string contig_name,
+	std::string junction_seq, int min_sv_size, std::shared_ptr<sv_t> main_sv, int lowq_junction_prefix, int lowq_junction_suffix) {
+	uint32_t* bam_cigar = bam_get_cigar(read);
+	std::vector<uint32_t> ssw_cigar;
+	for (int i = 0; i < read->core.n_cigar; i++) {
+		char op = bam_cigar_opchr(bam_cigar[i]);
+		int len = bam_cigar_oplen(bam_cigar[i]);
+		ssw_cigar.push_back(to_cigar_int(len, op));
+	}
+	return detect_svs_from_aln(ssw_cigar, read->core.pos, bam_endpos(read), get_AS_tag(read),
+		contig_name, junction_seq, min_sv_size, main_sv, lowq_junction_prefix, lowq_junction_suffix);
 }
 
 std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_name, char* contig_seq, std::string junction_seq, 
