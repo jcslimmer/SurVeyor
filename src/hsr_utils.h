@@ -197,7 +197,7 @@ void filter_fully_contained(std::vector<consensus_t*>& consensuses) {
 	std::sort(sorted.begin(), sorted.end(), [](const consensus_t* c1, const consensus_t* c2) {
 		return c1->start < c2->start || (c1->start == c2->start && c1->end > c2->end);
 	});
-	
+
 	std::vector<bool> to_delete(sorted.size(), false);
 	for (int i = 0; i < sorted.size(); i++) {
 		if (to_delete[i]) continue;
@@ -265,7 +265,6 @@ bool merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consen
 	return false;
 }
 
-// This only applies to HSR consensuses
 void merge_overlapping_clusters(std::vector<consensus_t*>& consensuses, int min_overlap) {
 
 	if (consensuses.empty()) return;

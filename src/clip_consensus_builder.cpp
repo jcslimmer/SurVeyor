@@ -260,20 +260,21 @@ std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector
             base_scores[nt_map[(uint8_t)nucl]].qual += qual;
         }
 
-        // determine length of low-quality prefix and suffix, i.e., positions with less than 3 supporting reads
+        base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
+        consensus[i] = best_base_score.base;
+        
+        // determine length of low-quality prefix and suffix
+        // low-quality prefix is the last position from the start where coverage is < 3 AND max base freq is < 2
         if (base_scores[0].freq + base_scores[1].freq + base_scores[2].freq + base_scores[3].freq < 3) {
             // not enough coverage
-            if (!low_prefix_done) {
-                lowq_prefix++;
-            } else if (lowq_suffix == 0) {
+            if (!low_prefix_done && best_base_score.freq < 2) {
+                lowq_prefix = i + 1;
+            } else if (lowq_suffix == 0 && best_base_score.freq < 2) {
                 lowq_suffix = consensus_len - i;
             }
         } else {
             low_prefix_done = true;
         }
-
-        base_score_t best_base_score = max(base_scores[0], base_scores[1], base_scores[2], base_scores[3]);
-        consensus[i] = best_base_score.base;
     }
     return consensus;
 }
@@ -487,11 +488,14 @@ void dedup_cluster(std::deque<bam1_t*>& cluster) {
     cluster.swap(unique_cluster);
 }
 
-std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deque<bam1_t*> clipped, bool left_clipped) {
+std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deque<bam1_t*> clipped, bool left_clipped,
+                                               std::deque<bool>& used) {
 
     if (clipped.size() <= 2 || clipped.size() > 20*stats.get_max_depth(contig_name)) {
         return {};
     }
+
+    std::deque<bam1_t*> orig_clipped = clipped;
 
     std::sort(clipped.begin(), clipped.end(), [](bam1_t* r1, bam1_t* r2) {
         return get_unclipped_start(r1) < get_unclipped_start(r2);
@@ -499,6 +503,8 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
     if (get_unclipped_start(clipped[0]) < 0) return {};
 
     dedup_cluster(clipped);
+
+    std::unordered_set<bam1_t*> used_reads; // reads used to build a consensus
 
     std::vector<consensus_t*> consensuses;
     while (clipped.size() >= 3) {
@@ -603,9 +609,18 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
                 fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_prefix, lowq_suffix);
             consensus->is_hsr = is_hsr;
             consensuses.push_back(consensus);
+
+            for (bam1_t* r : accepted_reads) used_reads.insert(r);
         }
         clipped.swap(rejected_reads);
     }
+
+    for (size_t i = 0; i < used.size(); i++) {
+        if (used_reads.count(orig_clipped[i])) {
+            used[i] = true;
+        }
+    }
+
     return consensuses;
 }
 
@@ -640,11 +655,7 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         std::deque<bam1_t*>& cluster = lc_clipped ? lc_cluster : rc_cluster;
         std::deque<bool>& used_for_consensus = lc_clipped ? lc_used_for_consensus : rc_used_for_consensus;
         if (cluster.size() >= 3 && !is_same_cluster(cluster.front(), read)) { // candidate cluster complete
-            std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster, lc_clipped);
-            if (!consensuses.empty()) {
-                std::fill(used_for_consensus.begin(), used_for_consensus.end(), true);
-            }
-
+            std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, cluster, lc_clipped, used_for_consensus);
             if (lc_clipped) lc_consensuses.insert(lc_consensuses.end(), consensuses.begin(), consensuses.end());
             else rc_consensuses.insert(rc_consensuses.end(), consensuses.begin(), consensuses.end());
         }
@@ -667,22 +678,48 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     }
 
     if (rc_cluster.size() >= 3) {
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, rc_cluster, false);
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, rc_cluster, false, rc_used_for_consensus);
         rc_consensuses.insert(rc_consensuses.end(), consensuses.begin(), consensuses.end());
     }
+    for (int i = 0; i < rc_used_for_consensus.size(); i++) {
+        if (!rc_used_for_consensus[i] && rc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+            // read was not used to build any consensus, try and detect variants from it
+            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(rc_cluster[i], contig_name, get_sequence(rc_cluster[i]), config.min_sv_size, nullptr, 0, 0);
+            mtx.lock();
+            for (auto& sv : svs) {
+                detected_svs_count[sv->unique_key(false)]++;
+            }
+            mtx.unlock();
+        }
+    }
     for (bam1_t* r : rc_cluster) bam_destroy1(r);
+    
     if (lc_cluster.size() >= 3) {
-        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, lc_cluster, true);
+        std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, lc_cluster, true, lc_used_for_consensus);
         lc_consensuses.insert(lc_consensuses.end(), consensuses.begin(), consensuses.end());
+    }
+    for (int i = 0; i < lc_used_for_consensus.size(); i++) {
+        if (!lc_used_for_consensus[i] && lc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+            // read was not used to build any consensus, try and detect variants from it
+            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(lc_cluster[i], contig_name, get_sequence(lc_cluster[i]), config.min_sv_size, nullptr, 0, 0);
+            mtx.lock();
+            for (auto& sv : svs) {
+                detected_svs_count[sv->unique_key(false)]++;
+            }
+            mtx.unlock();
+        }
     }
     for (bam1_t* r : lc_cluster) bam_destroy1(r);
 
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), rc_consensuses, config);
     filter_well_aligned_to_ref(contigs.get_seq(contig_name), contigs.get_len(contig_name), lc_consensuses, config);
+
     filter_fully_contained(rc_consensuses);
     filter_fully_contained(lc_consensuses);
+
     merge_overlapping_clusters(rc_consensuses, stats.read_len/2);
     merge_overlapping_clusters(lc_consensuses, stats.read_len/2);
+
     enforce_max_ploidy(rc_consensuses, 4);
     enforce_max_ploidy(lc_consensuses, 4);
 
@@ -728,6 +765,7 @@ int main(int argc, char* argv[]) {
         future = thread_pool.push(build_consensuses, contig_name, std::vector<std::string>{sr_bam_fname, hsr_bam_fname}, 
             workspace + "/consensuses/" + std::to_string(contig_id) + ".txt");
         futures.push_back(std::move(future));
+        // break;
     }
     thread_pool.stop(true);
     for (size_t i = 0; i < futures.size(); i++) {
