@@ -768,7 +768,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* contig_seq, hts_pos_t contig_len, 
 					std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus,
-					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, double max_seq_error, int min_sv_size) {
+					StripedSmithWaterman::Aligner& aligner, int min_overlap, int min_clip_len, int min_sv_size) {
 
 	std::string consensus_junction_seq;
 	hts_pos_t ref_remap_lh_start = 0, ref_remap_lh_end = 0, ref_remap_rh_start = 0, ref_remap_rh_end = 0;
@@ -779,11 +779,11 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 	if (rc_consensus != NULL && lc_consensus != NULL) {
 		std::string rc_consensus_seq = rc_consensus->sequence;
 		std::string lc_consensus_seq = lc_consensus->sequence;
-		suffix_prefix_aln_t spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
+		suffix_prefix_aln_t spa = aln_suffix_prefix_perfect(rc_consensus_seq, lc_consensus_seq, min_overlap);
 		if (spa.overlap < min_overlap || is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap)) {
 			rc_consensus_seq = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_suffix);
 			lc_consensus_seq = lc_consensus->sequence.substr(lc_consensus->lowq_prefix);
-			spa = aln_suffix_prefix(rc_consensus_seq, lc_consensus_seq, 1, -4, max_seq_error, min_overlap);
+			spa = aln_suffix_prefix_perfect(rc_consensus_seq, lc_consensus_seq, min_overlap);
 			if (spa.overlap < min_overlap || is_homopolymer(lc_consensus_seq.c_str(), spa.overlap)) {
 				return std::vector<std::shared_ptr<sv_t>>();
 			}

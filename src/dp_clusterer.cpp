@@ -100,7 +100,7 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<std::sha
 		std::shared_ptr<consensus_t> rc_consensus = std::make_shared<consensus_t>(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0, 0);
 		std::shared_ptr<consensus_t> lc_consensus = std::make_shared<consensus_t>(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, 0, 0, 0);
 		std::vector<std::shared_ptr<sv_t>> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
-			aligner, stats.read_len/3, config.min_clip_len, 0.0, config.min_sv_size);
+			aligner, stats.read_len/3, config.min_clip_len, config.min_sv_size);
 
 		std::shared_ptr<deletion_t> del = NULL;
 		if (!svs.empty() && svs[0]->svtype() == "DEL") { // first check if I can obtain precise coordinates for the deletion
