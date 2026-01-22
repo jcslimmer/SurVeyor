@@ -16,6 +16,28 @@ bcf_hdr_t* hdr;
 std::vector<bcf1_t*> normalised_vcf_records;
 std::mutex mtx;
 
+// Find the most similar substring of 'text' to 'word' using a simple sliding window approach,
+// returning the starting index of the most similar substring.
+// If multiple substrings have the same similarity score, the last one is returned.
+int find_most_similar_substring(char* text, int text_len, char* word) {
+	int word_len = strlen(word);
+	int best_start = -1;
+	int best_score = -1;
+
+	for (int i = 0; i <= text_len - word_len; i++) {
+		int score = 0;
+		for (int j = 0; j < word_len; j++) {
+			if (text[i + j] == word[j]) score++;
+		}
+		if (score >= best_score) {
+			best_score = score;
+			best_start = i;
+		}
+	}
+
+	return best_start;
+}
+
 void atomize_del(std::shared_ptr<sv_t> sv) {
 	if (sv->ins_seq.empty()) return;
 
@@ -25,25 +47,7 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 	strncpy(deleted_seq, chr_seq + sv->start+1, sv->end - sv->start);
 	deleted_seq[sv->end - sv->start] = '\0';
 
-	// if deleted sequence contains sv->ins_seq as a substring, split into two smaller deletions
-	char* pos_ptr = strstr(deleted_seq, sv->ins_seq.c_str());
-	if (pos_ptr) {
-		// Create two new SVs for the split deletions
-		hts_pos_t sv1_start = sv->start;
-		hts_pos_t sv1_end = sv->start + (pos_ptr - deleted_seq);
-		hts_pos_t sv2_start = sv->start + (pos_ptr - deleted_seq) + sv->ins_seq.length();
-		hts_pos_t sv2_end = sv->end;
-		if (sv1_end-sv1_start >= sv2_end-sv2_start) {
-			sv->end = sv1_end;
-			std::shared_ptr<sv_t> sv2 = std::make_shared<deletion_t>(sv->chr, sv2_start, sv2_end, "", nullptr, nullptr, nullptr, nullptr);
-			sv->aux_indels.push_back(sv2);
-		} else {
-			sv->start = sv2_start;
-			std::shared_ptr<sv_t> sv1 = std::make_shared<deletion_t>(sv->chr, sv1_start, sv1_end, "", nullptr, nullptr, nullptr, nullptr);
-			sv->aux_indels.push_back(sv1);
-		}
-		sv->ins_seq = "";
-	} else if (sv->ins_seq.length() == 1) { // DEL + SNP
+	if (sv->ins_seq.length() == 1) { // DEL + SNP. Mark last base as SNP and shorten deletion by 1 bp
 		hts_pos_t snp_pos = sv->end;
 		char ref_base = chr_seq[snp_pos];
 		char alt_base = sv->ins_seq[0];
@@ -51,6 +55,41 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 		sv->aux_snps.push_back(snp);
 
 		sv->end--;
+		sv->ins_seq = "";
+	} else {
+		// transform DEL + INS into (possibly two) DELs + SNPs (as few as possible)
+		int most_similar_pos = find_most_similar_substring(deleted_seq, sv->end - sv->start, (char*) sv->ins_seq.c_str());
+		
+		// Create two new SVs for the split deletions
+		hts_pos_t sv1_start = sv->start;
+		hts_pos_t sv1_end = sv->start + most_similar_pos;
+		hts_pos_t sv2_start = sv->start + most_similar_pos + sv->ins_seq.length();
+		hts_pos_t sv2_end = sv->end;
+		if (sv1_end-sv1_start >= sv2_end-sv2_start) {
+			sv->end = sv1_end;
+			if (sv2_end > sv2_start) {
+				std::shared_ptr<sv_t> sv2 = std::make_shared<deletion_t>(sv->chr, sv2_start, sv2_end, "", nullptr, nullptr, nullptr, nullptr);
+				sv->aux_indels.push_back(sv2);
+			}
+		} else {
+			sv->start = sv2_start;
+			if (sv1_end > sv1_start) {
+				std::shared_ptr<sv_t> sv1 = std::make_shared<deletion_t>(sv->chr, sv1_start, sv1_end, "", nullptr, nullptr, nullptr, nullptr);
+				sv->aux_indels.push_back(sv1);
+			}
+		}
+
+		// Create SNPs for the mismatched bases
+		for (size_t i = 0; i < sv->ins_seq.length(); i++) {
+			char ref_base = chr_seq[sv1_start+1 + most_similar_pos + i];
+			char alt_base = sv->ins_seq[i];
+			if (ref_base != alt_base) {
+				hts_pos_t snp_pos = sv1_start+1 + most_similar_pos + i;
+				snp_t snp(snp_pos, alt_base);
+				sv->aux_snps.push_back(snp);
+			}
+		}
+
 		sv->ins_seq = "";
 	}
 	delete[] deleted_seq;
