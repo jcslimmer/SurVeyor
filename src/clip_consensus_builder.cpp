@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "htslib/sam.h"
 #include "sam_utils.h"
@@ -22,6 +23,7 @@ std::string workdir, workspace;
 chr_seqs_map_t contigs;
 
 std::unordered_map<std::string, int> detected_svs_count;
+std::unordered_set<std::string> detected_svs_count_is_hq;
 
 struct sync_hts_reader_t {
     open_samFile_t* file1 = nullptr,* file2 = nullptr;
@@ -660,12 +662,15 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
             else rc_consensuses.insert(rc_consensuses.end(), consensuses.begin(), consensuses.end());
         }
         while (!cluster.empty() && !is_same_cluster(cluster.front(), read)) {
-            if (!used_for_consensus.front() && cluster.front()->core.qual >= config.high_confidence_mapq) {
+            if (!used_for_consensus.front()) {
                 // read was not used to build any consensus, try and detect variants from it
                 std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(cluster.front(), contig_name, get_sequence(cluster.front()), config.min_sv_size, nullptr, 0, 0);
                 mtx.lock();
                 for (auto& sv : svs) {
                     detected_svs_count[sv->unique_key(false)]++;
+                    if (cluster.front()->core.qual >= config.high_confidence_mapq) {
+                        detected_svs_count_is_hq.insert(sv->unique_key(false));
+                    }
                 }
                 mtx.unlock();
             }
@@ -765,7 +770,6 @@ int main(int argc, char* argv[]) {
         future = thread_pool.push(build_consensuses, contig_name, std::vector<std::string>{sr_bam_fname, hsr_bam_fname}, 
             workspace + "/consensuses/" + std::to_string(contig_id) + ".txt");
         futures.push_back(std::move(future));
-        // break;
     }
     thread_pool.stop(true);
     for (size_t i = 0; i < futures.size(); i++) {
@@ -774,9 +778,8 @@ int main(int argc, char* argv[]) {
 
     // Write detected SVs to VCF
     std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> svs_by_chr;
-    for (auto& p : detected_svs_count) {
-        if (p.second >= 3) {
-            const std::string& sv_str = p.first;
+    for (const std::string& sv_str : detected_svs_count_is_hq) {
+        if (detected_svs_count[sv_str] >= 2) { // SV detected by at least 2 reads
             std::string chr, insseq, svtype;
             hts_pos_t start, end;
             size_t pos1 = sv_str.find(':');

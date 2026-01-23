@@ -16,6 +16,7 @@
 #include "htslib/vcf.h"
 #include "htslib/hts.h"
 #include "htslib/faidx.h"
+#include "htslib/tbx.h"
 
 #include "sw_utils.h"
 #include "types.h"
@@ -1149,4 +1150,6 @@ int main(int argc, char* argv[]) {
     bcf_close(out_vcf_file);
     delete bam_pool;
     delete evidence_logger;
+
+    tbx_index_build(out_vcf_fname.c_str(), 0, &tbx_conf_vcf);
 }

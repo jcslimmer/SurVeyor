@@ -90,6 +90,11 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 			}
 		}
 
+		std::sort(sv->aux_snps.begin(), sv->aux_snps.end(),
+			[](const snp_t& a, const snp_t& b) {
+				return a.pos < b.pos;
+			});
+
 		sv->ins_seq = "";
 	}
 	delete[] deleted_seq;
