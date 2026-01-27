@@ -257,7 +257,7 @@ int main(int argc, char* argv[]) {
 	}
 	futures.clear();
 
-	std::string sr_vcf_fname = workdir + "/intermediate_results/sr.dedup.vcf.gz";
+	std::string sr_vcf_fname = workdir + "/intermediate_results/sr.norm.dedup.vcf.gz";
 	htsFile* sr_vcf_file = bcf_open(sr_vcf_fname.c_str(), "r");
 	bcf_hdr_t* hdr = bcf_hdr_read(sr_vcf_file);
 

@@ -216,7 +216,10 @@ if cmd_args.command == 'call':
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
     run_cmd(find_svs_from_sr_consensuses_cmd)
 
-    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.norm.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
+    run_cmd(normalise_cmd)
+
+    merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.norm.vcf.gz %s/intermediate_results/sr.norm.dedup.vcf.gz %s" % (cmd_args.workdir, cmd_args.workdir, cmd_args.reference)
     run_cmd(merge_identical_calls_cmd)
 
     dp_clusterer = SURVEYOR_PATH + "/bin/dp_clusterer %s %s %s %s" % (cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
@@ -282,7 +285,7 @@ if cmd_args.command == 'call':
         write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s %s/calls-genotyped.reassigned.vcf.gz %s" % (reconciled_file, cmd_args.workdir, cmd_args.reference)
         run_cmd(write_aux_snps_cmd)
 
-    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
