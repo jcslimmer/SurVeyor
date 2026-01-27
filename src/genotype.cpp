@@ -327,7 +327,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     if (sv->sample_info.ext_alt_consensus1_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->sample_info.ext_alt_consensus1_to_alt_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS_ED", &(sv->sample_info.ext_alt_consensus1_to_alt_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->sample_info.ext_alt_consensus1_to_ref_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS_ED", &(sv->sample_info.ext_alt_consensus1_to_ref_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->sample_info.ext_alt_consensus1_length), 1);
         int exss[] = {sv->sample_info.alt_consensus1_split_size1, sv->sample_info.alt_consensus1_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
@@ -346,7 +348,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     if (sv->sample_info.ext_alt_consensus2_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", &(sv->sample_info.ext_alt_consensus2_to_alt_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2_ED", &(sv->sample_info.ext_alt_consensus2_to_alt_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", &(sv->sample_info.ext_alt_consensus2_to_ref_score), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2_ED", &(sv->sample_info.ext_alt_consensus2_to_ref_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", &(sv->sample_info.ext_alt_consensus2_length), 1);
         int exss2[] = {sv->sample_info.alt_consensus2_split_size1, sv->sample_info.alt_consensus2_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", exss2, 2);
@@ -538,7 +542,6 @@ char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t h
     hap_seq[out_pos] = '\0';
     return hap_seq;
 }
-
 
 void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads, 
     double consistent_avg_score, double consistent_stddev_score) {

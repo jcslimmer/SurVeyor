@@ -8,7 +8,8 @@
 void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
                 stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
-                bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
+                bool reassign_evidence, evidence_map_t* evidence_map, 
+                std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
 
     hts_pos_t ins_start = ins->start, ins_end = ins->end;
 
@@ -365,9 +366,13 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     }
 
     ins->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score;
+    ins->sample_info.ext_alt_consensus1_to_ref_ed = ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches;
     ins->sample_info.ext_alt_consensus2_to_ref_score = ref2_aln.sw_score;
+    ins->sample_info.ext_alt_consensus2_to_ref_ed = ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches;
     ins->sample_info.ext_alt_consensus1_to_alt_score = alt1_aln.sw_score;
+    ins->sample_info.ext_alt_consensus1_to_alt_ed = alt1_aln.query_end - alt1_aln.query_begin - alt1_aln.mismatches;
     ins->sample_info.ext_alt_consensus2_to_alt_score = alt2_aln.sw_score;
+    ins->sample_info.ext_alt_consensus2_to_alt_ed = alt2_aln.query_end - alt2_aln.query_begin - alt2_aln.mismatches;
 
     set_bp_consensus_info(ins->sample_info.alt_bp1.reads_info, alt_bp1_better_seqs.size(), alt_bp1_better_seqs_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
     set_bp_consensus_info(ins->sample_info.alt_bp2.reads_info, alt_bp2_better_seqs.size(), alt_bp2_better_seqs_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);

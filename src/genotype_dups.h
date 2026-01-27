@@ -150,6 +150,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         if (ref_end > contig_len) ref_end = contig_len;
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &ref_aln, 0);
         dup->sample_info.ext_alt_consensus1_to_ref_score = ref_aln.sw_score;
+        dup->sample_info.ext_alt_consensus1_to_ref_ed = ref_aln.query_end - ref_aln.query_begin - ref_aln.mismatches;
 
         int n_extra_copies = alt_with_most_reads+1;
         int alt_len = ref_end - ref_start + n_extra_copies*svlen;
@@ -168,6 +169,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 		alt_seq[pos] = 0;
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
         dup->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
+        dup->sample_info.ext_alt_consensus1_to_alt_ed = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
 
         // delete[] alt_seq;
 
@@ -443,7 +445,12 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         dup->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         dup->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
+        dup->sample_info.ext_alt_consensus1_to_alt_ed = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
         dup->sample_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
+        dup->sample_info.ext_alt_consensus1_to_ref_ed = std::max(
+            ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches,
+            ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches
+        );
 
         ref1_aln.Clear();
         std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);

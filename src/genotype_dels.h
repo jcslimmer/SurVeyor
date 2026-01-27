@@ -13,8 +13,9 @@
 
 void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_read_t*>& candidate_reads_for_extension_itree, 
                 std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, char* contig_seq, hts_pos_t contig_len,
-                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger,
-                bool reassign_evidence, evidence_map_t* evidence_map, std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
+                stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner,
+                evidence_logger_t* evidence_logger, bool reassign_evidence, evidence_map_t* evidence_map, 
+                std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
     int del_start = del->start, del_end = del->end;
 
     hts_pos_t extend = stats.read_len + 20;
@@ -30,16 +31,18 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
     // all ranges will be start-inclusive and end-exclusive, i.e. [a,b)
     char* lh_seq = generate_haplotype_left(contig_seq, del_start-1, extend, del->aux_indels, del->aux_snps);
+    char* rh_seq = generate_haplotype_right(contig_seq, contig_len, del_end, extend, del->aux_indels, del->aux_snps);
     hts_pos_t alt_start = std::max(hts_pos_t(0), del_start-extend);
     hts_pos_t alt_end = std::min(del_end+extend, contig_len);
-    hts_pos_t alt_lh_len = strlen(lh_seq), alt_rh_len = alt_end-del_end;
+    hts_pos_t alt_lh_len = strlen(lh_seq), alt_rh_len = strlen(rh_seq);
     hts_pos_t alt_len = alt_lh_len + del->ins_seq.length() + alt_rh_len;
     char* alt_seq = new char[alt_len + 1];
     strncpy(alt_seq, lh_seq, alt_lh_len);
     strncpy(alt_seq+alt_lh_len, del->ins_seq.c_str(), del->ins_seq.length());
-    strncpy(alt_seq+alt_lh_len+del->ins_seq.length(), contig_seq+del_end, alt_rh_len);
+    strncpy(alt_seq+alt_lh_len+del->ins_seq.length(), rh_seq, alt_rh_len);
     alt_seq[alt_len] = 0;
     delete[] lh_seq;
+    delete[] rh_seq;
 
     // extract ref alleles - will be useful for consensus generation
     hts_pos_t ref_bp1_start = alt_start, ref_bp1_end = std::min(del_start+extend, contig_len);
@@ -174,8 +177,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
         std::shared_ptr<consensus_t> alt_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, alt_consensus_seq, 0, 0, 0, 0, 0, 0, 0);
-        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, del->start-stats.max_is, del->start, contig_len, config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
-        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, del->end, del->end+stats.max_is, contig_len, config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
+        extend_consensus_to_left(alt_consensus, candidate_reads_for_extension_itree, del_start-stats.max_is, del_start, contig_len, config.high_confidence_mapq, stats, mateseqs_w_mapq_chr); 
+        extend_consensus_to_right(alt_consensus, candidate_reads_for_extension_itree, del_end, del_end+stats.max_is, contig_len, config.high_confidence_mapq, stats, mateseqs_w_mapq_chr);
         
         del->sample_info.alt_lext_reads = alt_consensus->left_ext_reads;
         del->sample_info.alt_rext_reads = alt_consensus->right_ext_reads;
@@ -183,20 +186,24 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.hq_alt_rext_reads = alt_consensus->hq_right_ext_reads;
         alt_consensus_seq = alt_consensus->sequence;
         
-        char* lh_seq = generate_haplotype_left(contig_seq, del->start-1, alt_consensus_seq.length(), del->aux_indels, del->aux_snps);
-        hts_pos_t lh_start = del->start-alt_consensus_seq.length();
-        if (lh_start < 0) lh_start = 0;
+        char* lh_seq = generate_haplotype_left(contig_seq, del_start-1, alt_consensus_seq.length(), del->aux_indels, del->aux_snps);
         hts_pos_t lh_len = strlen(lh_seq);
-        hts_pos_t rh_end = del->end+alt_consensus_seq.length();
+        char* rh_seq = generate_haplotype_right(contig_seq, contig_len, del_end, alt_consensus_seq.length(), del->aux_indels, del->aux_snps);
+        hts_pos_t rh_len = strlen(rh_seq);
+        
+        hts_pos_t lh_start = del_start - lh_len;
+        if (lh_start < 0) lh_start = 0;
+        hts_pos_t rh_end = del_end + rh_len;
         if (rh_end > contig_len) rh_end = contig_len;
-        hts_pos_t rh_len = rh_end-del->end;
-    
+
         delete[] alt_seq;
         alt_seq = new char[lh_len + rh_len + del->ins_seq.length() + 1];
         strncpy(alt_seq, lh_seq, lh_len);
         strncpy(alt_seq+lh_len, del->ins_seq.c_str(), del->ins_seq.length());
-        strncpy(alt_seq+lh_len+del->ins_seq.length(), contig_seq+del->end, rh_len);
+        strncpy(alt_seq+lh_len+del->ins_seq.length(), rh_seq, rh_len);
         alt_seq[lh_len+rh_len+del->ins_seq.length()] = 0;
+        delete[] lh_seq;
+        delete[] rh_seq;
 
         // align to ref+SV
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+del->ins_seq.length()+rh_len, filter, &alt_aln, 0);
@@ -215,16 +222,16 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         del->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         del->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
-        del->left_anchor_aln->start = del->start - lf_aln_rlen;
-        del->left_anchor_aln->end = del->start;
+        del->left_anchor_aln->start = del_start - lf_aln_rlen;
+        del->left_anchor_aln->end = del_start;
         del->left_anchor_aln->seq_len = lf_aln_rlen;
         del->right_anchor_aln->start = del_end;
         del->right_anchor_aln->end = del_end + rf_aln_rlen;
         del->right_anchor_aln->seq_len = rf_aln_rlen;
 
         // align to ref
-        hts_pos_t lbp_start = lh_start, lbp_end = del->start + alt_consensus_seq.length();
-        hts_pos_t rbp_start = del->end - alt_consensus_seq.length(), rbp_end = rh_end;
+        hts_pos_t lbp_start = lh_start, lbp_end = del_start + alt_consensus_seq.length();
+        hts_pos_t rbp_start = del_end - alt_consensus_seq.length(), rbp_end = rh_end;
         if (lbp_end > contig_len) lbp_end = contig_len;
         if (rbp_start < 0) rbp_start = 0;
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
@@ -232,7 +239,12 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
         del->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         del->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
+        del->sample_info.ext_alt_consensus1_to_alt_ed = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
         del->sample_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
+        del->sample_info.ext_alt_consensus1_to_ref_ed = std::max(
+            ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches,
+            ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches
+        );
 
         ref1_aln.Clear();
         std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
