@@ -267,14 +267,12 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         delete[] lf_seq;
         delete[] rf_seq;
 
-        // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
-        hts_pos_t lh_len = ins_start - ref_bp1_start;
-        int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt1_aln.ref_begin);
-        int rf_aln_rlen = std::max(hts_pos_t(0), alt1_aln.ref_end - lh_len);
+        // length of the left and right flanking regions of the insertion covered by alt_bp1_consensus_seq
+        int lf_aln_rlen = std::max(0, alt_lf_len - alt1_aln.ref_begin);
+        int rf_aln_rlen = std::max(0, alt1_aln.ref_end+1 - alt_lf_len - ins_seq_portion_len);
 
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
-        int temp;
         auto query_lh_aln_score = find_aln_prefix_score(alt1_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt1_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
         ins->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt1_aln);
@@ -325,7 +323,7 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         int ins_seq_portion_len = std::min(ins->ins_seq.length(), alt_bp2_consensus_seq.length());
         strncpy(alt_bp2_seq+extra_len, ins->ins_seq.c_str()+(ins->ins_seq.length()-ins_seq_portion_len), ins_seq_portion_len);
         strncpy(alt_bp2_seq+extra_len+ins_seq_portion_len, rf_seq, alt_rf_len);
-        int alt_bp2_seq_len = extra_len + ins_seq_portion_len + ref_bp2_end-ins_end;
+        int alt_bp2_seq_len = extra_len + ins_seq_portion_len + alt_rf_len;
         alt_bp2_seq[alt_bp2_seq_len] = 0;
 
         aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_seq_len, filter, &alt2_aln, 0);
@@ -333,14 +331,12 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         delete[] lf_seq;
         delete[] rf_seq;
 
-        // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
-        hts_pos_t lh_len = extra_len + ins_seq_portion_len;
-        int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt2_aln.ref_begin);
-        int rf_aln_rlen = std::max(hts_pos_t(0), alt2_aln.ref_end - lh_len);
+        // length of the left and right flanking regions of the insertion covered by alt_consensus_seq
+        int lf_aln_rlen = std::max(0, extra_len - alt2_aln.ref_begin);
+        int rf_aln_rlen = std::max(0, alt2_aln.ref_end+1 - (extra_len + ins_seq_portion_len));
 
-        // length of the alt_consensus_seq covering left and right flanking regions of the deletion
+        // length of the alt_consensus_seq covering left and right flanking regions of the insertion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
-        int temp;
         auto query_lh_aln_score = find_aln_prefix_score(alt2_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt2_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
         ins->sample_info.alt_consensus2_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt2_aln);
