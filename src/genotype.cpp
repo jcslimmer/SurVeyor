@@ -339,7 +339,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSCIA", exsscia, 2);
     } else {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", NULL, 0);
@@ -360,7 +362,9 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", exssc2ia, 2);
     } else {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", NULL, 0);
@@ -690,6 +694,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             chosen_cseq_idx = i;
         }
     }
+
     std::sort(start_positions.begin(), start_positions.end());
     std::sort(end_positions.begin(), end_positions.end(), std::greater<int>());
     if (!consistent_reads.empty()) avg_score = cum_score/consistent_reads.size();
