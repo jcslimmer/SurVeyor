@@ -8,7 +8,7 @@ class Features:
 
     NAN = np.nan
 
-    info_features_names = [ 'START_STOP_DIST', 'SVLEN', 'SVINSLEN', 
+    info_features_names = [ 'START_STOP_DIST', 'SVLEN', 'SVINSLEN', 'EDIT_DISTANCE',
                             'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
                             'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
                             'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
@@ -38,7 +38,7 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF_TO_LEN',
+                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF_TO_LEN', 'EXASED_EXRSED_DIFF_TO_LEN',
                             'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF',
@@ -113,6 +113,16 @@ class Features:
             return info[key]
         else:
             return default
+        
+    def get_string_list_value(info, key, default):
+        if key in info:
+            v = info[key]
+            if isinstance(v, list) or isinstance(v, tuple):
+                return [str(x) for x in v]
+            else:
+                return [str(v)]
+        else:
+            return default
 
     def generate_id(record):
         svinsseq = Features.get_svinsseq(record)
@@ -147,6 +157,23 @@ class Features:
             return svlen[0]
         else:
             return svlen
+        
+    def get_edit_distance(record):
+        svinsseq = Features.get_svinsseq(record)
+        svinslen = Features.get_number_value(record.info, 'SVINSLEN', 0)
+        if svinslen == 0 and svinsseq:
+            svinslen = len(svinsseq)
+        edit_distance = record.stop - record.pos + svinslen
+        if "AUX_SNPS" in record.info:
+            aux_snps = Features.get_string_list_value(record.info, 'AUX_SNPS', [])
+            edit_distance += len(aux_snps)
+        if "AUX_INDELS" in record.info:
+            aux_indels = Features.get_string_list_value(record.info, 'AUX_INDELS', [])
+            for indel in aux_indels:
+                sl = indel.split(':')
+                edit_distance += int(sl[1]) - int(sl[0]) # length of deletion
+                edit_distance += len(sl[2]) # length of insertion
+        return edit_distance
 
     def get_svtype(record):
         if isinstance(record.info['SVTYPE'], list) or isinstance(record.info['SVTYPE'], tuple):
@@ -204,6 +231,9 @@ class Features:
         if svinslen == 0 and svinsseq:
             svinslen = len(svinsseq)
         features['SVINSLEN'] = svinslen
+
+        edit_distance = Features.get_edit_distance(record)
+        features['EDIT_DISTANCE'] = edit_distance
 
         features['INS_SEQ_COV_PREFIX_LEN'] = 1
         features['INS_SEQ_COV_SUFFIX_LEN'] = 1
@@ -633,19 +663,22 @@ class Features:
         exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0)
         exas1_scaled = exas1/(max(1, exl1))
         exas2_scaled = exas2/(max(1, exl2))
-        features['MEXAS'] = max(exas1_scaled, exas2_scaled)
-        features['mEXAS'] = min(exas1_scaled, exas2_scaled)
+
+        exas1_ed = Features.get_number_value(record.samples[0], 'EXAS_ED', 0)
+        exas2_ed = Features.get_number_value(record.samples[0], 'EXAS2_ED', 0)
 
         exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0)
         exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0)
         exrs1_scaled = exrs1/(max(1, exl1))
         exrs2_scaled = exrs2/(max(1, exl2))
 
-        features['EXAS_EXRS_RATIO'] = 0 if exrs1_scaled+exrs2_scaled == 0 else (exas1_scaled+exas2_scaled)/(exrs1_scaled+exrs2_scaled)
-        features['EXAS_EXRS_DIFF'] = (exas1-exrs1) + (exas2-exrs2)
+        exrs1_ed = Features.get_number_value(record.samples[0], 'EXRS_ED', 0)
+        exrs2_ed = Features.get_number_value(record.samples[0], 'EXRS2_ED', 0)
 
-        affected_length = features['START_STOP_DIST'] + svinslen
-        features['EXAS_EXRS_DIFF_TO_LEN'] = (exas1-exrs1+exas2-exrs2)/max(1, affected_length)
+        features['EXAS_EXRS_RATIO'] = 0 if exrs1_scaled+exrs2_scaled == 0 else (exas1_scaled+exas2_scaled)/(exrs1_scaled+exrs2_scaled)
+
+        features['EXAS_EXRS_DIFF_TO_LEN'] = (exas1-exrs1+exas2-exrs2)/max(1, edit_distance)
+        features['EXASED_EXRSED_DIFF_TO_LEN'] = (exas1_ed-exrs1_ed+exas2_ed-exrs2_ed)/max(1, edit_distance)
 
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
         features['EXSS1_1'] = exss1_1/(max_is+read_len)
