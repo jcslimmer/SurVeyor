@@ -137,7 +137,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 
     bool success = false;
     std::shared_ptr<insertion_t> insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
-        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, config);
+        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, stats, config);
     if (insertion != NULL) {
         mtx.lock();
         insertions.push_back(insertion);

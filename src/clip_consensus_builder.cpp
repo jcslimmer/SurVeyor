@@ -664,7 +664,8 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         while (!cluster.empty() && !is_same_cluster(cluster.front(), read)) {
             if (!used_for_consensus.front()) {
                 // read was not used to build any consensus, try and detect variants from it
-                std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(cluster.front(), contig_name, get_sequence(cluster.front()), config.min_sv_size, nullptr, 0, 0);
+                std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(cluster.front(), contig_name,
+                    get_sequence(cluster.front()), nullptr, 0, 0, stats, config);
                 mtx.lock();
                 for (auto& sv : svs) {
                     detected_svs_count[sv->unique_key(false)]++;
@@ -689,7 +690,8 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     for (int i = 0; i < rc_used_for_consensus.size(); i++) {
         if (!rc_used_for_consensus[i] && rc_cluster[i]->core.qual >= config.high_confidence_mapq) {
             // read was not used to build any consensus, try and detect variants from it
-            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(rc_cluster[i], contig_name, get_sequence(rc_cluster[i]), config.min_sv_size, nullptr, 0, 0);
+            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(rc_cluster[i], contig_name,
+                get_sequence(rc_cluster[i]), nullptr, 0, 0, stats, config);
             mtx.lock();
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;
@@ -706,7 +708,8 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
     for (int i = 0; i < lc_used_for_consensus.size(); i++) {
         if (!lc_used_for_consensus[i] && lc_cluster[i]->core.qual >= config.high_confidence_mapq) {
             // read was not used to build any consensus, try and detect variants from it
-            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(lc_cluster[i], contig_name, get_sequence(lc_cluster[i]), config.min_sv_size, nullptr, 0, 0);
+            std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(lc_cluster[i], contig_name, 
+                get_sequence(lc_cluster[i]), nullptr, 0, 0, stats, config);
             mtx.lock();
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;

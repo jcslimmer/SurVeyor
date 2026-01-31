@@ -143,7 +143,7 @@ void find_svs_from_consensuses_pair(int id, std::string contig_name,
 		} else {
 			int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
 			svs_by_pair[pair_idx] = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
-				aligner, min_overlap, config.min_clip_len, config.min_sv_size);
+				aligner, min_overlap, stats, config);
 		}
 	}
 }
@@ -603,9 +603,9 @@ void find_indels_from_unpaired_consensuses(int id, std::string contig_name, std:
 		
 		std::vector<std::shared_ptr<sv_t>> svs;
 		if (!consensus->left_clipped) {
-			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, config.min_clip_len, config.min_sv_size);
+			svs = detect_svs(contig_name, contig_seq, contig_len, consensus, NULL, aligner, 0, stats, config);
 		} else if (consensus->left_clipped) {
-			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, config.min_clip_len, config.min_sv_size);
+			svs = detect_svs(contig_name, contig_seq, contig_len, NULL, consensus, aligner, 0, stats, config);
 		}
 
 		if (!svs.empty()) {

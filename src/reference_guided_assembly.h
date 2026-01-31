@@ -522,14 +522,14 @@ std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::str
 		std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, 
 		std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
 		region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, 
-		StripedSmithWaterman::Aligner& aligner, config_t& config) {
+		StripedSmithWaterman::Aligner& aligner, stats_t& stats, config_t& config) {
 
 	int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
 	int remap_end = std::min(l_cluster->end+50, contig_len-1);
 	if (remap_start >= remap_end) return NULL;
 
 	 std::vector<std::shared_ptr<sv_t>> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
-                remap_start, remap_end, remap_start, remap_end, aligner, config.min_clip_len, config.min_sv_size);
+                remap_start, remap_end, remap_start, remap_end, aligner, 0, 0, stats, config);
 
 	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->svsize() < config.min_sv_size) return NULL;
 
