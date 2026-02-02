@@ -551,6 +551,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* aux_snps_tag = "##INFO=<ID=AUX_SNPS,Number=1,Type=String,Description=\"Auxiliary SNPs supporting the variant.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, aux_snps_tag, &len));
 
+	const char* exp_alt_freq_tag = "##INFO=<ID=EXP_ALT_READS_FREQ,Number=2,Type=Float,Description=\"Expected frequency of reads supporting the ALT bp1 and bp2 allele.\">";
+	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, exp_alt_freq_tag, &len));
+
 	// add ALT
 	const char* del_alt_tag = "##ALT=<ID=DEL,Description=\"Deletion\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, del_alt_tag, &len));

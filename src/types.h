@@ -160,6 +160,8 @@ struct sv_t {
     hts_pos_t start, end;
     std::string ins_seq, inferred_ins_seq;
     int mh_len = 0;
+    double expected_alt1_reads_frac = EXPECTED_ALT_READS_FREQ_NOT_COMPUTED;
+    double expected_alt2_reads_frac = EXPECTED_ALT_READS_FREQ_NOT_COMPUTED;
 
     std::shared_ptr<anchor_aln_t> left_anchor_aln, right_anchor_aln;
     std::shared_ptr<consensus_t> rc_consensus, lc_consensus;
@@ -170,8 +172,9 @@ struct sv_t {
     bool imprecise = false;
 
     static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
-    static const int SIZE_NOT_COMPUTED = INT32_MAX;
-    
+    static constexpr const int SIZE_NOT_COMPUTED = INT32_MAX;
+    static constexpr const double EXPECTED_ALT_READS_FREQ_NOT_COMPUTED = -1.0;
+
     double ks_pval = KS_PVAL_NOT_COMPUTED;
     int min_conf_size = SIZE_NOT_COMPUTED, max_conf_size = SIZE_NOT_COMPUTED, estimated_size = SIZE_NOT_COMPUTED;
 

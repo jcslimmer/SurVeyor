@@ -240,6 +240,10 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     if (mh_len > 0) {
         bcf_update_info_int32(out_hdr, sv->vcf_entry, "MH_LEN", &mh_len, 1);
     }
+    if (sv->expected_alt1_reads_frac != sv_t::EXPECTED_ALT_READS_FREQ_NOT_COMPUTED) {
+        float exp_alt_reads_freq[] = {(float) sv->expected_alt1_reads_frac, (float) sv->expected_alt2_reads_frac};
+        bcf_update_info_float(out_hdr, sv->vcf_entry, "EXP_ALT_READS_FREQ", exp_alt_reads_freq, 2);
+    }
 
     // update FORMAT fields
     bcf_update_genotypes(out_hdr, sv->vcf_entry, sv->sample_info.gt.data(), sv->sample_info.gt.size());
