@@ -74,10 +74,10 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 	mutex_per_chr[contig_id].unlock();
 
 	std::vector<std::shared_ptr<consensus_t>> consensuses_to_consider(consensuses->begin()+start_idx, consensuses->begin()+end_idx);
-
 	
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
-	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+	char* path = fai_path(reference_fname.c_str());
+	if (hts_set_fai_filename(bam_file->file, path) != 0) {
 		throw "Failed to read reference " + reference_fname;
 	}
 	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), config, stats, bam_file);
@@ -101,6 +101,7 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 	}
 
 	close_samFile(bam_file);
+	free(path);
 
 	mutex_per_chr[contig_id].lock();
 	active_threads_per_chr[contig_id]--;
@@ -642,6 +643,8 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 		std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
 		ss_clusters.push_back(cluster);
 	}
+	bam_destroy1(read);
+	sam_itr_destroy(iter);
 	close_samFile(dp_bam_file);
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
@@ -844,6 +847,8 @@ int main(int argc, char* argv[]) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(sv_vcf_header, bcf_entry);
 		read_svs_by_chr[sv->chr].push_back(sv);
 	}
+	bcf_hdr_destroy(sv_vcf_header);
+	bcf_close(sv_vcf_file);
 
     // create VCF out files
 	bcf_hdr_t* out_vcf_header = generate_vcf_header(chr_seqs, sample_name, config, full_cmd_str);
@@ -931,6 +936,7 @@ int main(int argc, char* argv[]) {
 
     chr_seqs.clear();
 
+	bcf_destroy(bcf_entry);
     bcf_hdr_destroy(out_vcf_header);
     bcf_close(out_vcf_file);
 

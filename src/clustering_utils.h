@@ -307,6 +307,7 @@ void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::ve
 			}
 		}
 	}
+	delete uf;
 }
 
 #endif // CLUSTERING_UTILS_H
