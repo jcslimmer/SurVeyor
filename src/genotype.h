@@ -179,4 +179,32 @@ char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_
 char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t hap_start, hts_pos_t hap_len,
     std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps);
 
+// Given a sequence alt_seq, a series of sequences ref_seqs and a read length read_len,
+// return all the positions in alt_seq where a read of length read_len that is not present 
+// in any of the ref_seqs starts.
+std::vector<hts_pos_t> get_diff_reads_expected_positions(std::vector<char*>& ref_seqs, std::vector<hts_pos_t>& ref_lens, char* alt_seq, hts_pos_t alt_len, int read_len) {
+    std::vector<hts_pos_t> positions;
+    if (read_len > alt_len || read_len <= 0) {
+        return positions;
+    }
+    for (hts_pos_t i = 0; i <= alt_len - read_len; i++) {
+        char* read_begin = alt_seq + i;
+        char* read_end = read_begin + read_len;
+        bool found_in_ref = false;
+        for (size_t j = 0; j < ref_seqs.size(); j++) {
+            char* ref_begin = ref_seqs[j];
+            char* ref_end = ref_begin + ref_lens[j];
+            auto it = std::search(ref_begin, ref_end, read_begin, read_end);
+            if (it != ref_end) {
+                found_in_ref = true;
+                break;
+            }
+        }
+        if (!found_in_ref) {
+            positions.push_back(i);
+        }
+    }
+    return positions;
+}
+
 #endif // GENOTYPE_H

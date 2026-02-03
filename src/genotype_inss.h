@@ -55,8 +55,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         alt_bp1_seq[alt_bp1_len] = 0;
     }
 
-    int alt_bp2_len = ins_rh_len + alt_rf_len;
-	char* alt_bp2_seq = new char[alt_bp2_len+1];
+	char* alt_bp2_seq;
+    int alt_bp2_len;
     if (ins_rh_len < extend) {
         // in this case, alt_bp2 = enough left flank + insertion + right flank
         int extra = std::min(extend-ins_rh_len, (hts_pos_t) alt_lf_len); // there may not be enough bp if near the start of contig
@@ -83,6 +83,13 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     hts_pos_t ref_bp2_start = std::max(hts_pos_t(0), ins_end-extend), ref_bp2_end = alt_end;
     hts_pos_t ref_bp2_pos = ins_end - ref_bp2_start;
     hts_pos_t ref_bp2_len = ref_bp2_end - ref_bp2_start;
+
+    std::vector<char*> ref_seqs = {contig_seq+ref_bp1_start, contig_seq+ref_bp2_start};
+    std::vector<hts_pos_t> ref_lens = {ref_bp1_len, ref_bp2_len};
+    std::vector<hts_pos_t> alt1_ref_diff_reads_expected_positions = get_diff_reads_expected_positions(ref_seqs, ref_lens, alt_bp1_seq, alt_bp1_len, stats.read_len);
+    std::vector<hts_pos_t> alt2_ref_diff_reads_expected_positions = get_diff_reads_expected_positions(ref_seqs, ref_lens, alt_bp2_seq, alt_bp2_len, stats.read_len);
+    ins->expected_alt1_reads_frac = (double) alt1_ref_diff_reads_expected_positions.size() / std::max(1, alt_bp1_len - stats.read_len + 1);
+    ins->expected_alt2_reads_frac = (double) alt2_ref_diff_reads_expected_positions.size() / std::max(1, alt_bp2_len - stats.read_len + 1);
 
     std::stringstream l_region, r_region;
     l_region << ins->chr << ":" << ref_bp1_start << "-" << ref_bp1_end;

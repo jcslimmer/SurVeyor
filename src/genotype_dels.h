@@ -59,21 +59,25 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     strncpy(ref_bp2_seq, contig_seq+ref_bp2_start, ref_bp2_len);
     ref_bp2_seq[ref_bp2_len] = 0;
 
-    std::stringstream l_region, r_region;
-    l_region << del->chr << ":" << alt_start << "-" << ref_bp1_end;
-    r_region << del->chr << ":" << ref_bp2_start << "-" << alt_end;
-    
-    char* regions[2];
-    regions[0] = strdup(l_region.str().c_str());
-    regions[1] = strdup(r_region.str().c_str());
-
-    hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
-
-    bam1_t* read = bam_init1();
+    std::vector<char*> ref_seqs = {ref_bp1_seq, ref_bp2_seq};
+    std::vector<hts_pos_t> ref_lens = {ref_bp1_len, ref_bp2_len};
+    std::vector<hts_pos_t> alt_ref_diff_reads_expected_positions = get_diff_reads_expected_positions(ref_seqs, ref_lens, alt_seq, alt_len, stats.read_len);
+    del->expected_alt1_reads_frac = (double) alt_ref_diff_reads_expected_positions.size() / std::max(hts_pos_t(1), alt_len - stats.read_len + 1);
 
     std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
     std::vector<int> alt_better_read_scores;
+    
+    bam1_t* read = bam_init1();
 
+    std::stringstream l_region, r_region;
+    l_region << del->chr << ":" << alt_start << "-" << ref_bp1_end;
+    r_region << del->chr << ":" << ref_bp2_start << "-" << alt_end;
+
+    char* regions[2];
+    regions[0] = strdup(l_region.str().c_str());
+    regions[1] = strdup(r_region.str().c_str());
+    hts_itr_t* iter = sam_itr_regarray(bam_file->idx, bam_file->header, regions, 2);
+    
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment alt_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
@@ -210,11 +214,10 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
         // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt_aln.ref_begin);
-        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len);
+        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len - hts_pos_t(del->ins_seq.length()));
 
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
-        int temp;
         auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
         del->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
