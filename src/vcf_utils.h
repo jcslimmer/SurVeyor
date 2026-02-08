@@ -438,6 +438,14 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* exssc2ia_tag = "##FORMAT=<ID=EXSSC2IA,Number=2,Type=Integer,Description=\"Score of the left half and right half of the extended alternative allele consensus for the second breakpoint, when allowed to map to the reference independently.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, exssc2ia_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1C_OCCR");
+	const char* ar1c_occr_tag = "##FORMAT=<ID=AR1C_OCCR,Number=1,Type=Float,Description=\"Occupancy ratio of starts of reads supporting breakpoint 1 of the ALT allele, normalised by expected occupancy ratio.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1c_occr_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR2C_OCCR");
+	const char* ar2c_occr_tag = "##FORMAT=<ID=AR2C_OCCR,Number=1,Type=Float,Description=\"Occupancy ratio of starts of reads supporting breakpoint 2 of the ALT allele, normalised by expected occupancy ratio.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar2c_occr_tag, &len));
+
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
 	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));
@@ -781,7 +789,7 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
 		} else {
 			int ref_len = strlen(sv->d.allele[0]);
 			int alt_len = strlen(sv->d.allele[1]);
-			return (alt_len > ref_len) ? "INS" : "DEL";
+			return alt_len <= ref_len ? "DEL" : "INS";
 		}
 		std::cerr << "Failed to determine SVTYPE for sv " << std::string(sv->d.id) << std::endl;
 		return "";

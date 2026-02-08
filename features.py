@@ -23,8 +23,9 @@ class Features:
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2' ]
 
-    reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO',
-                            'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'MAXARCD',
+    reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1C_OCCR',
+                            'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2C_OCCR',
+                            'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'MAXRRCD',
                             'ER',
@@ -330,6 +331,7 @@ class Features:
         features['AR1C_HQ_RATIO'] = arc1hq/max(1, ar1c)
         features['AR1CMSPAN_1'], features['AR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMSPAN', [0, 0], max_is)
         features['AR1CMHQSPAN_1'], features['AR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMHQSPAN', [0, 0], max_is)
+        features['AR1C_OCCR'] = Features.get_number_value(record.samples[0], 'AR1C_OCCR', Features.NAN)
 
         ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
         ar2c = Features.get_number_value(record.samples[0], 'AR2C', 0)
@@ -353,6 +355,7 @@ class Features:
         features['AR2C_HQ_RATIO'] = arc2hq/max(1, ar2c)
         features['AR2CMSPAN_1'], features['AR2CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR2CMSPAN', [0, 0], max_is)
         features['AR2CMHQSPAN_1'], features['AR2CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'AR2CMHQSPAN', [0, 0], max_is)
+        features['AR2C_OCCR'] = Features.get_number_value(record.samples[0], 'AR2C_OCCR', Features.NAN)
 
         ar1cf = Features.get_number_value(record.samples[0], 'AR1CF', 0, max(1, ar1c))
         ar1cr = Features.get_number_value(record.samples[0], 'AR1CR', 0, max(1, ar1c))

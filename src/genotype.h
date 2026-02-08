@@ -207,4 +207,41 @@ std::vector<hts_pos_t> get_diff_reads_expected_positions(std::vector<char*>& ref
     return positions;
 }
 
+std::vector<int> get_consistent_reads_start_positions(std::vector<std::shared_ptr<bam1_t>>& consistent_reads,
+    std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& start_positions) {
+    std::vector<int> consistent_positions;
+    std::unordered_set<bam1_t*> consistent_set;
+    for (auto& r : consistent_reads) {
+        consistent_set.insert(r.get());
+    }
+
+    for (int i = 0; i < reads.size(); i++) {
+        if (consistent_set.count(reads[i].get())) {
+            consistent_positions.push_back(start_positions[i]);
+        }
+    }
+    return consistent_positions;
+}
+
+// Given a vector of observed positions (with duplicates allowed) and the number of distinct valid positions
+// observable, compute the occupancy ratio as the number of distinct observed positions divided 
+// by expected number of observed positions under uniform distribution of observations across valid positions.
+// We can assume that all positions in 'positions' are valid.
+// If U is the number of unique observed positions, E[U] =  k * (1 - (1 - 1/k)^n), where k is valid_positions and n is positions.size()
+double occ_ratio(std::vector<int>& positions, int valid_positions) {
+    if (valid_positions <= 0) return sv_t::sample_info_t::NOT_COMPUTED;
+
+    int n = positions.size();
+    if (n == 0) return 1.0;
+
+    double k = valid_positions;
+
+    std::unordered_set<int> unique_positions(positions.begin(), positions.end());
+    double U = unique_positions.size();
+    double EU = k * (1.0 - std::exp((double)n * std::log1p(-1.0 / k)));
+
+    if (EU <= 0.0) return sv_t::sample_info_t::NOT_COMPUTED;
+    return U / EU;
+}
+
 #endif // GENOTYPE_H

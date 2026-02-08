@@ -375,6 +375,19 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", NULL, 0);
     }
 
+    if (sv->sample_info.alt1_occ_ratio != sv_t::sample_info_t::NOT_COMPUTED) {
+        float occ_ratio1 = sv->sample_info.alt1_occ_ratio;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1C_OCCR", &occ_ratio1, 1);
+    } else {
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1C_OCCR", NULL, 0);
+    }
+    if (sv->sample_info.alt2_occ_ratio != sv_t::sample_info_t::NOT_COMPUTED) {
+        float occ_ratio2 = sv->sample_info.alt2_occ_ratio;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR2C_OCCR", &occ_ratio2, 1);
+    } else {
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR2C_OCCR", NULL, 0);
+    }
+
     std::string filters;
     for (size_t i = 0; i < sv->sample_info.filters.size(); ++i) {
         filters += sv->sample_info.filters[i];

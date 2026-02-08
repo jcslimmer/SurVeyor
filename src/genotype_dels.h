@@ -65,6 +65,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     del->expected_alt1_reads_frac = (double) alt_ref_diff_reads_expected_positions.size() / std::max(hts_pos_t(1), alt_len - stats.read_len + 1);
 
     std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_seqs, ref_bp2_better_seqs;
+    std::vector<int> alt_better_read_positions;
     std::vector<int> alt_better_read_scores;
     
     bam1_t* read = bam_init1();
@@ -130,12 +131,13 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
                 increase_ref_bp2_better = true;
             }
         }
-        
+
         // align to ALT
         aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
         if (alt_aln.sw_score > ref_aln_score) {
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
             alt_better_read_scores.push_back(alt_aln.sw_score);
+            alt_better_read_positions.push_back(alt_aln.ref_begin);
         } else if (ref_aln_score > alt_aln.sw_score) {
             if (increase_ref_bp1_better) {
                 ref_bp1_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -167,6 +169,9 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
     auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, std::vector<bool>(), alt_consensus_seq, alt_avg_score, alt_stddev_score);
     auto ref_bp1_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_seqs, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_seqs_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_seqs, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+
+    std::vector<int> alt_better_read_positions_consistent = get_consistent_reads_start_positions(alt_better_reads_consistent, alt_better_reads, alt_better_read_positions);
+    del->sample_info.alt1_occ_ratio = occ_ratio(alt_better_read_positions_consistent, alt_ref_diff_reads_expected_positions.size());
 
     if (reassign_evidence) { // increment ORC counters for other SVs that lost support from these reads
         for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {

@@ -56,6 +56,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
     std::vector<std::shared_ptr<bam1_t>> ref_better_reads;
     std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_better_reads(alt_seqs.size());
+    std::vector<std::vector<int>> alt_better_read_positions(alt_seqs.size());
     std::vector<std::vector<int>> alt_better_reads_scores(alt_seqs.size());
 
     StripedSmithWaterman::Filter filter;
@@ -86,10 +87,11 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
 
         uint16_t best_aln_score = 0;
-        std::vector<uint16_t> alt_aln_scores(alt_seqs.size());
+        std::vector<uint16_t> alt_aln_scores(alt_seqs.size()), alt_aln_start_positions(alt_seqs.size());
         for (int i = 0; i < alt_seqs.size(); i++) {
             aligner.Align(seq.c_str(), alt_seqs[i], strlen(alt_seqs[i]), filter, &alt_aln, 0);
             alt_aln_scores[i] = alt_aln.sw_score;
+            alt_aln_start_positions[i] = alt_aln.ref_begin;
             if (alt_aln.sw_score > best_aln_score) {
                 best_aln_score = alt_aln.sw_score;
             }
@@ -100,6 +102,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
                 if (alt_aln_scores[i] == best_aln_score) {
                     alt_better_reads[i].push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
                     alt_better_reads_scores[i].push_back(alt_aln_scores[i]);
+                    alt_better_read_positions[i].push_back(alt_aln_start_positions[i]);
                 }
             }
         } else if (best_aln_score < ref_aln.sw_score) {
@@ -138,6 +141,9 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     double alt_stddev_score, ref_stddev_score;
     auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seqs[alt_with_most_reads], alt_better_reads[alt_with_most_reads], std::vector<bool>(), alt_consensus_seq, alt_avg_score, alt_stddev_score);
     auto ref_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_seq, ref_better_reads, std::vector<bool>(), ref_consensus_seq, ref_avg_score, ref_stddev_score);
+
+    std::vector<int> alt_better_read_positions_consistent = get_consistent_reads_start_positions(alt_better_reads_consistent, alt_better_reads[alt_with_most_reads], alt_better_read_positions[alt_with_most_reads]);
+    dup->sample_info.alt1_occ_ratio = occ_ratio(alt_better_read_positions_consistent, alt_ref_diff_reads_expected_positions.size());
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
@@ -286,6 +292,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     bam1_t* read = bam_init1();
 
     std::vector<std::shared_ptr<bam1_t>> alt_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
+    std::vector<int> alt_better_read_positions;
     std::vector<int> alt_better_reads_scores;
 
     StripedSmithWaterman::Filter filter;
@@ -343,6 +350,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         if (alt_aln.sw_score > ref_aln_score) {
             alt_better_reads.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
+            alt_better_read_positions.push_back(alt_aln.ref_begin);
             alt_better_reads_scores.push_back(alt_aln.sw_score);
         } else if (alt_aln.sw_score < ref_aln_score) {
             if (increase_ref_bp1_better) {
@@ -383,6 +391,9 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, std::vector<bool>(), alt_consensus_seq, alt_avg_score, alt_stddev_score);
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+
+    std::vector<int> alt_better_read_positions_consistent = get_consistent_reads_start_positions(alt_better_reads_consistent, alt_better_reads, alt_better_read_positions);
+    dup->sample_info.alt1_occ_ratio = occ_ratio(alt_better_read_positions_consistent, alt_ref_diff_reads_expected_positions.size());
 
     if (reassign_evidence) { // increment ORC counters for other SVs that lost support from these reads
         for (std::shared_ptr<bam1_t>& r : alt_better_reads_consistent) {
