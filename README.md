@@ -93,6 +93,12 @@ Then, the command
 ```
 A file OUT_PREFIX.vcf.gz will be produced.
 
+If using many of samples and you notice that the cohort-aware calls tend to have many duplicate SVs, add the following flag to the genotype command
+```
+--tr-bed SIMPLE_REPEATS_BED
+```
+where SIMPLE_REPEATS_BED is a list of repetitive regions for the reference, in BED format. We recommend using the simpleRepeats table from UCSC Table browser.
+
 ## Citation
 
 Currently, there is no manuscript for SurVeyor.
