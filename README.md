@@ -88,9 +88,9 @@ For clustering, a text file FILELIST should be produced where each line is a sam
 SAMPLE_NAME /path/to/sample/calls.vcf.gz
 
 Then, the command
-'''
+```
 ./bin/cluster FILELIST REFERENCE_FASTA -o OUT_PREFIX -t N_THREADS
-'''
+```
 A file OUT_PREFIX.vcf.gz will be produced.
 
 ## Citation
