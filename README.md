@@ -1,5 +1,5 @@
 # SurVeyor
-An SV caller from paired-end NGS data. SurVeyor can detect deletions, tandem duplications, insertions and inversions that are 50 base pairs or longer using WGS paired-end sequencing data.
+Structural variant discovery and genotyping pipeline from paired-end NGS data. SurVeyor can detect and genotype deletions, tandem duplications, insertions and inversions that are 50 base pairs or longer using WGS paired-end sequencing data. Furthermore, when multiple samples from a cohort are available, it is able to leverage the shared information to increase sample-level recall.
 
 ## Installation
 
@@ -74,6 +74,24 @@ For other parameters, please see the help with
 ```
 python surveyor.py genotype -h
 ```
+
+## Calling structural variants on a cohort
+
+SurVeyor can perform cohort-aware SV detection when a cohort of multiple samples is available. All samples must be aligned to the same reference genome.
+
+Cohort-aware SV detection consists of three steps:
+1) First, denovo calling must be performed for each sample individually
+2) Next, calls from all samples must be clustered. This produces a non-redundant catalogue of SVs within the cohort
+3) Finally, the catalogue must be genotyped on the sample(s) of interest
+
+For clustering, a text file FILELIST should be produced where each line is a sample, expressed as
+SAMPLE_NAME /path/to/sample/calls.vcf.gz
+
+Then, the command
+'''
+./bin/cluster FILELIST REFERENCE_FASTA -o OUT_PREFIX -t N_THREADS
+'''
+A file OUT_PREFIX.vcf.gz will be produced.
 
 ## Citation
 
