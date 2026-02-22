@@ -211,8 +211,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         strncpy(alt_seq+lh_len, del->ins_seq.c_str(), del->ins_seq.length());
         strncpy(alt_seq+lh_len+del->ins_seq.length(), rh_seq, rh_len);
         alt_seq[lh_len+rh_len+del->ins_seq.length()] = 0;
-        delete[] lh_seq;
-        delete[] rh_seq;
 
         // align to ref+SV
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, lh_len+del->ins_seq.length()+rh_len, filter, &alt_aln, 0);
@@ -256,13 +254,19 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
         ref1_aln.Clear();
         std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
-        aligner.Align(lh_query.c_str(), contig_seq+lbp_start, lbp_end-lbp_start, filter, &ref1_aln, 0);
+        char* ref_seq_for_lh_aln = concat2(lh_seq, contig_seq+del_start, lh_len, lbp_end-del_start);
+        aligner.Align(lh_query.c_str(), ref_seq_for_lh_aln, lh_len+lbp_end-del_start, filter, &ref1_aln, 0);
         del->sample_info.alt_consensus1_split_score1_ind_aln = ref1_aln.sw_score;
+        delete[] ref_seq_for_lh_aln;
+        delete[] lh_seq;
 
         ref2_aln.Clear();
         std::string rh_query = alt_consensus_seq.substr(alt_consensus_seq.length()-query_rh_aln_score.second);
-        aligner.Align(rh_query.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
+        char* ref_seq_for_rh_aln = concat2(contig_seq+rbp_start, rh_seq, del_end-rbp_start, rh_len);
+        aligner.Align(rh_query.c_str(), ref_seq_for_rh_aln, del_end-rbp_start+rh_len, filter, &ref2_aln, 0);
         del->sample_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
+        delete[] ref_seq_for_rh_aln;
+        delete[] rh_seq;
     }
 
     set_bp_consensus_info(del->sample_info.alt_bp1.reads_info, alt_better_reads.size(), alt_better_reads_consistent, alt_avg_score, alt_stddev_score);

@@ -483,4 +483,21 @@ bool is_genomic_string(std::string s) {
     return true;
 }
 
+char* concat2(const char* s1, const char* s2, size_t len1, size_t len2) {
+    char* result = new char[len1 + len2 + 1];
+    memcpy(result, s1, len1);
+    memcpy(result + len1, s2, len2);
+    result[len1 + len2] = '\0';
+    return result;
+}
+
+char* concat3(const char* s1, const char* s2, const char* s3, size_t len1, size_t len2, size_t len3) {
+    char* result = new char[len1 + len2 + len3 + 1];
+    memcpy(result, s1, len1);
+    memcpy(result + len1, s2, len2);
+    memcpy(result + len1 + len2, s3, len3);
+    result[len1 + len2 + len3] = '\0';
+    return result;
+}
+
 #endif

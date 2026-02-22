@@ -436,7 +436,7 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt_aln.ref_begin);
-        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len);
+        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len - (int) dup->ins_seq.length());
 
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
@@ -476,12 +476,12 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 
         ref1_aln.Clear();
         std::string lh_query = alt_consensus_seq.substr(0, query_lh_aln_score.second);
-        aligner.Align(lh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
+        aligner.Align(lh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref1_aln, 0);
         dup->sample_info.alt_consensus1_split_score1_ind_aln = ref1_aln.sw_score;
 
         ref2_aln.Clear();
         std::string rh_query = alt_consensus_seq.substr(alt_consensus_seq.length()-query_rh_aln_score.second);
-        aligner.Align(rh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
+        aligner.Align(rh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref2_aln, 0);
         dup->sample_info.alt_consensus1_split_score2_ind_aln = ref2_aln.sw_score;
     }
 

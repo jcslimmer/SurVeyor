@@ -280,8 +280,6 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
         aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_seq_len, filter, &alt1_aln, 0);
         delete[] alt_bp1_seq;
-        delete[] lf_seq;
-        delete[] rf_seq;
 
         // length of the left and right flanking regions of the insertion covered by alt_bp1_consensus_seq
         int lf_aln_rlen = std::max(0, alt_lf_len - alt1_aln.ref_begin);
@@ -302,15 +300,21 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
         StripedSmithWaterman::Alignment aln;
 
+        char* ref_seq = concat3(lf_seq, contig_seq+ins_start, rf_seq, alt_lf_len, ins_end-ins_start, alt_rf_len);
+
         aln.Clear();
         std::string lh_query = alt_bp1_consensus_seq.substr(0, query_lh_aln_score.second);
-        aligner.Align(lh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &aln, 0);
+        aligner.Align(lh_query.c_str(), ref_seq, alt_lf_len+ins_end-ins_start+alt_rf_len, filter, &aln, 0);
         ins->sample_info.alt_consensus1_split_score1_ind_aln = aln.sw_score;
 
         aln.Clear();
         std::string rh_query = alt_bp1_consensus_seq.substr(alt_bp1_consensus_seq.length()-query_rh_aln_score.second);
-        aligner.Align(rh_query.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &aln, 0);
+        aligner.Align(rh_query.c_str(), ref_seq, alt_lf_len+ins_end-ins_start+alt_rf_len, filter, &aln, 0);
         ins->sample_info.alt_consensus1_split_score2_ind_aln = aln.sw_score;
+
+        delete[] ref_seq;
+        delete[] lf_seq;
+        delete[] rf_seq;
     }
 
     ref2_aln.Clear();
@@ -344,8 +348,6 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
         aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_seq_len, filter, &alt2_aln, 0);
         delete[] alt_bp2_seq;
-        delete[] lf_seq;
-        delete[] rf_seq;
 
         // length of the left and right flanking regions of the insertion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(0, extra_len - alt2_aln.ref_begin);
@@ -366,15 +368,21 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
 
         StripedSmithWaterman::Alignment aln;
 
+        char* ref_seq = concat3(lf_seq, contig_seq+ins_start, rf_seq, alt_lf_len, ins_end-ins_start, alt_rf_len);
+
         aln.Clear();
         std::string lh_query = alt_bp2_consensus_seq.substr(0, query_lh_aln_score.second);
-        aligner.Align(lh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &aln, 0);
+        aligner.Align(lh_query.c_str(), ref_seq, alt_lf_len+ins_end-ins_start+alt_rf_len, filter, &aln, 0);
         ins->sample_info.alt_consensus2_split_score1_ind_aln = aln.sw_score;
 
         aln.Clear();
         std::string rh_query = alt_bp2_consensus_seq.substr(alt_bp2_consensus_seq.length()-query_rh_aln_score.second);
-        aligner.Align(rh_query.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &aln, 0);
+        aligner.Align(rh_query.c_str(), ref_seq, alt_lf_len+ins_end-ins_start+alt_rf_len, filter, &aln, 0);
         ins->sample_info.alt_consensus2_split_score2_ind_aln = aln.sw_score;
+
+        delete[] ref_seq;
+        delete[] lf_seq;
+        delete[] rf_seq;
     }
 
     ins->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score;
