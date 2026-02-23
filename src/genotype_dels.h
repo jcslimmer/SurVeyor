@@ -18,7 +18,7 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
                 std::unordered_map<std::string, std::shared_ptr<sv_t>>& sv_map) {
     int del_start = del->start, del_end = del->end;
 
-    hts_pos_t extend = stats.read_len + 20;
+    hts_pos_t extend = stats.read_len-1;
 
     // build alt allele
     /* POS in VCF is the base BEFORE the deletion - i.e., the first deleted base is POS+1.
