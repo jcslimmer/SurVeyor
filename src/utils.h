@@ -25,7 +25,6 @@ struct config_t {
     int min_clip_len, min_stable_mapq, min_diff_hsr;
     int min_sv_size, max_trans_size;
     double max_seq_error;
-    int max_clipped_pos_dist;
     bool per_contig_stats;
     std::string sampling_regions, version;
 
@@ -49,7 +48,6 @@ struct config_t {
         min_sv_size = std::stoi(config_params["min_sv_size"]);
         max_trans_size = std::stoi(config_params["max_trans_size"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
-        max_clipped_pos_dist = std::stoi(config_params["max_clipped_pos_dist"]);
         per_contig_stats = std::stoi(config_params["per_contig_stats"]);
         sampling_regions = config_params["sampling_regions"];
         version = config_params["version"];
@@ -344,6 +342,13 @@ void is_homopolymer_suffix(const char* seq, int len, bool* hp_suffix) {
         }
         hp_suffix[i] = (counts[max_idx] >= (len - i)*0.8);
     }
+}
+
+char toupper(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return c - ('a' - 'A');
+    }
+    return c;
 }
 
 void to_uppercase(char* s) {

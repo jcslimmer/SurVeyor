@@ -588,11 +588,9 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	std::stringstream called_by_ss;
 	called_by_ss << "##calledBy=SurVeyor " << config.version << "; ";
 	called_by_ss << "seed: " << config.seed << "; ";
-	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
 	called_by_ss << "min-sv-size: " << config.min_sv_size << "; ";
 	called_by_ss << "min-clip-len: " << config.min_clip_len << "; ";
 	called_by_ss << "max-seq-error: " << config.max_seq_error << "; ";
-	called_by_ss << "max-clipped-pos-dist: " << config.max_clipped_pos_dist << "; ";
 	called_by_ss << "max-trans-size: " << config.max_trans_size << "; ";
 	called_by_ss << "min-stable-mapq: " << config.min_stable_mapq << "; ";
 	called_by_ss << "min-diff-hsr: " << config.min_diff_hsr << "; ";

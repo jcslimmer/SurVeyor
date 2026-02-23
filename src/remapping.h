@@ -333,8 +333,8 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
 
     // un-accept all remappings that fall outside the strict limits or they are not clipped correctly
     for (remap_info_t& remap_info : ro_remap_infos) {
-        if (remap_info.left_clipped && strict_region_start < remap_info.start-config.max_clipped_pos_dist) remap_info.accepted = false;
-        if (remap_info.start < strict_region_start-config.max_clipped_pos_dist) remap_info.accepted = false;
+        if (remap_info.left_clipped && strict_region_start < remap_info.start-5) remap_info.accepted = false;
+        if (remap_info.start < strict_region_start-5) remap_info.accepted = false;
         if (remap_info.right_clipped && remap_info.end+5 < strict_region_end) remap_info.accepted = false;
         if (strict_region_end < remap_info.start) remap_info.accepted = false;
     }
