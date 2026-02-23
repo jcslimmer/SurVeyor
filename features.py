@@ -21,10 +21,10 @@ class Features:
                             'RIGHT_ANCHOR_A_RATIO_500', 'RIGHT_ANCHOR_C_RATIO_500', 'RIGHT_ANCHOR_G_RATIO_500', 'RIGHT_ANCHOR_T_RATIO_500', 'MAX_RIGHT_ANCHOR_BASE_RATIO_500',
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
-                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'MH_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2' ]
+                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2' ]
 
-    reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1C_OCCR',
-                            'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2C_OCCR',
+    reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', #'AR1C_OCCR',
+                            'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', #'AR2C_OCCR',
                             'MAXARCD',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'MAXRRCD',
@@ -39,7 +39,7 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXAS_EXRS_DIFF_TO_LEN', 'EXASED_EXRSED_DIFF_TO_LEN',
+                            'EXAS_EXRS_RATIO', 'EXASED_EXRSED_DIFF_TO_LEN',
                             'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF',
@@ -133,11 +133,11 @@ class Features:
 
     def get_svinsseq(record):
         if "<" not in record.alts[0]:
-            return record.alts[0]
+            return record.alts[0][1:]
         elif 'SVINSSEQ' in record.info:
             svinsseq = record.info['SVINSSEQ']
             if isinstance(svinsseq, list) or isinstance(svinsseq, tuple):
-                return svinsseq[0]
+                svinsseq = svinsseq[0]
             return svinsseq
         elif "LEFT_SVINSSEQ" in record.info or "RIGHT_SVINSSEQ" in record.info:
             left_svinsseq = Features.get_string_value(record.info, 'LEFT_SVINSSEQ', "")
@@ -242,8 +242,6 @@ class Features:
             i = svinsseq.index('-')
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
-
-        features['MH_LEN'] = Features.get_number_value(info, 'MH_LEN', 0)
 
         features['EXP_ALT_READS_FREQ1'], features['EXP_ALT_READS_FREQ2'] = Features.get_number_value(info, 'EXP_ALT_READS_FREQ', [Features.NAN, Features.NAN], 1.0)
 
@@ -696,7 +694,6 @@ class Features:
 
         features['EXAS_EXRS_RATIO'] = 0 if exrs1_scaled+exrs2_scaled == 0 else (exas1_scaled+exas2_scaled)/(exrs1_scaled+exrs2_scaled)
 
-        features['EXAS_EXRS_DIFF_TO_LEN'] = (exas1-exrs1+exas2-exrs2)/max(1, edit_distance)
         features['EXASED_EXRSED_DIFF_TO_LEN'] = (exas1_ed-exrs1_ed+exas2_ed-exrs2_ed)/max(1, edit_distance)
 
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
@@ -774,8 +771,8 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, tolerate_no_gts = False):
             continue
 
         model_name = Features.get_model_name(record, get_stat(stats, 'max_is', record.chrom), get_stat(stats, 'read_len', record.chrom))
-        feature_values = Features.record_to_features(record, stats)
         if gts[record.id] != "./.": # if no genotype is available, skip the record
+            feature_values = Features.record_to_features(record, stats)
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gts[record.id])
             variant_ids_by_source[model_name].append(Features.generate_id(record))
