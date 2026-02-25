@@ -682,7 +682,9 @@ int main(int argc, char* argv[]) {
 	// 1. missing gt in the benchmark (less missing alleles first)
 	// 2. rep (false first) 
 	// 3. score in descending order
-	// 4. benchmark id, called id (to make sort stable)
+	// 4. consistent ALT reads, in descending order
+	// 5. extended ALT consensus score, in descending order
+	// 6. benchmark id, called id (to make sort stable)
 	std::vector<sv_match_t> accepted_matches;
 	std::sort(matches.begin(), matches.end(), [](sv_match_t& a, sv_match_t& b) {
 		if (a.b_sv->missing_alleles() != b.b_sv->missing_alleles()) 
@@ -690,6 +692,16 @@ int main(int argc, char* argv[]) {
 		if (a.rep && !b.rep) return false;
 		if (!a.rep && b.rep) return true;
 		if (a.score != b.score) return a.score > b.score;
+		int a_consistent_reads = a.b_sv->sample_info.alt_bp1.reads_info.consistent_reads() + a.b_sv->sample_info.alt_bp2.reads_info.consistent_reads();
+		int b_consistent_reads = b.b_sv->sample_info.alt_bp1.reads_info.consistent_reads() + b.b_sv->sample_info.alt_bp2.reads_info.consistent_reads();
+		if (a_consistent_reads != b_consistent_reads) {
+			return a_consistent_reads > b_consistent_reads;
+		}
+		int a_ext_alt_consensus = a.b_sv->sample_info.ext_alt_consensus1_to_alt_score + a.b_sv->sample_info.ext_alt_consensus2_to_alt_score;
+		int b_ext_alt_consensus = b.b_sv->sample_info.ext_alt_consensus1_to_alt_score + b.b_sv->sample_info.ext_alt_consensus2_to_alt_score;
+		if (a_ext_alt_consensus != b_ext_alt_consensus) {
+			return a_ext_alt_consensus > b_ext_alt_consensus;
+		}
 		return std::tie(a.b_sv->id, a.c_sv->id) < std::tie(b.b_sv->id, b.c_sv->id); // to make sort stable
 	});
 
