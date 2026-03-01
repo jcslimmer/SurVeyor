@@ -18,7 +18,8 @@ std::mutex mtx;
 
 // Find the most similar substring of 'text' to 'word' using a simple sliding window approach,
 // returning the starting index of the most similar substring.
-// If multiple substrings have the same similarity score, the last one is returned.
+// Prefer, if possible, strings that are either the prefix or the suffix of 'text',
+// as this can lead to a more parsimonious atomization
 int find_most_similar_substring(char* text, int text_len, char* word) {
 	int word_len = strlen(word);
 	int best_start = -1;
@@ -29,7 +30,9 @@ int find_most_similar_substring(char* text, int text_len, char* word) {
 		for (int j = 0; j < word_len; j++) {
 			if (text[i + j] == word[j]) score++;
 		}
-		if (score >= best_score) {
+
+		bool is_prefix_or_suffix = (i == 0 || i == text_len - word_len);
+		if (score > best_score || (score == best_score && is_prefix_or_suffix)) {
 			best_score = score;
 			best_start = i;
 		}
@@ -107,7 +110,7 @@ void atomize(int id, std::shared_ptr<sv_t> sv) {
 		// splitting large deletions can create problems to the current genotyping algorithm
 		// especially when calculating features like discordant pairs or read depth
 		atomize_del(sv);
-	} else if (svtype == "INS") {
+	} else if (svtype == "INS" && sv->ins_seq.length() <= 50) {
 		// atomize_ins(sv);
 	}
 }
