@@ -223,8 +223,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
-        del->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
-        del->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        del->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second;
+        del->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second;
         del->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         del->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 

@@ -289,8 +289,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         auto query_lh_aln_score = find_aln_prefix_score(alt1_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt1_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
-        ins->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt1_aln);
-        ins->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt1_aln);
+        ins->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second;
+        ins->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second;
         ins->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         ins->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
@@ -357,8 +357,8 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         auto query_lh_aln_score = find_aln_prefix_score(alt2_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt2_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
-        ins->sample_info.alt_consensus2_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt2_aln);
-        ins->sample_info.alt_consensus2_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt2_aln);
+        ins->sample_info.alt_consensus2_split_size1 = query_lh_aln_score.second;
+        ins->sample_info.alt_consensus2_split_size2 = query_rh_aln_score.second;
         ins->sample_info.alt_consensus2_split_score1 = query_lh_aln_score.first;
         ins->sample_info.alt_consensus2_split_score2 = query_rh_aln_score.first;
 

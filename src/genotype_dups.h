@@ -194,8 +194,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         int temp;
         auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
-        dup->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
-        dup->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        dup->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second;
+        dup->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second;
         dup->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         dup->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
@@ -443,8 +443,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         int temp;
         auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
-        dup->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second - get_left_clip_size(alt_aln);
-        dup->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second - get_right_clip_size(alt_aln);
+        dup->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second;
+        dup->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second;
         dup->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;
         dup->sample_info.alt_consensus1_split_score2 = query_rh_aln_score.first;
 
