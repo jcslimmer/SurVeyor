@@ -46,7 +46,7 @@ struct config_t {
         min_stable_mapq = std::stoi(config_params["min_stable_mapq"]);
         min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
         min_sv_size = std::stoi(config_params["min_sv_size"]);
-        max_trans_size = std::stoi(config_params["max_trans_size"]);
+        if (config_params.count("max_trans_size")) max_trans_size = std::stoi(config_params["max_trans_size"]);
         max_seq_error = std::stod(config_params["max_seq_error"]);
         per_contig_stats = std::stoi(config_params["per_contig_stats"]);
         sampling_regions = config_params["sampling_regions"];
