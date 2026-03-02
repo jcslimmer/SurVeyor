@@ -148,10 +148,8 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         aligner.Align(alt_consensus_seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
 
         inv->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
-        inv->sample_info.ext_alt_consensus1_to_ref_score = ref_aln.sw_score;
-        inv->sample_info.ext_alt_consensus1_to_ref_ed = ref_aln.query_end - ref_aln.query_begin - ref_aln.mismatches;
-        inv->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
-        inv->sample_info.ext_alt_consensus1_to_alt_ed = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
+        inv->sample_info.ext_alt_consensus1_to_ref_score = ref_aln.query_end - ref_aln.query_begin - ref_aln.mismatches;
+        inv->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
 
         hts_pos_t alt_lf_len = inv->start-alt_start;
         int lf_aln_rlen = std::max(hts_pos_t(0), alt_lf_len - alt_aln.ref_begin);
@@ -477,14 +475,10 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         inv->right_anchor_aln->seq_len = rf_aln_rlen;
     }
 
-    inv->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.sw_score;
-    inv->sample_info.ext_alt_consensus1_to_ref_ed = ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches;
-    inv->sample_info.ext_alt_consensus2_to_ref_score = ref2_aln.sw_score;
-    inv->sample_info.ext_alt_consensus2_to_ref_ed = ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches;
-    inv->sample_info.ext_alt_consensus1_to_alt_score = alt1_aln.sw_score;
-    inv->sample_info.ext_alt_consensus1_to_alt_ed = alt1_aln.query_end - alt1_aln.query_begin - alt1_aln.mismatches;
-    inv->sample_info.ext_alt_consensus2_to_alt_score = alt2_aln.sw_score;
-    inv->sample_info.ext_alt_consensus2_to_alt_ed = alt2_aln.query_end - alt2_aln.query_begin - alt2_aln.mismatches;
+    inv->sample_info.ext_alt_consensus1_to_ref_score = ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches;
+    inv->sample_info.ext_alt_consensus2_to_ref_score = ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches;
+    inv->sample_info.ext_alt_consensus1_to_alt_score = alt1_aln.query_end - alt1_aln.query_begin - alt1_aln.mismatches;
+    inv->sample_info.ext_alt_consensus2_to_alt_score = alt2_aln.query_end - alt2_aln.query_begin - alt2_aln.mismatches;
 
     set_bp_consensus_info(inv->sample_info.alt_bp1.reads_info, alt_bp1_better_reads.size(), alt_bp1_better_reads_consistent, alt_bp1_avg_score, alt_bp1_stddev_score);
     set_bp_consensus_info(inv->sample_info.alt_bp2.reads_info, alt_bp2_better_reads.size(), alt_bp2_better_reads_consistent, alt_bp2_avg_score, alt_bp2_stddev_score);

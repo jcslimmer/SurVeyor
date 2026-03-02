@@ -244,10 +244,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         aligner.Align(alt_consensus_seq.c_str(), contig_seq+rbp_start, rbp_end-rbp_start, filter, &ref2_aln, 0);
 
         del->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
-        del->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.sw_score;
-        del->sample_info.ext_alt_consensus1_to_alt_ed = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
-        del->sample_info.ext_alt_consensus1_to_ref_score = std::max(ref1_aln.sw_score, ref2_aln.sw_score);
-        del->sample_info.ext_alt_consensus1_to_ref_ed = std::max(
+        del->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
+        del->sample_info.ext_alt_consensus1_to_ref_score = std::max(
             ref1_aln.query_end - ref1_aln.query_begin - ref1_aln.mismatches,
             ref2_aln.query_end - ref2_aln.query_begin - ref2_aln.mismatches
         );

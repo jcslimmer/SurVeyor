@@ -161,6 +161,38 @@ void reset_record_bp_consensus_info(bcf_hdr_t* out_hdr, bcf1_t* b, std::string p
     reset_record_bp_pairs_info(out_hdr, b, prefix, bp_number);
 }
 
+int calculate_mh_len(sv_t* sv) {
+    hts_pos_t chr_len = chr_seqs.get_len(sv->chr);
+    char* chr_seq = chr_seqs.get_seq(sv->chr);
+
+    // if complex indel, we do not consider microhomology
+    if ((sv->svtype() == "DEL" || sv->svtype() == "DUP") && !sv->ins_seq.empty()) {
+        return 0;
+    } else if (sv->svtype() == "INS" && sv->start != sv->end) {
+        return 0;
+    }
+
+    // cap microhomology length at 1000 bp to avoid excessive runtime
+    int rf_len_cap = std::min(hts_pos_t(1000), sv->svsize());
+    char* right_flanking = generate_haplotype_right(chr_seq, chr_len, sv->end+1, rf_len_cap, sv->aux_indels, sv->aux_snps);
+    int rf_len = strlen(right_flanking);
+
+    int mh_len = 0;
+    if (sv->svtype() == "DEL" || sv->svtype() == "DUP") {
+        while (mh_len < rf_len && toupper(chr_seq[sv->start+mh_len+1]) == toupper(right_flanking[mh_len])) {
+            mh_len++;
+        }
+    } else if (sv->svtype() == "INS") {
+        while (mh_len < sv->ins_seq.length() && sv->end+mh_len+1 < chr_len && toupper(sv->ins_seq[mh_len]) == toupper(chr_seq[sv->end+mh_len+1])) {
+            mh_len++;
+        }
+    }
+
+    delete[] right_flanking;
+
+    return mh_len;
+}
+
 void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_seq, hts_pos_t chr_len, int sample_idx) {
     
     bcf_translate(out_hdr, in_hdr, sv->vcf_entry);
@@ -227,16 +259,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	int sbc[] = {suffix_base_freqs.a, suffix_base_freqs.c, suffix_base_freqs.g, suffix_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "INS_SUFFIX_BASE_COUNT", sbc, 4);
 
-    int mh_len = 0;
-    if ((sv->svtype() == "DEL" || sv->svtype() == "DUP") && sv->ins_seq.empty()) {
-        while (mh_len < abs(sv->svlen()) && sv->end+mh_len+1 < chr_len && toupper(chr_seq[sv->start+mh_len+1]) == toupper(chr_seq[sv->end+mh_len+1])) {
-            mh_len++;
-        }
-    } else if (sv->svtype() == "INS" && sv->start == sv->end) {
-        while (mh_len < sv->ins_seq.length() && sv->end+mh_len+1 < chr_len && toupper(sv->ins_seq[mh_len]) == toupper(chr_seq[sv->end+mh_len+1])) {
-            mh_len++;
-        }
-    }
+    int mh_len = calculate_mh_len(sv);
     if (mh_len > 0) {
         bcf_update_info_int32(out_hdr, sv->vcf_entry, "MH_LEN", &mh_len, 1);
     }
@@ -331,9 +354,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     if (sv->sample_info.ext_alt_consensus1_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", &(sv->sample_info.ext_alt_consensus1_to_alt_score), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS_ED", &(sv->sample_info.ext_alt_consensus1_to_alt_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", &(sv->sample_info.ext_alt_consensus1_to_ref_score), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS_ED", &(sv->sample_info.ext_alt_consensus1_to_ref_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", &(sv->sample_info.ext_alt_consensus1_length), 1);
         int exss[] = {sv->sample_info.alt_consensus1_split_size1, sv->sample_info.alt_consensus1_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", exss, 2);
@@ -343,9 +364,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSCIA", exsscia, 2);
     } else {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS", NULL, 0);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS", NULL, 0);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC", NULL, 0);
@@ -354,9 +373,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 
     if (sv->sample_info.ext_alt_consensus2_length > 0) {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", &(sv->sample_info.ext_alt_consensus2_to_alt_score), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2_ED", &(sv->sample_info.ext_alt_consensus2_to_alt_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", &(sv->sample_info.ext_alt_consensus2_to_ref_score), 1);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2_ED", &(sv->sample_info.ext_alt_consensus2_to_ref_ed), 1);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", &(sv->sample_info.ext_alt_consensus2_length), 1);
         int exss2[] = {sv->sample_info.alt_consensus2_split_size1, sv->sample_info.alt_consensus2_split_size2};
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", exss2, 2);
@@ -366,9 +383,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2IA", exssc2ia, 2);
     } else {
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2", NULL, 0);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXAS2_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2", NULL, 0);
-        bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXRS2_ED", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXL2", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSS2", NULL, 0);
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "EXSSC2", NULL, 0);
