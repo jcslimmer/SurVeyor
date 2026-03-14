@@ -8,8 +8,8 @@ def valid_min_sv_size(arg):
         sv_size = int(arg)
     except ValueError:
         raise argparse.ArgumentTypeError("Value must be an integer.")
-    if sv_size < 10:
-        raise argparse.ArgumentTypeError("Value must be at least 10.")
+    if sv_size < 5:
+        raise argparse.ArgumentTypeError("Value must be at least 5.")
     return sv_size
 
 parser = argparse.ArgumentParser(description='SurVeyor, an SV caller.')
@@ -214,14 +214,14 @@ def genotype_variants(bam_fname, workdir, reference_fname, sample_name, ml_model
     genotype_cmd = SURVEYOR_PATH + "/bin/genotype %s/intermediate_results/calls-for-genotyping.vcf.gz %s/intermediate_results/calls-with-fmt.vcf.gz %s %s %s %s" % (workdir, workdir, bam_fname, reference_fname, workdir, sample_name)
     run_cmd(genotype_cmd)
 
+    if generate_training_data:
+        separate_ins_to_dup(workdir + "/intermediate_results/calls-with-fmt.vcf.gz", workdir + "/training-data.INS_TO_DUP.vcf.gz", workdir + "/training-data.vcf.gz")
+
     if not ml_model:
         print("No model provided. Skipping the classification step.")
         return
 
     Classifier.run_classifier(workdir + "/intermediate_results/calls-with-fmt.vcf.gz", workdir + "/intermediate_results/calls-with-gt.vcf.gz", workdir + "/stats.txt", ml_model)
-
-    if generate_training_data:
-        separate_ins_to_dup(workdir + "/intermediate_results/calls-with-fmt.vcf.gz", workdir + "/training-data.INS_TO_DUP.vcf.gz", workdir + "/training-data.vcf.gz")
 
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (workdir + "/intermediate_results/calls-raw.vcf.gz", workdir + "/intermediate_results/calls-with-gt.vcf.gz", workdir + "/intermediate_results/calls-with-gt.reconciled.vcf.gz", sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
@@ -274,22 +274,10 @@ if cmd_args.command == 'call':
             print("Error: --two-pass requires --ml-model to be provided.")
             exit(1)
 
-    # call_candidate_variants(cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
-    
+    call_candidate_variants(cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name)
+
     n_iters = 1
     genotype_variants(cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name, cmd_args.ml_model, n_iters, cmd_args.generate_training_data)
-
-    if cmd_args.two_pass:
-        _20_to_50_cmd = "bcftools view -i '(SVLEN>=-50 && SVLEN<=50 && SVTYPE!=\"BND\") || ID~\"SNP\" || ID~\"INDEL\"' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.20to50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_20_to_50_cmd)
-
-        _20_to_100_cmd = "bcftools view -i '(SVLEN>=-100 && SVLEN<=100 && SVTYPE!=\"BND\") || ID~\"SNP\" || ID~\"INDEL\"' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.20to100.vcf.gz ; tabix -p vcf %s/calls-genotyped.reassigned.20to100.vcf.gz" % (cmd_args.workdir, cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_20_to_100_cmd)
-
-        _geq50_cmd = "bcftools view -i 'SVLEN<=-50 || SVLEN>=50 || (SVTYPE==\"INS\" && SVLEN==\".\")' %s/calls-genotyped.reassigned.vcf.gz -Oz -o %s/calls-genotyped.reassigned.geq50.vcf.gz" % (cmd_args.workdir, cmd_args.workdir)
-        run_cmd(_geq50_cmd)
-
-    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
