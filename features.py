@@ -39,7 +39,7 @@ class Features:
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
                             'EXSS1_RATIO1', 'EXSS1_RATIO2', 'EXSS2_RATIO1', 'EXSS2_RATIO2',
-                            'EXAS_EXRS_RATIO', 'EXASED_EXRSED_DIFF_TO_LEN',
+                            'EXAS_EXRS_DIFF_TO_LEN',
                             'EXSSC1_IA_RATIO', 'EXSSC2_IA_RATIO', 'EXSSC1_IA_DIFF', 'EXSSC2_IA_DIFF',
                             'MEXL', 'mEXL', 'EXL',
                             'MDLF', 'MDSP', 'MDSF', 'MDRF', 'MDSP_OVER_MDLF', 'MDSF_OVER_MDRF',
@@ -96,6 +96,9 @@ class Features:
             svtype_str += "_LARGE"
             if 'EXL' not in record.samples[0]:
                 svtype_str += "_NOEXL"
+        elif svtype_str == "INS":
+            if Features.is_homopolymer(record):
+                svtype_str += "_HP"
 
         return svtype_str
 
@@ -158,6 +161,12 @@ class Features:
             return svlen[0]
         else:
             return svlen
+        
+    def is_homopolymer(record):
+        svinsseq = Features.get_svinsseq(record)
+        if len(svinsseq) < 10:
+            return False
+        return all(base == svinsseq[0] for base in svinsseq)
         
     def get_edit_distance(record):
         svinsseq = Features.get_svinsseq(record)
@@ -678,23 +687,10 @@ class Features:
 
         exas1 = Features.get_number_value(record.samples[0], 'EXAS', 0)
         exas2 = Features.get_number_value(record.samples[0], 'EXAS2', 0)
-        exas1_scaled = exas1/(max(1, exl1))
-        exas2_scaled = exas2/(max(1, exl2))
-
-        exas1_ed = Features.get_number_value(record.samples[0], 'EXAS_ED', 0)
-        exas2_ed = Features.get_number_value(record.samples[0], 'EXAS2_ED', 0)
-
         exrs1 = Features.get_number_value(record.samples[0], 'EXRS', 0)
         exrs2 = Features.get_number_value(record.samples[0], 'EXRS2', 0)
-        exrs1_scaled = exrs1/(max(1, exl1))
-        exrs2_scaled = exrs2/(max(1, exl2))
 
-        exrs1_ed = Features.get_number_value(record.samples[0], 'EXRS_ED', 0)
-        exrs2_ed = Features.get_number_value(record.samples[0], 'EXRS2_ED', 0)
-
-        features['EXAS_EXRS_RATIO'] = 0 if exrs1_scaled+exrs2_scaled == 0 else (exas1_scaled+exas2_scaled)/(exrs1_scaled+exrs2_scaled)
-
-        features['EXASED_EXRSED_DIFF_TO_LEN'] = (exas1_ed-exrs1_ed+exas2_ed-exrs2_ed)/max(1, edit_distance)
+        features['EXAS_EXRS_DIFF_TO_LEN'] = (exas1-exrs1+exas2-exrs2)/max(1, edit_distance)
 
         exss1_1, exss1_2 = Features.get_number_value(record.samples[0], 'EXSS', [0, 0])
         features['EXSS1_1'] = exss1_1/(max_is+read_len)
