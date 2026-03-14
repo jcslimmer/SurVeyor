@@ -11,30 +11,32 @@
 bool ends_with(const char* str, const char* suffix) {
 	int l_string = strlen(str);
 	int l_suffix = strlen(suffix);
+    if (l_suffix > l_string) return false;
 	return strcmp(str+(l_string-l_suffix), suffix) == 0;
 }
 
 std::vector<std::shared_ptr<sv_t>> read_sv_list(const char* filename) {
 	std::vector<std::shared_ptr<sv_t>> svs;
-	if (ends_with(filename, ".vcf.gz") || ends_with(filename, ".vcf") || ends_with(filename, ".bcf")) { // vcf format
-		htsFile* file = bcf_open(filename, "r");
-		bcf_hdr_t* hdr = bcf_hdr_read(file);
-		bcf1_t* line = bcf_init();
-		while (bcf_read(file, hdr, line) == 0) {
-            try {
-                std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, line);
-                if (sv != nullptr) {
-                    sv->vcf_entry = bcf_dup(line);
-                    svs.push_back(sv);
-                }
-            } catch (const std::exception& e) {
-                std::cerr << e.what() << std::endl;
-            }
-		}
-		bcf_destroy(line);
-		bcf_hdr_destroy(hdr);
-		bcf_close(file);
-	}
+    htsFile* file = bcf_open(filename, "r");
+    if (file == NULL) {
+        throw std::runtime_error("Error: could not open file " + std::string(filename));
+    }
+    bcf_hdr_t* hdr = bcf_hdr_read(file);
+    if (hdr == NULL) {
+        bcf_close(file);
+        throw std::runtime_error("Error: could not read header from file " + std::string(filename));
+    }
+    bcf1_t* line = bcf_init();
+    while (bcf_read(file, hdr, line) == 0) {
+        std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, line);
+        if (sv != nullptr) {
+            sv->vcf_entry = bcf_dup(line);
+            svs.push_back(sv);
+        }
+    }
+    bcf_destroy(line);
+    bcf_hdr_destroy(hdr);
+    bcf_close(file);
     return svs;
 }
 
@@ -43,10 +45,6 @@ struct repeat_t {
     int start, end;
 
     repeat_t() : start(0), end(0) {}
-    repeat_t(std::string& line) {
-        std::stringstream ss(line);
-        ss >> chr >> start >> end;
-    }
 
     bool contains(sv_t* sv) {
         return sv->chr == chr && start-10 <= sv->start && sv->end <= end+10;

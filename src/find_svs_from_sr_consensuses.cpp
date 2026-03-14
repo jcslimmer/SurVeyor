@@ -78,7 +78,7 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
 	char* path = fai_path(reference_fname.c_str());
 	if (hts_set_fai_filename(bam_file->file, path) != 0) {
-		throw "Failed to read reference " + reference_fname;
+		throw std::runtime_error("Failed to read reference " + reference_fname);
 	}
 	std::vector<ext_read_t*> candidate_reads_for_extension = get_extension_reads_from_consensuses(consensuses_to_consider, contig_name, chr_seqs.get_len(contig_name), config, stats, bam_file);
 	if (!candidate_reads_for_extension.empty()) {

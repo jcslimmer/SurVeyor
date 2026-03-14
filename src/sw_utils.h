@@ -561,10 +561,19 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 		stats_t& stats, config_t& config) {
 		// do not find aux SNPs in low-quality regions of the junction sequence
 
+	const int MAX_REF_REMAP_LEN = 100000;
+
     hts_pos_t ref_remap_lh_len = ref_remap_lh_end - ref_remap_lh_start;
     hts_pos_t ref_remap_rh_len = ref_remap_rh_end - ref_remap_rh_start;
 
-    char ref_lh_cstr[100000];
+    if (ref_remap_lh_len > MAX_REF_REMAP_LEN) {
+        throw std::runtime_error("Error: reference remapping length exceeds maximum allowed length: " + std::to_string(ref_remap_lh_len) + " > " + std::to_string(MAX_REF_REMAP_LEN));
+    }
+	if (ref_remap_rh_len > MAX_REF_REMAP_LEN) {
+		throw std::runtime_error("Error: reference remapping length exceeds maximum allowed length: " + std::to_string(ref_remap_rh_len) + " > " + std::to_string(MAX_REF_REMAP_LEN));
+	}
+
+    char ref_lh_cstr[MAX_REF_REMAP_LEN+1];
 	for (int i = 0; i < ref_remap_lh_len; i++) {
 		ref_lh_cstr[i] = toupper(contig_seq[ref_remap_lh_start+i]);
 	} ref_lh_cstr[ref_remap_lh_len] = '\0';
@@ -574,12 +583,12 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 
 	SW_SCORE_INT_16* prefix_scores = smith_waterman_gotoh(ref_lh_cstr, ref_remap_lh_len, prefix_junction_seq.c_str(), prefix_junction_seq.length(), 1, -4, -6, -1);
 
-    char ref_rh_cstr[100000];
+    char ref_rh_cstr[MAX_REF_REMAP_LEN+1];
     for (int i = 0; i < ref_remap_rh_len; i++) {
         ref_rh_cstr[i] = toupper(contig_seq[ref_remap_rh_start+i]);
     } ref_rh_cstr[ref_remap_rh_len] = '\0';
 
-    char ref_rh_cstr_rev[100000];
+    char ref_rh_cstr_rev[MAX_REF_REMAP_LEN+1];
     for (int i = 0; i < ref_remap_rh_len; i++) {
         ref_rh_cstr_rev[i] = ref_rh_cstr[ref_remap_rh_len-1-i];
     } ref_rh_cstr_rev[ref_remap_rh_len] = '\0';

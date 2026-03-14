@@ -1134,15 +1134,7 @@ int main(int argc, char* argv[]) {
     }
     thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
-        try {
-            futures[i].get();
-        } catch (char const* s) {
-            std::cerr << s << std::endl;
-        } catch (std::string s) {
-            std::cerr << s << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-        }
+        futures[i].get();
     }
     futures.clear();
 

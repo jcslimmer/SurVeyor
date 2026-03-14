@@ -51,7 +51,7 @@ void get_base_stats(int id, std::string bam_fname, std::string reference_fname, 
 
     open_samFile_t* bam_file = open_samFile(bam_fname);
     if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
-        throw "Failed to read reference " + reference_fname;
+        throw std::runtime_error("Failed to read reference " + reference_fname);
     }
 
     std::vector<hts_pos_t> local_dist;
@@ -93,7 +93,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 
     open_samFile_t* bam_file = open_samFile(bam_fname);
     if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
-        throw "Failed to read reference " + reference_fname;
+        throw std::runtime_error("Failed to read reference " + reference_fname);
     }
 
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
@@ -133,11 +133,11 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                 if (bam_is_rev(read) && !is_right_clipped(read, config.min_clip_len)) {
                     if (!ldc_writer) ldc_writer = open_writer(workspace + "/rev-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file->header);
                     int ok = sam_write1(ldc_writer, bam_file->header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(ldc_writer->fn);
+                    if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ldc_writer->fn));
                 } else if (!bam_is_rev(read) && !is_left_clipped(read, config.min_clip_len)) {
                     if (!rdc_writer) rdc_writer = open_writer(workspace + "/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file->header);
                     int ok = sam_write1(rdc_writer, bam_file->header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(rdc_writer->fn);
+                    if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(rdc_writer->fn));
                 }
             }
             if (!is_mate_unmapped(read)) { // save read seq for remapping
@@ -164,7 +164,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     if (!lp_writer) lp_writer = open_writer(workspace + "/long-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(lp_writer, bam_file->header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(lp_writer->fn);
+                    if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(lp_writer->fn));
                 } else {
                     if (!lp_mateseqs_fout.is_open()) lp_mateseqs_fout.open(workspace + "/long-pairs/" + std::to_string(contig_id) + ".txt");
                     lp_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
@@ -174,7 +174,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     if (!ow_writer) ow_writer = open_writer(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(ow_writer, bam_file->header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(ow_writer->fn);
+                    if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ow_writer->fn));
                 } else {
                     if (!ow_mateseqs_fout.is_open()) ow_mateseqs_fout.open(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".txt");
                     ow_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
@@ -184,7 +184,7 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     if (!ss_writer) ss_writer = open_writer(workspace + "/same-strand/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
                     int ok = sam_write1(ss_writer, bam_file->header, read);
-                    if (ok < 0) throw "Failed to write to " + std::string(ss_writer->fn);
+                    if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ss_writer->fn));
                 } else {
                     if (!ss_mateseqs_fout.is_open()) ss_mateseqs_fout.open(workspace + "/same-strand/" + std::to_string(contig_id) + ".txt");
                     ss_mateseqs_fout << bam_get_qname(read) << " " << get_sequence(read) << " " << std::to_string(get_nm(read)) << "\n";
@@ -227,12 +227,12 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 			if (!sr_writer) sr_writer = open_writer(workspace + "/sr/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
 			int ok = sam_write1(sr_writer, bam_file->header, read);
-			if (ok < 0) throw "Failed to write to " + std::string(sr_writer->fn);
-		} else if (is_samechr(read) && is_hidden_split_read(read, config)) {
+			if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(sr_writer->fn));
+		} else if (is_hidden_split_read(read, config)) {
             if (!hsr_writer) hsr_writer = open_writer(workspace + "/hsr/" + std::to_string(contig_id) + ".bam", bam_file->header);
 
             int ok = sam_write1(hsr_writer, bam_file->header, read);
-            if (ok < 0) throw "Failed to write to " + std::string(hsr_writer->fn);
+            if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(hsr_writer->fn));
             if (sampled) {
                 contig_qual_counts[int(avg_qual(read)+0.5)]++;
             }
@@ -344,7 +344,7 @@ int main(int argc, char* argv[]) {
 
     open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
 	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
-		throw "Failed to read reference " + reference_fname;
+		throw std::runtime_error("Failed to read reference " + reference_fname);
 	}
 
     mtx_contig = new std::mutex[contig_map.size()];
@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
 	std::vector<std::pair<std::string, hts_pos_t> > rnd_positions;
     std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
 	random_pos_generator_t random_pos_generator(chr_seqs, config.seed, config.sampling_regions);
-    int n_rand_pos = random_pos_generator.reference_len/1000;
+    int n_rand_pos = std::max(hts_pos_t(1000), random_pos_generator.reference_len/1000);
 	for (int i = 0; i < n_rand_pos; i++) {
         std::pair<std::string, hts_pos_t> rnd_pos = random_pos_generator.get_random_pos();
 		rnd_positions.push_back(rnd_pos);
@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
 
     ctpl::thread_pool base_stats_thread_pool(config.threads);
     std::vector<std::future<void> > futures;
-    int RND_POS_BLOCK_SIZE = rnd_positions.size()/(config.threads*10);
+    int RND_POS_BLOCK_SIZE = std::max(1, (int) rnd_positions.size()/(config.threads*10));
     for (int i = 0; i < rnd_positions.size(); i+=RND_POS_BLOCK_SIZE) {
         std::vector<std::pair<std::string, hts_pos_t> > rnd_pos_block(rnd_positions.begin()+i, rnd_positions.begin()+std::min(i+RND_POS_BLOCK_SIZE, (int) rnd_positions.size()));
         std::future<void> future = base_stats_thread_pool.push(get_base_stats, bam_fname, reference_fname, rnd_pos_block);
@@ -374,11 +374,7 @@ int main(int argc, char* argv[]) {
     }
     base_stats_thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
-        try {
-            futures[i].get();
-        } catch (char const* s) {
-            std::cerr << s << std::endl;
-        }
+        futures[i].get();
     }
     futures.clear();
 
@@ -387,14 +383,15 @@ int main(int argc, char* argv[]) {
     int stddev_is = stddev(general_isize_dist);
     general_isize_dist.erase(std::remove_if(general_isize_dist.begin(), general_isize_dist.end(), [mean_is, stddev_is](int x) { return std::abs(x-mean_is) >= 5*stddev_is; }), general_isize_dist.end());
 
-    uint64_t lower_stddev_is = 0, n_vals = 0;
+    uint64_t lower_stddev_is = 0;
+    int n_vals = 0;
     for (int x : general_isize_dist) {
         if (x < mean_is) {
             lower_stddev_is += (mean_is-x)*(mean_is-x);
             n_vals++;
         }
     }
-    lower_stddev_is = std::sqrt(lower_stddev_is / n_vals);
+    lower_stddev_is = std::sqrt(lower_stddev_is / std::max(1, n_vals));
 
     uint64_t higher_stddev_is = 0;
     n_vals = 0;
@@ -404,7 +401,7 @@ int main(int argc, char* argv[]) {
             n_vals++;
         }
     }
-    higher_stddev_is = std::sqrt(higher_stddev_is / n_vals);
+    higher_stddev_is = std::sqrt(higher_stddev_is / std::max(1, n_vals));
 
     stats.min_is = mean_is - 3*lower_stddev_is;
     stats.max_is = mean_is + 3.5*higher_stddev_is;
@@ -422,11 +419,17 @@ int main(int argc, char* argv[]) {
     }
     categorize_thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
-        try {
-            futures[i].get();
-        } catch (char const* s) {
-            std::cerr << s << std::endl;
-        }
+        futures[i].get();
+    }
+
+    if (depths.size() < MIN_RND_POS) {
+        throw std::runtime_error(
+            "Failed to estimate reliable depth statistics: only "
+            + std::to_string(depths.size())
+            + " informative sampled positions found, need at least "
+            + std::to_string(MIN_RND_POS)
+            + "; the sample is probably extremely sparse. Consider using the --sampling-regions option."
+        );
     }
 
     for (int i = 0; i < contig_map.size(); i++) {
@@ -455,6 +458,11 @@ int main(int argc, char* argv[]) {
     for (std::pair<uint64_t, uint32_t>& p : partial_sums) {
         sum_is += p.first;
         n_is += p.second;
+    }
+
+    if (n_is == 0) {
+        throw std::runtime_error("Failed to estimate reliable insert size statistics: no read pairs\
+             found crossing sampled positions. Consider using the --sampling-regions option.");
     }
 
     std::ofstream stats_out(workdir + "/stats.txt");

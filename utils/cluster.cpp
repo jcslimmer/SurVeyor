@@ -161,8 +161,8 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
     std::vector<std::vector<int>> cliques;
     int cliques_counter = 0;
     std::vector<int> cliques_idx(end-start, -1);
-    for (idx_size_t& _curr_idx : idx_by_neighborhood_size) {
-    	int curr_idx = _curr_idx.idx;
+    for (idx_size_t& i : idx_by_neighborhood_size) {
+    	int curr_idx = i.idx;
 
         // find cliqued neighbors
         std::vector<idx_size_t> cliqued_neighbors;
@@ -181,6 +181,8 @@ std::vector<std::vector<int>> compute_minimal_clique_cover(int start, int end, s
             std::vector<int>& neighbor_clique = cliques[neighboor_clique_idx];
             if (can_join_clique(neighbor_clique, svs, curr_idx)) {
                 neighbor_clique.push_back(curr_idx);
+				// note that we do not need to update cliques_idx here. Only one node in the clique (the one which started it)
+				// will have its cliques_idx set. This way, we do not test can_join_clique once per node in the clique
                 used = true;
                 break;
             }
@@ -602,7 +604,7 @@ int main(int argc, char* argv[]) {
 			("filelist", "Filelist containing a line for each sample being clustered. The line must contain the name of the sample and the "
 					"path of its VCF file, space or tab separated.", cxxopts::value<std::string>())
 			("reference", "Reference genome in fasta format", cxxopts::value<std::string>())
-			("o,out-prefix", "Files out_prefix.vcf.gz|.sv will be produced.", cxxopts::value<std::string>()->default_value("clustered"))
+			("o,out-prefix", "Files out_prefix.vcf.gz will be produced.", cxxopts::value<std::string>()->default_value("clustered"))
 			("d,max-dist-precise", "Maximum distance allowed between the breakpoints of two precise variants.",
 					cxxopts::value<int>()->default_value("100"))
 			("D,max-dist-imprecise", "Maximum distance allowed between the breakpoints when at least one of the variants is imprecise.",
@@ -661,7 +663,6 @@ int main(int argc, char* argv[]) {
 
     std::string out_vcf_fname = out_prefix + ".vcf.gz";
     htsFile* out_vcf_file = bcf_open(out_vcf_fname.c_str(), "wz");
-    std::string out_sv_fname = out_prefix + ".sv";
 
     chr_seqs.read_fasta_into_map(reference_fname);
 
@@ -674,11 +675,7 @@ int main(int argc, char* argv[]) {
     }
 	thread_pool_read_svs.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
-		try {
-			futures[i].get();
-		} catch (char const* s) {
-			std::cout << s << std::endl;
-		}
+		futures[i].get();
 	}
 	futures.clear();
 
@@ -700,11 +697,7 @@ int main(int argc, char* argv[]) {
     }
 	thread_pool_cc.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
-		try {
-			futures[i].get();
-		} catch (char const* s) {
-			std::cout << s << std::endl;
-		}
+		futures[i].get();
 	}
 
     for (int i = 0; i < nseqs; i++) {

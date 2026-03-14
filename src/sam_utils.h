@@ -78,7 +78,7 @@ int get_mate_left_clip_size(bam1_t* r) {
     if (is_mate_unmapped(r)) return 0;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (!mc_tag) {
-        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
     }
     char* mc = bam_aux2Z(mc_tag);
     int i = 0, left_clip = 0;
@@ -93,7 +93,7 @@ int get_mate_right_clip_size(bam1_t* r) {
     if (is_mate_unmapped(r)) return 0;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (!mc_tag) {
-        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
     }
     char* mc = bam_aux2Z(mc_tag);
     int len = strlen(mc), i = len - 1;
@@ -112,7 +112,7 @@ bool is_mate_left_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (mc_tag == NULL) {
-        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
     }
     char* mc_tag_str = bam_aux2Z(mc_tag);
     int i = 0;
@@ -123,7 +123,7 @@ bool is_mate_right_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
     const uint8_t* mc_tag = bam_aux_get(r, "MC");
     if (mc_tag == NULL) {
-        throw "Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.";
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
     }
     char* mc_tag_str = bam_aux2Z(mc_tag);
     int i = strlen(mc_tag_str)-1;
@@ -201,7 +201,7 @@ int64_t get_mq(bam1_t* r) {
 int64_t get_nm(bam1_t* r) {
     uint8_t* nm = bam_aux_get(r, "NM");
     if (nm == NULL) {
-        throw "Read " + std::string(bam_get_qname(r)) + " does not have the NM tag.";
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the NM tag.");
     }
     return bam_aux2i(nm);
 }
@@ -334,10 +334,10 @@ void copy_sequence(bam1_t* r, char* seq, bool fastq_seq = false) { // assumes se
 samFile* open_writer(std::string filename, bam_hdr_t* header) {
     samFile* writer = sam_open(filename.c_str(), "wb");
     if (writer == NULL) {
-        throw "Unable to open " + filename;
+        throw std::runtime_error("Unable to open " + filename);
     }
     if (sam_hdr_write(writer, header) != 0) {
-        throw "Could not write file " + filename;
+        throw std::runtime_error("Could not write file " + filename);
     }
     return writer;
 }
@@ -345,14 +345,14 @@ samFile* open_writer(std::string filename, bam_hdr_t* header) {
 void write_and_index_file(std::vector<bam1_t*>& reads, std::string path, bam_hdr_t* header) {
     samFile* file = open_writer(path, header);
     if (file == NULL) {
-        throw "Unable to open " + path;
+        throw std::runtime_error("Unable to open " + path);
     }
 
     // write reads
     std::sort(reads.begin(), reads.end(), [](bam1_t *r1, bam1_t *r2) { return r1->core.pos < r2->core.pos; });
     for (bam1_t* r : reads) {
         int ok = sam_write1(file, header, r);
-        if (ok < 0) throw "Unable to write to " + path;
+        if (ok < 0) throw std::runtime_error("Unable to write to " + path);
     }
 
     sam_close(file);
@@ -361,7 +361,7 @@ void write_and_index_file(std::vector<bam1_t*>& reads, std::string path, bam_hdr
 
     int code = sam_index_build(path.c_str(), 0);
     if (code != 0) {
-        throw "Cannot index " + path;
+        throw std::runtime_error("Cannot index " + path);
     }
 
     sam_close(file);
@@ -383,24 +383,24 @@ open_samFile_t* open_samFile(std::string fname_str, bool index_file = false) {
     open_samFile_t* sam_file = new open_samFile_t;
     sam_file->file = sam_open(fname, "r");
     if (sam_file->file == NULL) {
-        throw "Could not open " + std::string(fname);
+        throw std::runtime_error("Could not open " + std::string(fname));
     }
 
     if (index_file) {
         int code = sam_index_build(fname, 0);
         if (code != 0) {
-            throw "Cannot index " + std::string(fname);
+            throw std::runtime_error("Cannot index " + std::string(fname));
         }
     }
 
     sam_file->idx = sam_index_load(sam_file->file, sam_file->file->fn);
     if (sam_file->idx == NULL) {
-        throw "Unable to open index for " + std::string(fname);
+        throw std::runtime_error("Unable to open index for " + std::string(fname));
     }
 
     sam_file->header = sam_hdr_read(sam_file->file);
     if (sam_file->header == NULL) {
-        throw "Unable to open header for " + std::string(fname);
+        throw std::runtime_error("Unable to open header for " + std::string(fname));
     }
 
     return sam_file;

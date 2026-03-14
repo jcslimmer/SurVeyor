@@ -446,8 +446,8 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 
     for (int i = 0; i < svs.size(); i++) {
 		sv_t* sv = svs[i];
-        uint32_t n = ns[i], sum = sums[i];
-		uint64_t sq_sum = sq_sums[i];
+        int n = ns[i];
+		uint64_t sum = sums[i], sq_sum = sq_sums[i];
         if (n >= 4) {
             int avg_is = sum/n;
             int var_is = (sq_sum - sum*sum/n)/(n-1);

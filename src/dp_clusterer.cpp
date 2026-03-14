@@ -249,11 +249,7 @@ int main(int argc, char* argv[]) {
 	}
 	thread_pool1.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
-		try {
-			futures[i].get();
-		} catch (char const* s) {
-			std::cout << s << std::endl;
-		}
+		futures[i].get();
 	}
 	futures.clear();
 
@@ -285,11 +281,7 @@ int main(int argc, char* argv[]) {
 	}
 	thread_pool2.stop(true);
 	for (int i = 0; i < futures.size(); i++) {
-		try {
-			futures[i].get();
-		} catch (char const* s) {
-			std::cout << s << std::endl;
-		}
+		futures[i].get();
 	}
 	futures.clear();
 

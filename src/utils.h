@@ -209,10 +209,16 @@ struct chr_seqs_map_t {
     }
 
     char* get_seq(std::string seq_name) {
+        if (!seqs.count(seq_name)) {
+            throw std::runtime_error("Sequence " + seq_name + " not found in reference.");
+        }
         return seqs[seq_name]->seq;
     }
 
     hts_pos_t get_len(std::string seq_name) {
+        if (!seqs.count(seq_name)) {
+            throw std::runtime_error("Sequence " + seq_name + " not found in reference.");
+        }
         return seqs[seq_name]->len;
     }
 
@@ -422,6 +428,12 @@ struct random_pos_generator_t {
             }
         } else {
             std::ifstream fin(sampling_regions_fname);
+            // check if file exists and is not empty
+            if (!fin.good()) {
+                std::string error_msg = "Error: sampling regions file " + sampling_regions_fname + " does not exist or is not readable\n";
+                throw std::runtime_error(error_msg);
+            }
+
             std::string line;
             while (std::getline(fin, line)) {
                 std::istringstream iss(line);
@@ -453,6 +465,9 @@ struct random_pos_generator_t {
             reference_len += r.end - r.start;
         }
 
+        if (reference_len == 0) {
+            throw std::runtime_error("Error: the total length of sampling regions is 0.");
+        }
         dist = std::uniform_int_distribution<hts_pos_t>(0, reference_len-1);
     }
 

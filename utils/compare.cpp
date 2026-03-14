@@ -440,12 +440,12 @@ std::unordered_set<std::string> find_dup_ids(std::vector<std::shared_ptr<sv_t>>&
 
 int main(int argc, char* argv[]) {
 
-	cxxopts::Options options("compare", "Given a VCF or SV file with benchmark deletions and one with the called ones, reports for "
+	cxxopts::Options options("compare", "Given a VCF file with benchmark deletions and one with the called ones, reports for "
 											"each benchmark deletion whether it was called.");
 
 	options.add_options()
-		("benchmark_file", "VCF or SV file with the benchmark calls.", cxxopts::value<std::string>())
-		("called_file", "VCF or SV file with the calls to benchmark.", cxxopts::value<std::string>())
+		("benchmark_file", "VCF file with the benchmark calls.", cxxopts::value<std::string>())
+		("called_file", "VCF file with the calls to benchmark.", cxxopts::value<std::string>())
 		("R,reference", "Reference file in fasta format.", cxxopts::value<std::string>())
 		("T,tandem-repeats", "Tandem repeat file in BED format.", cxxopts::value<std::string>())
 		("d,max_dist_precise", "Maximum distance allowed between the breakpoints of two precise variants.",
@@ -640,9 +640,20 @@ int main(int argc, char* argv[]) {
 		std::unordered_map<std::string, std::vector<repeat_t>> reps;
 		std::unordered_map<std::string, std::vector<Interval<repeat_t>>> reps_iv;
 		std::ifstream rep_f(parsed_args["tandem-repeats"].as<std::string>());
+		if (!rep_f.is_open()) {
+			std::cerr << "Error opening tandem repeat file " << parsed_args["tandem-repeats"].as<std::string>() << std::endl;
+			exit(1);
+		}
 		while (getline(rep_f, line)) {
-			if (line[0] == '#') continue;
-			repeat_t r(line);
+			if (line.empty() || line[0] == '#') continue;
+			
+			std::stringstream ss(line);
+    		repeat_t r;
+			if (!(ss >> r.chr >> r.start >> r.end)) {
+				std::cerr << "Error parsing line in tandem repeat file: " << line << std::endl;
+				exit(1);
+			}
+
 			reps[r.chr].push_back(r);
 			reps_iv[r.chr].push_back(Interval<repeat_t>(r.start, r.end, r));
 		}
@@ -668,11 +679,7 @@ int main(int argc, char* argv[]) {
 	}
 	thread_pool.stop(true);
     for (int i = 0; i < futures.size(); i++) {
-        try {
-            futures[i].get();
-        } catch (char const* s) {
-            std::cerr << s << std::endl;
-        }
+		futures[i].get();
     }
     futures.clear();
 
