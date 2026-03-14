@@ -431,7 +431,7 @@ void genotype_inss(int id, std::string contig_name, char* contig_seq, int contig
     depth_filter_ins(contig_name, inss, bam_file, config, stats);
     calculate_ptn_ratio(contig_name, inss, bam_file, config, stats, evidence_logger, false, evidence_map, *mateseqs_w_mapq_chr);
     std::vector<sv_t*> inss_sv(inss.begin(), inss.end());
-    calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, inss_sv, bam_file, config, stats, config.min_sv_size, true);
+    calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, inss_sv, bam_file, config, stats, config.min_sv_size);
 
     release_mates(contig_id);
 }

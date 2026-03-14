@@ -164,23 +164,6 @@ void depth_filter_inv(std::string contig_name, std::vector<inversion_t*>& invert
 	depth_filter_indel(contig_name, testable_invs, bam_file, config, stats);
 }
 
-int find_smallest_range_start(std::vector<int>& v, int range_size, int& min_cum) {
-	int cum = 0;
-	for (int j = 0; j < range_size && j < v.size(); j++) {
-		cum += v[j];
-	}
-	int best_start = 0, best_cum = cum;
-	for (int j = range_size; j < v.size(); j++) {
-		cum = cum - v[j-range_size] + v[j];
-		if (cum < best_cum) {
-			best_cum = cum;
-			best_start = j - range_size + 1;
-		}
-	}
-	min_cum = best_cum;
-	return best_start;
-}
-
 struct pairs_data_t {
 	std::vector<int> pairs_pos_mqs, pairs_neg_mqs;
 	std::vector<int> pairs_pos_nms, pairs_neg_nms;
@@ -407,8 +390,7 @@ void count_stray_pairs(std::string contig_name, std::vector<duplication_t*>& dup
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
 										std::vector<sv_t*>& svs, open_samFile_t* bam_file, 
-										config_t& config, stats_t& stats, int min_sv_size,
-										bool disallow_changes = false) {
+										config_t& config, stats_t& stats, int min_sv_size) {
 
 	if (svs.empty()) return;
 
@@ -477,87 +459,6 @@ void calculate_confidence_interval_size(std::string contig_name, std::vector<dou
 				double ks_pval = ks_test(global_crossing_isize_dist, local_dists[i]);
 				if (std::isfinite(ks_pval)) sv->ks_pval = ks_pval;
 				else sv->ks_pval = sv_t::KS_PVAL_NOT_COMPUTED;
-
-				if (sv->svtype() != "DEL" || !sv->imprecise || disallow_changes) continue;
-
-				int est_size = avg_is - stats.pop_avg_crossing_is;
-
-				// compute depth base by base in the imprecise deleted regions
-				// TODO: there are some faster data structures out there for this - e.g., Fenwick tree
-				hts_pos_t range_start = std::max(hts_pos_t(1), sv->start-stats.read_len), range_end = sv->end + stats.read_len;
-				if (est_size > range_end-range_start || est_size < min_sv_size) continue; // estimated size is grossly off - ignore
-
-				std::vector<int> depth_by_base(range_end-range_start+1);
-				std::stringstream ss;
-				ss << contig_name << ":" << range_start << "-" << range_end;
-				iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
-				while (sam_itr_next(bam_file->file, iter, read) >= 0) {
-					if (is_unmapped(read) || is_mate_unmapped(read) || !is_primary(read) || read->core.qual < 0) continue;
-					if (!is_samechr(read) || is_samestr(read) || read->core.isize < -stats.max_is || read->core.isize > stats.max_is) continue;
-
-					int start = std::max(hts_pos_t(0), read->core.pos-range_start);
-					int end = std::min(bam_endpos(read)-range_start, range_end-range_start);
-					for (int i = start; i <= end; i++) depth_by_base[i]++;
-				}
-
-				// find window of est_size bp with minimum depth
-				int min_cum_depth;
-				int best_start = find_smallest_range_start(depth_by_base, est_size, min_cum_depth);
-				int del_cov = min_cum_depth/est_size;
-
-				std::vector<double> homalt_local_dist, het_local_dist;
-				for (int i = 0; i < global_crossing_isize_dist.size(); i++) {
-					double d = global_crossing_isize_dist[i];
-					homalt_local_dist.push_back(d+est_size);
-					if (i%2) het_local_dist.push_back(d+2*est_size);
-					else het_local_dist.push_back(d);
-				}
-
-				int homalt_evidence = 0, het_evidence = 0;
-
-				// whether the distribution supports a het or a homalt deletion
-				double homalt_pval = ks_test(local_dists[i], homalt_local_dist);
-				double het_pval = ks_test(local_dists[i], het_local_dist);
-				if (homalt_pval < het_pval) { // deletion is het
-					het_evidence++;
-				} else { // deletion is homalt
-					homalt_evidence++;
-				}
-
-				// whether the discordant pairs are closer to what we expect with a het or a hom alt deletion
-				// TODO: this is better than random but not very accurate. If we could have a test on standard deviations (het will have larger
-				// than the global, hom alt should be the same) as like Bartlett as the third vote it might be better
-				int homalt_idx = std::max(0, stats.max_is - est_size);
-				int het_idx = std::max(0, stats.max_is - 2*est_size);
-				int dev_if_homalt = abs((int) (sv->sample_info.alt_bp1.pairs_info.pairs-stats.get_median_disc_pairs_by_del_size(homalt_idx)));
-				int dev_if_het = abs((int) (sv->sample_info.alt_bp1.pairs_info.pairs-stats.get_median_disc_pairs_by_del_size(het_idx)/2));
-				if (dev_if_het <= dev_if_homalt) {
-					het_evidence++;
-				} else { // deletion is homalt
-					homalt_evidence++;
-				}
-
-				// depth supports hom alt or het
-				if (sv->sample_info.left_flanking_cov*0.25 < del_cov || sv->sample_info.right_flanking_cov*0.25 < del_cov) {
-					het_evidence++;
-				} else {
-					homalt_evidence++;
-				}
-
-				std::string genotype = het_evidence > homalt_evidence ? "0/1" : "1/1";
-
-				// if deletion is estimated het, double the size (unless it is bigger than the original range - then assume GT is wrong)
-				if (genotype == "0/1" && est_size*2 <= range_end-range_start) {
-					est_size *= 2;
-					best_start = find_smallest_range_start(depth_by_base, est_size, min_cum_depth);
-				}
-
-				int new_start = range_start + best_start, new_end = new_start + est_size;
-				if (new_start >= sv->start-stats.read_len/2 && new_end <= sv->end+stats.read_len/2) {
-					((deletion_t*) sv)->original_range = std::to_string(sv->start) + "-" + std::to_string(sv->end);
-					sv->start = new_start; sv->end = new_end;
-					sv->start = new_start; sv->end = new_end;
-				}
             }
         }
     }

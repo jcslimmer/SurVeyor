@@ -530,7 +530,7 @@ void genotype_dups(int id, std::string contig_name, char* contig_seq, hts_pos_t 
     release_mates(contig_id);
 
     depth_filter_dup(contig_name, dups, bam_file, config, stats);
-    calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size, true);
+    calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, small_dups, bam_file, config, stats, config.min_sv_size);
     std::string mates_nms_file = workdir + "/workspace/outward-pairs/" + std::to_string(contig_id) + ".txt";
     calculate_ptn_ratio(contig_name, dups, bam_file, config, stats, evidence_logger, false, evidence_map, mates_nms_file);
     count_stray_pairs(contig_name, dups, bam_file, config, stats);
