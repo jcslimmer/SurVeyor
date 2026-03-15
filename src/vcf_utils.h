@@ -1041,7 +1041,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		data = NULL;
 		bcf_get_info_int32(hdr, b, "INVPOS", &data, &len);
 		inversion_t* inv = (inversion_t*) sv.get();
-		if (len > 0) {
+		if (len > 1) {
 			inv->inv_start = data[0]-1;
 			inv->inv_end = data[1]-1;
 		}
@@ -1049,7 +1049,15 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	} else if (svtype == "BND") {
 		std::string alt = b->d.allele[1];
 		size_t colon_pos = alt.find(':');
+		if (colon_pos == std::string::npos) {
+			std::cerr << "Invalid BND ALT format for sv " << b->d.id << ": " << alt << std::endl;
+			return NULL;
+		}
 		size_t pos_start = colon_pos + 1, pos_end = alt.find_last_of("[]");
+		if (pos_end == std::string::npos || pos_end <= pos_start) {
+			std::cerr << "Invalid BND ALT format for sv " << b->d.id << ": " << alt << std::endl;
+			return NULL;
+		}
     	hts_pos_t pos2 = std::stoi(alt.substr(pos_start, pos_end-pos_start));
 		bool left_facing = false;
 		if (alt[pos_end] == '[') {
