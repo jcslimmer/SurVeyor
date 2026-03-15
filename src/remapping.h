@@ -180,7 +180,7 @@ int get_strict_region_start(std::vector<remap_info_t>& ro_remap_infos, std::vect
     }
     if (remap_infos.empty()) return 0;
 
-    remap_info_t guard; guard.start = 1000000;
+    remap_info_t guard; guard.start = INT32_MAX;
     remap_infos.push_back(guard);
 
     std::sort(remap_infos.begin(), remap_infos.end(),
@@ -474,7 +474,7 @@ std::pair<region_t, region_t> compute_best_and_base_regions(int contig_id, std::
     }
 
     // compute best score
-    for (region_t region : regions) {
+    for (region_t& region : regions) {
         char* contig_seq = contigs.get_seq(contig_map.get_name(region.contig_id));
         compute_score(region, contig_seq, r_cluster, l_cluster, mateseqs, NULL, NULL,
             aligner, permissive_aligner, is_rc, config, stats);

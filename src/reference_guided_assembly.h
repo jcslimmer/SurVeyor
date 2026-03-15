@@ -84,7 +84,10 @@ void remove_fully_contained(std::vector<std::string>& assembled_sequences, std::
 	}
 	std::sort(assembled_seqs_w_alns.begin(), assembled_seqs_w_alns.end(),
 			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& p1, const std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
-		return p1.second.ref_begin < p2.second.ref_begin;
+		if (p1.second.ref_begin != p2.second.ref_begin) {
+            return p1.second.ref_begin < p2.second.ref_begin;
+        }
+        return p1.second.ref_end > p2.second.ref_end;
 	});
 	int max_end = 0;
 	assembled_sequences.clear();
@@ -94,6 +97,40 @@ void remove_fully_contained(std::vector<std::string>& assembled_sequences, std::
 			max_end = p.second.ref_end;
 		}
 	}
+}
+
+std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > retain_non_overlapping_contigs(
+		std::vector<std::tuple<int, std::string, StripedSmithWaterman::Alignment> > contigs_w_score) {
+	std::sort(contigs_w_score.begin(), contigs_w_score.end(),
+			[](const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p1, const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p2) {
+		return std::get<0>(p1) > std::get<0>(p2);
+	});
+
+	std::vector<bool> remove(contigs_w_score.size(), false);
+	for (int i = contigs_w_score.size()-1; i >= 0; i--) {
+		for (int j = 0; j < i; j++) {
+			StripedSmithWaterman::Alignment& aln1 = std::get<2>(contigs_w_score[i]);
+			StripedSmithWaterman::Alignment& aln2 = std::get<2>(contigs_w_score[j]);
+			if (overlap(aln1.ref_begin, aln1.ref_end, aln2.ref_begin, aln2.ref_end)) {
+				remove[i] = true;
+				break;
+			}
+		}
+	}
+
+	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > retained;
+	for (int i = 0; i < contigs_w_score.size(); i++) {
+		if (!remove[i]) {
+			retained.push_back({std::get<1>(contigs_w_score[i]), std::get<2>(contigs_w_score[i])});
+		}
+	}
+
+	std::sort(retained.begin(), retained.end(),
+			[](const std::pair<std::string, StripedSmithWaterman::Alignment>& p1, const std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
+		return p1.second.ref_begin < p2.second.ref_begin;
+	});
+
+	return retained;
 }
 
 std::vector<std::string> generate_reference_guided_contigs(std::string reference, std::vector<std::string>& read_seqs, 
@@ -222,33 +259,13 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 		harsh_aligner.Align(assembled_sequences[i].c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
 		contigs_w_score.push_back({scores[i], assembled_sequences[i], aln});
 	}
-	std::sort(contigs_w_score.begin(), contigs_w_score.end(), 
-			[](const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p1, const std::tuple<int, std::string, StripedSmithWaterman::Alignment>& p2) {
-		return std::get<0>(p1) > std::get<0>(p2);
-	});
-
-	std::vector<bool> remove(contigs_w_score.size(), false);
-	for (int i = contigs_w_score.size()-1; i >= 0; i--) {
-		for (int j = 0; j < i; j++) {
-			int score1 = std::get<0>(contigs_w_score[i]);
-			int score2 = std::get<0>(contigs_w_score[j]);
-			StripedSmithWaterman::Alignment& aln1 = std::get<2>(contigs_w_score[i]);
-			StripedSmithWaterman::Alignment& aln2 = std::get<2>(contigs_w_score[j]);
-			if (overlap(aln1.ref_begin, aln1.ref_end, aln2.ref_begin, aln2.ref_end)) {
-				remove[i] = true;
-				break;
-			}
-		}
-	}
-
+	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment>> retained = retain_non_overlapping_contigs(contigs_w_score);
 	std::vector<std::string> retained_assembled_seqs;
-	for (int i = 0; i < contigs_w_score.size(); i++) {
-		if (!remove[i]) {
-			retained_assembled_seqs.push_back(std::get<1>(contigs_w_score[i]));
-			consensus_contigs_alns.push_back(std::get<2>(contigs_w_score[i]));
-		}
+	consensus_contigs_alns.clear();
+	for (auto& p : retained) {
+		retained_assembled_seqs.push_back(p.first);
+		consensus_contigs_alns.push_back(p.second);
 	}
-
 
 	// we assembled as much as possible using guidance from the reference
 	// however, reads may be misaligned for in the case of an incomplete or rearranged reference
@@ -300,13 +317,21 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	}
 	scaffolded_sequences.push_back(curr_seq);
 
-	consensus_contigs_alns.clear();
+	std::vector<std::tuple<int, std::string, StripedSmithWaterman::Alignment> > scaffolded_w_score;
 	for (std::string& seq : scaffolded_sequences) {
 		harsh_aligner.Align(seq.c_str(), reference.c_str(), reference.length(), filter, &aln, 0);
-		consensus_contigs_alns.push_back(aln);
+		scaffolded_w_score.push_back({aln.sw_score, seq, aln});
 	}
 
-	return scaffolded_sequences;
+	retained = retain_non_overlapping_contigs(scaffolded_w_score);
+	retained_assembled_seqs.clear();
+	consensus_contigs_alns.clear();
+	for (auto& p : retained) {
+		retained_assembled_seqs.push_back(p.first);
+		consensus_contigs_alns.push_back(p.second);
+	}
+
+	return retained_assembled_seqs;
 }
 
 std::vector<std::string> generate_reference_guided_consensus(std::string reference, 
@@ -451,7 +476,7 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 	std::string corrected_junction_seq = full_junction_sequence.substr(0, contigs_sorted_by_pos[0].second.ref_begin);
 	corrected_junction_seq += contigs_sorted_by_pos[0].first;
 	for (int i = 1; i < contigs_sorted_by_pos.size(); i++) {
-		corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[i-1].second.ref_end+1, contigs_sorted_by_pos[i].second.ref_begin-contigs_sorted_by_pos[i-1].second.ref_end);
+		corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[i-1].second.ref_end+1, contigs_sorted_by_pos[i].second.ref_begin-contigs_sorted_by_pos[i-1].second.ref_end-1);
 		corrected_junction_seq += contigs_sorted_by_pos[i].first;
 	}
 	corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[contigs_sorted_by_pos.size()-1].second.ref_end+1);
