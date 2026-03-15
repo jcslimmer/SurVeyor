@@ -994,10 +994,10 @@ int main(int argc, char* argv[]) {
 		for (int i = 0; i < count; i++) global_crossing_isize_dist.push_back(isize);
 	}
 	std::random_shuffle(global_crossing_isize_dist.begin(), global_crossing_isize_dist.end());
-	global_crossing_isize_dist.resize(100000);
+	if (global_crossing_isize_dist.size() > 100000) global_crossing_isize_dist.resize(100000);
 	crossing_isizes_dist_fin.close();
 
-    std::string full_cmd_fname = workdir + "/genotype_cmd.txt";
+    std::string full_cmd_fname = workdir + "/cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);
     std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);

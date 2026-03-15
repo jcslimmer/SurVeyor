@@ -23,12 +23,12 @@ struct config_t {
 
     int threads, seed;
     int min_clip_len, min_stable_mapq, min_diff_hsr;
+    int high_confidence_mapq;
     int min_sv_size, max_trans_size;
     double max_seq_error;
     bool per_contig_stats;
     std::string sampling_regions, version;
 
-    const int high_confidence_mapq = 60;
     const int flanking_size = 5000, indel_tested_region_size = 10000;
 
     void parse(std::string config_file) {
@@ -44,6 +44,7 @@ struct config_t {
         seed = std::stoi(config_params["seed"]);
         min_clip_len = std::stoi(config_params["min_clip_len"]);
         min_stable_mapq = std::stoi(config_params["min_stable_mapq"]);
+        high_confidence_mapq = std::stoi(config_params["high_confidence_mapq"]);
         min_diff_hsr = std::stoi(config_params["min_diff_hsr"]);
         min_sv_size = std::stoi(config_params["min_sv_size"]);
         if (config_params.count("max_trans_size")) max_trans_size = std::stoi(config_params["max_trans_size"]);
@@ -407,7 +408,6 @@ struct random_pos_generator_t {
 
     const int NO_SAMPLING_PADDING = 1000;
 
-    chr_seqs_map_t& chr_seqs_map;
     hts_pos_t reference_len = 0;
     std::mt19937 rng;
     std::uniform_int_distribution<hts_pos_t> dist;
@@ -419,12 +419,13 @@ struct random_pos_generator_t {
     };
     std::vector<region_t> regions;
 
-    random_pos_generator_t(chr_seqs_map_t& chr_seqs_map, int seed, std::string sampling_regions_fname = "") : chr_seqs_map(chr_seqs_map) {
+    random_pos_generator_t(bam_hdr_t* hdr, int seed, std::string sampling_regions_fname = "") {
         rng.seed(seed);
 
         if (sampling_regions_fname.empty()) {
-            for (std::string& chr : chr_seqs_map.ordered_contigs) {
-                regions.push_back(region_t(chr, NO_SAMPLING_PADDING, chr_seqs_map.get_len(chr)-NO_SAMPLING_PADDING));
+            for (int i = 0; i < hdr->n_targets; i++) {
+                std::string chr = hdr->target_name[i];
+                regions.push_back(region_t(chr, NO_SAMPLING_PADDING, hdr->target_len[i]-NO_SAMPLING_PADDING));
             }
         } else {
             std::ifstream fin(sampling_regions_fname);
@@ -438,6 +439,8 @@ struct random_pos_generator_t {
             while (std::getline(fin, line)) {
                 std::istringstream iss(line);
 
+                if (line.empty() || line[0] == '#') continue; // skip empty lines and comments
+
                 // tokenize iss imitating >>, do not assume format
                 std::vector<std::string> tokens;
                 std::string token;
@@ -445,10 +448,7 @@ struct random_pos_generator_t {
                     tokens.push_back(token);
                 }
 
-                if (tokens.size() == 1) {
-                    std::string chr = tokens[0];
-                    regions.push_back(region_t(chr, NO_SAMPLING_PADDING, chr_seqs_map.get_len(chr)-NO_SAMPLING_PADDING));
-                } else if (tokens.size() == 3) {
+                if (tokens.size() == 3) {
                     std::string chr = tokens[0];
                     hts_pos_t start = std::stoll(tokens[1]);
                     hts_pos_t end = std::stoll(tokens[2]);

@@ -74,13 +74,34 @@ hts_pos_t get_unclipped_end(bam1_t* r) {
     return bam_endpos(r) + get_right_clip_size(r);
 }
 
-int get_mate_left_clip_size(bam1_t* r) {
-    if (is_mate_unmapped(r)) return 0;
-    const uint8_t* mc_tag = bam_aux_get(r, "MC");
-    if (!mc_tag) {
+int64_t get_mq(bam1_t* r) {
+    uint8_t* mq = bam_aux_get(r, "MQ");
+    if (mq == NULL) {
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MQ tag.");
+    }
+    return bam_aux2i(mq);
+}
+
+char* get_mc(bam1_t* r) {
+    uint8_t* mc = bam_aux_get(r, "MC");
+    if (mc == NULL) {
         throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
     }
-    char* mc = bam_aux2Z(mc_tag);
+    return bam_aux2Z(mc);
+}
+
+int64_t get_nm(bam1_t* r) {
+    uint8_t* nm = bam_aux_get(r, "NM");
+    if (nm == NULL) {
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the NM tag.");
+    }
+    return bam_aux2i(nm);
+}
+
+int get_mate_left_clip_size(bam1_t* r) {
+    if (is_mate_unmapped(r)) return 0;
+
+    char* mc = get_mc(r);
     int i = 0, left_clip = 0;
     while (mc[i] >= '0' && mc[i] <= '9') {
         left_clip = left_clip * 10 + (mc[i] - '0');
@@ -91,11 +112,8 @@ int get_mate_left_clip_size(bam1_t* r) {
 
 int get_mate_right_clip_size(bam1_t* r) {
     if (is_mate_unmapped(r)) return 0;
-    const uint8_t* mc_tag = bam_aux_get(r, "MC");
-    if (!mc_tag) {
-        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
-    }
-    char* mc = bam_aux2Z(mc_tag);
+
+    char* mc = get_mc(r);
     int len = strlen(mc), i = len - 1;
     if (mc[i] != 'S') return 0;
     i--;
@@ -110,22 +128,16 @@ int get_mate_right_clip_size(bam1_t* r) {
 
 bool is_mate_left_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
-    const uint8_t* mc_tag = bam_aux_get(r, "MC");
-    if (mc_tag == NULL) {
-        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
-    }
-    char* mc_tag_str = bam_aux2Z(mc_tag);
+
+    char* mc_tag_str = get_mc(r);
     int i = 0;
     while (mc_tag_str[i] >= '0' && mc_tag_str[i] <= '9') i++;
     return mc_tag_str[i] == 'S';
 }
 bool is_mate_right_clipped(bam1_t* r) {
     if (is_mate_unmapped(r)) return false;
-    const uint8_t* mc_tag = bam_aux_get(r, "MC");
-    if (mc_tag == NULL) {
-        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
-    }
-    char* mc_tag_str = bam_aux2Z(mc_tag);
+
+    char* mc_tag_str = get_mc(r);
     int i = strlen(mc_tag_str)-1;
     return mc_tag_str[i] == 'S';
 }
@@ -137,7 +149,7 @@ bool is_hidden_split_read(bam1_t* r, config_t config) {
     if (!is_samechr(r)) return false;
 	if (is_left_clipped(r, config.min_clip_len) || is_right_clipped(r, config.min_clip_len)) return false;
 
-    int mismatches = bam_aux2i(bam_aux_get(r, "NM"));
+    int mismatches = get_nm(r);
 
     int indels = 0, inss = 0, dels = 0;
     uint32_t* cigar = bam_get_cigar(r);
@@ -156,11 +168,8 @@ bool is_hidden_split_read(bam1_t* r, config_t config) {
 }
 
 
-hts_pos_t get_mate_endpos(const bam1_t* r) {
-    uint8_t* mcs = bam_aux_get(r, "MC");
-    if (mcs == NULL) return r->core.mpos; // if no MC, return mpos
-
-    char* mc = bam_aux2Z(mcs);
+hts_pos_t get_mate_endpos(bam1_t* r) {
+    char* mc = get_mc(r);
     int i = 0, mclen = strlen(mc);
 
     int len = 0;
@@ -186,34 +195,6 @@ hts_pos_t get_mate_unclipped_end(bam1_t* r) {
     return get_mate_endpos(r) + get_mate_right_clip_size(r);
 }
 
-int64_t get_mq(bam1_t* r) {
-    uint8_t* mq = bam_aux_get(r, "MQ");
-    if (mq == NULL) {
-    	if ((r->core.flag & BAM_FUNMAP) == 0 && (r->core.flag & BAM_FMUNMAP) == 0) {
-			std::cerr << "Warning: read pair " << bam_get_qname(r) << " does not have an MQ tag. Please include it." << std::endl;
-			std::cerr << (r->core.flag & BAM_FMUNMAP) << std::endl;
-    	}
-    	return 0;
-    }
-    return bam_aux2i(mq);
-}
-
-int64_t get_nm(bam1_t* r) {
-    uint8_t* nm = bam_aux_get(r, "NM");
-    if (nm == NULL) {
-        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the NM tag.");
-    }
-    return bam_aux2i(nm);
-}
-
-std::string get_md(bam1_t* r) {
-    uint8_t* md = bam_aux_get(r, "MD");
-    if (md == NULL) {
-        return "";
-    }
-    return bam_aux2Z(md);
-}
-
 bool has_no_indels(bam1_t* read) {
     uint32_t *cigar = bam_get_cigar(read);
     return read->core.n_cigar == 1 && bam_cigar_op(cigar[0]) == BAM_CMATCH && bam_cigar_oplen(cigar[0]) == read->core.l_qseq;
@@ -222,13 +203,7 @@ bool has_no_indels(bam1_t* read) {
 bool is_perfectly_aligned(bam1_t* read) {
     // All M
     if (has_no_indels(read)) {
-        uint8_t* nm = bam_aux_get(read, "NM");
-        if (nm) {
-            return bam_aux2i(nm) == 0; // Whether it is perfectly aligned based on NM
-        } 
-
-        std::string md = get_md(read);
-        return md == std::to_string(read->core.l_qseq); // Perfectly aligned based on MD
+        return get_nm(read) == 0; // Whether it is perfectly aligned based on NM
     }
     return false; // Not perfectly aligned or cannot confirm alignment without NM or MD
 }

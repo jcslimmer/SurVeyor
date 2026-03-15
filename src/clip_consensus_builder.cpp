@@ -805,7 +805,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::string full_cmd_fname = workdir + "/call_cmd.txt";
+    std::string full_cmd_fname = workdir + "/cmd.txt";
 	std::ifstream full_cmd_fin(full_cmd_fname);
 	std::string full_cmd_str;
 	std::getline(full_cmd_fin, full_cmd_str);

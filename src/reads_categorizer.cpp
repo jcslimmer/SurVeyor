@@ -197,17 +197,18 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
         while (curr_pos < rnd_positions.size() && read->core.pos > rnd_positions[curr_pos]) curr_pos++;
 
         // sample depth
-		bool sampled = false;
+        bool sampled = false;
 		hts_pos_t read_endpos = bam_endpos(read);
 		for (int i = curr_pos; i < rnd_positions.size() && rnd_positions[i] < read_endpos; i++) {
 			if (read->core.pos <= rnd_positions[i] && rnd_positions[i] <= read_endpos) {
-				sampled = true;
+                sampled = true;
 				local_depths[i]++;
 			}
 		}
-
+        if (sampled && read->core.qual >= config.high_confidence_mapq) contig_qual_counts[int(avg_qual(read)+0.5)]++;
+        
         // sample pairs crossing
-		hts_pos_t pair_startpos = read->core.pos + stats.read_len/2, pair_endpos = get_mate_endpos(read) - stats.read_len/2;
+		hts_pos_t pair_startpos = read->core.pos + read->core.l_qseq/2, pair_endpos = get_mate_endpos(read) - read->core.l_qseq/2;
 		if (read->core.isize > 0 && read->core.isize <= stats.max_is && is_samechr(read) && !is_samestr(read)
 			&& !is_left_clipped(read, config.min_clip_len) && !is_right_clipped(read, config.min_clip_len)) {
 			for (int i = curr_pos; i < rnd_positions.size() && rnd_positions[i] < pair_endpos; i++) {
@@ -233,9 +234,6 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 
             int ok = sam_write1(hsr_writer, bam_file->header, read);
             if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(hsr_writer->fn));
-            if (sampled) {
-                contig_qual_counts[int(avg_qual(read)+0.5)]++;
-            }
         } 
     }
 
@@ -353,7 +351,7 @@ int main(int argc, char* argv[]) {
     // generate random positions
 	std::vector<std::pair<std::string, hts_pos_t> > rnd_positions;
     std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
-	random_pos_generator_t random_pos_generator(chr_seqs, config.seed, config.sampling_regions);
+	random_pos_generator_t random_pos_generator(bam_file->header, config.seed, config.sampling_regions);
     int n_rand_pos = std::max(hts_pos_t(1000), random_pos_generator.reference_len/1000);
 	for (int i = 0; i < n_rand_pos; i++) {
         std::pair<std::string, hts_pos_t> rnd_pos = random_pos_generator.get_random_pos();
@@ -378,10 +376,18 @@ int main(int argc, char* argv[]) {
     }
     futures.clear();
 
-    // Calculate base stats
+    // Calculate base stats. These are about the general insert size distribution, not the distribution of insert sizes crossing sampled positions
     int mean_is = mean(general_isize_dist);
     int stddev_is = stddev(general_isize_dist);
-    general_isize_dist.erase(std::remove_if(general_isize_dist.begin(), general_isize_dist.end(), [mean_is, stddev_is](int x) { return std::abs(x-mean_is) >= 5*stddev_is; }), general_isize_dist.end());
+    general_isize_dist.erase(std::remove_if(general_isize_dist.begin(), general_isize_dist.end(), [mean_is, stddev_is](int x) { return std::abs(x-mean_is) > 5*stddev_is; }), general_isize_dist.end());
+
+    if (general_isize_dist.empty()) {
+        throw std::runtime_error("Failed to estimate reliable insert size statistics: no read pairs found \
+            crossing sampled positions. Consider using the --sampling-regions option.");
+    }
+
+    mean_is = mean(general_isize_dist);
+    stddev_is = stddev(general_isize_dist);
 
     uint64_t lower_stddev_is = 0;
     int n_vals = 0;

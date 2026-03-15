@@ -1,4 +1,4 @@
-import sys, os, argparse, pysam, timeit, shutil
+import sys, os, argparse, hashlib, pysam, timeit, shutil
 from run_classifier import Classifier
 
 VERSION = "0.12"
@@ -25,8 +25,13 @@ call_genotype_shared_options_parser.add_argument('--seed', type=int, default=0, 
 call_genotype_shared_options_parser.add_argument('--max-seq-error', type=float, default=0.04, help='Max sequencing error admissible on the platform used.')
 call_genotype_shared_options_parser.add_argument('--min-sv-size', type=valid_min_sv_size, default=50, help='Min SV size.')
 call_genotype_shared_options_parser.add_argument('--min-clip-len', type=int, default=10, help='Min length for a clip to be used.')
-call_genotype_shared_options_parser.add_argument('--sampling-regions', help='File in BED format containing a list of regions to be used to estimate statistics such as depth.')
+call_genotype_shared_options_parser.add_argument('--sampling-regions', help='File in BED format containing regions to be used to estimate statistics such as depth.')
 call_genotype_shared_options_parser.add_argument('--min-stable-mapq', type=int, default=20, help='Minimum MAPQ for a stable read.')
+call_genotype_shared_options_parser.add_argument('--high-confidence-mapq', type=int, default=60, help='MAPQ threshold above which a read is considered high-confidence.')
+call_genotype_shared_options_parser.add_argument('--skip-bam-ref-validation', action='store_true',
+                        help='Skip BAM/reference compatibility checks. Use this at your own risk.')
+call_genotype_shared_options_parser.add_argument('--force-workdir', action='store_true',
+                        help='Allow execution in a non-empty workdir. Use this with caution.')
 call_genotype_shared_options_parser.add_argument('--per-contig-stats', action='store_true',
                         help='Depth statistics are computed separately for each contig. Useful when one or more of the target contigs are expected to have '
                         'dramatically different depth than others. Otherwise, it is not recommended to use this option.')
@@ -88,8 +93,153 @@ def mkdir(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-with open(cmd_args.workdir + "/call_cmd.txt", "w") as full_cmd_out:
-    print(" ".join(sys.argv[:]), file=full_cmd_out)
+def rmdir(dirname):
+    if os.path.exists(dirname):
+        shutil.rmtree(dirname)
+
+def mkdir_clean(dirname):
+    rmdir(dirname)
+    mkdir(dirname)
+
+def fail(message):
+    print(message)
+    exit(1)
+
+def validate_workdir_for_execution(workdir, force_workdir):
+    if not os.path.exists(workdir):
+        return
+    if not os.path.isdir(workdir):
+        fail("Error: workdir %s exists but is not a directory." % workdir)
+    if os.listdir(workdir) and not force_workdir:
+        fail("Error: workdir %s already exists and is not empty. Use a new workdir, empty it first, or rerun with --force-workdir to force the use of a non-empty workdir." % workdir)
+
+def compute_reference_contig_md5(reference_fasta, contig_name, chunk_size=1000000):
+    contig_len = reference_fasta.get_reference_length(contig_name)
+    md5 = hashlib.md5()
+    for start in range(0, contig_len, chunk_size):
+        end = min(contig_len, start + chunk_size)
+        md5.update(reference_fasta.fetch(contig_name, start, end).upper().encode())
+    return md5.hexdigest()
+
+def parse_sampling_regions(sampling_regions_fname, skip_hint):
+    regions = []
+    try:
+        with open(sampling_regions_fname) as sampling_regions_file:
+            for line_no, line in enumerate(sampling_regions_file, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+
+                tokens = stripped.split()
+                if len(tokens) == 3:
+                    try:
+                        start = int(tokens[1])
+                        end = int(tokens[2])
+                    except ValueError:
+                        fail("Error: invalid coordinates in sampling regions file %s at line %d.%s" %
+                             (sampling_regions_fname, line_no, skip_hint))
+                    regions.append((line_no, tokens[0], start, end))
+                else:
+                    fail("Error: invalid format in sampling regions file %s at line %d. Expected 3 BED fields: 'contig start end'.%s" %
+                         (sampling_regions_fname, line_no, skip_hint))
+    except OSError as exc:
+        fail("Error: could not read sampling regions file %s: %s.%s" %
+             (sampling_regions_fname, exc, skip_hint))
+    return regions
+
+def validate_bam_reference_compatibility(bam_fname, reference_fname, sampling_regions_fname=None):
+    skip_hint = " You can bypass this check with --skip-bam-ref-validation. This is generally discouraged. Only use it if you are sure this will not cause problems downstream."
+    bam_file = pysam.AlignmentFile(bam_fname, reference_filename=reference_fname)
+    reference_fasta = pysam.FastaFile(reference_fname)
+    try:
+        bam_contig_lengths = dict(zip(bam_file.references, bam_file.lengths))
+        bam_sq_records = {
+            sq["SN"]: sq
+            for sq in bam_file.header.to_dict().get("SQ", [])
+            if "SN" in sq
+        }
+        reference_contig_lengths = {
+            contig_name: reference_fasta.get_reference_length(contig_name)
+            for contig_name in reference_fasta.references
+        }
+        missing_contigs = [
+            contig_name for contig_name in bam_contig_lengths
+            if contig_name not in reference_contig_lengths
+        ]
+        if missing_contigs:
+            fail("Error: the reference FASTA is missing contig(s) present in the BAM header: %s" %
+                 ", ".join(missing_contigs[:10]) + (" ..." if len(missing_contigs) > 10 else "") + "." + skip_hint)
+
+        length_mismatches = []
+        for contig_name, bam_len in bam_contig_lengths.items():
+            reference_len = reference_contig_lengths[contig_name]
+            if bam_len != reference_len:
+                length_mismatches.append((contig_name, bam_len, reference_len))
+
+        if length_mismatches:
+            formatted = ", ".join(
+                "%s (BAM=%d, FASTA=%d)" % (contig_name, bam_len, reference_len)
+                for contig_name, bam_len, reference_len in length_mismatches[:10]
+            )
+            if len(length_mismatches) > 10:
+                formatted += " ..."
+            fail("Error: the BAM header and reference FASTA disagree on contig length(s): %s.%s" % (formatted, skip_hint))
+
+        md5_mismatches = []
+        md5_cache = {}
+        for contig_name in bam_contig_lengths:
+            bam_md5 = bam_sq_records.get(contig_name, {}).get("M5")
+            if not bam_md5:
+                continue
+
+            if contig_name not in md5_cache:
+                md5_cache[contig_name] = compute_reference_contig_md5(reference_fasta, contig_name)
+            if md5_cache[contig_name] != bam_md5.lower():
+                md5_mismatches.append((contig_name, bam_md5, md5_cache[contig_name]))
+
+        if md5_mismatches:
+            formatted = ", ".join(
+                "%s (BAM=%s, FASTA=%s)" % (contig_name, bam_md5, reference_md5)
+                for contig_name, bam_md5, reference_md5 in md5_mismatches[:10]
+            )
+            if len(md5_mismatches) > 10:
+                formatted += " ..."
+            fail("Error: the BAM header and reference FASTA disagree on contig MD5 checksum(s): %s.%s" % (formatted, skip_hint))
+
+        if sampling_regions_fname:
+            sampling_regions = parse_sampling_regions(sampling_regions_fname, skip_hint)
+            for line_no, contig_name, start, end in sampling_regions:
+                if contig_name not in bam_contig_lengths:
+                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the BAM header.%s" %
+                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                if contig_name not in reference_contig_lengths:
+                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the reference FASTA.%s" %
+                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                if start < 0 or end < 0:
+                    fail("Error: sampling regions file %s line %d has a negative coordinate for contig %s.%s" %
+                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                if start >= end:
+                    fail("Error: sampling regions file %s line %d has start >= end for contig %s.%s" %
+                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                contig_len = reference_contig_lengths[contig_name]
+                if end > contig_len:
+                    fail("Error: sampling regions file %s line %d extends past the end of contig %s (end=%d, contig_len=%d).%s" %
+                         (sampling_regions_fname, line_no, contig_name, end, contig_len, skip_hint))
+    finally:
+        bam_file.close()
+        reference_fasta.close()
+
+if cmd_args.command in ('call', 'genotype') and not cmd_args.skip_bam_ref_validation:
+    validate_bam_reference_compatibility(cmd_args.bam_file, cmd_args.reference, cmd_args.sampling_regions)
+
+if cmd_args.command in ('call', 'genotype'):
+    validate_workdir_for_execution(cmd_args.workdir, cmd_args.force_workdir)
+
+mkdir(cmd_args.workdir)
+
+if cmd_args.command in ('call', 'genotype'):
+    with open(cmd_args.workdir + "/cmd.txt", "w") as full_cmd_out:
+        print(" ".join(sys.argv[:]), file=full_cmd_out)
 
 mkdir(cmd_args.workdir + "/intermediate_results")
 
@@ -107,17 +257,17 @@ def reads_categorizer(workdir):
         config_file.write("version %s\n" % VERSION)
         config_file.write("min_diff_hsr %s\n" % cmd_args.min_diff_hsr)
         config_file.write("min_stable_mapq %d\n" % cmd_args.min_stable_mapq)
+        config_file.write("high_confidence_mapq %d\n" % cmd_args.high_confidence_mapq)
 
     mkdir(workdir + "/workspace")
-    mkdir(workdir + "/workspace/sr")
-    mkdir(workdir + "/workspace/hsr")
-    mkdir(workdir + "/workspace/fwd-stable")
-    mkdir(workdir + "/workspace/rev-stable")
-    mkdir(workdir + "/workspace/long-pairs")
-    mkdir(workdir + "/workspace/outward-pairs")
-    mkdir(workdir + "/workspace/same-strand")
-    mkdir(workdir + "/workspace/mateseqs")
-    mkdir(workdir + "/workspace/consensuses")
+    mkdir_clean(workdir + "/workspace/sr")
+    mkdir_clean(workdir + "/workspace/hsr")
+    mkdir_clean(workdir + "/workspace/fwd-stable")
+    mkdir_clean(workdir + "/workspace/rev-stable")
+    mkdir_clean(workdir + "/workspace/long-pairs")
+    mkdir_clean(workdir + "/workspace/outward-pairs")
+    mkdir_clean(workdir + "/workspace/same-strand")
+    mkdir_clean(workdir + "/workspace/mateseqs")
 
     with open("%s/contig_map" % workdir, "w") as contig_map:
         bam_file = pysam.AlignmentFile(cmd_args.bam_file, reference_filename=cmd_args.reference)
@@ -179,6 +329,7 @@ def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     with open(workdir + "/config.txt", "a") as config_file:
         config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
 
+    mkdir_clean(workdir + "/workspace/consensuses")
     clip_consensus_builder_cmd = SURVEYOR_PATH + "/bin/clip_consensus_builder %s %s %s" % (workdir, reference_fname, sample_name)
     run_cmd(clip_consensus_builder_cmd)
 
@@ -278,6 +429,8 @@ if cmd_args.command == 'call':
 
     n_iters = 1
     genotype_variants(cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name, cmd_args.ml_model, n_iters, cmd_args.generate_training_data)
+
+    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
