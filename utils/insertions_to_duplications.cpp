@@ -45,7 +45,8 @@ int main(int argc, char* argv[]) {
         std::shared_ptr<duplication_t> new_dup = nullptr;
 
         std::string ins_seq = sv->ins_seq;
-        if (sv->svtype() == "INS" && !ins_seq.empty() && ins_seq.length() < 16000 && ins_seq.find('-') == std::string::npos) {
+        if (sv->svtype() == "INS" && !ins_seq.empty() && ins_seq.length() >= 50 && ins_seq.length() < 16000 
+        && ins_seq.find('-') == std::string::npos) {
             std::string contig_name = sv->chr;
             hts_pos_t contig_len = chr_seqs.get_len(contig_name);
 
@@ -93,12 +94,11 @@ int main(int argc, char* argv[]) {
                 std::shared_ptr<duplication_t> prev_dup = std::dynamic_pointer_cast<duplication_t>(svs[unique_key_to_idx[unique_key]]);
                 if (new_dup->ins_to_dup_similarity > prev_dup->ins_to_dup_similarity) {
                     svs[unique_key_to_idx[unique_key]] = new_dup;
-                } else {
-                    continue;
                 }
+            } else {
+                unique_key_to_idx[unique_key] = svs.size();
+                svs.push_back(new_dup);
             }
-            unique_key_to_idx[unique_key] = svs.size();
-            svs.push_back(new_dup);
         }
     }
 
