@@ -62,7 +62,12 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 	} else {
 		// transform DEL + INS into (possibly two) DELs + SNPs (as few as possible)
 		int most_similar_pos = find_most_similar_substring(deleted_seq, sv->end - sv->start, (char*) sv->ins_seq.c_str());
-		
+		if (most_similar_pos == -1) {
+			// inserted sequence is longer than the deleted sequence (probably due to a malformed variant)
+			delete[] deleted_seq;
+			return;
+		}
+
 		// Create two new SVs for the split deletions
 		hts_pos_t sv1_start = sv->start;
 		hts_pos_t sv1_end = sv->start + most_similar_pos;
@@ -219,6 +224,7 @@ void left_align_dup(std::shared_ptr<sv_t> sv) {
 
 void left_align_ins(std::shared_ptr<sv_t> sv) {
 
+	if (sv->ins_seq.empty()) return;
 	if (!sv->aux_indels.empty()) return; // this may be complicated, let us skip for now
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
