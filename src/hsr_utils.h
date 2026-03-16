@@ -216,6 +216,7 @@ void filter_fully_contained(std::vector<consensus_t*>& consensuses) {
 	consensuses.clear();
 	for (int i = 0; i < sorted.size(); i++) {
 		if (!to_delete[i]) consensuses.push_back(sorted[i]);
+		else delete sorted[i];
 	}
 }
 
@@ -326,8 +327,12 @@ void merge_overlapping_clusters(std::vector<consensus_t*>& consensuses, int min_
 		}
 	}
 
-	consensuses.erase(std::remove_if(consensuses.begin(), consensuses.end(),
-		[&removed](consensus_t* c){ return removed.count(c) > 0; }), consensuses.end());
+	std::vector<consensus_t*> merged;
+	for (consensus_t* c : consensuses) {
+		if (removed.count(c) == 0) merged.push_back(c);
+		else delete c;
+	}
+	consensuses.swap(merged);
 }
 
 void enforce_max_ploidy(std::vector<consensus_t*>& consensuses, int max_ploidy) {

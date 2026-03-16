@@ -85,7 +85,7 @@ struct sync_hts_reader_t {
             sam_itr_destroy(iter);
         }
         for (open_samFile_t* file : files) {
-            close_samFile(file);
+            delete file;
         }
     }
 };
@@ -147,20 +147,29 @@ hts_pos_t get_end_offset(bam1_t* r1, bam1_t* r2) {
 
 // mismatch_score, gap_open_score and gap_extend_score must be negative
 int compute_read_score(bam1_t* r, int match_score, int mismatch_score, int gap_open_score, int gap_extend_score) {
-	int matches = 0;
-	int mismatches = get_nm(r);
+	int m_bases = 0;
+	int eq_bases = 0;
+	int x_bases = 0;
+	int indel_bases = 0;
 	int score = 0;
-    uint32_t* cigar = bam_get_cigar(r);
+	uint32_t* cigar = bam_get_cigar(r);
 	for (int i = 0; i < r->core.n_cigar; i++) {
 		char op = bam_cigar_opchr(cigar[i]);
 		int len = bam_cigar_oplen(cigar[i]);
-		if (op == 'M') matches += bam_cigar_oplen(cigar[i]);
+		if (op == 'M') m_bases += len;
+		else if (op == '=') eq_bases += len;
+		else if (op == 'X') x_bases += len;
 		else if (op == 'I' || op == 'D') {
 			score += gap_open_score + (len-1)*gap_extend_score;
-			mismatches -= len;
+			indel_bases += len;
 		}
 	}
-	score += match_score*matches + mismatch_score*mismatches - match_score*mismatches;
+
+	int nm = get_nm(r);
+	int mismatches_in_m = std::max(0, nm - indel_bases - x_bases);
+	int matches = eq_bases + std::max(0, m_bases - mismatches_in_m);
+	int mismatches = x_bases + mismatches_in_m;
+	score += match_score*matches + mismatch_score*mismatches;
 	return score;
 }
 
@@ -252,7 +261,7 @@ std::string build_full_consensus_seq(std::vector<std::string>& seqs, std::vector
     for (int i = 0; i < consensus_len; i++) {
         while (s < seqs.size() && read_end_offsets[s] < i) s++;
 
-        base_score_t base_scores[4] = { base_score_t('A'), base_score_t('C'), base_score_t('G'), base_score_t('T') };
+        base_score_t base_scores[5] = { base_score_t('A'), base_score_t('C'), base_score_t('G'), base_score_t('T'), base_score_t('N') };
         for (int j = s; j < seqs.size() && read_start_offsets[j] <= i; j++) {
             if (read_end_offsets[j] < i) continue;
 
@@ -383,10 +392,8 @@ std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1
         bam1_t* r = reads[i];
         hts_pos_t offset = read_start_offsets[i];
         int mm = 0;
-        
+
         // filter reads with too many differences from the consensus_seq
-        hts_pos_t clip_start = left_clipped ? 0 : r->core.l_qseq - get_right_clip_size(r);
-        hts_pos_t clip_end = left_clipped ? get_left_clip_size(r) : r->core.l_qseq;
         uint8_t* seq_array = bam_get_seq(r);
         for (int j = 0; j < r->core.l_qseq; j++) {
             if (j + offset >= consensus_seq.length()) {
@@ -396,21 +403,12 @@ std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1
                 mm++;
             }
         }
+
         accepted[i] = -mm;
-        if (mm <= std::ceil(config.max_seq_error * consensus_seq.length())) {
-            /* this is meant to fix a corner case where the clip is very short, and completely different from
-            * the consensus_seq. However, the rest of the reads is the same as the consensus_seq, therefore the mismatches
-            * accumulated in the clip are not enough to discard the read, despite the read not belonging to the cluster.
-            * We are being very permissive (i.e. we allow up to 50% mismatches in the clip) because
-            * 1. Illumina is known to accumulate sequencing errors at the 3' tail, which is the clipped portion in about
-            * 50% of the cases
-            * 2. Especially for short clips, if we used config.max_seq_error as for the rest of the consensus_seq, 2-3 mismatches
-            * would already discard them
-            */
+        if (mm <= std::ceil(config.max_seq_error * r->core.l_qseq)) {
             // the read should be much better when mapped to the consensus than when mapped to the reference
             int orig_score = compute_read_score(r, 1, -4, -6, -1);
             int new_score = (r->core.l_qseq-mm)*1 - mm*4;
-
             if (new_score - orig_score >= config.min_diff_hsr*5) { // each mismatch costs 5 points
                 accepted[i] = mm;
             }
@@ -477,14 +475,21 @@ std::string build_full_consensus_seq(std::deque<bam1_t*>& clipped, bool left_cli
 }
 
 void dedup_cluster(std::deque<bam1_t*>& cluster) {
-    std::unordered_map<std::string, int> seen;
+    std::unordered_map<std::string, bam1_t*> seen;
+    for (bam1_t* r : cluster) {
+        std::string key = std::to_string(r->core.pos) + " " +  get_sequence(r) + " " + 
+        std::to_string(r->core.mpos) + " " + std::string(get_mc(r));
+        if (!seen.count(key) || seen[key]->core.qual < r->core.qual) {
+            seen[key] = r;
+        }
+    }
+
     std::deque<bam1_t*> unique_cluster;
     for (bam1_t* r : cluster) {
-        std::string key = get_sequence(r) + " " + std::to_string(r->core.mpos);
-        int count = seen[key];
-        if (count == 0 || (count == 1 && r->core.qual >= config.high_confidence_mapq)) {
+        std::string key = std::to_string(r->core.pos) + " " +  get_sequence(r) + " " + 
+        std::to_string(r->core.mpos) + " " + std::string(get_mc(r));
+        if (seen[key] == r) {
             unique_cluster.push_back(r);
-            seen[key]++;
         }
     }
     cluster.swap(unique_cluster);
@@ -502,7 +507,7 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
     std::sort(clipped.begin(), clipped.end(), [](bam1_t* r1, bam1_t* r2) {
         return get_unclipped_start(r1) < get_unclipped_start(r2);
     });
-    if (get_unclipped_start(clipped[0]) < 0) return {};
+    if (get_unclipped_start(clipped[0]) < 0) return {}; // exclude clusters made of reads that are clipped due to hitting the beginning of the chromosome
 
     dedup_cluster(clipped);
 
@@ -644,6 +649,7 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
 
         bool lc_clipped;
         if (is_left_clipped(read, config.min_clip_len) && is_right_clipped(read, config.min_clip_len)) {
+            bam_destroy1(read);
             continue;
         } else if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) {
             lc_clipped = get_left_clip_size(read) >= get_right_clip_size(read);
@@ -695,6 +701,9 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
             mtx.lock();
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;
+                if (rc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+                    detected_svs_count_is_hq.insert(sv->unique_key(false));
+                }
             }
             mtx.unlock();
         }
@@ -713,6 +722,9 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
             mtx.lock();
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;
+                if (lc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+                    detected_svs_count_is_hq.insert(sv->unique_key(false));
+                }
             }
             mtx.unlock();
         }

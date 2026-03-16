@@ -75,6 +75,9 @@ hts_pos_t get_unclipped_end(bam1_t* r) {
 }
 
 int64_t get_mq(bam1_t* r) {
+    if (is_unmapped(r) || is_mate_unmapped(r)) {
+        return 0;
+    }
     uint8_t* mq = bam_aux_get(r, "MQ");
     if (mq == NULL) {
         throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MQ tag.");
@@ -83,6 +86,10 @@ int64_t get_mq(bam1_t* r) {
 }
 
 char* get_mc(bam1_t* r) {
+    static char empty_mc[] = "";
+    if (is_unmapped(r) || is_mate_unmapped(r)) {
+        return empty_mc;
+    }
     uint8_t* mc = bam_aux_get(r, "MC");
     if (mc == NULL) {
         throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MC tag.");
@@ -344,14 +351,25 @@ void write_and_index_file(std::vector<bam1_t*>& reads, std::string path, bam_hdr
 
 
 struct open_samFile_t {
-    samFile* file;
-    bam_hdr_t* header;
-    hts_idx_t* idx;
+    samFile* file = nullptr;
+    bam_hdr_t* header = nullptr;
+    hts_idx_t* idx = nullptr;
 
-    open_samFile_t() {}
+    open_samFile_t() = default;
 
-    open_samFile_t(samFile* file, bam_hdr_t* header, hts_idx_t* idx) : file(file), header(header), idx(idx) {}
+    open_samFile_t(const open_samFile_t&) = delete;
+    open_samFile_t& operator=(const open_samFile_t&) = delete;
+
+    open_samFile_t(open_samFile_t&&) = delete;
+    open_samFile_t& operator=(open_samFile_t&&) = delete;
+
+    ~open_samFile_t() {
+        if (idx) hts_idx_destroy(idx);
+        if (header) bam_hdr_destroy(header);
+        if (file) sam_close(file);
+    }
 };
+
 
 open_samFile_t* open_samFile(std::string fname_str, bool index_file = false) {
     const char* fname = fname_str.c_str();
@@ -384,8 +402,11 @@ open_samFile_t* open_samFile(std::string fname_str, bool index_file = false) {
 void close_samFile(open_samFile_t* f) {
     if (f) {
         hts_idx_destroy(f->idx);
+        f->idx = nullptr;
         bam_hdr_destroy(f->header);
+        f->header = nullptr;
         sam_close(f->file);
+        f->file = nullptr;
         delete f;
     }
 }
@@ -409,7 +430,7 @@ struct bam_pool_t {
 
     ~bam_pool_t() {
         for (open_samFile_t* o : pool) {
-            close_samFile(o);
+            delete o;
         }
     }
 };
