@@ -248,7 +248,7 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 
 	std::vector<bam1_t*> l_semi_mapped_pairs, r_semi_mapped_pairs;
 
-	open_samFile_t* clipped_file = open_samFile(clipped_fname.c_str(), true);
+	open_samFile_t* clipped_file = new open_samFile_t(clipped_fname.c_str(), true);
 	std::string contig_name = contig_map.get_name(contig_id);
 	hts_itr_t* iter = sam_itr_querys(clipped_file->idx, clipped_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
@@ -261,7 +261,9 @@ void add_semi_mapped_pairs(std::string clipped_fname, int contig_id, std::vector
 			}
 		}
 	}
-	close_samFile(clipped_file);
+	delete clipped_file;
+    hts_itr_destroy(iter);
+    bam_destroy1(read);
 
 	// add semimapped pairs
 	std::vector<Interval<bam1_t*>> r_iv, l_iv;
@@ -356,8 +358,8 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
     std::string l_dc_fname = workdir + "/workspace/rev-stable/" + std::to_string(contig_id) + ".noremap.bam";
     if (!file_exists(r_dc_fname) || !file_exists(l_dc_fname)) return;
 
-    open_samFile_t* r_dc_file = open_samFile(r_dc_fname.c_str(), true);
-    open_samFile_t* l_dc_file = open_samFile(l_dc_fname.c_str(), true);
+    open_samFile_t* r_dc_file = new open_samFile_t(r_dc_fname.c_str(), true);
+    open_samFile_t* l_dc_file = new open_samFile_t(l_dc_fname.c_str(), true);
 
     std::string clip_consensus_fname = workdir + "/workspace/consensuses/" + std::to_string(contig_id) + ".txt";
     std::vector<std::shared_ptr<consensus_t>> rc_consensuses, lc_consensuses;
@@ -506,8 +508,8 @@ void find_contig_insertions(int contig_id, ctpl::thread_pool& thread_pool, std::
         }
     }
 
-    close_samFile(l_dc_file);
-    close_samFile(r_dc_file);
+    delete l_dc_file;
+    delete r_dc_file;
 }
 
 int main(int argc, char* argv[]) {

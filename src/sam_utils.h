@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <mutex>
+#include <memory>
 
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
@@ -319,6 +320,7 @@ samFile* open_writer(std::string filename, bam_hdr_t* header) {
         throw std::runtime_error("Unable to open " + filename);
     }
     if (sam_hdr_write(writer, header) != 0) {
+        sam_close(writer);
         throw std::runtime_error("Could not write file " + filename);
     }
     return writer;
@@ -356,6 +358,33 @@ struct open_samFile_t {
     hts_idx_t* idx = nullptr;
 
     open_samFile_t() = default;
+    open_samFile_t(std::string fname_str, bool index_file = false) {
+        std::unique_ptr<samFile, decltype(&hts_close)> file_ptr(sam_open(fname_str.c_str(), "r"), &hts_close);
+        if (!file_ptr) {
+            throw std::runtime_error("Could not open " + fname_str);
+        }
+
+        if (index_file) {
+            int code = sam_index_build(fname_str.c_str(), 0);
+            if (code != 0) {
+                throw std::runtime_error("Cannot index " + fname_str);
+            }
+        }
+
+        std::unique_ptr<hts_idx_t, decltype(&hts_idx_destroy)> idx(sam_index_load(file_ptr.get(), fname_str.c_str()), &hts_idx_destroy);
+        if (!idx) {
+            throw std::runtime_error("Unable to open index for " + fname_str);
+        }
+
+        std::unique_ptr<bam_hdr_t, decltype(&bam_hdr_destroy)> header_ptr(sam_hdr_read(file_ptr.get()), &bam_hdr_destroy);
+        if (!header_ptr) {
+            throw std::runtime_error("Unable to open header for " + fname_str);
+        }
+
+        file = file_ptr.release();
+        header = header_ptr.release();
+        this->idx = idx.release();
+    }
 
     open_samFile_t(const open_samFile_t&) = delete;
     open_samFile_t& operator=(const open_samFile_t&) = delete;
@@ -370,47 +399,6 @@ struct open_samFile_t {
     }
 };
 
-
-open_samFile_t* open_samFile(std::string fname_str, bool index_file = false) {
-    const char* fname = fname_str.c_str();
-    open_samFile_t* sam_file = new open_samFile_t;
-    sam_file->file = sam_open(fname, "r");
-    if (sam_file->file == NULL) {
-        throw std::runtime_error("Could not open " + std::string(fname));
-    }
-
-    if (index_file) {
-        int code = sam_index_build(fname, 0);
-        if (code != 0) {
-            throw std::runtime_error("Cannot index " + std::string(fname));
-        }
-    }
-
-    sam_file->idx = sam_index_load(sam_file->file, sam_file->file->fn);
-    if (sam_file->idx == NULL) {
-        throw std::runtime_error("Unable to open index for " + std::string(fname));
-    }
-
-    sam_file->header = sam_hdr_read(sam_file->file);
-    if (sam_file->header == NULL) {
-        throw std::runtime_error("Unable to open header for " + std::string(fname));
-    }
-
-    return sam_file;
-}
-
-void close_samFile(open_samFile_t* f) {
-    if (f) {
-        hts_idx_destroy(f->idx);
-        f->idx = nullptr;
-        bam_hdr_destroy(f->header);
-        f->header = nullptr;
-        sam_close(f->file);
-        f->file = nullptr;
-        delete f;
-    }
-}
-
 struct bam_pool_t {
     std::mutex mtx;
     std::vector<open_samFile_t*> pool;
@@ -418,7 +406,7 @@ struct bam_pool_t {
 
     bam_pool_t(int size, std::string bam_fname, std::string reference_fname) : bam_fname(bam_fname), reference_fname(reference_fname) {
         for (int i = 0; i < size; i++) {
-            open_samFile_t* o = open_samFile(bam_fname.c_str());
+            open_samFile_t* o = new open_samFile_t(bam_fname.c_str());
             hts_set_fai_filename(o->file, fai_path(reference_fname.c_str()));
             pool.push_back(o);
         }

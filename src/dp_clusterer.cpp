@@ -54,7 +54,7 @@ std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::
 	if (!file_exists(dp_fname)) return std::vector<std::shared_ptr<cluster_t>>();
 
 	std::vector<std::shared_ptr<cluster_t>> clusters;
-	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
+	open_samFile_t* dp_bam_file = new open_samFile_t(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
@@ -62,7 +62,9 @@ std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::
 		std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
 		clusters.push_back(cluster);
 	}
-	close_samFile(dp_bam_file);
+	delete dp_bam_file;
+	hts_itr_destroy(iter);
+	bam_destroy1(read);
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;

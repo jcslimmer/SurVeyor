@@ -74,8 +74,8 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 	mutex_per_chr[contig_id].unlock();
 
 	std::vector<std::shared_ptr<consensus_t>> consensuses_to_consider(consensuses->begin()+start_idx, consensuses->begin()+end_idx);
-	
-	open_samFile_t* bam_file = open_samFile(complete_bam_fname);
+
+	open_samFile_t* bam_file = new open_samFile_t(complete_bam_fname);
 	char* path = fai_path(reference_fname.c_str());
 	if (hts_set_fai_filename(bam_file->file, path) != 0) {
 		throw std::runtime_error("Failed to read reference " + reference_fname);
@@ -100,7 +100,7 @@ void extend_consensuses(int id, std::vector<std::shared_ptr<consensus_t>>* conse
 		for (ext_read_t* ext_read : candidate_reads_for_extension) delete ext_read;
 	}
 
-	close_samFile(bam_file);
+	delete bam_file;
 	free(path);
 
 	mutex_per_chr[contig_id].lock();
@@ -635,7 +635,7 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	}
 
 	std::vector<std::shared_ptr<cluster_t>> ss_clusters;
-	open_samFile_t* dp_bam_file = open_samFile(dp_fname, true);
+	open_samFile_t* dp_bam_file = new open_samFile_t(dp_fname, true);
 	hts_itr_t* iter = sam_itr_querys(dp_bam_file->idx, dp_bam_file->header, contig_name.c_str());
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(dp_bam_file->file, iter, read) >= 0) {
@@ -645,7 +645,7 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	}
 	bam_destroy1(read);
 	sam_itr_destroy(iter);
-	close_samFile(dp_bam_file);
+	delete dp_bam_file;
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;

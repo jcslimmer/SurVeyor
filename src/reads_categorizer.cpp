@@ -7,6 +7,7 @@
 #include <numeric>
 #include <cmath>
 #include <random>
+#include <memory>
 
 #include "htslib/faidx.h"
 
@@ -49,8 +50,8 @@ std::ofstream open_mateseqs_fout(int contig_id) {
 
 void get_base_stats(int id, std::string bam_fname, std::string reference_fname, std::vector<std::pair<std::string, hts_pos_t> > rnd_positions) {
 
-    open_samFile_t* bam_file = open_samFile(bam_fname);
-    if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+    open_samFile_t bam_file(bam_fname);
+    if (hts_set_fai_filename(bam_file.file, fai_path(reference_fname.c_str())) != 0) {
         throw std::runtime_error("Failed to read reference " + reference_fname);
     }
 
@@ -61,10 +62,11 @@ void get_base_stats(int id, std::string bam_fname, std::string reference_fname, 
     for (auto& rnd_pos : rnd_positions) {
         std::stringstream ss;
         ss << rnd_pos.first << ":" << rnd_pos.second << "-" << rnd_pos.second+1000;
-        hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, ss.str().c_str());
+        hts_itr_t* iter = sam_itr_querys(bam_file.idx, bam_file.header, ss.str().c_str());
+        if (!iter) continue;
 
         int added = 0;
-        while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        while (sam_itr_next(bam_file.file, iter, read) >= 0) {
             if (!(read->core.flag & BAM_FPROPER_PAIR) || !is_primary(read)) continue;
             if (read->core.isize < 0 || read->core.isize > 20000) continue;
 
@@ -79,36 +81,33 @@ void get_base_stats(int id, std::string bam_fname, std::string reference_fname, 
         if (local_dist.size() > 100000) break;
     }
 
-    mtx.lock();
+    std::lock_guard<std::mutex> lock(mtx);
     general_isize_dist.insert(general_isize_dist.end(), local_dist.begin(), local_dist.end());
     stats.read_len = std::max(stats.read_len, read_len);
-    mtx.unlock();
 
     bam_destroy1(read);
-    close_samFile(bam_file);
 }
 
 void categorize(int id, int contig_id, std::string contig_name, std::string bam_fname, std::string reference_fname, std::vector<hts_pos_t> rnd_positions) {
     std::sort(rnd_positions.begin(), rnd_positions.end());
 
-    open_samFile_t* bam_file = open_samFile(bam_fname);
-    if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+    open_samFile_t bam_file(bam_fname);
+    if (hts_set_fai_filename(bam_file.file, fai_path(reference_fname.c_str())) != 0) {
         throw std::runtime_error("Failed to read reference " + reference_fname);
     }
 
-    hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, contig_name.c_str());
+    hts_itr_t* iter = sam_itr_querys(bam_file.idx, bam_file.header, contig_name.c_str());
     if (iter == NULL) { // no reads
-    	close_samFile(bam_file);
     	return;
     }
 
-    samFile* sr_writer = NULL;
-    samFile* hsr_writer = NULL;
-    samFile* rdc_writer = NULL;
-	samFile* ldc_writer = NULL;
-    samFile* lp_writer = NULL;
-    samFile* ow_writer = NULL;
-    samFile* ss_writer = NULL;
+    std::unique_ptr<samFile, decltype(&hts_close)> sr_writer(nullptr, &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> hsr_writer(nullptr, &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> rdc_writer(nullptr, &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> ldc_writer(nullptr , &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> lp_writer(nullptr, &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> ow_writer(nullptr, &hts_close);
+    std::unique_ptr<samFile, decltype(&hts_close)> ss_writer(nullptr, &hts_close);
     std::ofstream lp_mateseqs_fout; 
     std::ofstream ow_mateseqs_fout;
     std::ofstream ss_mateseqs_fout;
@@ -124,19 +123,19 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     uint32_t n_is = 0;
     
     bam1_t* read = bam_init1();
-    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+    while (sam_itr_next(bam_file.file, iter, read) >= 0) {
         if (!is_primary(read)) continue;
 
         int64_t mq = get_mq(read);
         if (is_dc_pair(read)) {
             if (read->core.qual >= config.min_stable_mapq && read->core.qual >= mq && !is_unmapped(read)) { // stable end
                 if (bam_is_rev(read) && !is_right_clipped(read, config.min_clip_len)) {
-                    if (!ldc_writer) ldc_writer = open_writer(workspace + "/rev-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file->header);
-                    int ok = sam_write1(ldc_writer, bam_file->header, read);
+                    if (!ldc_writer) ldc_writer.reset(open_writer(workspace + "/rev-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file.header));
+                    int ok = sam_write1(ldc_writer.get(), bam_file.header, read);
                     if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ldc_writer->fn));
                 } else if (!bam_is_rev(read) && !is_left_clipped(read, config.min_clip_len)) {
-                    if (!rdc_writer) rdc_writer = open_writer(workspace + "/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file->header);
-                    int ok = sam_write1(rdc_writer, bam_file->header, read);
+                    if (!rdc_writer) rdc_writer.reset(open_writer(workspace + "/fwd-stable/" + std::to_string(contig_id) + ".noremap.bam", bam_file.header));
+                    int ok = sam_write1(rdc_writer.get(), bam_file.header, read);
                     if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(rdc_writer->fn));
                 }
             }
@@ -146,7 +145,8 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     if (read->core.flag & BAM_FREAD1) qname += "_1";
                     else qname += "_2";
                 }
-                mtx_contig[read->core.mtid].lock();
+
+                std::lock_guard<std::mutex> lock(mtx_contig[read->core.mtid]);
                 mate_seqs[read->core.mtid].push_back(qname + " " + read_seq + " " + qual_ascii + " " + std::to_string(read->core.qual));
                 if (mate_seqs[read->core.mtid].size() > 1000) {
                     std::ofstream mate_seqs_fout = open_mateseqs_fout(read->core.mtid);
@@ -155,15 +155,14 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                     }
                     mate_seqs[read->core.mtid].clear();
                 }
-                mtx_contig[read->core.mtid].unlock();
             }
         }
         if (is_samechr(read)) {
         	if (is_long(read, stats.max_is)) {
                 if (read->core.isize > 0) {
-                    if (!lp_writer) lp_writer = open_writer(workspace + "/long-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
+                    if (!lp_writer) lp_writer.reset(open_writer(workspace + "/long-pairs/" + std::to_string(contig_id) + ".bam", bam_file.header));
 
-                    int ok = sam_write1(lp_writer, bam_file->header, read);
+                    int ok = sam_write1(lp_writer.get(), bam_file.header, read);
                     if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(lp_writer->fn));
                 } else {
                     if (!lp_mateseqs_fout.is_open()) lp_mateseqs_fout.open(workspace + "/long-pairs/" + std::to_string(contig_id) + ".txt");
@@ -171,9 +170,9 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                 }
             } else if (is_outward(read)) {
                 if (read->core.isize > 0) {
-                    if (!ow_writer) ow_writer = open_writer(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".bam", bam_file->header);
+                    if (!ow_writer) ow_writer.reset(open_writer(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".bam", bam_file.header));
 
-                    int ok = sam_write1(ow_writer, bam_file->header, read);
+                    int ok = sam_write1(ow_writer.get(), bam_file.header, read);
                     if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ow_writer->fn));
                 } else {
                     if (!ow_mateseqs_fout.is_open()) ow_mateseqs_fout.open(workspace + "/outward-pairs/" + std::to_string(contig_id) + ".txt");
@@ -181,9 +180,9 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
                 }
             } else if (is_samestr(read)) {
                 if (read->core.pos < read->core.mpos) {
-                    if (!ss_writer) ss_writer = open_writer(workspace + "/same-strand/" + std::to_string(contig_id) + ".bam", bam_file->header);
+                    if (!ss_writer) ss_writer.reset(open_writer(workspace + "/same-strand/" + std::to_string(contig_id) + ".bam", bam_file.header));
 
-                    int ok = sam_write1(ss_writer, bam_file->header, read);
+                    int ok = sam_write1(ss_writer.get(), bam_file.header, read);
                     if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(ss_writer->fn));
                 } else {
                     if (!ss_mateseqs_fout.is_open()) ss_mateseqs_fout.open(workspace + "/same-strand/" + std::to_string(contig_id) + ".txt");
@@ -225,31 +224,25 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
 		}
 
         if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) {
-			if (!sr_writer) sr_writer = open_writer(workspace + "/sr/" + std::to_string(contig_id) + ".bam", bam_file->header);
+			if (!sr_writer) sr_writer.reset(open_writer(workspace + "/sr/" + std::to_string(contig_id) + ".bam", bam_file.header));
 
-			int ok = sam_write1(sr_writer, bam_file->header, read);
+			int ok = sam_write1(sr_writer.get(), bam_file.header, read);
 			if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(sr_writer->fn));
 		} else if (is_hidden_split_read(read, config)) {
-            if (!hsr_writer) hsr_writer = open_writer(workspace + "/hsr/" + std::to_string(contig_id) + ".bam", bam_file->header);
+            if (!hsr_writer) hsr_writer.reset(open_writer(workspace + "/hsr/" + std::to_string(contig_id) + ".bam", bam_file.header));
 
-            int ok = sam_write1(hsr_writer, bam_file->header, read);
+            int ok = sam_write1(hsr_writer.get(), bam_file.header, read);
             if (ok < 0) throw std::runtime_error("Failed to write to " + std::string(hsr_writer->fn));
         } 
     }
 
-    if (sr_writer) sam_close(sr_writer);
-    if (rdc_writer) sam_close(rdc_writer);
-    if (ldc_writer) sam_close(ldc_writer);
-    if (hsr_writer) sam_close(hsr_writer);
-    if (lp_writer) sam_close(lp_writer);
-    if (ow_writer) sam_close(ow_writer);
-    if (ss_writer) sam_close(ss_writer);
     lp_mateseqs_fout.close();
     ow_mateseqs_fout.close();
     ss_mateseqs_fout.close();
 
     local_depths.erase(std::remove(local_depths.begin(), local_depths.end(), 0), local_depths.end());
-    mtx.lock();
+
+    std::lock_guard<std::mutex> lock(mtx);
     if (local_depths.size() >= MIN_RND_POS) {
 		std::sort(local_depths.begin(), local_depths.end());
 		min_depth_by_contig[contig_name] = local_depths[local_depths.size()/100];
@@ -287,12 +280,9 @@ void categorize(int id, int contig_id, std::string contig_name, std::string bam_
     for (int i = 0; i <= stats.max_is; i++) {
     	isize_counts[i] += local_isize_counts[i];
     }
-    mtx.unlock();
 
     bam_destroy1(read);
 	hts_itr_destroy(iter);
-
-    close_samFile(bam_file);
 }
 
 void find_1_perc(std::vector<uint32_t>& v, uint32_t& min, uint32_t& max) {
@@ -340,8 +330,8 @@ int main(int argc, char* argv[]) {
     contig_map_t contig_map(workdir);
     chr_seqs.read_lens_into_map(reference_fname);
 
-    open_samFile_t* bam_file = open_samFile(bam_fname.c_str());
-	if (hts_set_fai_filename(bam_file->file, fai_path(reference_fname.c_str())) != 0) {
+    open_samFile_t bam_file(bam_fname.c_str());
+	if (hts_set_fai_filename(bam_file.file, fai_path(reference_fname.c_str())) != 0) {
 		throw std::runtime_error("Failed to read reference " + reference_fname);
 	}
 
@@ -351,7 +341,7 @@ int main(int argc, char* argv[]) {
     // generate random positions
 	std::vector<std::pair<std::string, hts_pos_t> > rnd_positions;
     std::unordered_map<std::string, std::vector<hts_pos_t> > rnd_pos_map;
-	random_pos_generator_t random_pos_generator(bam_file->header, config.seed, config.sampling_regions);
+	random_pos_generator_t random_pos_generator(bam_file.header, config.seed, config.sampling_regions);
     int n_rand_pos = std::max(hts_pos_t(1000), random_pos_generator.reference_len/1000);
 	for (int i = 0; i < n_rand_pos; i++) {
         std::pair<std::string, hts_pos_t> rnd_pos = random_pos_generator.get_random_pos();

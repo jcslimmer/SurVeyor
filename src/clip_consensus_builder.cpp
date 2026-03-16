@@ -43,7 +43,7 @@ struct sync_hts_reader_t {
         bam1_t* read = bam_init1();
         for (std::string fname : fnames) {
             if (!file_exists(fname)) continue;
-            open_samFile_t* file = open_samFile(fname, true);
+            open_samFile_t* file = new open_samFile_t(fname, true);
             hts_itr_t* iter = sam_itr_querys(file->idx, file->header, region.c_str());
             if (sam_itr_next(file->file, iter, read) >= 0) {
                 read_queue.push(bam_dup1(read));
