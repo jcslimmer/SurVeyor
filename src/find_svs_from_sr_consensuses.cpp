@@ -136,11 +136,10 @@ void find_svs_from_consensuses_pair(int id, std::string contig_name,
 			std::shared_ptr<consensus_t> leftmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c1_consensus : c2_consensus;
 			std::shared_ptr<consensus_t> rightmost_consensus = c1_consensus->breakpoint < c2_consensus->breakpoint ? c2_consensus : c1_consensus;
 			std::shared_ptr<breakend_t> bnd = detect_bnd(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), leftmost_consensus, rightmost_consensus, ps.spa, aligner, config.min_clip_len);
-			if (bnd == NULL || bnd->svsize() < config.min_sv_size) {
-				return;
+			if (bnd != NULL && bnd->svsize() >= config.min_sv_size) {
+				bnd->source = "2SR";
+				svs_by_pair[pair_idx].push_back(bnd);
 			}
-			bnd->source = "2SR";
-			svs_by_pair[pair_idx].push_back(bnd);
 		} else {
 			int min_overlap = min_overlap_f(c1_consensus.get(), c2_consensus.get());
 			svs_by_pair[pair_idx] = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), c1_consensus, c2_consensus,
@@ -212,6 +211,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 		compatible_ra_idxs.erase(std::remove_if(compatible_ra_idxs.begin(), compatible_ra_idxs.end(),
 			[](Interval<int>& iv) { return iv.value == -1; }), compatible_ra_idxs.end());
 
+		// if SR consensus is available for only one of the two anchors, create a "DP" consensus for the other anchor 
 		if (compatible_la_idxs.empty() != compatible_ra_idxs.empty()) {
 			std::shared_ptr<consensus_t> consensus;
 			if (compatible_la_idxs.empty()) {
@@ -292,7 +292,6 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 			if (spa.overlap > 0 && !is_homopolymer(lc_consensus->sequence.c_str(), spa.overlap) && spa.overlap <= 2*stats.read_len) { 
 				consensuses_scored_pairs.push_back(pair_w_score_t(i, false, iv.value, true, spa, NULL));
 			} else { // trim low quality (i.e., supported by less than 2 reads) bases
-				// TODO: investigate if we can use base qualities for this
 				std::string rc_consensus_trim = rc_consensus->sequence.substr(0, rc_consensus->sequence.length()-rc_consensus->lowq_suffix);
 				std::string lc_consensus_trim = lc_consensus->sequence.substr(lc_consensus->lowq_prefix);
 
@@ -317,6 +316,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 
 	std::vector<std::shared_ptr<breakend_t>> bnds_lf, bnds_rf;
 	std::vector<bool> used_consensus_rc(rc_consensuses.size(), false), used_consensus_lc(lc_consensuses.size(), false);
+	std::unordered_set<cluster_t*> used_ss_clusters;
 
 	const int block_size = 50;
 	std::vector<std::future<void>> futures;
@@ -334,7 +334,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 		pair_w_score_t& ps = consensuses_scored_pairs[i];
 		bool used_c1 = ps.c1_lc ? used_consensus_lc[ps.c1_idx] : used_consensus_rc[ps.c1_idx];
 		bool used_c2 = ps.c2_lc ? used_consensus_lc[ps.c2_idx] : used_consensus_rc[ps.c2_idx];
-		if (used_c1 || used_c2) continue;
+		bool used_dp_cluster = ps.dp_cluster != nullptr && used_ss_clusters.count(ps.dp_cluster.get()) > 0;
+		if (used_c1 || used_c2 || used_dp_cluster) continue;
 
 		local_svs.insert(local_svs.end(), svs_by_pair[i].begin(), svs_by_pair[i].end());
 		if (svs_by_pair[i].empty()) continue;
@@ -343,6 +344,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 		else used_consensus_rc[ps.c1_idx] = true;
 		if (ps.c2_lc) used_consensus_lc[ps.c2_idx] = true;
 		else used_consensus_rc[ps.c2_idx] = true;
+		if (ps.dp_cluster != nullptr) used_ss_clusters.insert(ps.dp_cluster.get());
 	}
 
 	for (std::shared_ptr<sv_t>& sv : local_svs) {
@@ -367,6 +369,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 
 	int bnd_idx = 0;
 	std::sort(bnds_lf.begin(), bnds_lf.end(), [](const std::shared_ptr<breakend_t>& i1, const std::shared_ptr<breakend_t>& i2) { return i1->start < i2->start; });
+	std::sort(lf_ss_clusters.begin(), lf_ss_clusters.end(), [](const std::shared_ptr<cluster_t>& c1, const std::shared_ptr<cluster_t>& c2) { return c1->la_end < c2->la_end; });
 	for (std::shared_ptr<cluster_t> c : lf_ss_clusters) {
 		while (bnd_idx < bnds_lf.size() && bnds_lf[bnd_idx]->start < c->la_end-stats.max_is) bnd_idx++;
 
@@ -390,7 +393,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 			} else {
 				auto left_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->la_start, c->la_end, c->la_end-c->la_start, 0);
 				auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
-				bnd = std::make_shared<breakend_t>(contig_name, c->la_start, c->ra_start, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, true);
+					bnd = std::make_shared<breakend_t>(contig_name, c->la_start, c->ra_start, "", left_anchor_aln, right_anchor_aln, true);
 				bnd->imprecise = true;
 			}
 
@@ -403,6 +406,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 	}
 
 	std::sort(bnds_rf.begin(), bnds_rf.end(), [](const std::shared_ptr<breakend_t>& i1, const std::shared_ptr<breakend_t>& i2) { return i1->start < i2->start; });
+	std::sort(rf_ss_clusters.begin(), rf_ss_clusters.end(), [](const std::shared_ptr<cluster_t>& c1, const std::shared_ptr<cluster_t>& c2) { return c1->la_start < c2->la_start; });
 	bnd_idx = 0;
 	for (std::shared_ptr<cluster_t> c : rf_ss_clusters) {
 		while (bnd_idx < bnds_rf.size() && bnds_rf[bnd_idx]->start < c->la_start) bnd_idx++;
@@ -430,7 +434,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 				if (left_anchor_aln->end > right_anchor_aln->end) {
 					std::swap(left_anchor_aln, right_anchor_aln);
 				}
-				bnd = std::make_shared<breakend_t>(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln, false);
+					bnd = std::make_shared<breakend_t>(contig_name, left_anchor_aln->end, right_anchor_aln->end, "", left_anchor_aln, right_anchor_aln, false);
 				bnd->imprecise = true;
 			}
 
@@ -464,23 +468,27 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 		std::string seq = "";
 
 		std::shared_ptr<consensus_t> rc_consensus = NULL, lc_consensus = NULL;
-		if (bnd_rf->rc_consensus != NULL) {
-			rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, seq, bnd_rf->rc_consensus->fwd_reads+bnd_rf->lc_consensus->fwd_reads, 
-				bnd_rf->rc_consensus->rev_reads+bnd_rf->lc_consensus->rev_reads, 0, std::max(bnd_rf->rc_consensus->max_mapq, bnd_rf->lc_consensus->max_mapq), 0, 0, 0);
-			rc_consensus->max_mapq = std::max(bnd_rf->rc_consensus->max_mapq, bnd_rf->lc_consensus->max_mapq);
-			rc_consensus->left_ext_reads = bnd_rf->rc_consensus->left_ext_reads;
-			rc_consensus->right_ext_reads = bnd_rf->lc_consensus->left_ext_reads;
-			rc_consensus->hq_left_ext_reads = bnd_rf->rc_consensus->hq_left_ext_reads;
-			rc_consensus->hq_right_ext_reads = bnd_rf->lc_consensus->hq_left_ext_reads;
+		std::shared_ptr<consensus_t> bnd_rf_left_consensus = bnd_rf->leftmost_consensus;
+		std::shared_ptr<consensus_t> bnd_rf_right_consensus = bnd_rf->rightmost_consensus;
+		std::shared_ptr<consensus_t> bnd_lf_left_consensus = bnd_lf->leftmost_consensus;
+		std::shared_ptr<consensus_t> bnd_lf_right_consensus = bnd_lf->rightmost_consensus;
+		if (bnd_rf_left_consensus != NULL && bnd_rf_right_consensus != NULL) {
+			rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, seq, bnd_rf_left_consensus->fwd_reads+bnd_rf_right_consensus->fwd_reads, 
+				bnd_rf_left_consensus->rev_reads+bnd_rf_right_consensus->rev_reads, 0, std::max(bnd_rf_left_consensus->max_mapq, bnd_rf_right_consensus->max_mapq), 0, 0, 0);
+			rc_consensus->max_mapq = std::max(bnd_rf_left_consensus->max_mapq, bnd_rf_right_consensus->max_mapq);
+			rc_consensus->left_ext_reads = bnd_rf_left_consensus->left_ext_reads;
+			rc_consensus->right_ext_reads = bnd_rf_right_consensus->left_ext_reads;
+			rc_consensus->hq_left_ext_reads = bnd_rf_left_consensus->hq_left_ext_reads;
+			rc_consensus->hq_right_ext_reads = bnd_rf_right_consensus->hq_left_ext_reads;
 		}
-		if (bnd_lf->lc_consensus != NULL) {
-			lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, seq, bnd_lf->rc_consensus->fwd_reads+bnd_lf->lc_consensus->fwd_reads, 
-				bnd_lf->rc_consensus->rev_reads+bnd_lf->lc_consensus->rev_reads, 0, std::max(bnd_lf->rc_consensus->max_mapq, bnd_lf->lc_consensus->max_mapq), 0, 0, 0);
-			lc_consensus->max_mapq = std::max(bnd_lf->rc_consensus->max_mapq, bnd_lf->lc_consensus->max_mapq);
-			lc_consensus->left_ext_reads = bnd_lf->rc_consensus->right_ext_reads;
-			lc_consensus->right_ext_reads = bnd_lf->lc_consensus->right_ext_reads;
-			lc_consensus->hq_left_ext_reads = bnd_lf->rc_consensus->hq_right_ext_reads;
-			lc_consensus->hq_right_ext_reads = bnd_lf->lc_consensus->hq_right_ext_reads;
+		if (bnd_lf_left_consensus != NULL && bnd_lf_right_consensus != NULL) {
+			lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, seq, bnd_lf_left_consensus->fwd_reads+bnd_lf_right_consensus->fwd_reads, 
+				bnd_lf_left_consensus->rev_reads+bnd_lf_right_consensus->rev_reads, 0, std::max(bnd_lf_left_consensus->max_mapq, bnd_lf_right_consensus->max_mapq), 0, 0, 0);
+			lc_consensus->max_mapq = std::max(bnd_lf_left_consensus->max_mapq, bnd_lf_right_consensus->max_mapq);
+			lc_consensus->left_ext_reads = bnd_lf_left_consensus->right_ext_reads;
+			lc_consensus->right_ext_reads = bnd_lf_right_consensus->right_ext_reads;
+			lc_consensus->hq_left_ext_reads = bnd_lf_left_consensus->hq_right_ext_reads;
+			lc_consensus->hq_right_ext_reads = bnd_lf_right_consensus->hq_right_ext_reads;
 		}
 
 		bool imprecise = bnd_rf->imprecise || bnd_lf->imprecise;
@@ -627,6 +635,10 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	std::unordered_map<std::string, std::string> qname_to_seq;
 	std::unordered_map<std::string, int64_t> qname_to_mate_nm; 
 	std::ifstream mateseqs_fin(workdir + "/workspace/same-strand/" + std::to_string(contig_id) + ".txt");
+	if (!mateseqs_fin.is_open()) {
+		throw std::runtime_error("Error opening file: " + workdir + "/workspace/same-strand/" + std::to_string(contig_id) + ".txt");
+	}
+
 	std::string qname, seq;
 	int64_t nm;
 	while (mateseqs_fin >> qname >> seq >> nm) {
@@ -654,6 +666,9 @@ void cluster_ss_dps(int id, int contig_id, std::string contig_name) {
 	ss_clusters.erase(std::remove_if(ss_clusters.begin(), ss_clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) { return c == NULL || c->count < min_cluster_size; }), ss_clusters.end());
 
 	for (std::shared_ptr<cluster_t> c : ss_clusters) {
+		if (!qname_to_seq.count(c->ra_furthermost_seq)) {
+			throw std::runtime_error("Error: qname " + c->ra_furthermost_seq + " not found in qname_to_seq");
+		}
 		c->ra_furthermost_seq = qname_to_seq[c->ra_furthermost_seq];
 	}
 

@@ -254,11 +254,9 @@ void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::ve
 		}
 	}
 
-	std::list<std::shared_ptr<cluster_t>> clusters_created_all; // keep track of clusters so we delete them all
 	std::multimap<int, std::shared_ptr<cluster_t>> clusters_map;
     for (std::shared_ptr<cluster_t> c : clusters) {
         if (c == NULL || c->used) continue;
-        clusters_created_all.push_back(c);
         clusters_map.insert(std::make_pair(c->la_start, c));
         clusters_map.insert(std::make_pair(c->la_end, c));
     }
@@ -274,7 +272,6 @@ void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, std::ve
         new_cluster->id = parent_id;
         clusters[parent_id] = new_cluster;
         clusters[ccd.c1->id+ccd.c2->id-parent_id] = NULL;
-        clusters_created_all.push_back(new_cluster);
 
         ccd.c1->used = true;
         remove_cluster_from_mm(clusters_map, ccd.c1);

@@ -1063,7 +1063,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 		if (alt[pos_end] == '[') {
 			left_facing = true;
 		}
-		sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln, left_facing);
+			sv = std::make_shared<breakend_t>(bcf_seqname_safe(hdr, b), b->pos, pos2-1, get_ins_seq(hdr, b), left_anchor_aln, right_anchor_aln, left_facing);
 	} else {
 		return NULL;
 	}

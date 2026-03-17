@@ -292,7 +292,7 @@ struct sv_t {
         return lc_consensus->remap_boundary;
     }
 
-    std::string unique_key(bool include_aux = true) {
+    virtual std::string unique_key(bool include_aux = true) {
         std::string key = chr + ":" + std::to_string(start) + ":" + std::to_string(end) + ":" + svtype() + ":" + ins_seq;
         if (!include_aux) return key;
         for (const auto& snp : aux_snps) {
@@ -389,15 +389,22 @@ struct insertion_t : sv_t {
 
 struct breakend_t : sv_t {
     bool left_facing;
+    std::shared_ptr<consensus_t> leftmost_consensus, rightmost_consensus;
     
     breakend_t(std::string chr, hts_pos_t start, hts_pos_t end, std::string ins_seq, 
-        std::shared_ptr<consensus_t> rc_consensus, std::shared_ptr<consensus_t> lc_consensus, 
         std::shared_ptr<anchor_aln_t> left_anchor_aln, std::shared_ptr<anchor_aln_t> right_anchor_aln, 
-        bool left_facing) : sv_t(chr, start, end, ins_seq, rc_consensus, lc_consensus, left_anchor_aln, right_anchor_aln), left_facing(left_facing) {}
+        bool left_facing,
+        std::shared_ptr<consensus_t> leftmost_consensus = nullptr, std::shared_ptr<consensus_t> rightmost_consensus = nullptr) :
+        sv_t(chr, start, end, ins_seq, nullptr, nullptr, left_anchor_aln, right_anchor_aln),
+        left_facing(left_facing), leftmost_consensus(leftmost_consensus), rightmost_consensus(rightmost_consensus) {}
 
-    std::string svtype() { return "BND"; }
-    hts_pos_t svlen() { return 0; }
-    hts_pos_t svsize() { return end - start; }
+    std::string unique_key(bool include_aux = true) override {
+        return sv_t::unique_key(include_aux) + ":" + (left_facing ? "LF" : "RF");
+    }
+
+    std::string svtype() override { return "BND"; }
+    hts_pos_t svlen() override { return 0; }
+    hts_pos_t svsize() override { return end - start; }
 };
 
 struct inversion_t : sv_t {

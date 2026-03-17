@@ -948,7 +948,7 @@ std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq
 		auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(ref_remap_rh_start+right_part_aln.ref_begin, ref_remap_rh_start+right_part_aln.ref_end, right_part.length(), right_part_aln.sw_score);
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_end, end = ref_remap_rh_start + right_part_aln.ref_end;
-		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, false);
+		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, left_anchor_aln, right_anchor_aln, false, leftmost_consensus, rightmost_consensus);
 	} else {
 
 		rc(full_junction_seq);
@@ -1000,7 +1000,7 @@ std::shared_ptr<breakend_t> detect_bnd(std::string contig_name, char* contig_seq
 
 		hts_pos_t start = ref_remap_lh_start + left_part_aln.ref_begin-1, end = ref_remap_rh_start + right_part_aln.ref_begin-1;
 		if (start < 0) start = 0;
-		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, leftmost_consensus, rightmost_consensus, left_anchor_aln, right_anchor_aln, true);
+		return std::make_shared<breakend_t>(contig_name, start, end, middle_part, left_anchor_aln, right_anchor_aln, true, leftmost_consensus, rightmost_consensus);
 	}
 }
 
