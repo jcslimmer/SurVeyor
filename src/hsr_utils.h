@@ -37,16 +37,17 @@ int compute_left_half_Ms(bam1_t* r) {
 std::pair<int, int> compute_left_and_right_differences_indel_as_1_diff(bam1_t* r) {
 	int border = r->core.l_qseq/2;
 	int left_Ms = compute_left_half_Ms(r);
-
+	
 	// we computed left_Ms because the MD tag does not include insertions
 	// i.e. if I have CIGAR: 50M50I50M and MD: 74A25, the mismatch is not in position 75 in the query,
 	// but it is in position 125
 	// here we compute the number of deleted bases and mismatches in each half of the read based on the MD tag
-	std::string md_tag = bam_aux2Z(bam_aux_get(r, "MD"));
+	char* md_tag = get_md(r);
+	int md_len = strlen(md_tag);
 	int m = 0;
 	int left_diffs = 0, right_diffs = 0;
 	bool del_mode = false;
-	for (int i = 0; i < md_tag.length(); i++) {
+	for (int i = 0; i < md_len; i++) {
 		char c = md_tag[i];
 		if (c >= '0' && c <= '9') {
 			m = m*10 + c-'0';
@@ -101,11 +102,12 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
     // i.e. if I have CIGAR: 50M50I50M and MD: 74A25, the mismatch is not in position 75 in the query,
     // but it is in position 125
     // here we compute the number of deleted bases and mismatches in each half of the read based on the MD tag
-    std::string md_tag = bam_aux2Z(bam_aux_get(r, "MD"));
+    std::string md_tag = get_md(r);
+    int md_len = md_tag.length();
     int m = 0;
     int left_diffs = 0, right_diffs = 0;
     bool del_mode = false;
-    for (int i = 0; i < md_tag.length(); i++) {
+    for (int i = 0; i < md_len; i++) {
         char c = md_tag[i];
         if (c >= '0' && c <= '9') {
             m = m*10 + c-'0';
@@ -169,7 +171,7 @@ void filter_well_aligned_to_ref(char* contig_seq, hts_pos_t contig_len, std::vec
         hts_pos_t ref_start = c->start - 10, ref_end = c->end + 10;
 		if (ref_start < 0) ref_start = 0;
 		if (ref_end > contig_len) ref_end = contig_len;
-        aligner.Align(c->sequence.c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &aln, 0);
+        aligner.Align(c->highq_sequence().c_str(), contig_seq+ref_start, ref_end-ref_start, filter, &aln, 0);
 		int dops = 0, dbases = 0, iops = 0, ibases = 0, xbases = 0;
 		for (uint32_t op : aln.cigar) {
 			char opchar = cigar_int_to_op(op);
@@ -206,7 +208,7 @@ void filter_fully_contained(std::vector<consensus_t*>& consensuses) {
 			if (sorted[j]->start > sorted[i]->end) break;
 			if (sorted[j]->end <= sorted[i]->end) {
 				// j is contained within i
-				std::string highq_seq = sorted[j]->sequence.substr(sorted[j]->lowq_prefix, sorted[j]->sequence.length()-sorted[j]->lowq_prefix-sorted[j]->lowq_suffix);
+				std::string highq_seq = sorted[j]->highq_sequence();
 				if (sorted[i]->sequence.find(highq_seq) != std::string::npos) {
 					to_delete[j] = true;
 				}

@@ -124,6 +124,10 @@ struct consensus_t {
             return sequence.substr(sequence.length()-clip_len);
         }
     }
+
+    std::string highq_sequence() {
+        return sequence.substr(lowq_prefix, sequence.length()-lowq_prefix-lowq_suffix);
+    }
 };
 
 struct snp_t {

@@ -106,6 +106,14 @@ int64_t get_nm(bam1_t* r) {
     return bam_aux2i(nm);
 }
 
+char* get_md(bam1_t* r) {
+    uint8_t* md = bam_aux_get(r, "MD");
+    if (md == NULL) {
+        throw std::runtime_error("Read " + std::string(bam_get_qname(r)) + " does not have the MD tag.");
+    }
+    return bam_aux2Z(md);
+}
+
 int get_mate_left_clip_size(bam1_t* r) {
     if (is_mate_unmapped(r)) return 0;
 

@@ -694,39 +694,39 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         rc_consensuses.insert(rc_consensuses.end(), consensuses.begin(), consensuses.end());
     }
     for (int i = 0; i < rc_used_for_consensus.size(); i++) {
-        if (!rc_used_for_consensus[i] && rc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+        if (!rc_used_for_consensus[i]) {
             // read was not used to build any consensus, try and detect variants from it
             std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(rc_cluster[i], contig_name,
                 get_sequence(rc_cluster[i]), nullptr, 0, 0, stats, config);
-            mtx.lock();
+
+            std::lock_guard<std::mutex> lock(mtx);
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;
                 if (rc_cluster[i]->core.qual >= config.high_confidence_mapq) {
                     detected_svs_count_is_hq.insert(sv->unique_key(false));
                 }
             }
-            mtx.unlock();
         }
     }
     for (bam1_t* r : rc_cluster) bam_destroy1(r);
-    
+
     if (lc_cluster.size() >= 3) {
         std::vector<consensus_t*> consensuses = build_full_consensus(contig_name, lc_cluster, true, lc_used_for_consensus);
         lc_consensuses.insert(lc_consensuses.end(), consensuses.begin(), consensuses.end());
     }
     for (int i = 0; i < lc_used_for_consensus.size(); i++) {
-        if (!lc_used_for_consensus[i] && lc_cluster[i]->core.qual >= config.high_confidence_mapq) {
+        if (!lc_used_for_consensus[i]) {
             // read was not used to build any consensus, try and detect variants from it
             std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_aln(lc_cluster[i], contig_name, 
                 get_sequence(lc_cluster[i]), nullptr, 0, 0, stats, config);
-            mtx.lock();
+
+            std::lock_guard<std::mutex> lock(mtx);
             for (auto& sv : svs) {
                 detected_svs_count[sv->unique_key(false)]++;
                 if (lc_cluster[i]->core.qual >= config.high_confidence_mapq) {
                     detected_svs_count_is_hq.insert(sv->unique_key(false));
                 }
             }
-            mtx.unlock();
         }
     }
     for (bam1_t* r : lc_cluster) bam_destroy1(r);
