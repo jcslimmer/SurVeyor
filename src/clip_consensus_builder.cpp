@@ -26,9 +26,7 @@ std::unordered_map<std::string, int> detected_svs_count;
 std::unordered_set<std::string> detected_svs_count_is_hq;
 
 struct sync_hts_reader_t {
-    open_samFile_t* file1 = nullptr,* file2 = nullptr;
     std::vector<open_samFile_t*> files;
-    hts_itr_t* iter1 = nullptr,* iter2 = nullptr;
     std::vector<hts_itr_t*> iters;
     int read_len;
     
@@ -397,7 +395,7 @@ std::vector<int> find_accepted_reads(std::string& consensus_seq, std::deque<bam1
         uint8_t* seq_array = bam_get_seq(r);
         for (int j = 0; j < r->core.l_qseq; j++) {
             if (j + offset >= consensus_seq.length()) {
-                std::cerr << "WARNING: consensus_seq out of boundary." << std::endl;
+                throw std::runtime_error("Consensus/read offset invariant violated in find_accepted_reads. Please report this to the developers.");
             }
             if (consensus_seq[j + offset] != get_base(seq_array, j)) {
                 mm++;
@@ -654,9 +652,10 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
         } else if (is_left_clipped(read, config.min_clip_len) || is_right_clipped(read, config.min_clip_len)) {
             lc_clipped = get_left_clip_size(read) >= get_right_clip_size(read);
         } else if (is_hidden_split_read(read, config)) {
-            std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences(read, false);
+            std::pair<int, int> left_and_right_diffs = compute_left_and_right_differences_indel_as_n_diffs(read);
             lc_clipped = left_and_right_diffs.first > left_and_right_diffs.second;
         } else {
+            bam_destroy1(read);
             continue;
         }
 

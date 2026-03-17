@@ -34,65 +34,6 @@ int compute_left_half_Ms(bam1_t* r) {
 	return left_Ms;
 }
 
-std::pair<int, int> compute_left_and_right_differences_indel_as_1_diff(bam1_t* r) {
-	int border = r->core.l_qseq/2;
-	int left_Ms = compute_left_half_Ms(r);
-	
-	// we computed left_Ms because the MD tag does not include insertions
-	// i.e. if I have CIGAR: 50M50I50M and MD: 74A25, the mismatch is not in position 75 in the query,
-	// but it is in position 125
-	// here we compute the number of deleted bases and mismatches in each half of the read based on the MD tag
-	char* md_tag = get_md(r);
-	int md_len = strlen(md_tag);
-	int m = 0;
-	int left_diffs = 0, right_diffs = 0;
-	bool del_mode = false;
-	for (int i = 0; i < md_len; i++) {
-		char c = md_tag[i];
-		if (c >= '0' && c <= '9') {
-			m = m*10 + c-'0';
-			del_mode = false;
-		} else if (c >= 'A' && c <= 'T') {
-			left_Ms -= m;
-			m = 0;
-			if (!del_mode) {
-				left_Ms--;
-				if (left_Ms > 0) left_diffs++;
-				else right_diffs++;
-			}
-		} else if (c == '^') {
-			left_Ms -= m;
-			m = 0;
-			del_mode = true;
-			if (left_Ms > 0) left_diffs++;
-			else right_diffs++;
-		}
-	}
-
-	int qpos = 0;
-	uint32_t* cigar = bam_get_cigar(r);
-	for (int i = 0; i < r->core.n_cigar; i++) {
-		char op_char = bam_cigar_opchr(cigar[i]);
-		int op_len = bam_cigar_oplen(cigar[i]);
-		if (op_char == 'M') {
-			qpos += op_len;
-		} else if (op_char == 'I') {
-			if (qpos < border && qpos + op_len > border) {  // this is the case there an insertion is partially in the left
-															// half and partially in the right half
-				left_diffs++;
-				right_diffs++;
-			} else if (qpos < border) {
-				left_diffs++;
-			} else if (qpos >= border) {
-				right_diffs++;
-			}
-			qpos += op_len;
-		}
-	}
-
-	return {left_diffs, right_diffs};
-}
-
 // computes the differences for the left and the right half of the read
 std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* r) {
     int border = r->core.l_qseq/2;
@@ -131,7 +72,7 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
     for (int i = 0; i < r->core.n_cigar; i++) {
         char op_char = bam_cigar_opchr(cigar[i]);
         int op_len = bam_cigar_oplen(cigar[i]);
-        if (op_char == 'M') {
+        if (op_char == 'M' || op_char == '=' || op_char == 'X') {
             qpos += op_len;
         } else if (op_char == 'I') {
             if (qpos < border && qpos + op_len > border) {  // this is the case there an insertion is partially in the left
@@ -148,14 +89,6 @@ std::pair<int, int> compute_left_and_right_differences_indel_as_n_diffs(bam1_t* 
     }
 
     return {left_diffs, right_diffs};
-}
-
-std::pair<int, int> compute_left_and_right_differences(bam1_t* r, bool indel_as_single_diff) {
-	if (indel_as_single_diff) {
-		return compute_left_and_right_differences_indel_as_1_diff(r);
-	} else {
-		return compute_left_and_right_differences_indel_as_n_diffs(r);
-	}
 }
 
 // If the high quality (i.e., supported by >= 3 reads) part of the consensus sequence aligns too well to the reference,
@@ -224,7 +157,13 @@ void filter_fully_contained(std::vector<consensus_t*>& consensuses) {
 
 // c1 is assumed to be to the left of c2, and neither cluster is not fully contained within the other
 void merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consensus_t* target, std::string& c1_seq, std::string& c2_seq, int overlap) {
-	target->breakpoint = c1->left_clipped ? c1->breakpoint : c2->breakpoint;
+	if (c1->is_hsr && !c2->is_hsr) {
+		target->breakpoint = c2->breakpoint;
+	} else if (!c1->is_hsr && c2->is_hsr) {
+		target->breakpoint = c1->breakpoint;
+	} else {
+		target->breakpoint = c1->left_clipped ? c1->breakpoint : c2->breakpoint;
+	}
 	target->start = c1->start;
 	target->end = c2->end;
 	target->sequence = c1_seq + c2_seq.substr(overlap);
@@ -237,8 +176,9 @@ void merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consen
 	} else {
 		target->remap_boundary = std::min(c1->remap_boundary, c2->remap_boundary);
 	}
-	target->lowq_prefix = c1->lowq_prefix;;
+	target->lowq_prefix = c1->lowq_prefix;
 	target->lowq_suffix = c2->lowq_suffix;
+	target->is_hsr = c1->is_hsr && c2->is_hsr; 
 }
 
 bool merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consensus_t* target, int min_overlap) {
