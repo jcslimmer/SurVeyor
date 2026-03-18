@@ -26,6 +26,7 @@ int priority(sv_t* sv) {
 	else if (sv->source == "1SR_LC" || sv->source == "1SR_RC") return 5;
 	else if (sv->source == "1HSR_LC" || sv->source == "1HSR_RC") return 6;
 	else if (sv->source == "DP") return 7;
+	else if (sv->source == "READ") return 8;
 	throw std::runtime_error("Unknown source: " + sv->source);
 }
 
@@ -35,17 +36,6 @@ int main(int argc, char* argv[]) {
 	std::string out_vcf_fname = argv[2];
 	std::string reference_fname = argv[3];
 
-	std::unordered_map<std::string, int> source_priorities;
-	source_priorities["2SR"] = 1;
-	source_priorities["HSR-SR"] = 2;
-	source_priorities["SR-HSR"] = 2;
-	source_priorities["2HSR"] = 3;
-	source_priorities["1SR_LC"] = 4;
-	source_priorities["1SR_RC"] = 4;
-	source_priorities["1HSR_LC"] = 5;
-	source_priorities["1HSR_RC"] = 5;
-	source_priorities["DP"] = 6;
-
 	std::unordered_map<std::string, std::shared_ptr<sv_t>> sv_entries;
 	std::vector<std::string> ids_sorted;
 
@@ -54,7 +44,6 @@ int main(int argc, char* argv[]) {
 	bcf1_t* b = bcf_init();
 	while (bcf_read(in_vcf_file, in_vcf_hdr, b) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_hdr, b);
-
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
 			std::shared_ptr<sv_t> prev_sv = sv_entries[unique_id];
@@ -67,7 +56,7 @@ int main(int argc, char* argv[]) {
 			} else {
 				std::string src_prev = sv_entries[unique_id]->source;
 				std::string src_curr = sv->source;
-				if (source_priorities[src_prev] > source_priorities[src_curr]) {
+				if (priority(sv_entries[unique_id].get()) > priority(sv.get())) {
 					std::swap(sv_entries[unique_id], sv);
 					std::swap(src_prev, src_curr);
 				}

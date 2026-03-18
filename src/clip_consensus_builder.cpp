@@ -537,9 +537,9 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
                 return is_left_clipped(r, config.min_clip_len) || is_right_clipped(r, config.min_clip_len);
             }), clipped.end());
             if (clipped.size() == old_size) {
-                return consensuses;
+                break; // if no clipped read can be removed, give up on this cluster
             } else {
-                continue;
+                continue; // skip clipped.swap(rejected_reads) in this case
             }
         }
 
@@ -808,9 +808,11 @@ int main(int argc, char* argv[]) {
 
             if (svtype == "DEL") {
                 std::shared_ptr<deletion_t> del = std::make_shared<deletion_t>(chr, start, end, "", nullptr, nullptr, nullptr, nullptr);
+                del->source = "READ";
                 svs_by_chr[chr].push_back(del);
             } else if (svtype == "INS") {
                 std::shared_ptr<insertion_t> ins = std::make_shared<insertion_t>(chr, start, end, insseq, nullptr, nullptr, nullptr, nullptr);
+                ins->source = "READ";
                 svs_by_chr[chr].push_back(ins);
             }
         }
