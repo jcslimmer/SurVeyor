@@ -830,9 +830,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		ref_remap_lh_start = std::max(hts_pos_t(0), rc_consensus->start - (int) rc_consensus->sequence.length());
 		ref_remap_lh_end = std::min(rc_consensus->end + (int) rc_consensus->sequence.length(), contig_len);
 
-		ref_remap_rh_start = rc_consensus->remap_boundary - rc_consensus->sequence.length();
-		ref_remap_rh_end = rc_consensus->remap_boundary + rc_consensus->sequence.length();
-		if (rc_consensus->remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+		ref_remap_rh_start = rc_consensus->other_bp_lower_boundary;
+		ref_remap_rh_end = rc_consensus->other_bp_upper_boundary + rc_consensus->sequence.length();
+		if (rc_consensus->other_bp_upper_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
 			ref_remap_rh_start = rc_consensus->breakpoint - 2*rc_consensus->sequence.length();
 			ref_remap_rh_end = rc_consensus->breakpoint + 2*rc_consensus->sequence.length();
 		}
@@ -844,9 +844,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 	} else if (lc_consensus != NULL) {
 		consensus_junction_seq = lc_consensus->sequence;
 
-		ref_remap_lh_start = lc_consensus->remap_boundary - lc_consensus->sequence.length();
-		ref_remap_lh_end = lc_consensus->remap_boundary + lc_consensus->sequence.length();
-		if (lc_consensus->remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+		ref_remap_lh_start = lc_consensus->other_bp_lower_boundary - lc_consensus->sequence.length();
+		ref_remap_lh_end = lc_consensus->other_bp_upper_boundary;
+		if (lc_consensus->other_bp_lower_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
 			ref_remap_lh_start = lc_consensus->breakpoint - 2*lc_consensus->sequence.length();
 			ref_remap_lh_end = lc_consensus->breakpoint + 2*lc_consensus->sequence.length();
 		}

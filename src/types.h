@@ -17,28 +17,31 @@ struct consensus_t {
     std::string sequence;
     int fwd_reads, rev_reads;
     uint8_t max_mapq;
-    hts_pos_t remap_boundary;
+    hts_pos_t other_bp_lower_boundary = LOWER_BOUNDARY_NON_CALCULATED, other_bp_upper_boundary = UPPER_BOUNDARY_NON_CALCULATED;
     int clip_len, lowq_prefix, lowq_suffix;
     int left_ext_reads = 0, right_ext_reads = 0, hq_left_ext_reads = 0, hq_right_ext_reads = 0;
     bool is_hsr = false;
 	bool extended_to_left = false, extended_to_right = false;
 
-    static const int LOWER_BOUNDARY_NON_CALCULATED = 0, UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX;
+    enum : hts_pos_t {
+        LOWER_BOUNDARY_NON_CALCULATED = 0,
+        UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX
+    };
 
     consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
                 const std::string& sequence, int fwd_reads, int rev_reads, int clip_len, uint8_t max_mapq, 
-                hts_pos_t remap_boundary, int lowq_prefix, int lowq_suffix)
+                int lowq_prefix, int lowq_suffix)
                 : left_clipped(left_clipped), start(start), breakpoint(breakpoint), end(end),
                 orig_start(start), orig_end(end),
                 sequence(sequence), fwd_reads(fwd_reads), rev_reads(rev_reads), clip_len(clip_len), max_mapq(max_mapq), 
-                remap_boundary(remap_boundary), lowq_prefix(lowq_prefix), lowq_suffix(lowq_suffix) {}
+                lowq_prefix(lowq_prefix), lowq_suffix(lowq_suffix) {}
 
     consensus_t(std::string& line) {
         std::stringstream ss(line);
         char dir;
         int max_mapq_int;
         ss >> start >> end >> breakpoint >> dir >> sequence >> fwd_reads >> rev_reads
-           >> max_mapq_int >> remap_boundary >> lowq_prefix >> lowq_suffix >> is_hsr;
+           >> max_mapq_int >> other_bp_lower_boundary >> other_bp_upper_boundary >> lowq_prefix >> lowq_suffix >> is_hsr;
         orig_start = start;
         orig_end = end;
         left_clipped = dir == 'L';
@@ -49,7 +52,7 @@ struct consensus_t {
     std::string to_string() {
         std::stringstream ss;
         ss << start << " " << end << " " << breakpoint << (left_clipped ? " L " : " R ") << sequence << " ";
-        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << remap_boundary << " " << lowq_prefix << " " << lowq_suffix << " ";
+        ss << fwd_reads << " " << rev_reads << " " << (int)max_mapq << " " << other_bp_lower_boundary << " " << other_bp_upper_boundary << " " << lowq_prefix << " " << lowq_suffix << " ";
         ss << is_hsr;
         return ss.str();
     }
@@ -60,10 +63,10 @@ struct consensus_t {
     	if (!left_clipped) {
     		return start - max_is + read_len;
     	} else {
-    		if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-				return breakpoint - max_is - 2*sequence.length();
+    		if (other_bp_lower_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+				return breakpoint - max_is + read_len;
 			} else {
-				return remap_boundary;
+				return other_bp_lower_boundary - max_is + read_len;
 			}
     	}
     }
@@ -71,20 +74,20 @@ struct consensus_t {
 		if (!left_clipped) {
 			return start;
 		} else {
-			if (remap_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
-				return breakpoint + max_is + 2*sequence.length();
+			if (other_bp_upper_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) { // could not calculate the remap boundary, fall back to formula
+				return breakpoint;
 			} else {
-				return remap_boundary + max_is;
+				return other_bp_upper_boundary;
 			}
 		}
 	}
 
     hts_pos_t right_ext_target_start(int max_is, int read_len) {
 		if (!left_clipped) {
-			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-				return breakpoint - max_is - 2*sequence.length();
+			if (other_bp_lower_boundary == consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
+				return breakpoint;
 			} else {
-				return remap_boundary - max_is;
+				return other_bp_lower_boundary;
 			}
 		} else {
 			return end;
@@ -92,10 +95,10 @@ struct consensus_t {
 	}
     hts_pos_t right_ext_target_end(int max_is, int read_len) {
     	if (!left_clipped) {
-			if (remap_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-				return breakpoint + max_is + 2*sequence.length();
+			if (other_bp_upper_boundary == consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
+				return breakpoint + max_is - read_len;
 			} else {
-				return remap_boundary;
+				return other_bp_upper_boundary + max_is - read_len;
 			}
 		} else {
 			return end + max_is - read_len;
@@ -282,14 +285,13 @@ struct sv_t {
 
     bool is_pass() { return sample_info.filters.empty() || sample_info.filters[0] == "PASS"; }
 
-    hts_pos_t remap_boundary_upper() {
-        if (rc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
-        return rc_consensus->remap_boundary;
-    }
-
-    hts_pos_t remap_boundary_lower() {
+    hts_pos_t other_bp_lower_boundary() {
         if (lc_consensus == NULL) return consensus_t::LOWER_BOUNDARY_NON_CALCULATED;
-        return lc_consensus->remap_boundary;
+        return lc_consensus->other_bp_lower_boundary;
+    }
+    hts_pos_t other_bp_upper_boundary() {
+        if (rc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
+        return rc_consensus->other_bp_upper_boundary;
     }
 
     virtual std::string unique_key(bool include_aux = true) {

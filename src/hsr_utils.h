@@ -171,11 +171,8 @@ void merge_overlapping_pair_of_clusters(consensus_t* c1, consensus_t* c2, consen
 	target->rev_reads = c1->rev_reads + c2->rev_reads;
 	target->clip_len = 0;
 	target->max_mapq = std::max(c1->max_mapq, c2->max_mapq);
-	if (c1->left_clipped) {
-		target->remap_boundary = std::max(c1->remap_boundary, c2->remap_boundary);
-	} else {
-		target->remap_boundary = std::min(c1->remap_boundary, c2->remap_boundary);
-	}
+	target->other_bp_lower_boundary = std::max(c1->other_bp_lower_boundary, c2->other_bp_lower_boundary);
+	target->other_bp_upper_boundary = std::min(c1->other_bp_upper_boundary, c2->other_bp_upper_boundary);
 	target->lowq_prefix = c1->lowq_prefix;
 	target->lowq_suffix = c2->lowq_suffix;
 	target->is_hsr = c1->is_hsr && c2->is_hsr; 

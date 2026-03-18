@@ -519,12 +519,6 @@ bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name,
 	const char* source_tag = "##INFO=<ID=SOURCE,Number=1,Type=String,Description=\"Source of the SV.\">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, source_tag, &len));
 
-	const char* remap_lb_tag = "##INFO=<ID=REMAP_LB,Number=1,Type=Integer,Description=\"Minimum coordinate according to the mates of the clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_lb_tag, &len));
-
-	const char* remap_ub_tag = "##INFO=<ID=REMAP_UB,Number=1,Type=Integer,Description=\"Maximum coordinate according to the mates of the clipped reads.\">";
-	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, remap_ub_tag, &len));
-
 	const char* est_size_tag = "##INFO=<ID=EST_SIZE,Number=1,Type=Integer,Description=\"Estimated size of the imprecise event. \">";
 	bcf_hdr_add_hrec(header, bcf_hdr_parse_line(header, est_size_tag, &len));
 
@@ -698,15 +692,6 @@ void sv2bcf(bcf_hdr_t* hdr, bcf1_t* bcf_entry, sv_t* sv, char* chr_seq, bool for
 	}
 	if (!sv->inferred_ins_seq.empty()) {
 		bcf_update_info_string(hdr, bcf_entry, "SVINSSEQ_INFERRED", sv->inferred_ins_seq.c_str());
-	}
-
-	if (!for_gt) {
-		if (sv->rc_consensus && sv->rc_consensus->remap_boundary != consensus_t::UPPER_BOUNDARY_NON_CALCULATED) {
-			bcf_update_info_int32(hdr, bcf_entry, "REMAP_UB", &sv->rc_consensus->remap_boundary, 1);
-		}
-		if (sv->lc_consensus && sv->lc_consensus->remap_boundary != consensus_t::LOWER_BOUNDARY_NON_CALCULATED) {
-			bcf_update_info_int32(hdr, bcf_entry, "REMAP_LB", &sv->lc_consensus->remap_boundary, 1);
-		}
 	}
 
 	bcf_update_info_flag(hdr, bcf_entry, "IMPRECISE", "", sv->imprecise);
@@ -982,23 +967,7 @@ std::shared_ptr<sv_t> bcf_to_sv(bcf_hdr_t* hdr, bcf1_t* b) {
 	int* data = NULL;
 	int len = 0;
 
-	std::shared_ptr<consensus_t> rc_consensus = nullptr;
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "REMAP_UB", &data, &len);
-	if (len > 0) {
-		rc_consensus = std::make_shared<consensus_t>(false, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0, 0);
-	}
-	free(data);
-
-	std::shared_ptr<consensus_t> lc_consensus = nullptr;
-	data = NULL;
-	len = 0;
-	bcf_get_info_int32(hdr, b, "REMAP_LB", &data, &len);
-	if (len > 0) {
-		lc_consensus = std::make_shared<consensus_t>(true, 0, 0, 0, "", 0, 0, 0, 0, data[0], 0, 0);
-	}
-	free(data);
+	std::shared_ptr<consensus_t> rc_consensus = nullptr, lc_consensus = nullptr;
 
 	data = NULL;
 	len = 0;

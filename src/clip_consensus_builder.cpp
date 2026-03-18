@@ -546,7 +546,8 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
         if (accepted_reads.size() >= 3) {
             hts_pos_t start = get_unclipped_start(accepted_reads[0]), end = 0;
             hts_pos_t breakpoint = left_clipped ? INT32_MAX : 0; // the current HTS_POS_MAX does not compile on some compilers
-            hts_pos_t remap_boundary = left_clipped ? consensus_t::LOWER_BOUNDARY_NON_CALCULATED : consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
+            hts_pos_t other_bp_lower_boundary = consensus_t::LOWER_BOUNDARY_NON_CALCULATED;
+            hts_pos_t other_bp_upper_boundary = consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
             int fwd_clipped = 0, rev_clipped = 0;
             uint8_t max_mapq = 0;
             for (bam1_t* r : accepted_reads) {
@@ -559,9 +560,12 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
 
                 if (!is_samechr(r) || is_samestr(r)) continue;
                 if (left_clipped && bam_is_rev(r) && !is_mate_left_clipped(r)) {
-                    remap_boundary = std::max(remap_boundary, r->core.mpos);
+                    other_bp_lower_boundary = std::max(other_bp_lower_boundary, r->core.mpos);
+                    other_bp_upper_boundary = std::min(other_bp_upper_boundary, r->core.mpos+stats.max_is);
                 } else if (!left_clipped && !bam_is_rev(r) && !is_mate_right_clipped(r)) {
-                    remap_boundary = std::min(remap_boundary, r->core.pos + r->core.isize);
+                    hts_pos_t mate_endpos = get_mate_endpos(r);
+                    other_bp_lower_boundary = std::max(other_bp_lower_boundary, mate_endpos-stats.max_is);
+                    other_bp_upper_boundary = std::min(other_bp_upper_boundary, get_mate_endpos(r));
                 }
             }
 
@@ -611,9 +615,13 @@ std::vector<consensus_t*> build_full_consensus(std::string contig_name, std::deq
             if (is_hsr) clip_len = 0;
 
             consensus_t* consensus = new consensus_t(left_clipped, start, breakpoint, end, consensus_seq,
-                fwd_clipped, rev_clipped, clip_len, max_mapq, remap_boundary, lowq_prefix, lowq_suffix);
+                fwd_clipped, rev_clipped, clip_len, max_mapq, lowq_prefix, lowq_suffix);
+            consensus->other_bp_lower_boundary = other_bp_lower_boundary;
+            consensus->other_bp_upper_boundary = other_bp_upper_boundary;
             consensus->is_hsr = is_hsr;
-            consensuses.push_back(consensus);
+            if (other_bp_lower_boundary < other_bp_upper_boundary) { // TODO: check if this is too stringent. Alternative is to use defaults
+                consensuses.push_back(consensus);
+            }
 
             for (bam1_t* r : accepted_reads) used_reads.insert(r);
         }
@@ -738,6 +746,18 @@ void build_consensuses(int id, std::string contig_name, std::vector<std::string>
 
     merge_overlapping_clusters(rc_consensuses, stats.read_len/2);
     merge_overlapping_clusters(lc_consensuses, stats.read_len/2);
+
+    auto drop_invalid_other_bp_intervals = [](std::vector<consensus_t*>& consensuses) {
+        for (consensus_t*& consensus : consensuses) {
+            if (consensus->other_bp_lower_boundary > consensus->other_bp_upper_boundary) {
+                delete consensus;
+                consensus = nullptr;
+            }
+        }
+        consensuses.erase(std::remove(consensuses.begin(), consensuses.end(), nullptr), consensuses.end());
+    };
+    drop_invalid_other_bp_intervals(rc_consensuses);
+    drop_invalid_other_bp_intervals(lc_consensuses);
 
     enforce_max_ploidy(rc_consensuses, 4);
     enforce_max_ploidy(lc_consensuses, 4);
