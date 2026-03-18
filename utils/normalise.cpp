@@ -28,7 +28,7 @@ int find_most_similar_substring(char* text, int text_len, char* word) {
 	for (int i = 0; i <= text_len - word_len; i++) {
 		int score = 0;
 		for (int j = 0; j < word_len; j++) {
-			if (text[i + j] == word[j]) score++;
+			if (toupper(text[i + j]) == toupper(word[j])) score++;
 		}
 
 		bool is_prefix_or_suffix = (i == 0 || i == text_len - word_len);
@@ -41,8 +41,8 @@ int find_most_similar_substring(char* text, int text_len, char* word) {
 	return best_start;
 }
 
-void atomize_del(std::shared_ptr<sv_t> sv) {
-	if (sv->ins_seq.empty()) return;
+std::shared_ptr<sv_t> atomize_del(std::shared_ptr<sv_t> sv) {
+	if (sv->ins_seq.empty()) return sv;
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
@@ -54,8 +54,10 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 		hts_pos_t snp_pos = sv->end;
 		char ref_base = chr_seq[snp_pos];
 		char alt_base = sv->ins_seq[0];
-		snp_t snp(snp_pos, alt_base);
-		sv->aux_snps.push_back(snp);
+		if (toupper(ref_base) != toupper(alt_base)) {
+			snp_t snp(snp_pos, alt_base);
+			sv->aux_snps.push_back(snp);
+		}
 
 		sv->end--;
 		sv->ins_seq = "";
@@ -65,7 +67,7 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 		if (most_similar_pos == -1) {
 			// inserted sequence is longer than the deleted sequence (probably due to a malformed variant)
 			delete[] deleted_seq;
-			return;
+			return sv;
 		}
 
 		// Create two new SVs for the split deletions
@@ -91,7 +93,7 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 		for (size_t i = 0; i < sv->ins_seq.length(); i++) {
 			char ref_base = chr_seq[sv1_start+1 + most_similar_pos + i];
 			char alt_base = sv->ins_seq[i];
-			if (ref_base != alt_base) {
+			if (toupper(ref_base) != toupper(alt_base)) {
 				hts_pos_t snp_pos = sv1_start+1 + most_similar_pos + i;
 				snp_t snp(snp_pos, alt_base);
 				sv->aux_snps.push_back(snp);
@@ -106,41 +108,56 @@ void atomize_del(std::shared_ptr<sv_t> sv) {
 		sv->ins_seq = "";
 	}
 	delete[] deleted_seq;
+
+	if (sv->start >= sv->end) {
+		return nullptr;
+	}
+	return sv;
 }
 
-void atomize(int id, std::shared_ptr<sv_t> sv) {
+std::shared_ptr<sv_t> atomize(int id, std::shared_ptr<sv_t> sv) {
 	std::string svtype = sv->svtype();
 	if (svtype == "DEL" && sv->svsize() <= 50) { 
 		// only atomize small deletions
 		// splitting large deletions can create problems to the current genotyping algorithm
 		// especially when calculating features like discordant pairs or read depth
-		atomize_del(sv);
+		return atomize_del(sv);
 	} else if (svtype == "INS" && sv->ins_seq.length() <= 50) {
 		// atomize_ins(sv);
+		return sv; // we currently do not atomize insertions
+	} else {
+		return sv;
 	}
 }
 
-void simplify_del(std::shared_ptr<sv_t> sv) {
+std::shared_ptr<sv_t> simplify_del(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
 	// try to shorten deletion if ins_seq
 	int start_is = 0;
-	while (start_is < sv->ins_seq.length() && sv->ins_seq[start_is] == chr_seq[sv->start+1]) {
+	while (start_is < sv->ins_seq.length() && sv->start < sv->end &&
+		   toupper(sv->ins_seq[start_is]) == toupper(chr_seq[sv->start+1])) {
 		start_is++;
 		sv->start++;
 	}
 	sv->ins_seq = sv->ins_seq.substr(start_is);
 
 	int end_is = sv->ins_seq.length();
-	while (end_is > 0 && sv->ins_seq[end_is-1] == chr_seq[sv->end]) {
+	while (end_is > 0 && sv->start < sv->end &&
+		   toupper(sv->ins_seq[end_is-1]) == toupper(chr_seq[sv->end])) {
 		end_is--;
 		sv->end--;
 	}
 	sv->ins_seq = sv->ins_seq.substr(0, end_is);
+
+	if (sv->start >= sv->end) {
+		return nullptr;
+	}
+	return sv;
 }
 
-void simplify_ins(std::shared_ptr<sv_t> sv) {
+std::shared_ptr<sv_t> simplify_ins(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
@@ -158,14 +175,21 @@ void simplify_ins(std::shared_ptr<sv_t> sv) {
 		sv->end--;
 	}
 	sv->ins_seq = sv->ins_seq.substr(0, end_is);
+
+	if (sv->ins_seq.empty()) {
+		return nullptr;
+	}
+	return sv;
 }
 
-void simplify(std::shared_ptr<sv_t> sv) {
+std::shared_ptr<sv_t> simplify(std::shared_ptr<sv_t> sv) {
 	std::string svtype = sv->svtype();
 	if (svtype == "DEL") {
-		simplify_del(sv);
+		return simplify_del(sv);
 	} else if (svtype == "INS") {
-		simplify_ins(sv);
+		return simplify_ins(sv);
+	} else {
+		return sv;
 	}
 }
 
@@ -186,7 +210,7 @@ void left_align_del(std::shared_ptr<sv_t> sv) {
 		}
 	}
 
-	while (sv->start > limit && chr_seq[sv->start] == chr_seq[sv->end]) {
+	while (sv->start > limit && toupper(chr_seq[sv->start]) == toupper(chr_seq[sv->end])) {
 		sv->start--;
 		sv->end--;
 	}
@@ -207,18 +231,24 @@ void left_align_dup(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
-	hts_pos_t limit = -1;
+	hts_pos_t limit = 0;
 	for (snp_t& snp : sv->aux_snps) {
 		if (snp.pos <= sv->start) {
 			limit = snp.pos; // note that snps are sorted by position
 		}
 	}
 
-	int i = 0;
-	while (sv->start > 0 && chr_seq[sv->start] == chr_seq[sv->end]) {
+	for (snp_t& snp : sv->aux_snps) {
+		std::swap(chr_seq[snp.pos], snp.alt_base);
+	}
+
+	while (sv->start > limit && toupper(chr_seq[sv->start]) == toupper(chr_seq[sv->end])) {
 		sv->start--;
 		sv->end--;
-		i++;
+	}
+
+	for (snp_t& snp : sv->aux_snps) {
+		std::swap(chr_seq[snp.pos], snp.alt_base);
 	}
 }
 
@@ -265,6 +295,18 @@ void left_align(std::shared_ptr<sv_t> sv) {
 	}
 }
 
+void canonicalize_aux(std::shared_ptr<sv_t> sv) {
+	std::sort(sv->aux_snps.begin(), sv->aux_snps.end(),
+		[](const snp_t& a, const snp_t& b) {
+			return std::tie(a.pos, a.alt_base) < std::tie(b.pos, b.alt_base);
+		});
+	std::sort(sv->aux_indels.begin(), sv->aux_indels.end(),
+		[](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) {
+			return std::make_tuple(a->start, a->end, a->svtype(), a->ins_seq) <
+				   std::make_tuple(b->start, b->end, b->svtype(), b->ins_seq);
+		});
+}
+
 int main(int argc, char* argv[]) {
 
 	std::string in_vcf_fname = argv[1];
@@ -284,12 +326,17 @@ int main(int argc, char* argv[]) {
 			std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
 			continue;
 		}
-		sv->vcf_entry = bcf_dup(vcf_record);
-		simplify(sv);
-		atomize(0, sv);
-		left_align(sv);
-		svs.push_back(sv);
-	}
+			sv->vcf_entry = bcf_dup(vcf_record);
+			sv = simplify(sv);
+			if (sv == nullptr) continue;
+			
+			sv = atomize(0, sv);
+			if (sv == nullptr) continue;
+			
+			left_align(sv);
+			canonicalize_aux(sv);
+			svs.push_back(sv);
+		}
 
 	for (const auto& sv : svs) {
 		bcf1_t* vcf_record_norm = bcf_init();
