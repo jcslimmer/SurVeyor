@@ -44,8 +44,6 @@ void cluster_clusters(std::vector<std::shared_ptr<cluster_t>>& clusters, int min
 	clusters.erase(std::remove_if(clusters.begin(), clusters.end(), [min_cluster_size](std::shared_ptr<cluster_t> c) {
 		return c == NULL || c->count < min_cluster_size;
 	}), clusters.end());
-
-	std::sort(clusters.begin(), clusters.end());
 }
 
 std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::string contig_name, std::string dp_dir) {
@@ -78,7 +76,7 @@ std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::
 
 	std::string qname, seq;
 	int64_t nm;
-	std::ifstream mateseqs_fin(dp_dir + std::to_string(contig_id) + ".txt");
+	std::ifstream mateseqs_fin(dp_dir + "/" + std::to_string(contig_id) + ".txt");
 	mateseqs_fin.clear();
 	mateseqs_fin.seekg(0);
 	while (mateseqs_fin >> qname >> seq >> nm) {
@@ -99,8 +97,8 @@ void cluster_lp_dps(int contig_id, std::string contig_name, std::vector<std::sha
 	for (std::shared_ptr<cluster_t> c : clusters) {
 		if (c->used) continue;
 
-		std::shared_ptr<consensus_t> rc_consensus = std::make_shared<consensus_t>(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, 0, 0, 0);
-		std::shared_ptr<consensus_t> lc_consensus = std::make_shared<consensus_t>(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, 0, 0, 0);
+		std::shared_ptr<consensus_t> rc_consensus = std::make_shared<consensus_t>(false, 0, c->la_end, 0, c->la_furthermost_seq, 0, 0, 0, 0, consensus_t::UPPER_BOUNDARY_NON_CALCULATED, 0, 0);
+		std::shared_ptr<consensus_t> lc_consensus = std::make_shared<consensus_t>(false, 0, c->ra_start, 0, c->ra_furthermost_seq, 0, 0, 0, 0, consensus_t::LOWER_BOUNDARY_NON_CALCULATED, 0, 0);
 		std::vector<std::shared_ptr<sv_t>> svs = detect_svs(contig_name, chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), rc_consensus, lc_consensus, 
 			aligner, stats.read_len/3, stats, config);
 
