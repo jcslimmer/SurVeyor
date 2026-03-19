@@ -21,10 +21,13 @@ int priority(sv_t* sv) {
 		if (ins->imprecise || ins->incomplete_ins_seq()) return 7;
 		else return 1;
 	} else if (sv->source == "2SR") return 2;
+	else if (sv->source == "2SR-2SR") return 2;
 	else if (sv->source == "HSR-SR" || sv->source == "SR-HSR") return 3;
 	else if (sv->source == "2HSR") return 4;
+	else if (sv->source == "2SR-DP" || sv->source == "DP-2SR") return 5;
 	else if (sv->source == "1SR_LC" || sv->source == "1SR_RC") return 5;
 	else if (sv->source == "1HSR_LC" || sv->source == "1HSR_RC") return 6;
+	else if (sv->source == "DP-DP") return 7;
 	else if (sv->source == "DP") return 7;
 	else if (sv->source == "READ") return 8;
 	throw std::runtime_error("Unknown source: " + sv->source);
