@@ -293,7 +293,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 		std::unordered_map<std::string, std::string>& mateseqs, std::unordered_map<std::string, std::string>& matequals,
 		std::ofstream& assembly_failed_no_seq, std::ofstream& assembly_failed_cycle_writer, std::ofstream& assembly_failed_too_many_reads_writer,
 		StripedSmithWaterman::Aligner& aligner_to_base, StripedSmithWaterman::Aligner& harsh_aligner,
-		std::vector<bam1_t*>& assembled_reads, config_t& config, stats_t& stats) {
+		config_t& config, stats_t& stats) {
 
 	std::vector<std::string> assembled_sequences = assemble_sequences(contig_name, r_cluster, l_cluster, mateseqs, harsh_aligner, config, stats);
 
@@ -336,7 +336,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 	std::vector<std::shared_ptr<sv_t>> svs = detect_svs_from_junction(contig_name, contig_seq, assembled_sequence, remap_region_start, remap_region_end, 
 		remap_region_start, remap_region_end, aligner_to_base, 0, 0, stats, config);
 	std::shared_ptr<sv_t> chosen_ins = NULL;
-	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svlen() < 50) { // cannot identify an SV insertion, check if it is an incomplete assembly
+	if (svs.empty() || svs[0]->svtype() != "INS" || svs[0]->svsize() < config.min_assembled_ins_size) { // cannot identify an SV insertion, check if it is an incomplete assembly
 		if (assembled_sequences.size() == 1) return NULL;
 
 		extend = 2*(assembled_sequence.length() + assembled_sequences[1].length());
@@ -349,8 +349,8 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 			remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, 0, 0, stats, config);
 		std::vector<std::shared_ptr<sv_t>> svs2 = detect_svs_from_junction(contig_name, contig_seq, assembled_sequences[1] + "-" + assembled_sequence, 
 			remap_region_start, remap_region_end, remap_region_start, remap_region_end, aligner_to_base, 0, 0, stats, config);
-		bool sv1_is_ins = !svs1.empty() && svs1[0]->svtype() == "INS";
-		bool sv2_is_ins = !svs2.empty() && svs2[0]->svtype() == "INS";
+		bool sv1_is_ins = !svs1.empty() && svs1[0]->svtype() == "INS" && svs1[0]->svsize() >= config.min_assembled_ins_size;
+		bool sv2_is_ins = !svs2.empty() && svs2[0]->svtype() == "INS" && svs2[0]->svsize() >= config.min_assembled_ins_size;
 		if (sv1_is_ins && !sv2_is_ins) {
 			chosen_ins = svs1[0];
 		} else if (!sv1_is_ins && sv2_is_ins) {
@@ -377,7 +377,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 				std::shared_ptr<sv_t> new_ins = new_svs[0];
 				int sep = new_ins->ins_seq.find("-");
 				if (sep != std::string::npos && sep >= config.min_clip_len && new_ins->ins_seq.length()-sep >= config.min_clip_len &&
-					raa_score_ratio < double(new_ins->right_anchor_aln->best_score)/new_ins->right_anchor_aln->seq_len && new_ins->svsize() >= config.min_sv_size) {
+					raa_score_ratio < double(new_ins->right_anchor_aln->best_score)/new_ins->right_anchor_aln->seq_len && new_ins->svsize() >= config.min_assembled_ins_size) {
 						chosen_ins = new_ins;
 						full_assembled_seq = assembled_sequence + "-" + assembled_sequences[1];
 					}
@@ -389,7 +389,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 				std::shared_ptr<sv_t> new_ins = new_svs[0];
 				int sep = new_ins->ins_seq.find("-");
 				if (sep != std::string::npos && sep >= config.min_clip_len && new_ins->ins_seq.length()-sep >= config.min_clip_len &&
-					laa_score_ratio < double(new_ins->left_anchor_aln->best_score)/new_ins->left_anchor_aln->seq_len && new_ins->svsize() >= config.min_sv_size) {
+					laa_score_ratio < double(new_ins->left_anchor_aln->best_score)/new_ins->left_anchor_aln->seq_len && new_ins->svsize() >= config.min_assembled_ins_size) {
 						chosen_ins = new_ins;
 						full_assembled_seq = assembled_sequences[1] + "-" + assembled_sequence;
 					}
@@ -404,6 +404,8 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 
 	int sep = chosen_ins->ins_seq.find("-");
 	if (sep != std::string::npos && (sep < config.min_clip_len || chosen_ins->ins_seq.length()-sep < config.min_clip_len)) return NULL; // "-" is too close to the edge
+
+	int assembled_reads_count = 0;
 
 	StripedSmithWaterman::Filter filter;
 	if (r_cluster->clip_consensus) {
@@ -421,11 +423,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			bam1_t* d = bam_dup1(read.get());
-			d->core.mpos = 0;
-			d->core.mtid = d->core.tid;
-			d->core.flag |= BAM_FMUNMAP;
-			assembled_reads.push_back(d);
+			assembled_reads_count++;
 		}
 	}
 	for (std::shared_ptr<bam1_t> read : l_cluster->cluster->reads) {
@@ -434,11 +432,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 		StripedSmithWaterman::Alignment aln;
 		harsh_aligner.Align(mate_seq.c_str(), full_assembled_seq.c_str(), full_assembled_seq.length(), filter, &aln, 0);
 		if (accept(aln, config.min_clip_len, config.max_seq_error, mate_qual, stats.min_avg_base_qual)) {
-			bam1_t* d = bam_dup1(read.get());
-			d->core.mpos = 0;
-			d->core.mtid = d->core.tid;
-			d->core.flag |= BAM_FMUNMAP;
-			assembled_reads.push_back(d);
+			assembled_reads_count++;
 		}
 	}
 	if (l_cluster->clip_consensus) {
@@ -461,7 +455,7 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 		qual_ascii = std::string(qual_ascii.rbegin(), qual_ascii.rend());
 		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
-			assembled_reads.push_back(bam_dup1(read));
+			assembled_reads_count++;
 		}
 	}
 	for (bam1_t* read : l_cluster->semi_mapped_reads) {
@@ -471,16 +465,14 @@ std::shared_ptr<sv_t> detect_de_novo_insertion(std::string& contig_name, chr_seq
 		std::string qual_ascii = get_qual_ascii(read, true);
 		if (overlap(ins_seq_start, ins_seq_end, aln.ref_begin, aln.ref_end) >= config.min_clip_len
 				&& accept(aln, config.min_clip_len, config.max_seq_error, qual_ascii, stats.min_avg_base_qual)) {
-			assembled_reads.push_back(bam_dup1(read));
+			assembled_reads_count++;
 		}
 	}
 
-	for (bam1_t* read : assembled_reads) {
-		bam_aux_update_str(read, "ID", chosen_ins->id.length(), chosen_ins->id.c_str());
-	}
-
 	chosen_ins->source = "DE_NOVO_ASSEMBLY";
-	if (assembled_reads.size() <= 2) return NULL;
+	if (assembled_reads_count <= 2) {
+		return NULL;
+	}
 	chosen_ins->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
 	return chosen_ins;
 }

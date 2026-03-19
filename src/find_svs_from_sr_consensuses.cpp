@@ -903,15 +903,15 @@ int main(int argc, char* argv[]) {
 
 			// do some light filtering here - it helps merge_identical_calls not merge good calls with calls that will get filtered
 			if (sv->svtype() == "DEL") {
-				if (sv->other_bp_lower_boundary() > sv->start) {
+				if (sv->start < sv->start_bp_lower_boundary() || sv->start > sv->start_bp_upper_boundary()) {	
 					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
-				} else if (sv->other_bp_upper_boundary() < sv->end) {
+				} else if (sv->end < sv->end_bp_lower_boundary() || sv->end > sv->end_bp_upper_boundary()) {
 					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				}
 			} else if (sv->svtype() == "DUP") {
-				if (sv->start > sv->other_bp_upper_boundary()) {
+				if (sv->start < sv->start_bp_lower_boundary() || sv->start > sv->start_bp_upper_boundary()) {
 					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
-				} else if (sv->end < sv->other_bp_lower_boundary()) {
+				} else if (sv->end < sv->end_bp_lower_boundary() || sv->end > sv->end_bp_upper_boundary()) {
 					sv->sample_info.filters.push_back("REMAP_BOUNDARY_FILTER");
 				}
 			}

@@ -285,11 +285,20 @@ struct sv_t {
 
     bool is_pass() { return sample_info.filters.empty() || sample_info.filters[0] == "PASS"; }
 
-    hts_pos_t other_bp_lower_boundary() {
+    hts_pos_t start_bp_lower_boundary() {
         if (lc_consensus == NULL) return consensus_t::LOWER_BOUNDARY_NON_CALCULATED;
         return lc_consensus->other_bp_lower_boundary;
     }
-    hts_pos_t other_bp_upper_boundary() {
+    hts_pos_t start_bp_upper_boundary() {
+        if (lc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
+        return lc_consensus->other_bp_upper_boundary;
+    }
+
+    hts_pos_t end_bp_lower_boundary() {
+        if (rc_consensus == NULL) return consensus_t::LOWER_BOUNDARY_NON_CALCULATED;
+        return rc_consensus->other_bp_lower_boundary;
+    }
+    hts_pos_t end_bp_upper_boundary() {
         if (rc_consensus == NULL) return consensus_t::UPPER_BOUNDARY_NON_CALCULATED;
         return rc_consensus->other_bp_upper_boundary;
     }

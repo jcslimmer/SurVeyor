@@ -50,7 +50,7 @@ bool operator < (const cc_v_distance_t& ccd1, const cc_v_distance_t& ccd2) { // 
     return ccd1.distance < ccd2.distance;
 }
 
-bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, std::vector<bam1_t*>& kept,
+bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
                    int contig_id, bam_hdr_t* header, std::unordered_map<std::string, std::string>& mateseqs,
 				   std::unordered_map<std::string, std::string>& matequals,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
@@ -88,7 +88,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
     std::string contig_name = contig_map.get_name(contig_id);
     if (regions.empty()) {
 		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
-				aligner_to_base, harsh_aligner, kept, config, stats);
+				aligner_to_base, harsh_aligner, config, stats);
                 
         if (ins != NULL) {
 			mtx.lock();
@@ -127,7 +127,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
-				aligner_to_base, harsh_aligner, kept, config, stats);
+				aligner_to_base, harsh_aligner, config, stats);
 
 		if (ins != NULL) {
             mtx.lock();
@@ -141,16 +141,13 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 
     bool success = false;
     std::shared_ptr<insertion_t> insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
-        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_side, lo_remap_side, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, stats, config);
+        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_side, lo_remap_side, best_region, is_rc, left_bp_precise, right_bp_precise, aligner, stats, config);
     if (insertion != NULL) {
         mtx.lock();
         insertions.push_back(insertion);
         mtx.unlock();
         success = true;
     }
-
-    std::sort(kept.begin(), kept.end(), [] (bam1_t* r1, bam1_t* r2) {return get_endpoint(r1) < get_endpoint(r2);});
-
     return success;
 }
 
@@ -337,15 +334,11 @@ void find_insertions(int id, int contig_id, int comp_id, std::vector<cc_v_distan
         if (c1->cluster->used || c2->cluster->used) continue;
 
         // remap clusters
-        std::vector<bam1_t*> to_write;
-		bool success = find_insertion_from_cluster_pair(c1, c2, to_write, contig_id, hdr, *mateseqs.get(), *matequals.get(), 
-                                aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
-        if (!success) continue;
-
-        for (bam1_t* r : to_write) {
-            bam_destroy1(r);
+		bool success = find_insertion_from_cluster_pair(c1, c2, contig_id, hdr, *mateseqs.get(), *matequals.get(),
+			aligner, permissive_aligner, aligner_to_base, harsh_aligner, stats);
+        if (success) {
+            c1->cluster->used = true; c2->cluster->used = true;
         }
-        c1->cluster->used = true; c2->cluster->used = true;
     }
     std::unordered_set<std::shared_ptr<insertion_cluster_t> > clusters;
     for (cc_v_distance_t& cc_v_distance : cc_v_distances) {
@@ -570,7 +563,7 @@ int main(int argc, char* argv[]) {
 
 	int a_id = 0, t_id = 0;
 	for (const std::shared_ptr<sv_t>& insertion : insertions) {
-        if (insertion->ins_seq.length() < config.min_sv_size) {
+        if (insertion->ins_seq.length() < config.min_assembled_ins_size) {
             continue;
         }
 

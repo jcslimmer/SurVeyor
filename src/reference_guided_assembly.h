@@ -373,32 +373,32 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 
 	if (best_region.score.remap_start >= best_region.score.remap_end) return "";
 
-	insertion_cluster_t* refined_r_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
-	insertion_cluster_t* refined_l_cluster = new insertion_cluster_t(std::make_shared<cluster_t>());
+	insertion_cluster_t refined_r_cluster(std::make_shared<cluster_t>());
+	insertion_cluster_t refined_l_cluster(std::make_shared<cluster_t>());
 	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
 		if (rc_remap_side.read_remap_infos[i].accepted) {
-			refined_r_cluster->add_stable_read(r_cluster->cluster->reads[i]);
+			refined_r_cluster.add_stable_read(r_cluster->cluster->reads[i]);
 		}
 	}
 	for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
 		if (lc_remap_side.read_remap_infos[i].accepted) {
-			refined_l_cluster->add_stable_read(l_cluster->cluster->reads[i]);
+			refined_l_cluster.add_stable_read(l_cluster->cluster->reads[i]);
 		}
 	}
 	if (r_cluster->clip_consensus && rc_remap_side.clip_remap_info && rc_remap_side.clip_remap_info->accepted) {
-		refined_r_cluster->add_clip_cluster(r_cluster->clip_consensus);
+		refined_r_cluster.add_clip_cluster(r_cluster->clip_consensus);
 	}
 	if (l_cluster->clip_consensus && lc_remap_side.clip_remap_info && lc_remap_side.clip_remap_info->accepted) {
-		refined_l_cluster->add_clip_cluster(l_cluster->clip_consensus);
+		refined_l_cluster.add_clip_cluster(l_cluster->clip_consensus);
 	}
 
-	if (refined_r_cluster->empty() || refined_l_cluster->empty()) return "";
-	if (refined_r_cluster->end-refined_r_cluster->start <= 0 || refined_l_cluster->end-refined_l_cluster->start <= 0) return "";
+	if (refined_r_cluster.empty() || refined_l_cluster.empty()) return "";
+	if (refined_r_cluster.end-refined_r_cluster.start <= 0 || refined_l_cluster.end-refined_l_cluster.start <= 0) return "";
 
     // build reference-guide as left flanking + predicted transposed region + right flanking
-	char* left_flanking = new char[refined_r_cluster->end-refined_r_cluster->start+2];
-	strncpy(left_flanking, contigs.get_seq(contig_name)+refined_r_cluster->start, refined_r_cluster->end-refined_r_cluster->start+1);
-	left_flanking[refined_r_cluster->end-refined_r_cluster->start+1] = '\0';
+	char* left_flanking = new char[refined_r_cluster.end-refined_r_cluster.start+2];
+	strncpy(left_flanking, contigs.get_seq(contig_name)+refined_r_cluster.start, refined_r_cluster.end-refined_r_cluster.start+1);
+	left_flanking[refined_r_cluster.end-refined_r_cluster.start+1] = '\0';
 	to_uppercase(left_flanking);
 
 	int ins_seq_start = best_region.start + best_region.score.remap_start,
@@ -409,9 +409,9 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 	if (is_rc) rc(pred_ins_seq);
 	to_uppercase(pred_ins_seq);
 
-	char* right_flanking = new char[refined_l_cluster->end-refined_l_cluster->start+2];
-	strncpy(right_flanking, contigs.get_seq(contig_name)+refined_l_cluster->start, refined_l_cluster->end-refined_l_cluster->start+1);
-	right_flanking[refined_l_cluster->end-refined_l_cluster->start+1] = '\0';
+	char* right_flanking = new char[refined_l_cluster.end-refined_l_cluster.start+2];
+	strncpy(right_flanking, contigs.get_seq(contig_name)+refined_l_cluster.start, refined_l_cluster.end-refined_l_cluster.start+1);
+	right_flanking[refined_l_cluster.end-refined_l_cluster.start+1] = '\0';
 	to_uppercase(right_flanking);
 
 	// NOTE: prefixes and suffixes may be duplicated - i.e., suffix of left flanking also appearing as prefix of predicted ins seq
@@ -453,33 +453,37 @@ std::string generate_consensus_sequences(std::string contig_name, chr_seqs_map_t
 	std::vector<std::string> consensus_contigs = generate_reference_guided_consensus(full_junction_sequence, r_cluster, l_cluster, mateseqs,
 			aligner, harsh_aligner, consensus_contigs_alns, config, stats);
 
-	if (consensus_contigs.empty()) return full_junction_sequence;
+	std::string corrected_junction_seq;
 
-	int l_bp_in_seq = refined_r_cluster->end-refined_r_cluster->start, r_bp_in_seq = full_junction_sequence.length()-(refined_l_cluster->end-refined_l_cluster->start);
+	if (consensus_contigs.empty()) {
+		corrected_junction_seq = full_junction_sequence;
+	} else {
+		int l_bp_in_seq = refined_r_cluster.end-refined_r_cluster.start, r_bp_in_seq = full_junction_sequence.length()-(refined_l_cluster.end-refined_l_cluster.start);
 
-	const int OFFSET = 50;
-	for (StripedSmithWaterman::Alignment& aln : consensus_contigs_alns) {
-		left_bp_precise |= (aln.ref_begin < l_bp_in_seq-OFFSET && aln.ref_end >= l_bp_in_seq+OFFSET);
-		right_bp_precise |= (aln.ref_begin < r_bp_in_seq-OFFSET && aln.ref_end >= r_bp_in_seq+OFFSET);
+		const int OFFSET = 50;
+		for (StripedSmithWaterman::Alignment& aln : consensus_contigs_alns) {
+			left_bp_precise |= (aln.ref_begin < l_bp_in_seq-OFFSET && aln.ref_end >= l_bp_in_seq+OFFSET);
+			right_bp_precise |= (aln.ref_begin < r_bp_in_seq-OFFSET && aln.ref_end >= r_bp_in_seq+OFFSET);
+		}
+	
+		std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > contigs_sorted_by_pos;
+		for (int i = 0; i < consensus_contigs.size(); i++) {
+			contigs_sorted_by_pos.push_back({consensus_contigs[i], consensus_contigs_alns[i]});
+		}
+		std::sort(contigs_sorted_by_pos.begin(), contigs_sorted_by_pos.end(),
+				[](std::pair<std::string, StripedSmithWaterman::Alignment>& p1, std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
+			return p1.second.ref_begin < p2.second.ref_begin;
+		});
+	
+		// complement holes in contigs with reference
+		corrected_junction_seq = full_junction_sequence.substr(0, contigs_sorted_by_pos[0].second.ref_begin);
+		corrected_junction_seq += contigs_sorted_by_pos[0].first;
+		for (int i = 1; i < contigs_sorted_by_pos.size(); i++) {
+			corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[i-1].second.ref_end+1, contigs_sorted_by_pos[i].second.ref_begin-contigs_sorted_by_pos[i-1].second.ref_end-1);
+			corrected_junction_seq += contigs_sorted_by_pos[i].first;
+		}
+		corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[contigs_sorted_by_pos.size()-1].second.ref_end+1);
 	}
-
-	std::vector<std::pair<std::string, StripedSmithWaterman::Alignment> > contigs_sorted_by_pos;
-	for (int i = 0; i < consensus_contigs.size(); i++) {
-		contigs_sorted_by_pos.push_back({consensus_contigs[i], consensus_contigs_alns[i]});
-	}
-	std::sort(contigs_sorted_by_pos.begin(), contigs_sorted_by_pos.end(),
-			[](std::pair<std::string, StripedSmithWaterman::Alignment>& p1, std::pair<std::string, StripedSmithWaterman::Alignment>& p2) {
-		return p1.second.ref_begin < p2.second.ref_begin;
-	});
-
-	// complement holes in contigs with reference
-	std::string corrected_junction_seq = full_junction_sequence.substr(0, contigs_sorted_by_pos[0].second.ref_begin);
-	corrected_junction_seq += contigs_sorted_by_pos[0].first;
-	for (int i = 1; i < contigs_sorted_by_pos.size(); i++) {
-		corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[i-1].second.ref_end+1, contigs_sorted_by_pos[i].second.ref_begin-contigs_sorted_by_pos[i-1].second.ref_end-1);
-		corrected_junction_seq += contigs_sorted_by_pos[i].first;
-	}
-	corrected_junction_seq += full_junction_sequence.substr(contigs_sorted_by_pos[contigs_sorted_by_pos.size()-1].second.ref_end+1);
 
 	StripedSmithWaterman::Alignment aln;
 	StripedSmithWaterman::Filter filter;
@@ -548,7 +552,7 @@ void update_read(bam1_t* read, region_t& chosen_region, remap_info_t& remap_info
 std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::string contig_name, char* contig_seq, hts_pos_t contig_len, std::string& junction_seq,
 			std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster, 
 			remap_side_t& ro_remap_side, remap_side_t& lo_remap_side,
-			region_t& best_region, bool is_rc, std::vector<bam1_t*>& kept, bool left_bp_precise, bool right_bp_precise, 
+			region_t& best_region, bool is_rc, bool left_bp_precise, bool right_bp_precise, 
 			StripedSmithWaterman::Aligner& aligner, stats_t& stats, config_t& config) {
 
 	int remap_start = std::max(hts_pos_t(0), r_cluster->start-50);
@@ -558,7 +562,7 @@ std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::str
 	 std::vector<std::shared_ptr<sv_t>> insertions = detect_svs_from_junction(contig_name, contig_seq, junction_seq, 
                 remap_start, remap_end, remap_start, remap_end, aligner, 0, 0, stats, config);
 
-	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->svsize() < config.min_sv_size) return NULL;
+	if (insertions.empty() || insertions[0]->svtype() != "INS" || insertions[0]->svsize() < config.min_assembled_ins_size) return NULL;
 
 	std::shared_ptr<insertion_t> insertion = std::dynamic_pointer_cast<insertion_t>(insertions[0]);
 
@@ -657,17 +661,6 @@ std::shared_ptr<insertion_t> detect_reference_guided_assembly_insertion(std::str
 	insertion->imprecise = !left_bp_precise || !right_bp_precise;
 	insertion->source = "REFERENCE_GUIDED_ASSEMBLY";
 	insertion->mh_len = 0; // current value is just a temporary approximation, reset it. genotype will calculate it correctly
-
-	// for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
-	// 	bam1_t* r = bam_dup1(r_cluster->cluster->reads[i]);
-	// 	update_read(r, best_region, ro_remap_infos[i], is_rc);
-	// 	kept.push_back(r);
-	// }
-	// for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
-	// 	bam1_t* r = bam_dup1(l_cluster->cluster->reads[i]);
-	// 	update_read(r, best_region, lo_remap_infos[i], is_rc);
-	// 	kept.push_back(r);
-	// }
 
 	return insertion;
 }

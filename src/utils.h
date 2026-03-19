@@ -30,6 +30,7 @@ struct config_t {
     std::string sampling_regions, version;
 
     const int flanking_size = 5000, indel_tested_region_size = 10000;
+    const int min_assembled_ins_size = 50;
 
     void parse(std::string config_file) {
         std::unordered_map<std::string, std::string> config_params;
