@@ -105,22 +105,26 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
     region_t best_region = best_and_base_region.first;
     region_t base_region = best_and_base_region.second;
 
-    std::vector<remap_info_t> ro_remap_infos, lo_remap_infos;
+    remap_side_t ro_remap_side, lo_remap_side;
     char* contig_seq = contigs.get_seq(contig_map.get_name(best_region.contig_id));
     bool is_rc;
-    compute_score(best_region, contig_seq, r_cluster, l_cluster, mateseqs, &ro_remap_infos, &lo_remap_infos,
+    compute_score(best_region, contig_seq, r_cluster, l_cluster, mateseqs, &ro_remap_side, &lo_remap_side,
                   aligner, permissive_aligner, is_rc, config, stats);
 
     // build corrected consensus sequence and realign reads to it
     bool left_bp_precise = false, right_bp_precise = false;
-    std::string corrected_consensus_sequence = generate_consensus_sequences(contig_name, contigs, contig_map, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos,
-				best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, matequals, aligner, harsh_aligner, config, stats);
+    std::string corrected_consensus_sequence = generate_consensus_sequences(contig_name, contigs, contig_map, r_cluster, l_cluster, ro_remap_side, lo_remap_side,
+					best_region, is_rc, left_bp_precise, right_bp_precise, mateseqs, matequals, aligner, harsh_aligner, config, stats);
 
     /* == Try assembly == */
 	int rc_accepted_reads = 0, lc_accepted_reads = 0;
-	for (remap_info_t& remap_info : ro_remap_infos) rc_accepted_reads += remap_info.accepted;
-	for (remap_info_t& remap_info : lo_remap_infos) lc_accepted_reads += remap_info.accepted;
-	int tot_reads = r_cluster->cluster->count + l_cluster->cluster->count;
+	for (int i = 0; i < r_cluster->cluster->reads.size(); i++) {
+        rc_accepted_reads += ro_remap_side.read_remap_infos[i].accepted;
+    }
+    for (int i = 0; i < l_cluster->cluster->reads.size(); i++) {
+        lc_accepted_reads += lo_remap_side.read_remap_infos[i].accepted;
+    }
+	int tot_reads = r_cluster->cluster->reads.size() + l_cluster->cluster->reads.size();
 	if (rc_accepted_reads == 0 || lc_accepted_reads == 0 || double(rc_accepted_reads+lc_accepted_reads)/tot_reads < 0.5) {
 		std::shared_ptr<sv_t> ins = detect_de_novo_insertion(contig_name, contigs, r_cluster, l_cluster, mateseqs, matequals, assembly_failed_no_seq, assembly_failed_cycle_writer, assembly_failed_too_many_reads_writer,
 				aligner_to_base, harsh_aligner, kept, config, stats);
@@ -137,7 +141,7 @@ bool find_insertion_from_cluster_pair(std::shared_ptr<insertion_cluster_t> r_clu
 
     bool success = false;
     std::shared_ptr<insertion_t> insertion = detect_reference_guided_assembly_insertion(contig_name, contigs.get_seq(contig_name), contigs.get_len(contig_name), 
-        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_infos, lo_remap_infos, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, stats, config);
+        corrected_consensus_sequence, r_cluster, l_cluster, ro_remap_side, lo_remap_side, best_region, is_rc, kept, left_bp_precise, right_bp_precise, aligner, stats, config);
     if (insertion != NULL) {
         mtx.lock();
         insertions.push_back(insertion);

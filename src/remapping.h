@@ -60,6 +60,11 @@ struct remap_info_t {
     }
 };
 
+struct remap_side_t {
+    std::vector<remap_info_t> read_remap_infos;
+    std::unique_ptr<remap_info_t> clip_remap_info;
+};
+
 region_t get_candidate_region(std::vector<std::shared_ptr<bam1_t>> subcluster, std::string& m_contig_name, int m_contig_id, hts_pos_t m_contig_len, int max_is, int max_trans_size) {
     std::shared_ptr<bam1_t> leftmost_reverse_mate = NULL, rightmost_reverse_mate = NULL;
     std::shared_ptr<bam1_t> leftmost_forward_mate = NULL, rightmost_forward_mate = NULL;
@@ -234,7 +239,7 @@ int get_strict_region_end(std::vector<remap_info_t>& rc_remap_infos, std::vector
 
 region_score_t compute_score_supp(region_t& region, char* contig_seq, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
                        std::unordered_map<std::string, std::string>& mateseqs,
-                       std::vector<remap_info_t>& ro_remap_infos, std::vector<remap_info_t>& lo_remap_infos,
+                       remap_side_t& ro_remap_side, remap_side_t& lo_remap_side,
                        StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
                        bool do_rc, config_t& config, stats_t& stats) {
 
@@ -297,12 +302,12 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
         min_start = std::min(min_start, remap_info.start);
         remap_info.end += strict_region_start;
         max_end = std::max(max_end, remap_info.end);
-        ro_remap_infos.push_back(remap_info);
+        ro_remap_side.read_remap_infos.push_back(remap_info);
     }
     if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
     	std::string clip_seq = r_cluster->clip_consensus ? r_cluster->clip_consensus->clip_sequence() : "";
     	char clip_dir = do_rc ? 'R' : 'L'; // R means that the clip determines the right-most boundary of the inserted region/sequence, L the left-most
-    	remap_to_maxis_window(ro_remap_infos, rc_remap_info, region_ptr, strict_region_start, strict_region_end,
+    	remap_to_maxis_window(ro_remap_side.read_remap_infos, rc_remap_info, region_ptr, strict_region_start, strict_region_end,
     			r_mates, clip_seq, clip_dir, stats.max_is, config.min_clip_len, aligner, filter);
     }
 
@@ -313,45 +318,45 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
         min_start = std::min(min_start, remap_info.start);
         remap_info.end += strict_region_start;
         max_end = std::max(max_end, remap_info.end);
-        lo_remap_infos.push_back(remap_info);
+        lo_remap_side.read_remap_infos.push_back(remap_info);
     }
     if (max_end-min_start > stats.max_is) { // all the mappings need to be within a config.max_is bp window
     	std::string clip_seq = l_cluster->clip_consensus ? l_cluster->clip_consensus->clip_sequence() : "";
     	char clip_dir = do_rc ? 'L' : 'R';
-    	remap_to_maxis_window(lo_remap_infos, lc_remap_info, region_ptr, strict_region_start, strict_region_end,
+    	remap_to_maxis_window(lo_remap_side.read_remap_infos, lc_remap_info, region_ptr, strict_region_start, strict_region_end,
     			l_mates, clip_seq, clip_dir, stats.max_is, config.min_clip_len, aligner, filter);
     }
 
     // if strict limits not identified through remapping of the clips, choose most common start and most common ends
     if (strict_region_start == 0) {
-        strict_region_start = get_strict_region_start(ro_remap_infos, lo_remap_infos);
+        strict_region_start = get_strict_region_start(ro_remap_side.read_remap_infos, lo_remap_side.read_remap_infos);
     }
     if (strict_region_end == region.end-region.start) {
-        int temp = get_strict_region_end(ro_remap_infos, lo_remap_infos);
+        int temp = get_strict_region_end(ro_remap_side.read_remap_infos, lo_remap_side.read_remap_infos);
         if (temp > 0) strict_region_end = temp;
     }
 
     // un-accept all remappings that fall outside the strict limits or they are not clipped correctly
-    for (remap_info_t& remap_info : ro_remap_infos) {
+    for (remap_info_t& remap_info : ro_remap_side.read_remap_infos) {
         if (remap_info.left_clipped && strict_region_start < remap_info.start-5) remap_info.accepted = false;
         if (remap_info.start < strict_region_start-5) remap_info.accepted = false;
         if (remap_info.right_clipped && remap_info.end+5 < strict_region_end) remap_info.accepted = false;
         if (strict_region_end < remap_info.start) remap_info.accepted = false;
     }
-    for (remap_info_t& remap_info : lo_remap_infos) {
+    for (remap_info_t& remap_info : lo_remap_side.read_remap_infos) {
         if (remap_info.left_clipped && strict_region_start < remap_info.start-5) remap_info.accepted = false;
         if (remap_info.end < strict_region_start) remap_info.accepted = false;
         if (remap_info.right_clipped && remap_info.end+5 < strict_region_end) remap_info.accepted = false;
         if (strict_region_end < remap_info.start) remap_info.accepted = false;
     }
 
-    for (remap_info_t& remap_info : ro_remap_infos) {
+    for (remap_info_t& remap_info : ro_remap_side.read_remap_infos) {
         if (remap_info.accepted) {
             score.total_score += remap_info.score;
             score.ro_accepted++;
         }
     }
-    for (remap_info_t& remap_info : lo_remap_infos) {
+    for (remap_info_t& remap_info : lo_remap_side.read_remap_infos) {
         if (remap_info.accepted) {
             score.total_score += remap_info.score;
             score.lo_accepted++;
@@ -360,26 +365,26 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
 
     // find inserted sequence coordinates
     int rc_start = INT32_MAX, rc_end = 0;
-	if (rc_remap_info.accepted) {
-		rc_start = rc_remap_info.start;
-		rc_end = rc_remap_info.end;
-	} else {
-		for (remap_info_t& ri : ro_remap_infos) {
-			if (ri.accepted) {
-				rc_start = std::min(rc_start, ri.start);
-				rc_end = std::max(rc_end, ri.end);
+		if (rc_remap_info.accepted) {
+			rc_start = rc_remap_info.start;
+			rc_end = rc_remap_info.end;
+		} else {
+			for (remap_info_t& ri : ro_remap_side.read_remap_infos) {
+				if (ri.accepted) {
+					rc_start = std::min(rc_start, ri.start);
+					rc_end = std::max(rc_end, ri.end);
 			}
 		}
 	}
 	int lc_start = INT32_MAX, lc_end = 0;
-	if (lc_remap_info.accepted) {
-		lc_start = lc_remap_info.start;
-		lc_end = lc_remap_info.end;
-	} else {
-		for (remap_info_t& ri : lo_remap_infos) {
-			if (ri.accepted) {
-				lc_start = std::min(lc_start, ri.start);
-				lc_end = std::max(lc_end, ri.end);
+		if (lc_remap_info.accepted) {
+			lc_start = lc_remap_info.start;
+			lc_end = lc_remap_info.end;
+		} else {
+			for (remap_info_t& ri : lo_remap_side.read_remap_infos) {
+				if (ri.accepted) {
+					lc_start = std::min(lc_start, ri.start);
+					lc_end = std::max(lc_end, ri.end);
 			}
 		}
 	}
@@ -393,14 +398,14 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
 	}
 
     if (r_cluster->clip_consensus) {
-        ro_remap_infos.push_back(rc_remap_info);
+        ro_remap_side.clip_remap_info.reset(new remap_info_t(rc_remap_info));
         if (rc_remap_info.accepted) {
             score.total_score += rc_remap_info.score;
             score.ro_accepted++;
         }
     }
     if (l_cluster->clip_consensus) {
-        lo_remap_infos.push_back(lc_remap_info);
+        lo_remap_side.clip_remap_info.reset(new remap_info_t(lc_remap_info));
         if (lc_remap_info.accepted) {
             score.total_score += lc_remap_info.score;
             score.lo_accepted++;
@@ -411,25 +416,37 @@ region_score_t compute_score_supp(region_t& region, char* contig_seq, std::share
 
 void compute_score(region_t& region, char* contig_seq, std::shared_ptr<insertion_cluster_t> r_cluster, std::shared_ptr<insertion_cluster_t> l_cluster,
                    std::unordered_map<std::string, std::string>& mateseqs,
-                   std::vector<remap_info_t>* ro_remap_infos, std::vector<remap_info_t>* lo_remap_infos,
+                   remap_side_t* ro_remap_side, remap_side_t* lo_remap_side,
                    StripedSmithWaterman::Aligner& aligner, StripedSmithWaterman::Aligner& permissive_aligner,
                    bool& is_rc, config_t& config, stats_t& stats) {
 
-    std::vector<remap_info_t> fwd_ro_remap_infos, fwd_lo_remap_infos, rc_ro_remap_infos, rc_lo_remap_infos;
-    region_score_t score = compute_score_supp(region, contig_seq, r_cluster, l_cluster, mateseqs, fwd_ro_remap_infos, fwd_lo_remap_infos,
+    remap_side_t fwd_ro_remap_side, fwd_lo_remap_side, rc_ro_remap_side, rc_lo_remap_side;
+    region_score_t score = compute_score_supp(region, contig_seq, r_cluster, l_cluster, mateseqs, fwd_ro_remap_side, fwd_lo_remap_side,
                                               aligner,permissive_aligner, false, config, stats);
-    region_score_t rc_score = compute_score_supp(region, contig_seq, r_cluster, l_cluster, mateseqs, rc_ro_remap_infos, rc_lo_remap_infos,
+    region_score_t rc_score = compute_score_supp(region, contig_seq, r_cluster, l_cluster, mateseqs, rc_ro_remap_side, rc_lo_remap_side,
                                                  aligner, permissive_aligner, true, config, stats);
     if (score >= rc_score) {
         is_rc = false;
         region.score = score;
-        if (ro_remap_infos != NULL) ro_remap_infos->swap(fwd_ro_remap_infos);
-        if (lo_remap_infos != NULL) lo_remap_infos->swap(fwd_lo_remap_infos);
+        if (ro_remap_side != NULL) {
+            ro_remap_side->read_remap_infos.swap(fwd_ro_remap_side.read_remap_infos);
+            ro_remap_side->clip_remap_info.swap(fwd_ro_remap_side.clip_remap_info);
+        }
+        if (lo_remap_side != NULL) {
+            lo_remap_side->read_remap_infos.swap(fwd_lo_remap_side.read_remap_infos);
+            lo_remap_side->clip_remap_info.swap(fwd_lo_remap_side.clip_remap_info);
+        }
     } else {
         is_rc = true;
         region.score = rc_score;
-        if (ro_remap_infos != NULL) ro_remap_infos->swap(rc_ro_remap_infos);
-        if (lo_remap_infos != NULL) lo_remap_infos->swap(rc_lo_remap_infos);
+        if (ro_remap_side != NULL) {
+            ro_remap_side->read_remap_infos.swap(rc_ro_remap_side.read_remap_infos);
+            ro_remap_side->clip_remap_info.swap(rc_ro_remap_side.clip_remap_info);
+        }
+        if (lo_remap_side != NULL) {
+            lo_remap_side->read_remap_infos.swap(rc_lo_remap_side.read_remap_infos);
+            lo_remap_side->clip_remap_info.swap(rc_lo_remap_side.clip_remap_info);
+        }
     }
 }
 
