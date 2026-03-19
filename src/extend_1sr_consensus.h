@@ -547,9 +547,9 @@ void extend_consensus_to_right(std::shared_ptr<consensus_t> consensus, IntervalT
 	std::string ext_consensus = consensus->sequence;
 	while (e.overlap) {
 		ext_consensus += read_seqs[e.next].substr(e.overlap);
-		e = best_edges[e.next];
 		consensus->right_ext_reads++;
 		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_right_ext_reads++;
+		e = best_edges[e.next];
 	}
 
 	if (!consensus->left_clipped) {
@@ -626,9 +626,9 @@ void extend_consensus_to_left(std::shared_ptr<consensus_t> consensus, IntervalTr
 	std::string ext_consensus = consensus->sequence;
 	while (e.overlap) {
 		ext_consensus = read_seqs[e.next].substr(0, read_seqs[e.next].length()-e.overlap) + ext_consensus;
-		e = best_edges[e.next];
 		consensus->left_ext_reads++;
 		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_left_ext_reads++;
+		e = best_edges[e.next];
 	}
 
 	if (consensus->left_clipped) {
