@@ -313,6 +313,10 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     
         int or2chq = sv->sample_info.assigned_to_other_sv_bp2_consistent_highmq;
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2CHQ", &or2chq, 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2C", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2CHQ", NULL, 0);
     }
 
     int td = sv->sample_info.too_deep;
@@ -617,7 +621,7 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     bp_reads_info.consistent_avg_score = consistent_avg_score;
     bp_reads_info.consistent_stddev_score = consistent_stddev_score;
 
-    bp_reads_info.consistent_avg_mq = sum_mq/consistent_reads.size();
+    bp_reads_info.consistent_avg_mq = sum_mq/std::max(1, (int) consistent_reads.size());
     bp_reads_info.consistent_stddev_mq = stddev(mqs);
 
     bp_reads_info.fwd_mate_cov_bps = get_covered_bps(fwd_mate_positions);

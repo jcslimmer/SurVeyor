@@ -682,6 +682,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 		qname_to_mate_nm[qname] = nm;
 	}
 
+	std::unordered_map<duplication_t*, size_t> duplication_to_idx;
+	for (size_t i = 0; i < duplications.size(); i++) duplication_to_idx[duplications[i]] = i;
+
 	std::vector<pairs_data_t> alt_pairs_data(duplications.size()), ref_pairs_data(duplications.size());
 	std::vector<pairs_data_t> neutral_bp1_pairs_data(duplications.size()), neutral_bp2_pairs_data(duplications.size());
 
@@ -692,7 +695,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		if (is_unmapped(read) || !is_primary(read)) continue;
 
-		while (curr_dup_dp_idx < duplications.size() && duplications_by_start[curr_dup_dp_idx]->start+stats.max_is < read->core.pos) curr_dup_dp_idx++;
+		while (curr_dup_dp_idx < duplications.size() && duplications_by_start[curr_dup_dp_idx]->start < read->core.pos-stats.max_is) curr_dup_dp_idx++;
 		while (curr_dup_bystart_idx < duplications.size() && duplications_by_start[curr_dup_bystart_idx]->start < read->core.pos) curr_dup_bystart_idx++;
 		while (curr_dup_byend_idx < duplications.size() && duplications_by_end[curr_dup_byend_idx]->end < read->core.pos) curr_dup_byend_idx++;
 
@@ -700,41 +703,48 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 		if (bam_is_rev(read) && is_outward(read)) {
 			for (int i = curr_dup_dp_idx; i < duplications.size() && bam_endpos(read) > duplications_by_start[i]->start; i++) {
 				duplication_t* dup = duplications_by_start[i];
+				int idx = duplication_to_idx[dup];
 				if (dup->start < pair_start && pair_start < dup->start+stats.max_is && dup->end-stats.max_is < pair_end && pair_end < dup->end) {
 					if (evidence_logger) evidence_logger->log_pair_association(dup->id, read);
 					std::string read_name = bam_get_qname(read);
 					if (reassign_evidence && evidence_map->read_to_sv_map.count(read_name) &&
 						evidence_map->read_to_sv_map[read_name] != dup->id) continue;
-					add_read(alt_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+					add_read(alt_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 				}
 			}
 		} else if (!bam_is_rev(read) && read->core.isize >= stats.min_is && read->core.isize <= stats.max_is) {
 			for (int i = curr_dup_bystart_idx; i < duplications.size() && duplications_by_start[i]->start < pair_end; i++) {
-				if (pair_start <= duplications_by_start[i]->start && duplications_by_start[i]->end <= pair_end) {
-					if (read->core.isize > stats.max_is-duplications_by_start[i]->svlen()) {
-						add_read(ref_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+				duplication_t* dup = duplications_by_start[i];
+				int idx = duplication_to_idx[dup];
+				if (pair_start <= dup->start && dup->end <= pair_end) {
+					if (read->core.isize > stats.max_is-dup->svlen()) {
+						add_read(ref_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 					} else {
-						add_read(neutral_bp1_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
-						add_read(neutral_bp2_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+						add_read(neutral_bp1_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+						add_read(neutral_bp2_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 					}
-				} else if (pair_start <= duplications_by_start[i]->start && duplications_by_start[i]->start <= pair_end) {
-					add_read(neutral_bp1_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+				} else if (pair_start <= dup->start && dup->start <= pair_end) {
+					add_read(neutral_bp1_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 				}
 			}
 			for (int i = curr_dup_byend_idx; i < duplications.size() && duplications_by_end[i]->end < pair_end; i++) {
-				if (pair_start <= duplications_by_start[i]->start && duplications_by_start[i]->end <= pair_end) {
-					continue; // already accounted for in the previous loop
-				} else if (pair_start <= duplications_by_end[i]->end && duplications_by_end[i]->end <= pair_end) {
-					add_read(neutral_bp2_pairs_data[i], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
+				duplication_t* dup = duplications_by_end[i];
+				int idx = duplication_to_idx[dup];
+				if (pair_start <= dup->start && dup->end <= pair_end) {
+					continue;
+				} else if (pair_start <= dup->end && dup->end <= pair_end) {
+					add_read(neutral_bp2_pairs_data[idx], read, qname_to_mate_nm[std::string(bam_get_qname(read))]);
 				}
 			}
 		}
 	}
 	for (int i = 0; i < duplications.size(); i++) {
-		set_bp_pairs_info(duplications_by_start[i]->sample_info.alt_bp1.pairs_info, alt_pairs_data[i], config);
-		set_bp_pairs_info(duplications_by_start[i]->sample_info.ref_bp1.pairs_info, ref_pairs_data[i], config);
-		set_bp_pairs_info(duplications_by_start[i]->sample_info.neutral_bp1_pairs, neutral_bp1_pairs_data[i], config);
-		set_bp_pairs_info(duplications_by_end[i]->sample_info.neutral_bp2_pairs, neutral_bp2_pairs_data[i], config);
+		duplication_t* dup = duplications[i];
+		int idx = duplication_to_idx[dup];
+		set_bp_pairs_info(dup->sample_info.alt_bp1.pairs_info, alt_pairs_data[idx], config);
+		set_bp_pairs_info(dup->sample_info.ref_bp1.pairs_info, ref_pairs_data[idx], config);
+		set_bp_pairs_info(dup->sample_info.neutral_bp1_pairs, neutral_bp1_pairs_data[idx], config);
+		set_bp_pairs_info(dup->sample_info.neutral_bp2_pairs, neutral_bp2_pairs_data[idx], config);
 	}
 }
 
@@ -764,6 +774,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 		return i1->end < i2->end;
 	});
 
+	std::unordered_map<insertion_t*, size_t> insertion_to_idx;
+	for (size_t i = 0; i < insertions.size(); i++) insertion_to_idx[insertions[i]] = i;
+
 	std::vector<pairs_data_t> alt_bp1_pairs_data(insertions.size()), alt_bp2_pairs_data(insertions.size());
 	std::vector<pairs_data_t> ref_bp1_pairs_data(insertions.size());
 	std::vector<pairs_data_t> neutral_bp1_pairs_data(insertions.size());
@@ -779,8 +792,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
 
-        while (curr_del_bystart_idx < insertions.size() && insertions[curr_del_bystart_idx]->start < read->core.pos) curr_del_bystart_idx++;
-		while (curr_del_byend_idx < insertions.size() && insertions[curr_del_byend_idx]->end < read->core.pos-stats.max_is) curr_del_byend_idx++;
+        while (curr_del_bystart_idx < insertions_by_start.size() && insertions_by_start[curr_del_bystart_idx]->start < read->core.pos) curr_del_bystart_idx++;
+		while (curr_del_byend_idx < insertions_by_end.size() && insertions_by_end[curr_del_byend_idx]->end < read->core.pos-stats.max_is) curr_del_byend_idx++;
 
         std::string qname = bam_get_qname(read);
         if (is_samechr(read)) {
@@ -798,39 +811,45 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 			StripedSmithWaterman::Alignment aln;
 			if (!bam_is_rev(read)) {
 				rc(mate_seq);
-				for (int i = curr_del_bystart_idx; i < insertions.size() && insertions_by_start[i]->start-stats.max_is < read->core.pos; i++) {
-					harsh_aligner.Align(mate_seq.c_str(), insertions_by_start[i]->ins_seq.c_str(), insertions_by_start[i]->ins_seq.length(), filter, &aln, 0);
-		
+				for (int i = curr_del_bystart_idx; i < insertions_by_start.size() && insertions_by_start[i]->start < read->core.pos+stats.max_is; i++) {
+					insertion_t* ins = insertions_by_start[i];
+					int idx = insertion_to_idx[ins];
+
+					harsh_aligner.Align(mate_seq.c_str(), ins->ins_seq.c_str(), ins->ins_seq.length(), filter, &aln, 0);
+
 					double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
 					int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
 
-					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
-						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_start[i]->ins_seq.length()-1)) {
-						if (evidence_logger) evidence_logger->log_pair_association(insertions_by_start[i]->id, read);
+					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) &&
+						(rc_size < config.min_clip_len || aln.ref_end >= ins->ins_seq.length()-1)) {
+						if (evidence_logger) evidence_logger->log_pair_association(ins->id, read);
 						std::string read_name = bam_get_qname(read);
 						if (reassign_evidence && evidence_map->read_to_sv_map.count(read_name) > 0 &&
-							evidence_map->read_to_sv_map[read_name] != insertions_by_start[i]->id) continue;
-						add_read(alt_bp1_pairs_data[i], read, aln.mismatches);
+							evidence_map->read_to_sv_map[read_name] != ins->id) continue;
+						add_read(alt_bp1_pairs_data[idx], read, aln.mismatches);
 					} else {
-						add_read(stray_bp1_pairs_data[i], read, aln.mismatches);
+						add_read(stray_bp1_pairs_data[idx], read, aln.mismatches);
 					}
 				}
 			} else {
 				for (int i = curr_del_byend_idx; i < insertions.size() && insertions_by_end[i]->end < read->core.pos; i++) {
-					harsh_aligner.Align(mate_seq.c_str(), insertions_by_end[i]->ins_seq.c_str(), insertions_by_end[i]->ins_seq.length(), filter, &aln, 0);
+					insertion_t* ins = insertions_by_end[i];
+					int idx = insertion_to_idx[ins];
+
+					harsh_aligner.Align(mate_seq.c_str(), ins->ins_seq.c_str(), ins->ins_seq.length(), filter, &aln, 0);
 
 					double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
 					int lc_size = get_left_clip_size(aln), rc_size = get_right_clip_size(aln);
-					
-					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) && 
-						(rc_size < config.min_clip_len || aln.ref_end >= insertions_by_end[i]->ins_seq.length()-1)) {
-						if (evidence_logger) evidence_logger->log_pair_association(insertions_by_end[i]->id, read);
+
+					if (mismatch_rate <= config.max_seq_error && (lc_size < config.min_clip_len || aln.ref_begin == 0) &&
+						(rc_size < config.min_clip_len || aln.ref_end >= ins->ins_seq.length()-1)) {
+						if (evidence_logger) evidence_logger->log_pair_association(ins->id, read);
 						std::string read_name = bam_get_qname(read);
 						if (reassign_evidence && evidence_map->read_to_sv_map.count(read_name) > 0 &&
-							evidence_map->read_to_sv_map[read_name] != insertions_by_end[i]->id) continue;
-						add_read(alt_bp2_pairs_data[i], read, aln.mismatches);
+							evidence_map->read_to_sv_map[read_name] != ins->id) continue;
+						add_read(alt_bp2_pairs_data[idx], read, aln.mismatches);
 					} else {
-						add_read(stray_bp2_pairs_data[i], read, aln.mismatches);
+						add_read(stray_bp2_pairs_data[idx], read, aln.mismatches);
 					}
 				}	
 			}
@@ -839,7 +858,9 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 				hts_pos_t pair_start = read->core.pos + read->core.l_qseq/2, pair_end = read->core.mpos + read->core.l_qseq/2;
 				for (int i = curr_del_bystart_idx; i < insertions.size() && insertions_by_start[i]->start <= pair_end; i++) {
 					if (pair_start <= insertions_by_start[i]->start && insertions_by_start[i]->start <= pair_end) {
-						pairs_data_t* pairs_data = (read->core.isize > stats.max_is-insertions_by_start[i]->svlen() ? &ref_bp1_pairs_data[i] : &neutral_bp1_pairs_data[i]);
+						insertion_t* ins = insertions_by_start[i];
+						int idx = insertion_to_idx[ins];
+						pairs_data_t* pairs_data = (read->core.isize > stats.max_is-ins->svlen() ? &ref_bp1_pairs_data[idx] : &neutral_bp1_pairs_data[idx]);
 						pairs_waiting_for_neg_nm[std::string(bam_get_qname(read))].push_back({pairs_data, bam_dup1(read)});
 					}
 				}
@@ -855,13 +876,13 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
     }
     for (int i = 0; i < insertions.size(); i++) {
         insertion_t* ins = insertions[i];
-		
-		set_bp_pairs_info(ins->sample_info.alt_bp1.pairs_info, alt_bp1_pairs_data[i], config);
-		set_bp_pairs_info(ins->sample_info.alt_bp2.pairs_info, alt_bp2_pairs_data[i], config);
-		set_bp_pairs_info(ins->sample_info.bp1_stray_pairs, stray_bp1_pairs_data[i], config);
-		set_bp_pairs_info(ins->sample_info.bp2_stray_pairs, stray_bp2_pairs_data[i], config);
-		set_bp_pairs_info(ins->sample_info.ref_bp1.pairs_info, ref_bp1_pairs_data[i], config);
-		set_bp_pairs_info(ins->sample_info.neutral_bp1_pairs, neutral_bp1_pairs_data[i], config);
+		int idx = insertion_to_idx[ins];
+		set_bp_pairs_info(ins->sample_info.alt_bp1.pairs_info, alt_bp1_pairs_data[idx], config);
+		set_bp_pairs_info(ins->sample_info.alt_bp2.pairs_info, alt_bp2_pairs_data[idx], config);
+		set_bp_pairs_info(ins->sample_info.bp1_stray_pairs, stray_bp1_pairs_data[idx], config);
+		set_bp_pairs_info(ins->sample_info.bp2_stray_pairs, stray_bp2_pairs_data[idx], config);
+		set_bp_pairs_info(ins->sample_info.ref_bp1.pairs_info, ref_bp1_pairs_data[idx], config);
+		set_bp_pairs_info(ins->sample_info.neutral_bp1_pairs, neutral_bp1_pairs_data[idx], config);
     }
 
     for (char* region : regions) free(region);
@@ -935,9 +956,10 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<inversion_t*>& inv
 		}
 	}
 
+	std::vector<int> empty_nms;
 	for (int i = 0; i < inversions.size(); i++) {
-		set_bp_pairs_info(inversions_by_end[i]->sample_info.alt_bp1.pairs_info, supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], config);
-		set_bp_pairs_info(inversions_by_start[i]->sample_info.alt_bp2.pairs_info, supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], config);
+		set_bp_pairs_info(inversions_by_end[i]->sample_info.alt_bp1.pairs_info, supp_pairs_bp1_pos_mqs[i], supp_pairs_bp1_neg_mqs[i], empty_nms, empty_nms, config);
+		set_bp_pairs_info(inversions_by_start[i]->sample_info.alt_bp2.pairs_info, supp_pairs_bp2_pos_mqs[i], supp_pairs_bp2_neg_mqs[i], empty_nms, empty_nms, config);
 	}
 }
 
