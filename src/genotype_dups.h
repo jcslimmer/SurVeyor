@@ -180,8 +180,7 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
 		alt_seq[pos] = 0;
         aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
         dup->sample_info.ext_alt_consensus1_to_alt_score = alt_aln.query_end - alt_aln.query_begin - alt_aln.mismatches;
-
-        // delete[] alt_seq;
+        delete[] alt_seq;
 
         int lf_seq_end = dup_start - ref_start;
         int lf_aln_rlen = std::max(0, lf_seq_end-alt_aln.ref_begin);
@@ -389,6 +388,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
     auto alt_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(alt_seq, alt_better_reads, std::vector<bool>(), alt_consensus_seq, alt_avg_score, alt_stddev_score);
     auto ref_bp1_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp1_seq, ref_bp1_better_reads, std::vector<bool>(), ref_bp1_consensus_seq, ref_bp1_avg_score, ref_bp1_stddev_score);
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score);
+    delete[] ref_bp1_seq;
+    delete[] ref_bp2_seq;
 
     std::vector<int> alt_better_read_positions_consistent = get_consistent_reads_start_positions(alt_better_reads_consistent, alt_better_reads, alt_better_read_positions);
     dup->sample_info.alt1_occ_ratio = occ_ratio(alt_better_read_positions_consistent, alt_ref_diff_reads_expected_positions.size());

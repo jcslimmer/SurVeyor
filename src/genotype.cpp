@@ -411,14 +411,14 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     for (size_t i = 0; i < sv->sample_info.filters.size(); ++i) {
         filters += sv->sample_info.filters[i];
         if (i + 1 < sv->sample_info.filters.size()) {
-            filters += ",";
+            filters += ";";
         }
     }
     if (filters.empty()) {
         filters = "PASS";
     }
 
-    char* filters_cstr = strdup(filters.c_str());
+    const char* filters_cstr = filters.c_str();
     bcf_update_format_char(out_hdr, sv->vcf_entry, "FT", filters_cstr, strlen(filters_cstr));
 }
 

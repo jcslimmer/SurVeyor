@@ -275,7 +275,7 @@ void count_stray_pairs(std::string contig_name, std::vector<deletion_t*> deletio
 		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read) || is_outward(read)) {
 			for (int i = curr_pos; i < deletions.size() && deletions[i]->end <= bam_endpos(read); i++) {
 				if (read->core.pos <= deletions[i]->end+stats.max_is) {
-					pos_mqs[i].push_back(get_nm(read));
+					pos_mqs[i].push_back(get_mq(read));
 					neg_mqs[i].push_back(read->core.qual);
 
 					pos_nms[i].push_back(0);
@@ -757,11 +757,8 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
 	std::vector<char*> regions;
     for (insertion_t* ins : insertions) {
         std::stringstream ss;
-        ss << ins->chr << ":" << std::max(hts_pos_t(1), ins->start-stats.max_is) << "-" << ins->start;
+        ss << ins->chr << ":" << std::max(hts_pos_t(1), ins->start-stats.max_is) << "-" << ins->end+stats.max_is;
         regions.push_back(strdup(ss.str().c_str()));
-		ss.str("");
-		ss << ins->chr << ":" << ins->end << "-" << ins->end+stats.max_is;
-		regions.push_back(strdup(ss.str().c_str()));
     }
 
 	std::vector<insertion_t*> insertions_by_start(insertions.begin(), insertions.end());
