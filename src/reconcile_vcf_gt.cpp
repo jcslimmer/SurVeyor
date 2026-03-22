@@ -47,6 +47,8 @@ std::unordered_map<std::string, gt_record_t> load_gt_vcf(std::string gt_vcf_fnam
     }
 
     bcf_destroy(b);
+    bcf_hdr_destroy(hdr);
+    bcf_close(fp);
     return gt_records;
 }
 
@@ -144,7 +146,6 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
     }
 
     bcf_destroy(b);
-    bcf_close(out_fp);
 }
 
 int main(int argc, char** argv) {
@@ -194,11 +195,15 @@ int main(int argc, char** argv) {
     }
     bcf_hdr_t* gt_hdr = bcf_hdr_read(gt_fp);
     copy_all_format_to_base(base_hdr, base_fp, gt_records, gt_hdr, out_fp, out_hdr);
-
+    
     // Cleanup
     for (auto &pair : gt_records) {
         bcf_destroy(pair.second.record);
     }
+    bcf_hdr_destroy(gt_hdr);
+    bcf_close(gt_fp);
     bcf_hdr_destroy(base_hdr);
     bcf_close(base_fp);
+    bcf_hdr_destroy(out_hdr);
+    bcf_close(out_fp);
 }

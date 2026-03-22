@@ -23,11 +23,12 @@ def process_vcf(training_prefix):
     ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
                             training_prefix + ".gts", tolerate_no_gts = False)
-    
-    vcf_training_data["INS_TO_DUP"] = ins_to_dup_vcf_training_data["INS_TO_DUP"]
-    vcf_training_gts["INS_TO_DUP"] = ins_to_dup_vcf_training_gts["INS_TO_DUP"]
-    vcf_training_data["INS_TO_DUP_LARGE"] = ins_to_dup_vcf_training_data["INS_TO_DUP_LARGE"]
-    vcf_training_gts["INS_TO_DUP_LARGE"] = ins_to_dup_vcf_training_gts["INS_TO_DUP_LARGE"]
+
+    for model_name in ("INS_TO_DUP", "INS_TO_DUP_LARGE"):
+        if model_name in ins_to_dup_vcf_training_data:
+            vcf_training_data[model_name] = ins_to_dup_vcf_training_data[model_name]
+            vcf_training_gts[model_name] = ins_to_dup_vcf_training_gts[model_name]
+
     return vcf_training_data, vcf_training_gts
 
 if __name__ == '__main__':
@@ -58,6 +59,10 @@ if __name__ == '__main__':
             continue
 
         training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
+        unique_labels = np.unique(training_labels)
+        if len(unique_labels) == 1:
+            raise RuntimeError(f"Only one label ({unique_labels[0]}) present in yes/no training data for model {model_name}. Cannot train the first-stage classifier.")
+
         if cmd_args.cross_species:
             classifier = xgb.XGBClassifier(n_estimators=50, max_depth=7, min_child_weight=42, learning_rate=0.1, n_jobs=cmd_args.threads, random_state=42, tree_method='hist')
         else:
@@ -78,6 +83,9 @@ if __name__ == '__main__':
 
         positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
         positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
+
+        if len(positive_training_data) == 0:
+            raise RuntimeError(f"No positive (0/1 or 1/1) training examples found for model {model_name}. Cannot train the GT-stage classifier.")
 
         unique_labels = np.unique(positive_training_labels)
         if len(unique_labels) == 1:

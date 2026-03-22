@@ -466,6 +466,7 @@ elif cmd_args.command == 'generate-training-data':
         print("Error: training-data.vcf.gz not found in the workdir %s. Please make sure to run the call command with --generate-training-data first." % cmd_args.workdir)
         exit(1)
 
+    mkdir(cmd_args.outdir)
     sample_training_data_vcf = os.path.join(cmd_args.outdir, cmd_args.samplename + ".vcf.gz")
     shutil.copyfile(cmd_args.workdir + "/training-data.vcf.gz", sample_training_data_vcf)
     shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz"))

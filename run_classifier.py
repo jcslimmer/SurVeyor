@@ -12,11 +12,13 @@ class Classifier:
         for record in vcf_reader.fetch():
             if features.Features.get_svtype(record) != "INV":
                 record.filter.clear()
+                record.samples[0]['EPR'] = None
+                record.samples[0]['HOPR'] = None
                 record_id = features.Features.generate_id(record)
                 if record_id in svid_to_gt:
                     gt = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
                     max_is, read_len = features.get_stat(stats, 'max_is', record.chrom), features.get_stat(stats, 'read_len', record.chrom)
-                    if features.Features.get_model_name(record, max_is, read_len) in ("DUP_LARGE", "DUP_LARGE_IMPRECISE"):# or \
+                    if features.Features.get_model_name(record, max_is, read_len) in ("DUP_LARGE", "DUP_LARGE_NOEXL", "INS_TO_DUP_LARGE"):# or \
                         # for large duplications, and for likely multi-allelic duplications, only output ./1 genotypes
                         if gt[1] == 1:
                             gt = (None, 1)
@@ -72,8 +74,10 @@ class Classifier:
         # write the predictions to a VCF file
         vcf_reader = pysam.VariantFile(in_vcf)
         header = vcf_reader.header
-        header.add_line('##FORMAT=<ID=EPR,Number=1,Type=Float,Description="Probability of the SV existing in the sample, according to the ML model.">')
-        header.add_line('##FORMAT=<ID=HOPR,Number=1,Type=Float,Description="Probability of an existing SV to be homozygous, according to the ML model.">')
+        if 'EPR' not in header.formats:
+            header.add_line('##FORMAT=<ID=EPR,Number=1,Type=Float,Description="Probability of the SV existing in the sample, according to the ML model.">')
+        if 'HOPR' not in header.formats:
+            header.add_line('##FORMAT=<ID=HOPR,Number=1,Type=Float,Description="Probability of an existing SV to be homozygous, according to the ML model.">')
         Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_epr, svid_to_hopr, out_vcf, stats_fname)
 
 if __name__ == "__main__":
