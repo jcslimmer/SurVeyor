@@ -1,3 +1,4 @@
+#include <cstring>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -6,6 +7,32 @@
 #include <htslib/vcf.h>
 #include "types.h"
 #include "vcf_utils.h"
+
+bool is_literal_allele_record(bcf1_t* record) {
+    bcf_unpack(record, BCF_UN_STR);
+    if (record->n_allele < 2) return false;
+    const char* alt = record->d.allele[1];
+    return alt[0] != '<' && strchr(alt, '[') == NULL && strchr(alt, ']') == NULL;
+}
+
+bool same_record_identity(bcf_hdr_t* hdr, bcf1_t* b1, bcf1_t* b2) {
+    bcf_unpack(b1, BCF_UN_STR);
+    bcf_unpack(b2, BCF_UN_STR);
+
+    if (b1->rid != b2->rid || b1->pos != b2->pos) return false;
+
+    bool b1_is_literal = is_literal_allele_record(b1);
+    bool b2_is_literal = is_literal_allele_record(b2);
+    if (b1_is_literal != b2_is_literal) return false;
+
+    if (b1_is_literal) {
+        return strcmp(b1->d.allele[0], b2->d.allele[0]) == 0 &&
+               strcmp(b1->d.allele[1], b2->d.allele[1]) == 0;
+    }
+
+    return get_sv_end(hdr, b1) == get_sv_end(hdr, b2) && get_ins_seq(hdr, b1) == get_ins_seq(hdr, b2) 
+        && get_sv_type(hdr, b1) == get_sv_type(hdr, b2);
+}
 
 int main(int argc, char* argv[]) {
     std::string in_vcf_fname = argv[1];
@@ -28,7 +55,7 @@ int main(int argc, char* argv[]) {
 	while (bcf_read(in_vcf_file, in_vcf_hdr, r) == 0) {
         bcf1_t* b = bcf_dup(r);
 		vcf_records.push_back(b);
-        
+
         char* s_data = NULL;
         int len = 0;
         bcf_get_info_string(in_vcf_hdr, b, "AUX_SNPS", (void**) &s_data, &len);
@@ -94,12 +121,12 @@ int main(int argc, char* argv[]) {
         [](const bcf1_t* b1, const bcf1_t* b2) { return std::tie(b1->rid, b1->pos) < std::tie(b2->rid, b2->pos); });
 
     for (int i = 0; i < vcf_records.size(); i++) {
-        std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_hdr, vcf_records[i]);
+        bcf_unpack(vcf_records[i], BCF_UN_STR);
         for (int j = i+1; j < vcf_records.size(); j++) {
-            if (sv->start != vcf_records[j]->pos) break;
+            bcf_unpack(vcf_records[j], BCF_UN_STR);
+            if (vcf_records[i]->rid != vcf_records[j]->rid || vcf_records[i]->pos != vcf_records[j]->pos) break;
 
-            std::shared_ptr<sv_t> sv2 = bcf_to_sv(in_vcf_hdr, vcf_records[j]);
-            if (sv->chr == sv2->chr && sv->end == sv2->end && sv->ins_seq == sv2->ins_seq) {
+            if (same_record_identity(in_vcf_hdr, vcf_records[i], vcf_records[j])) {
                 // if both 1/1
                 std::vector<int> gt1 = get_bcf_gt(in_vcf_hdr, vcf_records[i]);
                 std::vector<int> gt2 = get_bcf_gt(in_vcf_hdr, vcf_records[j]);
