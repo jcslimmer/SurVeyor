@@ -24,8 +24,8 @@ struct consensus_t {
 	bool extended_to_left = false, extended_to_right = false;
 
     enum : hts_pos_t {
-        LOWER_BOUNDARY_NON_CALCULATED = 0,
-        UPPER_BOUNDARY_NON_CALCULATED = INT32_MAX
+        LOWER_BOUNDARY_NON_CALCULATED = HTS_POS_MIN,
+        UPPER_BOUNDARY_NON_CALCULATED = HTS_POS_MAX
     };
 
     consensus_t(bool left_clipped, hts_pos_t start, hts_pos_t breakpoint, hts_pos_t end,
