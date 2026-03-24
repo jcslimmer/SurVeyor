@@ -451,7 +451,8 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 	for (std::shared_ptr<breakend_t> bnd_rf : bnds_rf) {
 		for (std::shared_ptr<breakend_t> bnd_lf : bnds_lf) {
 			if (bnd_lf->start-bnd_rf->start > -stats.read_len && bnd_lf->end-bnd_rf->end > -stats.read_len &&
-				(bnd_lf->start-bnd_rf->start <= stats.max_is || bnd_lf->end-bnd_rf->end <= stats.max_is)) {
+				(bnd_lf->start-bnd_rf->start <= stats.max_is || bnd_lf->end-bnd_rf->end <= stats.max_is)
+				&& bnd_lf->start < bnd_rf->end) {
 				hts_pos_t dist = std::abs(bnd_rf->start-bnd_lf->start) + std::abs(bnd_rf->end-bnd_lf->end);
 				bnd_pairs.push_back(std::make_tuple(dist, bnd_rf, bnd_lf));
 			}
