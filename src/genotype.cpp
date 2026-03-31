@@ -35,6 +35,7 @@
 #include "genotype_dups.h"
 #include "genotype_inss.h"
 #include "genotype_invs.h"
+// #include "genotype_hp_indels.h"
 
 chr_seqs_map_t chr_seqs;
 config_t config;
@@ -86,6 +87,13 @@ void update_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, sv_t::bp_reads_i
         bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMSPAN").c_str(), mate_cov_bps, 2);
         int hq_mate_cov_bps[] = {bp_reads_info.fwd_hq_mate_cov_bps, bp_reads_info.rev_hq_mate_cov_bps};
         bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CMHQSPAN").c_str(), hq_mate_cov_bps, 2);
+
+        int exact_reads = bp_reads_info.exact_fwd + bp_reads_info.exact_rev;
+        bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "E").c_str(), &exact_reads, 1);
+        if (exact_reads) {
+            bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "EF").c_str(), &(bp_reads_info.exact_fwd), 1);
+            bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "ER").c_str(), &(bp_reads_info.exact_rev), 1);
+        }
     }
 }
 
@@ -97,6 +105,9 @@ void reset_record_bp_reads_info(bcf_hdr_t* out_hdr, bcf1_t* b, std::string prefi
     bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "C").c_str(), NULL, 0);
     bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CF").c_str(), NULL, 0);
     bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CR").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "E").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "EF").c_str(), NULL, 0);
+    bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "ER").c_str(), NULL, 0);
     bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CAS").c_str(), NULL, 0);
     bcf_update_format_float(out_hdr, b, (read_fmt_prefix + "CSS").c_str(), NULL, 0);
     bcf_update_format_int32(out_hdr, b, (read_fmt_prefix + "CHQ").c_str(), NULL, 0);
@@ -584,7 +595,7 @@ char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t h
 }
 
 void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads, 
-    double consistent_avg_score, double consistent_stddev_score) {
+    std::vector<bool>& is_exact_read, double consistent_avg_score, double consistent_stddev_score) {
     
     bp_reads_info.computed = true;
     bp_reads_info.reads = n_reads;
@@ -594,16 +605,19 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     std::vector<hts_pair_pos_t> fwd_hq_mate_positions, rev_hq_mate_positions;
 
     double sum_mq = 0;
-    for (std::shared_ptr<bam1_t> read : consistent_reads) {
+    for (size_t i = 0; i < consistent_reads.size(); ++i) {
+        std::shared_ptr<bam1_t> read = consistent_reads[i];
         int mq = get_mq(read.get());
         if (bam_is_mrev(read)) {
             bp_reads_info.consistent_fwd++;
+            if (is_exact_read[i]) bp_reads_info.exact_fwd++;
             rev_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             if (mq >= config.high_confidence_mapq) {
                 rev_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             }
         } else {
             bp_reads_info.consistent_rev++;
+            if (is_exact_read[i]) bp_reads_info.exact_rev++;
             fwd_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
             if (mq >= config.high_confidence_mapq) {
                 fwd_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
@@ -648,13 +662,17 @@ std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std
     return consensus_seqs;
 }
 
-std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<bool> revcomp_read, std::string& consensus_seq, double& avg_score, double& stddev_score) {
+// Returns a pair of (consistent reads, is_exact_match)
+std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subset(std::string ref_seq, 
+    std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<bool> revcomp_read, std::string& consensus_seq, double& avg_score, double& stddev_score, 
+    std::vector<bool>& is_exact_match) {
 
     if (reads.empty()) {
         avg_score = 0;
         stddev_score = 0;
         consensus_seq = "";
-        return reads;
+        is_exact_match.clear();
+        return {};
     }
 
     if (revcomp_read.empty()) {
@@ -673,6 +691,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     std::vector<std::string> consensus_seqs = gen_consensus_seqs(ref_seq, seqs);
 
     std::vector<std::shared_ptr<bam1_t>> consistent_reads;
+    is_exact_match.clear();
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln;
     std::vector<int> start_positions, end_positions;
@@ -692,6 +711,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
 
         std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
+        std::vector<bool> curr_is_exact_match;
         std::vector<StripedSmithWaterman::Alignment> curr_alns;
         std::vector<int> curr_seqs_idxs;
         double curr_cum_score = 0;
@@ -710,6 +730,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
                 curr_alns.push_back(aln);
                 curr_seqs_idxs.push_back(j);
                 curr_consistent_reads.push_back(read);
+                curr_is_exact_match.push_back(mismatch_rate == 0 && left_clip_size == 0 && right_clip_size == 0);
                 curr_cum_score += double(aln.sw_score)/seq.length();
                 curr_aln_scores.push_back(double(aln.sw_score)/seq.length());
                 curr_start_positions.push_back(aln.ref_begin);
@@ -727,6 +748,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             end_positions = curr_end_positions;
             alns = curr_alns;
             consensus_seq = cseq;
+            is_exact_match = curr_is_exact_match;
             chosen_cseq_idx = i;
         }
     }
@@ -762,15 +784,18 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     return consistent_reads;
 }
 
-std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, double& avg_score, double& stddev_score) {
+std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, 
+    double& avg_score, double& stddev_score, std::vector<bool>& is_exact_read) {
 
     if (reads.empty()) {
         avg_score = 0;
         stddev_score = 0;
+        is_exact_read.clear();
         return reads;
     }
 
     std::vector<std::shared_ptr<bam1_t>> consistent_reads;
+    is_exact_read.clear();
 
     StripedSmithWaterman::Filter filter;
     StripedSmithWaterman::Alignment aln;
@@ -785,8 +810,11 @@ std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::stri
         alns.push_back(aln);
 
         double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-        if (mismatch_rate <= config.max_seq_error && !is_left_clipped(aln, config.min_clip_len) && !is_right_clipped(aln, config.min_clip_len)) {
+        int left_clip_size = get_left_clip_size(aln);
+        int right_clip_size = get_right_clip_size(aln);
+        if (mismatch_rate <= config.max_seq_error && left_clip_size < config.min_clip_len && right_clip_size < config.min_clip_len) {
             consistent_reads.push_back(read);
+            is_exact_read.push_back(mismatch_rate == 0 && left_clip_size == 0 && right_clip_size == 0);
             cum_score += double(aln.sw_score)/seq.length();
             aln_scores.push_back(double(aln.sw_score)/seq.length());
         }
@@ -1021,6 +1049,7 @@ int main(int argc, char* argv[]) {
     }
 
     bcf1_t* vcf_record = bcf_init();
+    std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> hp_by_chr;
     std::unordered_map<std::string, std::vector<std::shared_ptr<deletion_t>>> dels_by_chr;
     std::unordered_map<std::string, std::vector<std::shared_ptr<duplication_t>>> dups_by_chr;
     std::unordered_map<std::string, std::vector<std::shared_ptr<insertion_t>>> inss_by_chr;
@@ -1034,14 +1063,18 @@ int main(int argc, char* argv[]) {
         }
         sv_map[sv->id] = sv;
 
+        if (sv->start > sv->end) {
+            std::cout << "Discarding SV with invalid coordinates: " << sv->id << std::endl;
+            continue;
+        }
+
         sv->vcf_entry = bcf_dup(vcf_record);
+        // if (is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
+        //     hp_by_chr[sv->chr].push_back(sv);
+        // } else 
         if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
         } else if (sv->svtype() == "DUP") {
-            if (sv->end-sv->start <= 0) {
-                std::cout << "Discarding SV with invalid coordinates: " << sv->id << std::endl;
-                continue;
-            }
             dups_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<duplication_t>(sv));
         } else if (sv->svtype() == "INS") {
         	inss_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<insertion_t>(sv));
@@ -1072,7 +1105,24 @@ int main(int argc, char* argv[]) {
 
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
-        
+
+        // std::vector<std::shared_ptr<sv_t>>& hps = hp_by_chr[contig_name];
+        // std::vector<hts_pair_pos_t> ref_hp_ranges;
+        // for (std::shared_ptr<sv_t>& hp : hps) {
+        //     ref_hp_ranges.push_back(find_ref_hp_range_for_indel(hp.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name)));
+        // }
+
+        // std::vector<sv_t*> block_hps;
+        // for (int i = 0; i < hps.size(); i++) {
+        //     block_hps.push_back(hps[i].get());
+        //     if ((i == hps.size()-1 && !block_hps.empty()) 
+        //     || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
+        //         std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
+        //                 chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool);
+        //         block_hps.clear();
+        //     }
+        // }
+
         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
         std::vector<deletion_t*> block_dels;
         for (int i = 0; i < dels.size(); i++) {
@@ -1157,6 +1207,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < n_seqs; i++) {
     	std::string contig_name = seqnames[i];
     	std::vector<std::shared_ptr<sv_t>> contig_svs;
+        if (hp_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), hp_by_chr[contig_name].begin(), hp_by_chr[contig_name].end());
     	if (dels_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dels_by_chr[contig_name].begin(), dels_by_chr[contig_name].end());
     	if (dups_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), dups_by_chr[contig_name].begin(), dups_by_chr[contig_name].end());
     	if (inss_by_chr.count(contig_name) > 0) contig_svs.insert(contig_svs.end(), inss_by_chr[contig_name].begin(), inss_by_chr[contig_name].end());

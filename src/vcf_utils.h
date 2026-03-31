@@ -75,6 +75,18 @@ void add_read_support_headers(bcf_hdr_t* hdr, const char prefix, int bp_n, const
             "Number of consistent reverse reads supporting %s in the %s allele."
         },
         {
+            "%cR%dE", 1, "Integer",
+            "Number of consistent exact (i.e., perfectly matching) reads supporting %s in the %s allele."
+        },
+        {
+            "%cR%dEF", 1, "Integer",
+            "Number of consistent exact (i.e., perfectly matching) forward reads supporting %s in the %s allele."
+        },
+        {
+            "%cR%dER", 1, "Integer",
+            "Number of consistent exact (i.e., perfectly matching) reverse reads supporting %s in the %s allele."
+        },
+        {
             "%cR%dCAS", 1, "Float",
             "Average aln score of consistent reads supporting %s of the SV to the %s allele consensus."
         },

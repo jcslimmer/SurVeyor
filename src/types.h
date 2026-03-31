@@ -198,6 +198,7 @@ struct sv_t {
         double consistent_avg_mq = 0, consistent_stddev_mq = 0;
         int consistent_high_mq = 0;
         double consistent_avg_score = 0, consistent_stddev_score = 0;
+        int exact_fwd = 0, exact_rev = 0;
         int fwd_mate_cov_bps = 0, rev_mate_cov_bps = 0;
         int fwd_hq_mate_cov_bps = 0, rev_hq_mate_cov_bps = 0;
 
