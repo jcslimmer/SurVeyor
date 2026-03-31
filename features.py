@@ -728,11 +728,11 @@ def select_gt(gt1, gt2):
     else:
         return "./."
 
-def read_gts(file_path, tolerate_no_gts = False):
-    if not os.path.exists(file_path) and tolerate_no_gts:
-        return defaultdict(lambda: "0/0")
+def read_gts(file_path):
+    if not os.path.exists(file_path):
+        raise RuntimeError(f"Genotype labels file not found: {file_path}")
+    gts = dict()
     with open(file_path, 'r') as file:
-        gts = defaultdict(lambda: "0/0")
         for line in file:
             id, gt = line.strip().split()
             if id not in gts:
@@ -755,8 +755,8 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, tolerate_no_gts = False):
-    gts = read_gts(fp_fname, tolerate_no_gts=tolerate_no_gts)
+def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False):
+    gts = None if ignore_gts else read_gts(fp_fname)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats = load_stats(stats_fname)
 
@@ -767,10 +767,16 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, tolerate_no_gts = False):
             continue
 
         model_name = Features.get_model_name(record, get_stat(stats, 'max_is', record.chrom), get_stat(stats, 'read_len', record.chrom))
-        if gts[record.id] != "./.": # if no genotype is available, skip the record
+        if ignore_gts:
+            gt = "NA"
+        else:
+            if record.id not in gts:
+                raise RuntimeError(f"Missing GT label for record {record.id} in {fp_fname}")
+            gt = gts[record.id]
+        if gt != "./.": # if no genotype is available, skip the record
             feature_values = Features.record_to_features(record, stats)
             features_by_source[model_name].append(feature_values)
-            gts_by_source[model_name].append(gts[record.id])
+            gts_by_source[model_name].append(gt)
             variant_ids_by_source[model_name].append(Features.generate_id(record))
 
     for model_name in features_by_source:

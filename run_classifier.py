@@ -35,7 +35,7 @@ class Classifier:
 
     def run_classifier(in_vcf, out_vcf, stats_fname, model_dir):
         test_data, _, test_variant_ids = \
-            features.parse_vcf(in_vcf, stats_fname, "XXX", tolerate_no_gts = True)
+            features.parse_vcf(in_vcf, stats_fname, "XXX", ignore_gts = True)
 
         svid_to_gt = dict()
         svid_to_epr, svid_to_hopr = dict(), dict()

@@ -753,11 +753,14 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	if (called_to_benchmark_gts_fout.is_open()) {
+		std::unordered_set<std::string> written_ids;
+
 		// note that this reports called SVs that matched to a benchmark SV with missing genotype as ./.
 		// this is good, because these SVs are less confident, and will be ignored when training our model
 		for (sv_match_t& match : accepted_matches) {
 			if (match.c_sv != NULL) {
 				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
+				written_ids.insert(match.c_sv->id);
 			}
 		}
 		std::set<std::string> c_unchoosen_ids;
@@ -771,6 +774,18 @@ int main(int argc, char* argv[]) {
 		// let us reported them with ./. since they are less confident, and will be ignored when training our model
 		for (std::string id : c_unchoosen_ids) {
 			called_to_benchmark_gts_fout << id << " " << "./." << std::endl;
+			written_ids.insert(id);
+		}
+
+		// not yet written SVs, mark them as ./. if they matched to a benchmark SV such as ./0, 
+		// otherwise as 0/0
+		for (const std::shared_ptr<sv_t>& csv : called_svs) {
+			if (written_ids.count(csv->id)) continue;
+			if (c_unknown.count(csv->id)) {
+				called_to_benchmark_gts_fout << csv->id << " " << "./." << std::endl;
+			} else {
+				called_to_benchmark_gts_fout << csv->id << " " << "0/0" << std::endl;
+			}
 		}
 	}
 

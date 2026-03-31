@@ -19,10 +19,10 @@ training_data, training_gts = defaultdict(list), defaultdict(list)
 def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
-                           tolerate_no_gts = False)
+                           ignore_gts = False)
     ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
-                            training_prefix + ".gts", tolerate_no_gts = False)
+                            training_prefix + ".gts", ignore_gts = False)
 
     for model_name in ("INS_TO_DUP", "INS_TO_DUP_LARGE"):
         if model_name in ins_to_dup_vcf_training_data:
@@ -89,12 +89,7 @@ if __name__ == '__main__':
 
         unique_labels = np.unique(positive_training_labels)
         if len(unique_labels) == 1:
-            print(f"Only one label present in positive training data for model {model_name}.")
-            first_entry = positive_training_data[0:1]
-            first_label = positive_training_labels[0]
-            opposite_label = 1 - first_label  
-            positive_training_data = np.concatenate([positive_training_data, first_entry], axis=0)
-            positive_training_labels = np.concatenate([positive_training_labels, np.array([opposite_label])])
+            raise RuntimeError(f"Only one label ({unique_labels[0]}) present in positive training data for model {model_name}. Cannot train the GT-stage classifier.")
 
         unique, counts = np.unique(positive_training_labels, return_counts=True)
 
