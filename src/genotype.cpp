@@ -718,8 +718,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
         std::vector<double> curr_aln_scores;
         for (int j = 0; j < reads.size(); j++) {
             std::shared_ptr<bam1_t> read = reads[j];
-            std::string seq = get_sequence(read.get());
-            if (revcomp_read[j]) rc(seq);
+            const std::string& seq = seqs[j];
 
             harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
 

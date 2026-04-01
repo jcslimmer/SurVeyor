@@ -62,7 +62,8 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::vector<std::shared_ptr<bam1_t>> alt_better_seqs, ref_better_seqs;
     std::vector<bool> alt_better_seqs_isrc, ref_better_seqs_isrc;
 
-    StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Filter filter_with_pos_and_cigar(true, true, 0, 32767);
+    StripedSmithWaterman::Filter filter_with_score_only(false, false, 0, 32767);
     StripedSmithWaterman::Alignment alt_aln, ref_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
@@ -78,10 +79,10 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         }
 
         // align to ALT
-        aligner.Align(seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
+        aligner.Align(seq.c_str(), alt_seq, alt_len, filter_with_score_only, &alt_aln, 0);
 
         // // align to REF
-        aligner.Align(seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
+        aligner.Align(seq.c_str(), ref_seq, ref_len, filter_with_score_only, &ref_aln, 0);
 
         if (alt_aln.sw_score > ref_aln.sw_score) {
             alt_better_seqs.push_back(std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
@@ -137,7 +138,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         alt_seq[alt_len] = 0;
 
         // align to ref+SV
-        aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter, &alt_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), alt_seq, alt_len, filter_with_pos_and_cigar, &alt_aln, 0);
 
         delete[] ref_seq;
         ref_start = std::max(hts_pos_t(0), sv_start-stats.max_is);
@@ -148,7 +149,7 @@ void genotype_small_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         ref_seq[ref_len] = 0;
 
         // align to ref
-        aligner.Align(alt_consensus_seq.c_str(), ref_seq, ref_len, filter, &ref_aln, 0);
+        aligner.Align(alt_consensus_seq.c_str(), ref_seq, ref_len, filter_with_pos_and_cigar, &ref_aln, 0);
 
         inv->sample_info.ext_alt_consensus1_length = alt_consensus_seq.length();
         inv->sample_info.ext_alt_consensus1_to_ref_score = ref_aln.query_end - ref_aln.query_begin - ref_aln.mismatches;
@@ -260,7 +261,8 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
     std::vector<std::shared_ptr<bam1_t>> alt_bp1_better_reads, alt_bp2_better_reads, ref_bp1_better_reads, ref_bp2_better_reads;
     std::vector<bool> alt_bp1_better_reads_isrc, alt_bp2_better_reads_isrc, ref_bp1_better_reads_isrc, ref_bp2_better_reads_isrc;
 
-    StripedSmithWaterman::Filter filter;
+    StripedSmithWaterman::Filter filter_with_pos_and_cigar(true, true, 0, 32767);
+    StripedSmithWaterman::Filter filter_with_score_only(false, false, 0, 32767);
     StripedSmithWaterman::Alignment alt1_aln, alt2_aln, ref1_aln, ref2_aln;
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
@@ -288,35 +290,35 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
             }
 
             // align to ALT
-            aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
-            aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+            aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter_with_score_only, &alt1_aln, 0);
+            aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter_with_score_only, &alt2_aln, 0);
 
             // align to REF
-            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
-            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter_with_score_only, &ref1_aln, 0);
+            aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter_with_score_only, &ref2_aln, 0);
         } else if (sv_start-10 <= read->core.mpos && get_mate_endpos(read) <= sv_end+10) { // if mate is inside the inversion
 
             // if read and mate point towards each other, it means that if the inversion is true, they were RC together
             // therefore, we need to align it as it is to REF but reverse-complemented to ALT
             if (is_proper_pair(read, stats.min_is, stats.max_is)) {
                 if (bam_is_mrev(read)) {
-                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter_with_score_only, &ref1_aln, 0);
                     rc(seq);
-                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter_with_score_only, &alt2_aln, 0);
                     alt_is_rc = true;
                 } else {
-                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter_with_score_only, &ref2_aln, 0);
                     rc(seq);
-                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter_with_score_only, &alt1_aln, 0);
                     alt_is_rc = true;
                 }
             } else if (is_samestr(read)) { // if both point in the same direction, the mate was RC by itself, and we can align the read as it is
                 if (bam_is_rev(read)) {
-                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter, &ref2_aln, 0);
-                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_len, filter_with_score_only, &ref2_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp2_seq, alt_bp2_len, filter_with_score_only, &alt2_aln, 0);
                 } else {
-                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter, &ref1_aln, 0);
-                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+                    aligner.Align(seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_len, filter_with_score_only, &ref1_aln, 0);
+                    aligner.Align(seq.c_str(), alt_bp1_seq, alt_bp1_len, filter_with_score_only, &alt1_aln, 0);
                 }
             }
         }
@@ -421,7 +423,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         if (ref_bp1_start < 0) ref_bp1_start = 0;
         hts_pos_t ref_bp1_end = sv_start+alt_bp1_consensus_seq.length();
         if (ref_bp1_end > contig_len) ref_bp1_end = contig_len;
-        aligner.Align(alt_bp1_consensus_seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter, &ref1_aln, 0);
+        aligner.Align(alt_bp1_consensus_seq.c_str(), contig_seq+ref_bp1_start, ref_bp1_end-ref_bp1_start, filter_with_pos_and_cigar, &ref1_aln, 0);
 
         hts_pos_t alt_bp1_start = std::max(hts_pos_t(0), hts_pos_t(sv_start-alt_bp1_consensus_seq.length()));
         hts_pos_t alt_bp1_end = std::min(hts_pos_t(sv_start+alt_bp1_consensus_seq.length()), contig_len);
@@ -442,7 +444,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         }
         alt_bp1_seq[alt_bp1_len] = 0;
 
-        aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_len, filter, &alt1_aln, 0);
+        aligner.Align(alt_bp1_consensus_seq.c_str(), alt_bp1_seq, alt_bp1_len, filter_with_pos_and_cigar, &alt1_aln, 0);
         delete[] ext_inv_suffix_rc;
         delete[] alt_bp1_seq;
 
@@ -460,7 +462,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         if (ref_bp2_start < 0) ref_bp2_start = 0;
         hts_pos_t ref_bp2_end = sv_end+alt_bp2_consensus_seq.length();
         if (ref_bp2_end > contig_len) ref_bp2_end = contig_len;
-        aligner.Align(alt_bp2_consensus_seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter, &ref2_aln, 0);
+        aligner.Align(alt_bp2_consensus_seq.c_str(), contig_seq+ref_bp2_start, ref_bp2_end-ref_bp2_start, filter_with_pos_and_cigar, &ref2_aln, 0);
 
         hts_pos_t alt_bp2_start = std::max(hts_pos_t(0), hts_pos_t(sv_end-alt_bp2_consensus_seq.length()));
         hts_pos_t alt_bp2_end = std::min(hts_pos_t(sv_end+alt_bp2_consensus_seq.length()), contig_len);
@@ -481,7 +483,7 @@ void genotype_large_inv(inversion_t* inv, open_samFile_t* bam_file, IntervalTree
         strncpy(alt_bp2_seq+extra_len+ext_inv_border_len, contig_seq+sv_end, alt_bp2_end-sv_end);
         alt_bp2_seq[alt_bp2_len] = 0;
 
-        aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_len, filter, &alt2_aln, 0);
+        aligner.Align(alt_bp2_consensus_seq.c_str(), alt_bp2_seq, alt_bp2_len, filter_with_pos_and_cigar, &alt2_aln, 0);
         delete[] ext_inv_prefix_rc;
         delete[] alt_bp2_seq;
 
