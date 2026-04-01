@@ -13,6 +13,7 @@
 #include <random>
 #include <unistd.h>
 #include <algorithm>
+#include <cstring>
 
 #include <htslib/sam.h>
 #include "htslib/hts.h"
@@ -168,6 +169,20 @@ bool file_exists(std::string& fname) {
 	return std::ifstream(fname).good();
 }
 
+char toupper(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return c - ('a' - 'A');
+    }
+    return c;
+}
+
+void to_uppercase(char* s) {
+    while (*s) {
+        *s = toupper(*s);
+        s++;
+    }
+}
+
 struct chr_seqs_map_t {
     struct chr_seq_t {
         char* seq;
@@ -180,14 +195,16 @@ struct chr_seqs_map_t {
     std::unordered_map<std::string, chr_seq_t*> seqs;
     std::vector<std::string> ordered_contigs;
 
-    void read_fasta_into_map(std::string& reference_fname) {
+    void read_fasta_into_map(std::string& reference_fname, bool uppercase_reference = true) {
         ordered_contigs.clear();
         FILE* fasta = fopen(reference_fname.c_str(), "r");
         kseq_t* seq = kseq_init(fileno(fasta));
         while (kseq_read(seq) >= 0) {
             std::string seq_name = seq->name.s;
             char* chr_seq = new char[seq->seq.l + 1];
-            strcpy(chr_seq, seq->seq.s);
+            strncpy(chr_seq, seq->seq.s, seq->seq.l);
+            chr_seq[seq->seq.l] = '\0';
+            if (uppercase_reference) to_uppercase(chr_seq);
             if (seqs.count(seq_name)) delete seqs[seq_name];
             seqs[seq_name] = new chr_seq_t(chr_seq, seq->seq.l);
             ordered_contigs.push_back(seq_name);
@@ -341,19 +358,6 @@ void is_homopolymer_suffix(const char* seq, int len, bool* hp_suffix) {
             max_idx = curr_idx;
         }
         hp_suffix[i] = (counts[max_idx] >= (len - i)*0.8);
-    }
-}
-
-char toupper(char c) {
-    if (c >= 'a' && c <= 'z') {
-        return c - ('a' - 'A');
-    }
-    return c;
-}
-
-void to_uppercase(char* s) {
-    for (int i = 0; s[i] != '\0'; i++) {
-        s[i] = toupper(s[i]);
     }
 }
 
