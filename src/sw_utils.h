@@ -66,7 +66,7 @@ int* smith_waterman_gotoh_scalar_reference(
         for (int j = 1; j <= query_len; ++j) {
             
             // 1. Calculate Scores
-            int score = (ref[i-1] == query[j-1]) ? match_score : mismatch_penalty;
+            int score = (toupper(ref[i-1]) == toupper(query[j-1])) ? match_score : mismatch_penalty;
             int diagonal_val = H[i-1][j-1] + score;
 
             // RG (Vertical): Gap in Query (Deletion)
@@ -138,7 +138,7 @@ SW_SCORE_INT_16* smith_waterman_gotoh(const char* ref, int ref_len, const char* 
 		p5 += posix_memalign(reinterpret_cast<void**>(&profile[i]), alignment, stride * sizeof(SW_SCORE_INT_16));
 		profile[i][0] = 0;
 		for (int j = 1; j <= query_len; j++) {
-			profile[i][j] = (query[j-1] == alphabet[i]) ? match_score : mismatch_penalty;
+			profile[i][j] = (toupper(query[j-1]) == alphabet[i]) ? match_score : mismatch_penalty;
 		}
 		std::fill(profile[i]+query_len+1, profile[i]+query_len_rounded+1, 0);
 	}
@@ -163,7 +163,7 @@ SW_SCORE_INT_16* smith_waterman_gotoh(const char* ref, int ref_len, const char* 
 	std::fill(prefix_scores, prefix_scores+stride, 0);
 	for (int i = 1; i <= ref_len; i++) {
 		SW_SCORE_INT_16* ref_profile = profile[0];
-		switch (ref[i-1]) {
+		switch (toupper(ref[i-1])) {
 			case 'A': ref_profile = profile[1]; break;
 			case 'C': ref_profile = profile[2]; break;
 			case 'G': ref_profile = profile[3]; break;
@@ -372,8 +372,8 @@ suffix_prefix_aln_t aln_suffix_prefix_perfect(const std::string& s1, const std::
 int number_of_mismatches_fast(const char* s1, const char* s2, int len, int max_mismatches) {
 	// count number of mismatches between the first len characters of s1 and s2
 	int n_mismatches = 0;
-    SIMD_INT_16* s1_it = (SIMD_INT_16*) s1;
-    SIMD_INT_16* s2_it = (SIMD_INT_16*) s2;
+    const SIMD_INT_16* s1_it = (const SIMD_INT_16*) s1;
+    const SIMD_INT_16* s2_it = (const SIMD_INT_16*) s2;
     int scaled_len = len/BYTES_PER_BLOCK_16;
     for (int i = 0; i < scaled_len; i++) {
         SIMD_INT_16 n1 = LOADU_INT_16(s1_it);
@@ -388,6 +388,7 @@ int number_of_mismatches_fast(const char* s1, const char* s2, int len, int max_m
     }
     return n_mismatches;
 }
+
 suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
                                       int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
 
