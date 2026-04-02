@@ -389,6 +389,81 @@ int number_of_mismatches_fast(const char* s1, const char* s2, int len, int max_m
     return n_mismatches;
 }
 
+struct ungapped_aln_t {
+    int query_begin;
+    int query_end;
+    int ref_begin;
+    int ref_end;
+    int mismatches;
+    int score;
+
+    ungapped_aln_t(int query_begin, int query_end, int ref_begin, int ref_end, int mismatches, int score)
+        : query_begin(query_begin), query_end(query_end), ref_begin(ref_begin), ref_end(ref_end), mismatches(mismatches), score(score) {}
+
+	double mismatch_rate() { return (query_end - query_begin) > 0 ? double(mismatches)/(query_end - query_begin) : 1; }
+};
+
+// Finds the best ungapped placement of query against ref, allowing query overhang
+// on either side of the reference. Query bases outside ref count as clips, not mismatches.
+// Each side of the query may extend by at most max_ref_overflow bases beyond the reference.
+// query_begin/query_end and ref_begin/ref_end describe the overlapped intervals [begin, end).
+// score is the ungapped alignment score on the overlapped interval only.
+ungapped_aln_t best_ungapped_aln(const char* query, int query_len, const char* ref, int ref_len,
+                                 int max_ref_overflow = 0, int match_score = 1, int mismatch_score = -4) {
+    if (query_len <= 0) {
+        return ungapped_aln_t(0, 0, 0, 0, 0, 0);
+    }
+    if (ref_len <= 0) {
+        return ungapped_aln_t(0, 0, 0, 0, 0, 0);
+    }
+
+	if (max_ref_overflow < 0) max_ref_overflow = 0;
+
+    const int query_len_rounded = (query_len + BYTES_PER_BLOCK_16 - 1)/BYTES_PER_BLOCK_16*BYTES_PER_BLOCK_16;
+    const int query_pad_len = query_len_rounded - query_len;
+    const int ref_pad_len = max_ref_overflow;
+    const char query_pad_char = '\0';
+    const char ref_pad_char = '\1';
+
+    std::vector<char> padded_query(query_len_rounded, query_pad_char);
+    std::memcpy(padded_query.data(), query, query_len);
+
+	int padded_ref_len = std::max(ref_len + 2*ref_pad_len + query_pad_len, query_len_rounded);
+    std::vector<char> padded_ref(padded_ref_len, ref_pad_char);
+    std::memcpy(padded_ref.data() + ref_pad_len, ref, ref_len);
+
+    ungapped_aln_t best_aln(0, 0, 0, 0, 0, INT32_MIN);
+    int best_score = INT32_MIN;
+    for (int i = 0; i <= padded_ref.size()-query_len_rounded; i++) {
+
+		int valid_overlap = overlap(ref_pad_len, ref_pad_len + ref_len, i, i + query_len); // the remaining query_len_rounded - mismatches are guaranteed to be mismatches
+		int guaranteed_mismatches = query_len_rounded - valid_overlap;
+
+		int max_mismatches = query_len_rounded;
+		if (best_score != INT32_MIN) {
+			// max_mismatches = the number of mismatches that would make this alignment's score equal to the current best score, plus the guaranteed mismatches
+			int max_possible_score = valid_overlap * match_score;
+			max_mismatches = (max_possible_score - best_score) / (match_score - mismatch_score) + guaranteed_mismatches; 
+		}
+		int mismatches = number_of_mismatches_fast(padded_query.data(), padded_ref.data() + i, query_len_rounded, max_mismatches);
+		if (mismatches > max_mismatches) continue; // cannot be better than current best
+		
+		int actual_mismatches = mismatches - guaranteed_mismatches;
+
+		int score = (valid_overlap - actual_mismatches) * match_score + actual_mismatches * mismatch_score;
+		if (score > best_score) {
+			best_score = score;
+			int query_begin = i < ref_pad_len ? ref_pad_len - i : 0;
+			int query_end = query_begin + valid_overlap;
+			int ref_begin = std::max(0, i - ref_pad_len);
+			int ref_end = ref_begin + valid_overlap;
+			best_aln = ungapped_aln_t(query_begin, query_end, ref_begin, ref_end, actual_mismatches, score);
+		}
+		if (best_score == query_len * match_score) break; // cannot do better than a perfect match
+    }
+    return best_aln;
+}
+
 suffix_prefix_aln_t aln_suffix_prefix(std::string& s1, std::string& s2, int match_score, int mismatch_score, double max_seq_error,
                                       int min_overlap = 1, int max_overlap = INT32_MAX, int max_mismatches = INT32_MAX) {
 

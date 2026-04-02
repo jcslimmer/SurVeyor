@@ -657,7 +657,7 @@ std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std
     for (std::string& seq : seqs) {
         seqs_w_pp.push_back({seq, true, true});
     }
-    std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, harsh_aligner, config, stats);
+    std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, config, stats);
     consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
     return consensus_seqs;
 }
@@ -692,10 +692,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
 
     std::vector<std::shared_ptr<bam1_t>> consistent_reads;
     is_exact_match.clear();
-    StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment aln;
     std::vector<int> start_positions, end_positions;
-    std::vector<StripedSmithWaterman::Alignment> alns;
     std::vector<int> chosen_seqs_idxs;
     double cum_score = 0;
     std::vector<double> aln_scores;
@@ -712,31 +709,29 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
         std::vector<std::shared_ptr<bam1_t>> curr_consistent_reads;
         std::vector<int> curr_start_positions, curr_end_positions;
         std::vector<bool> curr_is_exact_match;
-        std::vector<StripedSmithWaterman::Alignment> curr_alns;
         std::vector<int> curr_seqs_idxs;
         double curr_cum_score = 0;
         std::vector<double> curr_aln_scores;
         for (int j = 0; j < reads.size(); j++) {
             std::shared_ptr<bam1_t> read = reads[j];
-            const std::string& seq = seqs[j];
+            const std::string& read_seq = seqs[j];
 
-            harsh_aligner.Align(seq.c_str(), cseq.c_str(), cseq.length(), filter, &aln, 0);
-
-            double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-            int left_clip_size = aln.query_begin;
-            int right_clip_size = seq.length() - aln.query_end - 1;
-            if (mismatch_rate <= config.max_seq_error && left_clip_size < config.min_clip_len && right_clip_size < config.min_clip_len) {
-                curr_alns.push_back(aln);
+            ungapped_aln_t ungapped_aln = best_ungapped_aln(read_seq.c_str(), read_seq.length(), cseq.c_str(), cseq.length(),
+            std::max(0, config.min_clip_len - 1));
+            if (ungapped_aln.query_end - ungapped_aln.query_begin <= 0) continue; 
+            
+            double mismatch_rate = double(ungapped_aln.mismatches)/(ungapped_aln.query_end-ungapped_aln.query_begin);
+            if (mismatch_rate <= config.max_seq_error) {
                 curr_seqs_idxs.push_back(j);
                 curr_consistent_reads.push_back(read);
-                curr_is_exact_match.push_back(mismatch_rate == 0 && left_clip_size == 0 && right_clip_size == 0);
-                curr_cum_score += double(aln.sw_score)/seq.length();
-                curr_aln_scores.push_back(double(aln.sw_score)/seq.length());
-                curr_start_positions.push_back(aln.ref_begin);
-                curr_end_positions.push_back(aln.ref_end);
+                curr_is_exact_match.push_back(ungapped_aln.mismatches == 0);
+                curr_cum_score += double(ungapped_aln.score)/read_seq.length();
+                curr_aln_scores.push_back(double(ungapped_aln.score)/read_seq.length());
+                curr_start_positions.push_back(ungapped_aln.ref_begin);
+                curr_end_positions.push_back(ungapped_aln.ref_end);
             }
         }
-        
+
         curr_cum_score /= log(cseq.length());
         if (curr_cum_score > cum_score) {
             consistent_reads = curr_consistent_reads;
@@ -745,7 +740,6 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
             aln_scores = curr_aln_scores;
             start_positions = curr_start_positions;
             end_positions = curr_end_positions;
-            alns = curr_alns;
             consensus_seq = cseq;
             is_exact_match = curr_is_exact_match;
             chosen_cseq_idx = i;
@@ -763,7 +757,7 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
         chosen_seqs.push_back(seqs[idx]);
     }
     if (start_positions.size() >= 2) {
-        correct_contig(consensus_seq, chosen_seqs, alns, config, true);
+        correct_contig(consensus_seq, chosen_seqs, config, true);
 
         consensus_seq = consensus_seq.substr(start_positions[1], end_positions[1]-start_positions[1]);
 
@@ -796,26 +790,19 @@ std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::stri
     std::vector<std::shared_ptr<bam1_t>> consistent_reads;
     is_exact_read.clear();
 
-    StripedSmithWaterman::Filter filter;
-    StripedSmithWaterman::Alignment aln;
-    std::vector<StripedSmithWaterman::Alignment> alns;
-    double cum_score = 0;
     std::vector<double> aln_scores;
     for (std::shared_ptr<bam1_t> read : reads) {
         std::string seq = get_sequence(read.get(), true);
         if (!bam_is_mrev(read)) rc(seq);
-        
-        harsh_aligner.Align(seq.c_str(), ref_seq.c_str(), ref_seq.length(), filter, &aln, 0);
-        alns.push_back(aln);
 
-        double mismatch_rate = double(aln.mismatches)/(aln.query_end-aln.query_begin);
-        int left_clip_size = get_left_clip_size(aln);
-        int right_clip_size = get_right_clip_size(aln);
-        if (mismatch_rate <= config.max_seq_error && left_clip_size < config.min_clip_len && right_clip_size < config.min_clip_len) {
+        ungapped_aln_t ungapped_aln = best_ungapped_aln(seq.c_str(), seq.length(), ref_seq.c_str(), ref_seq.length(), config.min_clip_len - 1);
+        if (ungapped_aln.query_end - ungapped_aln.query_begin <= 0) continue;
+
+        double mismatch_rate = double(ungapped_aln.mismatches)/(ungapped_aln.query_end-ungapped_aln.query_begin);
+        if (mismatch_rate <= config.max_seq_error) {
             consistent_reads.push_back(read);
-            is_exact_read.push_back(mismatch_rate == 0 && left_clip_size == 0 && right_clip_size == 0);
-            cum_score += double(aln.sw_score)/seq.length();
-            aln_scores.push_back(double(aln.sw_score)/seq.length());
+            is_exact_read.push_back(mismatch_rate == 0);
+            aln_scores.push_back(double(ungapped_aln.score)/seq.length());
         }
     }
 

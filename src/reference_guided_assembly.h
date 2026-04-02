@@ -191,7 +191,7 @@ std::vector<std::string> generate_reference_guided_contigs(std::string reference
 		used[curr_vertex] = true;
 
 		std::string corrected_assembled_sequence = assembled_sequence;
-		correct_contig(corrected_assembled_sequence, used_reads, harsh_aligner, config);
+		correct_contig(corrected_assembled_sequence, used_reads, config);
 		assembled_sequences.push_back(corrected_assembled_sequence);
 	}
 	for (int i = 0; i < n; i++) {
@@ -275,7 +275,7 @@ std::vector<std::string> generate_reference_guided_consensus(std::string referen
 	for (std::string& seq : discarded_reads) {
 		seqs_w_pp.push_back({seq, true, true});
 	}
-	std::vector<std::string> scaffolding_sequences = assemble_reads(temp1, seqs_w_pp, temp2, harsh_aligner, config, stats);
+	std::vector<std::string> scaffolding_sequences = assemble_reads(temp1, seqs_w_pp, temp2, config, stats);
 
 	if (!scaffold || retained_assembled_seqs.empty()) return retained_assembled_seqs;
 	
