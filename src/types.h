@@ -177,6 +177,7 @@ struct sv_t {
 
     std::string source;
     bool imprecise = false;
+    bool hp_genotyped = false;
 
     static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
     static constexpr const int SIZE_NOT_COMPUTED = INT32_MAX;
@@ -203,6 +204,7 @@ struct sv_t {
         int fwd_hq_mate_cov_bps = 0, rev_hq_mate_cov_bps = 0;
 
         int consistent_reads() { return consistent_fwd + consistent_rev; }
+        int exact_reads() { return exact_fwd + exact_rev; }
     };
 
     struct bp_pairs_info_t {

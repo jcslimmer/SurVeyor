@@ -10,7 +10,7 @@ class Classifier:
 
         vcf_writer = pysam.VariantFile(out_vcf_fname, 'wz', header=vcf_header)
         for record in vcf_reader.fetch():
-            if features.Features.get_svtype(record) != "INV":
+            if not features.Features.skips_ml_genotyping(record):
                 record.filter.clear()
                 record.samples[0]['EPR'] = None
                 record.samples[0]['HOPR'] = None

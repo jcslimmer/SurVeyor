@@ -277,6 +277,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* mh_len = "##INFO=<ID=MH_LEN,Number=1,Type=Integer,Description=\"Length of the microhomology.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr,mh_len, &len));
 
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "HP_GENOTYPED");
+    const char* hp_genotyped_tag = "##INFO=<ID=HP_GENOTYPED,Number=0,Type=Flag,Description=\"This variant was genotyped using the homopolymer-specific genotyping path.\">";
+    bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, hp_genotyped_tag, &len));
+
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "GT");
 	const char* gt_tag = "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, gt_tag, &len));

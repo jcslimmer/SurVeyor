@@ -190,6 +190,9 @@ class Features:
             return record.info['SVTYPE'][0]
         return record.info['SVTYPE']
 
+    def skips_ml_genotyping(record):
+        return Features.get_svtype(record).startswith('INV') or 'HP_GENOTYPED' in record.info
+
     def normalise(value, min, max):
         if max == min:
             return value - min
@@ -796,8 +799,7 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False):
 
     features_by_source, gts_by_source, variant_ids_by_source = defaultdict(list), defaultdict(list), defaultdict(list)
     for record in vcf_reader.fetch():
-        record_svtype = Features.get_svtype(record)
-        if record_svtype.startswith('INV'):
+        if Features.skips_ml_genotyping(record):
             continue
 
         model_name = Features.get_model_name(record, get_stat(stats, 'max_is', record.chrom), get_stat(stats, 'read_len', record.chrom))

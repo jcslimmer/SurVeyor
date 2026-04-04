@@ -11,20 +11,27 @@
 #include "genotype.h"
 #include "var_utils.h"
 
+const double MAX_TAIL_MISMATCH_RATE = 0.2; 
+
 struct hp_read_info_t {
     int hp_len;
     int tail_5p_len, tail_3p_len;
     int tail_5p_mismatches, tail_3p_mismatches;
+    std::shared_ptr<bam1_t> read;
+
+    bool is_good_read(int min_tail_len, double max_mismatch_rate) const {
+        return tail_5p_len >= min_tail_len && double(tail_5p_mismatches)/tail_5p_len <= max_mismatch_rate &&
+               tail_3p_len >= min_tail_len && double(tail_3p_mismatches)/tail_3p_len <= max_mismatch_rate;
+    }
 };
 
 
 // Find the mode of the HP lengths among the good reads
 // Good reads = <20% mismatches on both tails
-int find_good_reads_hp_len_mode(const std::vector<hp_read_info_t>& hp_read_infos) {
+int find_good_reads_hp_len_mode(const std::vector<hp_read_info_t>& hp_read_infos, int min_tail_len, double max_mismatch_rate) {
     std::unordered_map<int, int> hp_len_counts;
     for (const hp_read_info_t& hp_read_info : hp_read_infos) {
-        if ((hp_read_info.tail_5p_len == 0 || double(hp_read_info.tail_5p_mismatches)/hp_read_info.tail_5p_len <= 0.2) &&
-            (hp_read_info.tail_3p_len == 0 || double(hp_read_info.tail_3p_mismatches)/hp_read_info.tail_3p_len <= 0.2)) {
+        if (hp_read_info.is_good_read(min_tail_len, max_mismatch_rate)) {
             hp_len_counts[hp_read_info.hp_len]++;
         }
     }
@@ -36,7 +43,10 @@ int find_good_reads_hp_len_mode(const std::vector<hp_read_info_t>& hp_read_infos
             max_count = kv.second;
         }
     }
-    return mode_hp_len;
+    if (max_count > 0) {
+        return mode_hp_len;
+    }
+    return -1; // no good reads
 }
 
 std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::vector<hp_read_info_t>& hp_read_infos) {
@@ -94,6 +104,7 @@ std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::v
 }
 
 
+// TODO: replace with the fast SIMD version in sw_utils.h
 // For clipped tails, place the tail at its best ungapped offset in the local reference window.
 int best_ungapped_mismatch_count(const std::string& query, char* ref, hts_pos_t ref_len) {
     if (query.empty() || ref_len < (hts_pos_t) query.length()) {
@@ -104,7 +115,7 @@ int best_ungapped_mismatch_count(const std::string& query, char* ref, hts_pos_t 
     for (hts_pos_t i = 0; i + query.length() <= ref_len; i++) {
         int mismatches = 0;
         for (int j = 0; j < query.length(); j++) {
-            if (std::toupper(query[j]) != std::toupper(ref[i + j])) {
+            if (query[j] != std::toupper(ref[i + j])) {
                 mismatches++;
             }
         }
@@ -149,7 +160,7 @@ int tail_mismatch_count_simple(bam1_t* read, const std::string& read_seq, const 
 
 hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range, char hp_base, char* contig_seq, hts_pos_t contig_len) {
     if (read == NULL || is_unmapped(read) || !is_primary(read) || read->core.l_qseq <= 0) {
-        return {0, 0, 0, 0, 0};
+        return {0, 0, 0, 0, 0, nullptr};
     }
 
     const int tail_align_leeway = 10;
@@ -206,7 +217,7 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
             left_tail_len = last_qpos_before_ref_hp + 1;
             right_tail_len = read->core.l_qseq - first_qpos_after_ref_hp;
         } else {
-            return {0, 0, 0, 0, 0};
+            return {0, 0, 0, 0, 0, nullptr};
         }
 
         int left_mismatches = tail_mismatch_count_simple(read, read_seq, qpos_to_rpos,
@@ -215,9 +226,9 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
             contig_seq, contig_len, read->core.l_qseq - right_tail_len, read->core.l_qseq, false, tail_align_leeway, ref_hp_range.end);
 
         if (!bam_is_rev(read)) {
-            return {0, left_tail_len, right_tail_len, left_mismatches, right_mismatches};
+            return {0, left_tail_len, right_tail_len, left_mismatches, right_mismatches, std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1)};
         } else {
-            return {0, right_tail_len, left_tail_len, right_mismatches, left_mismatches};
+            return {0, right_tail_len, left_tail_len, right_mismatches, left_mismatches, std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1)};
         }
     }
 
@@ -257,6 +268,7 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
         hp_read_info.tail_5p_mismatches = left_mismatches;
         hp_read_info.tail_3p_mismatches = right_mismatches;
     }
+    hp_read_info.read = std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1);
 
     return hp_read_info;
 }
@@ -266,6 +278,9 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     stats_t& stats, config_t& config) {
 
     if (hp_indels.empty()) return;
+    for (sv_t* hp_indel : hp_indels) {
+        hp_indel->hp_genotyped = true;
+    }
 
     char hp_base = get_homopolymer_base(hp_indels[0], contig_seq);
 
@@ -289,6 +304,8 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     bam_destroy1(read);
     hts_itr_destroy(iter);
 
+    if (hp_read_infos.empty()) return;
+
     // Cluster reads into up to two clusters by their observed HP lengths
     std::vector<std::vector<hp_read_info_t>> clusters = cluster_reads_by_two_modes(hp_read_infos);
 
@@ -298,8 +315,67 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     }
     allele_lens.push_back(ref_hp_range.end - ref_hp_range.beg); // allele_lens[hp_indels.size()] corresponds to the reference allele
 
+    int ref_reads = 0;
+    std::vector<std::shared_ptr<bam1_t>> ref_good_reads;
+    std::vector<bool> ref_is_exact_match;
+ 
+    std::vector<int> alt_reads(hp_indels.size(), 0);
+    std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_good_reads(hp_indels.size()); 
+    std::vector<std::vector<bool>> alt_is_exact_match(hp_indels.size());
+
     // Associate each cluster to the most likely allele based on its mode HP length
-    
+    for (const std::vector<hp_read_info_t>& cluster : clusters) {
+        int mode_hp_len = find_good_reads_hp_len_mode(cluster, config.min_clip_len, MAX_TAIL_MISMATCH_RATE);
+        if (mode_hp_len == -1) continue; // no good reads in this cluster, so skip it for genotyping
+
+        int best_allele_idx = -1;
+        int best_allele_len_diff = INT32_MAX;
+        for (int i = 0; i < allele_lens.size(); i++) {
+            int allele_len_diff = abs(mode_hp_len - allele_lens[i]);
+            if (allele_len_diff < best_allele_len_diff) {
+                best_allele_idx = i;
+                best_allele_len_diff = allele_len_diff;
+            } else if (allele_len_diff == best_allele_len_diff && allele_lens[i] < allele_lens[best_allele_idx]) {
+                // break ties toward smaller allele, since HP read runs are more likely to be overestimated than underestimated
+                best_allele_idx = i;
+            }
+        }
+
+        std::vector<std::shared_ptr<bam1_t>> good_reads;
+        std::vector<bool> is_exact_match;
+        for (const hp_read_info_t& hp_read_info : cluster) {
+            if (hp_read_info.is_good_read(config.min_clip_len, MAX_TAIL_MISMATCH_RATE)) {
+                good_reads.push_back(hp_read_info.read);
+                is_exact_match.push_back(hp_read_info.hp_len == allele_lens[best_allele_idx]);
+            }
+        }
+
+        if (best_allele_idx == allele_lens.size() - 1) {
+            // Cluster best matches the reference allele
+            ref_reads += cluster.size();
+            ref_good_reads.insert(ref_good_reads.end(), good_reads.begin(), good_reads.end());
+            ref_is_exact_match.insert(ref_is_exact_match.end(), is_exact_match.begin(), is_exact_match.end());
+        } else {
+            // Cluster best matches an indel allele, so assign its reads to that allele
+            alt_reads[best_allele_idx] += cluster.size();
+            alt_good_reads[best_allele_idx].insert(alt_good_reads[best_allele_idx].end(), good_reads.begin(), good_reads.end());
+            alt_is_exact_match[best_allele_idx].insert(alt_is_exact_match[best_allele_idx].end(), is_exact_match.begin(), is_exact_match.end());
+        }
+    }
+
+    std::vector<std::shared_ptr<bam1_t>> consistent_reads; // dummy consistent reads 
+    std::vector<bool> is_exact_match; // dummy exact match flags
+    for (int i = 0; i < hp_indels.size(); i++) {
+        set_bp_consensus_info(hp_indels[i]->sample_info.alt_bp1.reads_info, alt_reads[i], alt_good_reads[i], alt_is_exact_match[i], 0.0, 0.0);
+        if (hp_indels[i]->sample_info.alt_bp1.reads_info.exact_reads() > 0 && alt_reads[i] > 0 && ref_reads == 0) {
+            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(1), bcf_gt_unphased(1)};
+        } else if (hp_indels[i]->sample_info.alt_bp1.reads_info.exact_reads() > 0 && alt_reads[i] > 0 && ref_reads > 0) {
+            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(1)};
+        } else {
+            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(0)};
+        }
+    }
+    set_bp_consensus_info(hp_indels[0]->sample_info.ref_bp1.reads_info, ref_reads, ref_good_reads, ref_is_exact_match, 0.0, 0.0);
 }
 
 // hp_indels are guaranteed to be on the same chromosome

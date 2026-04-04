@@ -134,6 +134,12 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
                 bcf_update_info_string(out_hdr, b, "HARD_FILTERS", hard_filters);
             }
             free(hard_filters);
+
+            int hp_genotyped_len = 0;
+            int hp_genotyped_flag = 0;
+            if (bcf_get_info_flag(gt_hdr, gt_record, "HP_GENOTYPED", &hp_genotyped_flag, &hp_genotyped_len) > 0) {
+                bcf_update_info_flag(out_hdr, b, "HP_GENOTYPED", "", 1);
+            }
         } else {
             int32_t missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
             bcf_update_genotypes(out_hdr, b, missing_gt, 2);
@@ -172,8 +178,13 @@ int main(int argc, char** argv) {
     // reset samples in out header
     bcf_hdr_t* out_hdr = bcf_subset_header(base_hdr, sample, imap);
     add_fmt_tags(out_hdr);
-    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
     int len = 0;
+
+    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "HP_GENOTYPED");
+    const char* hp_genotyped_tag = "##INFO=<ID=HP_GENOTYPED,Number=0,Type=Flag,Description=\"This variant was genotyped using the homopolymer-specific genotyping path.\">";
+    bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, hp_genotyped_tag, &len));
+    
+    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";
     bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, gt_as_dup_tag, &len));
     

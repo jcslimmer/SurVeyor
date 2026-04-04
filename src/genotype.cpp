@@ -35,7 +35,7 @@
 #include "genotype_dups.h"
 #include "genotype_inss.h"
 #include "genotype_invs.h"
-// #include "genotype_hp_indels.h"
+#include "genotype_hp_indels.h"
 
 chr_seqs_map_t chr_seqs;
 config_t config;
@@ -274,6 +274,7 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     if (mh_len > 0) {
         bcf_update_info_int32(out_hdr, sv->vcf_entry, "MH_LEN", &mh_len, 1);
     }
+    bcf_update_info_flag(out_hdr, sv->vcf_entry, "HP_GENOTYPED", "", sv->hp_genotyped);
     if (sv->expected_alt1_reads_frac != sv_t::EXPECTED_ALT_READS_FREQ_NOT_COMPUTED) {
         float exp_alt_reads_freq[] = {(float) sv->expected_alt1_reads_frac, (float) sv->expected_alt2_reads_frac};
         bcf_update_info_float(out_hdr, sv->vcf_entry, "EXP_ALT_READS_FREQ", exp_alt_reads_freq, 2);
@@ -647,9 +648,9 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
 std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std::string>& seqs) {
     std::vector<std::string> temp1, temp2;
     std::vector<StripedSmithWaterman::Alignment> consensus_contigs_alns;
-    
+
     std::vector<std::string> consensus_seqs; 
-    
+
     consensus_seqs = generate_reference_guided_consensus(ref_seq, temp1, seqs, temp2, aligner, harsh_aligner, consensus_contigs_alns, config, stats, false);
     consensus_seqs.push_back("");
 
@@ -1055,10 +1056,9 @@ int main(int argc, char* argv[]) {
         }
 
         sv->vcf_entry = bcf_dup(vcf_record);
-        // if (is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
-        //     hp_by_chr[sv->chr].push_back(sv);
-        // } else 
-        if (sv->svtype() == "DEL") {
+        if (false && is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
+            hp_by_chr[sv->chr].push_back(sv);
+        } else if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
         } else if (sv->svtype() == "DUP") {
             dups_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<duplication_t>(sv));
@@ -1092,22 +1092,22 @@ int main(int argc, char* argv[]) {
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
 
-        // std::vector<std::shared_ptr<sv_t>>& hps = hp_by_chr[contig_name];
-        // std::vector<hts_pair_pos_t> ref_hp_ranges;
-        // for (std::shared_ptr<sv_t>& hp : hps) {
-        //     ref_hp_ranges.push_back(find_ref_hp_range_for_indel(hp.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name)));
-        // }
+        std::vector<std::shared_ptr<sv_t>>& hps = hp_by_chr[contig_name];
+        std::vector<hts_pair_pos_t> ref_hp_ranges;
+        for (std::shared_ptr<sv_t>& hp : hps) {
+            ref_hp_ranges.push_back(find_ref_hp_range_for_indel(hp.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name)));
+        }
 
-        // std::vector<sv_t*> block_hps;
-        // for (int i = 0; i < hps.size(); i++) {
-        //     block_hps.push_back(hps[i].get());
-        //     if ((i == hps.size()-1 && !block_hps.empty()) 
-        //     || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
-        //         std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
-        //                 chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool);
-        //         block_hps.clear();
-        //     }
-        // }
+        std::vector<sv_t*> block_hps;
+        for (int i = 0; i < hps.size(); i++) {
+            block_hps.push_back(hps[i].get());
+            if ((i == hps.size()-1 && !block_hps.empty()) 
+            || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
+                std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
+                        chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool);
+                block_hps.clear();
+            }
+        }
 
         std::vector<std::shared_ptr<deletion_t>>& dels = dels_by_chr[contig_name];
         std::vector<deletion_t*> block_dels;
