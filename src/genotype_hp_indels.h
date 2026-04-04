@@ -275,7 +275,7 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
 
 
 void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_hp_range, open_samFile_t* bam_file, char* contig_seq, hts_pos_t contig_len, 
-    stats_t& stats, config_t& config) {
+    stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger) {
 
     if (hp_indels.empty()) return;
     for (sv_t* hp_indel : hp_indels) {
@@ -290,19 +290,59 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     region_ss << hp_indels[0]->chr << ":" << ref_hp_range.beg-1 << "-" << ref_hp_range.end+1;
     hts_itr_t* iter = sam_itr_querys(bam_file->idx, bam_file->header, region_ss.str().c_str());
 
+    // Build alt alleles
+    hts_pos_t extend = stats.read_len - 1;
+    hts_pos_t ref_hp_len = ref_hp_range.end - ref_hp_range.beg;
+    hts_pos_t alt_start = std::max(hts_pos_t(0), ref_hp_range.beg - extend);
+    hts_pos_t alt_end = std::min(contig_len, ref_hp_range.end + extend);
+    hts_pos_t left_flank_len = ref_hp_range.beg - alt_start;
+    hts_pos_t right_flank_len = alt_end - ref_hp_range.end;
+
+    std::vector<char*> alt_alleles;
+    std::vector<int> alt_allele_lens;
+    for (sv_t* hp_indel : hp_indels) {
+        hts_pos_t alt_hp_len = ref_hp_len + hp_indel->svlen();
+        hts_pos_t alt_len = left_flank_len + alt_hp_len + right_flank_len;
+        char* alt_seq = new char[alt_len + 1];
+        strncpy(alt_seq, contig_seq + alt_start, left_flank_len);
+        memset(alt_seq + left_flank_len, hp_base, alt_hp_len);
+        strncpy(alt_seq + left_flank_len + alt_hp_len, contig_seq + ref_hp_range.end, right_flank_len);
+        alt_seq[alt_len] = '\0';
+        alt_alleles.push_back(alt_seq);
+        alt_allele_lens.push_back(alt_len);
+    }
+
     // For each read overlapping the reference HP, calculate its observed HP length,
     // 5'/3' tail lengths and 5'/3' tail mismatch counts.
+    StripedSmithWaterman::Alignment alt_aln;
+    StripedSmithWaterman::Filter filter_score_only(false, false, 0, 32767);
+
     bam1_t* read = bam_init1();
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (!is_proper_pair(read, stats.min_is, stats.max_is)) continue;
 
         hp_read_info_t hp_read_info = calculate_hp_read_info(read, ref_hp_range, hp_base, contig_seq, contig_len);
-        if (hp_read_info.tail_3p_len < config.min_clip_len || hp_read_info.tail_5p_len < config.min_clip_len) continue;
+        if (hp_read_info.tail_3p_len < config.min_clip_len || hp_read_info.tail_5p_len < config.min_clip_len) {
+            // Even if we are discarding this reads because the tails are too short, we still want to prevent it from being used as evidence for non-HP indels
+            // when they are aligned better to one of the HP indels
+            std::string seq = get_sequence(read);
+            for (int i = 0; i < hp_indels.size(); i++) {
+                aligner.Align(seq.c_str(), alt_alleles[i], alt_allele_lens[i], filter_score_only, &alt_aln, 0);
+                std::vector<std::shared_ptr<bam1_t>> read_v = { std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1) };
+                std::vector<int> alt_aln_scores = { alt_aln.sw_score };
+                if (evidence_logger) evidence_logger->log_reads_associations(hp_indels[i]->id, 1, read_v, alt_aln_scores);
+            }
+            continue;
+        }
         hp_read_infos.push_back(hp_read_info);
     }
     bam_destroy1(read);
     hts_itr_destroy(iter);
+
+    for (char* alt_seq : alt_alleles) {
+        delete[] alt_seq;
+    }
 
     if (hp_read_infos.empty()) return;
 
@@ -341,15 +381,18 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
             }
         }
 
-        std::vector<std::shared_ptr<bam1_t>> good_reads;
+        std::vector<std::shared_ptr<bam1_t>> good_reads, garbage_reads;
         std::vector<bool> is_exact_match;
         for (const hp_read_info_t& hp_read_info : cluster) {
             if (hp_read_info.is_good_read(config.min_clip_len, MAX_TAIL_MISMATCH_RATE)) {
                 good_reads.push_back(hp_read_info.read);
                 is_exact_match.push_back(hp_read_info.hp_len == allele_lens[best_allele_idx]);
+            } else {
+                garbage_reads.push_back(hp_read_info.read);
             }
         }
 
+        
         if (best_allele_idx == allele_lens.size() - 1) {
             // Cluster best matches the reference allele
             ref_reads += cluster.size();
@@ -360,6 +403,8 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
             alt_reads[best_allele_idx] += cluster.size();
             alt_good_reads[best_allele_idx].insert(alt_good_reads[best_allele_idx].end(), good_reads.begin(), good_reads.end());
             alt_is_exact_match[best_allele_idx].insert(alt_is_exact_match[best_allele_idx].end(), is_exact_match.begin(), is_exact_match.end());
+            std::vector<int> dummy_scores(good_reads.size(), stats.read_len+1); // forcibly assign an impossibly high score to prevent other reads from using them
+            if (evidence_logger) evidence_logger->log_reads_associations(hp_indels[best_allele_idx]->id, 1, good_reads, dummy_scores); 
         }
     }
 
@@ -380,7 +425,9 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
 
 // hp_indels are guaranteed to be on the same chromosome
 void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<sv_t*> hp_indels, 
-    stats_t stats, config_t config, bam_pool_t* bam_pool) {
+    stats_t stats, config_t config, bam_pool_t* bam_pool, evidence_logger_t* evidence_logger) {
+
+    StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
     std::unordered_map<hts_pos_t, std::vector<sv_t*>> hp_indels_by_ref_hp_range;
     for (sv_t* hp_indel : hp_indels) {
@@ -393,7 +440,7 @@ void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int c
     for (auto& kv : hp_indels_by_ref_hp_range) {
         std::vector<sv_t*>& hp_indels_in_range = kv.second;
         hts_pair_pos_t ref_hp_range = find_ref_hp_range_for_indel(hp_indels_in_range[0], contig_seq, contig_len);
-        genotype_hp_indels_group(hp_indels_in_range, ref_hp_range, bam_file, contig_seq, contig_len, stats, config);
+        genotype_hp_indels_group(hp_indels_in_range, ref_hp_range, bam_file, contig_seq, contig_len, stats, config, aligner, evidence_logger);
     }
 }
 

@@ -1056,7 +1056,7 @@ int main(int argc, char* argv[]) {
         }
 
         sv->vcf_entry = bcf_dup(vcf_record);
-        if (false && is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
+        if (is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
             hp_by_chr[sv->chr].push_back(sv);
         } else if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
@@ -1104,7 +1104,7 @@ int main(int argc, char* argv[]) {
             if ((i == hps.size()-1 && !block_hps.empty()) 
             || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
                 std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
-                        chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool);
+                        chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool, evidence_logger);
                 block_hps.clear();
             }
         }
