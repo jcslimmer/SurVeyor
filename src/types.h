@@ -178,6 +178,7 @@ struct sv_t {
     std::string source;
     bool imprecise = false;
     bool hp_genotyped = false;
+    hts_pos_t hp_ref_beg = HTS_POS_MIN, hp_ref_end = HTS_POS_MIN;
 
     static constexpr const double KS_PVAL_NOT_COMPUTED = -1.0;
     static constexpr const int SIZE_NOT_COMPUTED = INT32_MAX;

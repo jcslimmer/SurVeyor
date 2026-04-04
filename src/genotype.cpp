@@ -275,6 +275,12 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_info_int32(out_hdr, sv->vcf_entry, "MH_LEN", &mh_len, 1);
     }
     bcf_update_info_flag(out_hdr, sv->vcf_entry, "HP_GENOTYPED", "", sv->hp_genotyped);
+    if (sv->hp_ref_beg != HTS_POS_MIN && sv->hp_ref_end != HTS_POS_MIN) {
+        int hp_ref_range[] = {(int) sv->hp_ref_beg + 1, (int) sv->hp_ref_end + 1}; // convert to 1-based coordinates for VCF
+        bcf_update_info_int32(out_hdr, sv->vcf_entry, "HP_REF_RANGE", hp_ref_range, 2);
+    } else {
+        bcf_update_info_int32(out_hdr, sv->vcf_entry, "HP_REF_RANGE", NULL, 0);
+    }
     if (sv->expected_alt1_reads_frac != sv_t::EXPECTED_ALT_READS_FREQ_NOT_COMPUTED) {
         float exp_alt_reads_freq[] = {(float) sv->expected_alt1_reads_frac, (float) sv->expected_alt2_reads_frac};
         bcf_update_info_float(out_hdr, sv->vcf_entry, "EXP_ALT_READS_FREQ", exp_alt_reads_freq, 2);

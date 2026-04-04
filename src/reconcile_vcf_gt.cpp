@@ -140,6 +140,13 @@ void copy_all_format_to_base(bcf_hdr_t* base_hdr, htsFile* base_fp, const std::u
             if (bcf_get_info_flag(gt_hdr, gt_record, "HP_GENOTYPED", &hp_genotyped_flag, &hp_genotyped_len) > 0) {
                 bcf_update_info_flag(out_hdr, b, "HP_GENOTYPED", "", 1);
             }
+
+            int32_t* hp_ref_range = NULL;
+            int n_hp_ref_range = 0;
+            if (bcf_get_info_int32(gt_hdr, gt_record, "HP_REF_RANGE", &hp_ref_range, &n_hp_ref_range) > 0) {
+                bcf_update_info_int32(out_hdr, b, "HP_REF_RANGE", hp_ref_range, n_hp_ref_range);
+            }
+            free(hp_ref_range);
         } else {
             int32_t missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
             bcf_update_genotypes(out_hdr, b, missing_gt, 2);
@@ -183,6 +190,10 @@ int main(int argc, char** argv) {
     bcf_hdr_remove(out_hdr, BCF_HL_INFO, "HP_GENOTYPED");
     const char* hp_genotyped_tag = "##INFO=<ID=HP_GENOTYPED,Number=0,Type=Flag,Description=\"This variant was genotyped using the homopolymer-specific genotyping path.\">";
     bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, hp_genotyped_tag, &len));
+
+    bcf_hdr_remove(out_hdr, BCF_HL_INFO, "HP_REF_RANGE");
+    const char* hp_ref_range_tag = "##INFO=<ID=HP_REF_RANGE,Number=2,Type=Integer,Description=\"1-based half-open [start,end) coordinates of the reference homopolymer run used in homopolymer-specific genotyping.\">";
+    bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, hp_ref_range_tag, &len));
     
     bcf_hdr_remove(out_hdr, BCF_HL_INFO, "GT_AS_DUP");
     const char* gt_as_dup_tag = "##INFO=<ID=GT_AS_DUP,Number=1,Type=String,Description=\"This insertions was genotyped as the duplication provided in this field.\">";

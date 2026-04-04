@@ -280,6 +280,8 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     if (hp_indels.empty()) return;
     for (sv_t* hp_indel : hp_indels) {
         hp_indel->hp_genotyped = true;
+        hp_indel->hp_ref_beg = ref_hp_range.beg;
+        hp_indel->hp_ref_end = ref_hp_range.end;
     }
 
     char hp_base = get_homopolymer_base(hp_indels[0], contig_seq);
