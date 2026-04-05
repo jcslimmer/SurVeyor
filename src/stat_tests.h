@@ -694,6 +694,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<duplication_t*>& d
 	bam1_t* read = bam_init1();
 	while (sam_itr_next(bam_file->file, iter, read) >= 0) {
 		if (is_unmapped(read) || !is_primary(read)) continue;
+		if (is_mate_unmapped(read) || !is_samechr(read) || is_samestr(read)) continue;
 
 		while (curr_dup_dp_idx < duplications.size() && duplications_by_start[curr_dup_dp_idx]->start < read->core.pos-stats.max_is) curr_dup_dp_idx++;
 		while (curr_dup_bystart_idx < duplications.size() && duplications_by_start[curr_dup_bystart_idx]->start < read->core.pos) curr_dup_bystart_idx++;
