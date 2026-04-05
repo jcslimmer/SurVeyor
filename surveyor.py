@@ -70,6 +70,7 @@ generate_training_data_parser.add_argument('simple_repeat_bed', help='BED file w
 generate_training_data_parser.add_argument('reference', help='Reference genome in FASTA format.')
 generate_training_data_parser.add_argument('samplename', help='Name of the sample used in the call command.')
 generate_training_data_parser.add_argument('--unreliable-gts', help='File with list of ID of variants with unreliable genotypes, to be set to ./1 if found')
+generate_training_data_parser.add_argument('--restrict-to-bed', help='Restrict the training data VCF to indels fully contained in an interval from this BED file.')
 
 cmd_args = parser.parse_args()
 
@@ -121,31 +122,77 @@ def compute_reference_contig_md5(reference_fasta, contig_name, chunk_size=100000
         md5.update(reference_fasta.fetch(contig_name, start, end).upper().encode())
     return md5.hexdigest()
 
-def parse_sampling_regions(sampling_regions_fname, skip_hint):
+def parse_bed_regions(bed_fname):
     regions = []
     try:
-        with open(sampling_regions_fname) as sampling_regions_file:
-            for line_no, line in enumerate(sampling_regions_file, start=1):
+        with open(bed_fname) as bed_file:
+            for line_no, line in enumerate(bed_file, start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
 
                 tokens = stripped.split()
-                if len(tokens) == 3:
-                    try:
-                        start = int(tokens[1])
-                        end = int(tokens[2])
-                    except ValueError:
-                        fail("Error: invalid coordinates in sampling regions file %s at line %d.%s" %
-                             (sampling_regions_fname, line_no, skip_hint))
-                    regions.append((line_no, tokens[0], start, end))
-                else:
-                    fail("Error: invalid format in sampling regions file %s at line %d. Expected 3 BED fields: 'contig start end'.%s" %
-                         (sampling_regions_fname, line_no, skip_hint))
+                if len(tokens) < 3:
+                    fail("Error: invalid format in BED file %s at line %d. Expected at least 3 BED fields: 'contig start end'." %
+                         (bed_fname, line_no))
+
+                try:
+                    start = int(tokens[1])
+                    end = int(tokens[2])
+                except ValueError:
+                    fail("Error: invalid coordinates in BED file %s at line %d." %
+                         (bed_fname, line_no))
+
+                if start < 0 or end < 0:
+                    fail("Error: BED file %s line %d has a negative coordinate." %
+                         (bed_fname, line_no))
+                if start >= end:
+                    fail("Error: BED file %s line %d has start >= end." %
+                         (bed_fname, line_no))
+
+                regions.append((line_no, tokens[0], start, end))
     except OSError as exc:
-        fail("Error: could not read sampling regions file %s: %s.%s" %
-             (sampling_regions_fname, exc, skip_hint))
+        fail("Error: could not read BED file %s: %s." %
+             (bed_fname, exc))
     return regions
+
+# This function assumes that the input VCF is sorted by coordinate
+def restrict_vcf_to_regions_sweep(in_vcf_fname, out_vcf_fname, regions):
+    regions_by_contig = {}
+    for _, contig_name, start, end in regions:
+        regions_by_contig.setdefault(contig_name, []).append((start, end))
+
+    for contig_name, contig_regions in regions_by_contig.items():
+        contig_regions.sort()
+        merged_regions = []
+        for start, end in contig_regions:
+            if merged_regions and start < merged_regions[-1][1]:
+                merged_regions[-1] = (merged_regions[-1][0], max(merged_regions[-1][1], end))
+            else:
+                merged_regions.append((start, end))
+        regions_by_contig[contig_name] = merged_regions
+
+    with pysam.VariantFile(in_vcf_fname) as in_vcf, \
+         pysam.VariantFile(out_vcf_fname, 'wz', header=in_vcf.header) as out_vcf:
+        current_contig = None
+        current_regions = []
+        current_region_idx = 0
+
+        for record in in_vcf:
+            if record.contig != current_contig:
+                current_contig = record.contig
+                current_regions = regions_by_contig.get(current_contig, [])
+                current_region_idx = 0
+
+            while current_region_idx < len(current_regions) and current_regions[current_region_idx][1] <= record.start:
+                current_region_idx += 1
+
+            if current_region_idx == len(current_regions):
+                continue
+
+            region_start, region_end = current_regions[current_region_idx]
+            if region_start <= record.start and record.stop <= region_end:
+                out_vcf.write(record)
 
 def validate_bam_reference_compatibility(bam_fname, reference_fname, sampling_regions_fname=None):
     skip_hint = " You can bypass this check with --skip-bam-ref-validation. This is generally discouraged. Only use it if you are sure this will not cause problems downstream."
@@ -207,24 +254,18 @@ def validate_bam_reference_compatibility(bam_fname, reference_fname, sampling_re
             fail("Error: the BAM header and reference FASTA disagree on contig MD5 checksum(s): %s.%s" % (formatted, skip_hint))
 
         if sampling_regions_fname:
-            sampling_regions = parse_sampling_regions(sampling_regions_fname, skip_hint)
+            sampling_regions = parse_bed_regions(sampling_regions_fname)
             for line_no, contig_name, start, end in sampling_regions:
                 if contig_name not in bam_contig_lengths:
-                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the BAM header.%s" %
-                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the BAM header." %
+                         (sampling_regions_fname, line_no, contig_name))
                 if contig_name not in reference_contig_lengths:
-                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the reference FASTA.%s" %
-                         (sampling_regions_fname, line_no, contig_name, skip_hint))
-                if start < 0 or end < 0:
-                    fail("Error: sampling regions file %s line %d has a negative coordinate for contig %s.%s" %
-                         (sampling_regions_fname, line_no, contig_name, skip_hint))
-                if start >= end:
-                    fail("Error: sampling regions file %s line %d has start >= end for contig %s.%s" %
-                         (sampling_regions_fname, line_no, contig_name, skip_hint))
+                    fail("Error: sampling regions file %s line %d references contig %s, which is missing from the reference FASTA." %
+                         (sampling_regions_fname, line_no, contig_name))
                 contig_len = reference_contig_lengths[contig_name]
                 if end > contig_len:
-                    fail("Error: sampling regions file %s line %d extends past the end of contig %s (end=%d, contig_len=%d).%s" %
-                         (sampling_regions_fname, line_no, contig_name, end, contig_len, skip_hint))
+                    fail("Error: sampling regions file %s line %d extends past the end of contig %s (end=%d, contig_len=%d)." %
+                         (sampling_regions_fname, line_no, contig_name, end, contig_len))
     finally:
         bam_file.close()
         reference_fasta.close()
@@ -458,7 +499,7 @@ elif cmd_args.command == 'genotype':
     if not cmd_args.ml_model:
         exit(0)
 
-    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    # deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'generate-training-data':
 
@@ -466,10 +507,19 @@ elif cmd_args.command == 'generate-training-data':
         print("Error: training-data.vcf.gz not found in the workdir %s. Please make sure to run the call command with --generate-training-data first." % cmd_args.workdir)
         exit(1)
 
+    restrict_to_bed_regions = None
+    if cmd_args.restrict_to_bed:
+        restrict_to_bed_regions = parse_bed_regions(cmd_args.restrict_to_bed)
+
     mkdir(cmd_args.outdir)
     sample_training_data_vcf = os.path.join(cmd_args.outdir, cmd_args.samplename + ".vcf.gz")
-    shutil.copyfile(cmd_args.workdir + "/training-data.vcf.gz", sample_training_data_vcf)
-    shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz"))
+    sample_ins_to_dup_training_data_vcf = os.path.join(cmd_args.outdir, cmd_args.samplename + ".INS_TO_DUP.vcf.gz")
+    if restrict_to_bed_regions:
+        restrict_vcf_to_regions_sweep(cmd_args.workdir + "/training-data.vcf.gz", sample_training_data_vcf, restrict_to_bed_regions)
+        restrict_vcf_to_regions_sweep(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", sample_ins_to_dup_training_data_vcf, restrict_to_bed_regions)
+    else:
+        shutil.copyfile(cmd_args.workdir + "/training-data.vcf.gz", sample_training_data_vcf)
+        shutil.copyfile(cmd_args.workdir + "/training-data.INS_TO_DUP.vcf.gz", sample_ins_to_dup_training_data_vcf)
     shutil.copyfile(cmd_args.workdir + "/stats.txt", os.path.join(cmd_args.outdir, cmd_args.samplename + ".stats"))
 
     # if  training-data.reassigned.vcf.gz and training-data.reassigned.INS_TO_DUP.vcf.gz are present,

@@ -431,10 +431,11 @@ void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int c
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
 
-    std::unordered_map<hts_pos_t, std::vector<sv_t*>> hp_indels_by_ref_hp_range;
+    std::unordered_map<std::string, std::vector<sv_t*>> hp_indels_by_ref_hp_range;
     for (sv_t* hp_indel : hp_indels) {
         hts_pair_pos_t ref_hp_range = find_ref_hp_range_for_indel(hp_indel, contig_seq, contig_len);
-        hp_indels_by_ref_hp_range[ref_hp_range.beg].push_back(hp_indel);
+        std::string ref_hp_range_key = std::to_string(ref_hp_range.beg) + ":" + std::to_string(ref_hp_range.end);
+        hp_indels_by_ref_hp_range[ref_hp_range_key].push_back(hp_indel);
     }
 
     open_samFile_t* bam_file = bam_pool->get_bam_reader(id);
