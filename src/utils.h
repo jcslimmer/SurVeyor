@@ -430,7 +430,8 @@ struct random_pos_generator_t {
         if (sampling_regions_fname.empty()) {
             for (int i = 0; i < hdr->n_targets; i++) {
                 std::string chr = hdr->target_name[i];
-                regions.push_back(region_t(chr, NO_SAMPLING_PADDING, hdr->target_len[i]-NO_SAMPLING_PADDING));
+                if (hdr->target_len[i] <= 2*NO_SAMPLING_PADDING) continue;
+                regions.push_back(region_t(chr, NO_SAMPLING_PADDING, hdr->target_len[i] - NO_SAMPLING_PADDING));
             }
         } else {
             std::ifstream fin(sampling_regions_fname);
