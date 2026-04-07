@@ -699,13 +699,13 @@ int main(int argc, char* argv[]) {
 		if (a.rep && !b.rep) return false;
 		if (!a.rep && b.rep) return true;
 		if (a.score != b.score) return a.score > b.score;
-		int a_consistent_reads = a.b_sv->sample_info.alt_bp1.reads_info.consistent_reads() + a.b_sv->sample_info.alt_bp2.reads_info.consistent_reads();
-		int b_consistent_reads = b.b_sv->sample_info.alt_bp1.reads_info.consistent_reads() + b.b_sv->sample_info.alt_bp2.reads_info.consistent_reads();
+		int a_consistent_reads = a.c_sv->sample_info.alt_bp1.reads_info.consistent_reads() + a.c_sv->sample_info.alt_bp2.reads_info.consistent_reads();
+		int b_consistent_reads = b.c_sv->sample_info.alt_bp1.reads_info.consistent_reads() + b.c_sv->sample_info.alt_bp2.reads_info.consistent_reads();
 		if (a_consistent_reads != b_consistent_reads) {
 			return a_consistent_reads > b_consistent_reads;
 		}
-		int a_ext_alt_consensus = a.b_sv->sample_info.ext_alt_consensus1_to_alt_score + a.b_sv->sample_info.ext_alt_consensus2_to_alt_score;
-		int b_ext_alt_consensus = b.b_sv->sample_info.ext_alt_consensus1_to_alt_score + b.b_sv->sample_info.ext_alt_consensus2_to_alt_score;
+		int a_ext_alt_consensus = a.c_sv->sample_info.ext_alt_consensus1_to_alt_score + a.c_sv->sample_info.ext_alt_consensus2_to_alt_score;
+		int b_ext_alt_consensus = b.c_sv->sample_info.ext_alt_consensus1_to_alt_score + b.c_sv->sample_info.ext_alt_consensus2_to_alt_score;
 		if (a_ext_alt_consensus != b_ext_alt_consensus) {
 			return a_ext_alt_consensus > b_ext_alt_consensus;
 		}

@@ -15,6 +15,29 @@ bool ends_with(const char* str, const char* suffix) {
 	return strcmp(str+(l_string-l_suffix), suffix) == 0;
 }
 
+int get_optional_format_int32(bcf_hdr_t* hdr, bcf1_t* line, const char* tag, int fallback = 0) {
+    int32_t* vals = NULL;
+    int nvals = 0;
+    int value = fallback;
+    if (bcf_get_format_int32(hdr, line, tag, &vals, &nvals) > 0 && nvals > 0 &&
+        vals[0] != bcf_int32_missing && vals[0] != bcf_int32_vector_end) {
+        value = vals[0];
+    }
+    free(vals);
+    return value;
+}
+
+void load_compare_tiebreak_fields(bcf_hdr_t* hdr, bcf1_t* line, sv_t* sv) {
+    sv->sample_info.alt_bp1.reads_info.consistent_fwd = get_optional_format_int32(hdr, line, "AR1CF");
+    sv->sample_info.alt_bp1.reads_info.consistent_rev = get_optional_format_int32(hdr, line, "AR1CR");
+
+    sv->sample_info.alt_bp2.reads_info.consistent_fwd = get_optional_format_int32(hdr, line, "AR2CF");
+    sv->sample_info.alt_bp2.reads_info.consistent_rev = get_optional_format_int32(hdr, line, "AR2CR");
+
+    sv->sample_info.ext_alt_consensus1_to_alt_score = get_optional_format_int32(hdr, line, "EXAS");
+    sv->sample_info.ext_alt_consensus2_to_alt_score = get_optional_format_int32(hdr, line, "EXAS2");
+}
+
 std::vector<std::shared_ptr<sv_t>> read_sv_list(const char* filename) {
 	std::vector<std::shared_ptr<sv_t>> svs;
     htsFile* file = bcf_open(filename, "r");
@@ -30,6 +53,7 @@ std::vector<std::shared_ptr<sv_t>> read_sv_list(const char* filename) {
     while (bcf_read(file, hdr, line) == 0) {
         std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, line);
         if (sv != nullptr) {
+            load_compare_tiebreak_fields(hdr, line, sv.get());
             sv->vcf_entry = bcf_dup(line);
             svs.push_back(sv);
         }
