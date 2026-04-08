@@ -21,7 +21,7 @@ class Features:
                             'RIGHT_ANCHOR_A_RATIO_500', 'RIGHT_ANCHOR_C_RATIO_500', 'RIGHT_ANCHOR_G_RATIO_500', 'RIGHT_ANCHOR_T_RATIO_500', 'MAX_RIGHT_ANCHOR_BASE_RATIO_500',
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
-                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2' ]
+                            'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2', 'HP_REF_LEN', 'HP_ALT_LEN' ]
 
     reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1E', 'AR1E_RATIO', #'AR1C_OCCR',
                             'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2E', 'AR2E_RATIO', #'AR2C_OCCR',
@@ -80,6 +80,9 @@ class Features:
             Features.stat_test_features_names + Features.dp_features_names
 
     def get_model_name(record, max_is, read_len):
+        if Features.gt_as_homopolymer(record):
+            return "HP"
+
         svtype_str = Features.get_svtype(record)
 
         if svtype_str == "DUP" and "INS_TO_DUP" in record.info:
@@ -96,9 +99,6 @@ class Features:
             svtype_str += "_LARGE"
             if 'EXL' not in record.samples[0]:
                 svtype_str += "_NOEXL"
-        elif svtype_str == "INS":
-            if Features.is_homopolymer(record):
-                svtype_str += "_HP"
 
         return svtype_str
 
@@ -162,12 +162,9 @@ class Features:
         else:
             return svlen
         
-    def is_homopolymer(record):
-        svinsseq = Features.get_svinsseq(record)
-        if len(svinsseq) < 10:
-            return False
-        return all(base == svinsseq[0] for base in svinsseq)
-        
+    def gt_as_homopolymer(record):
+        return 'HP_GENOTYPED' in record.info
+
     def get_edit_distance(record):
         svinsseq = Features.get_svinsseq(record)
         svinslen = Features.get_number_value(record.info, 'SVINSLEN', 0)
@@ -191,7 +188,7 @@ class Features:
         return record.info['SVTYPE']
 
     def skips_ml_genotyping(record):
-        return Features.get_svtype(record).startswith('INV') or 'HP_GENOTYPED' in record.info
+        return Features.get_svtype(record).startswith('INV')
 
     def normalise(value, min, max):
         if max == min:
@@ -201,9 +198,9 @@ class Features:
     def piecewise_normalise(value, minv, maxv):
         neg = value < 0
         value = abs(value)
-        if value < minv:
-            ret_val = value/minv * 0.25
-        elif value >= maxv:
+        if value <= minv:
+            ret_val = value/max(1, minv) * 0.25
+        elif value > maxv:
             ret_val = value/max(1, maxv) * 0.25 + 0.75
         else:
             ret_val = 0.25 + (value - minv) / (maxv - minv) * 0.75
@@ -255,7 +252,12 @@ class Features:
             features['INS_SEQ_COV_PREFIX_LEN'] = i/len(svinsseq)
             features['INS_SEQ_COV_SUFFIX_LEN'] = (len(svinsseq)-i)/len(svinsseq)
 
-        features['EXP_ALT_READS_FREQ1'], features['EXP_ALT_READS_FREQ2'] = Features.get_number_value(info, 'EXP_ALT_READS_FREQ', [Features.NAN, Features.NAN], 1.0)
+        exp_alt_reads_freq1, exp_alt_reads_freq2 = Features.get_number_value(info, 'EXP_ALT_READS_FREQ', [Features.NAN, Features.NAN], 1.0)
+        features['EXP_ALT_READS_FREQ1'], features['EXP_ALT_READS_FREQ2'] = exp_alt_reads_freq1, exp_alt_reads_freq2
+
+        hp_ref_start, hp_ref_end = Features.get_number_value(info, 'HP_REF_RANGE', [Features.NAN, Features.NAN])
+        features['HP_REF_LEN'] = hp_ref_end - hp_ref_start
+        features['HP_ALT_LEN'] = features['HP_REF_LEN'] + Features.get_svlen(record)
 
         left_anchor_base_count = Features.get_number_value(info, 'LEFT_ANCHOR_BASE_COUNT', [0, 0, 0, 0])
         left_anchor_base_count_ratio = [x/max(1, sum(left_anchor_base_count)) for x in left_anchor_base_count]
@@ -323,9 +325,9 @@ class Features:
         ar1c = Features.get_number_value(record.samples[0], 'AR1C', 0)
         ar1_adj = ar1
         ar1c_adj = ar1c
-        if features['EXP_ALT_READS_FREQ1'] > 0:
-            ar1_adj = ar1/features['EXP_ALT_READS_FREQ1']
-            ar1c_adj = ar1c/features['EXP_ALT_READS_FREQ1']
+        if exp_alt_reads_freq1 > 0:
+            ar1_adj = ar1/exp_alt_reads_freq1
+            ar1c_adj = ar1c/exp_alt_reads_freq1
         ar1caq = Features.get_number_value(record.samples[0], 'AR1CAQ', Features.NAN)
         ar1csq = Features.get_number_value(record.samples[0], 'AR1CSQ', Features.NAN)
         ar1cas = Features.get_number_value(record.samples[0], 'AR1CAS', Features.NAN)
@@ -350,9 +352,9 @@ class Features:
         ar2c = Features.get_number_value(record.samples[0], 'AR2C', 0)
         ar2_adj = ar2
         ar2c_adj = ar2c
-        if features['EXP_ALT_READS_FREQ2'] > 0:
-            ar2_adj = ar2/features['EXP_ALT_READS_FREQ2']
-            ar2c_adj = ar2c/features['EXP_ALT_READS_FREQ2']
+        if exp_alt_reads_freq2 > 0:
+            ar2_adj = ar2/exp_alt_reads_freq2
+            ar2c_adj = ar2c/exp_alt_reads_freq2
         ar2caq = Features.get_number_value(record.samples[0], 'AR2CAQ', Features.NAN)
         ar2csq = Features.get_number_value(record.samples[0], 'AR2CSQ', Features.NAN)
         ar2cas = Features.get_number_value(record.samples[0], 'AR2CAS', Features.NAN)
