@@ -251,6 +251,11 @@ struct sv_t {
         int alt_consensus2_split_score1_ind_aln = 0, alt_consensus2_split_score2_ind_aln = 0;
         int ins_seq_prefix_cov = 0, ins_seq_suffix_cov = 0;
         bool too_deep = false;
+        int alt1_hp_len_mode = NOT_COMPUTED, alt1_consistent_hp_len_mode = NOT_COMPUTED;
+        double alt1_consistent_hp_len_iqr = NOT_COMPUTED;
+        double alt1_hp_5p_mismatch_rate = NOT_COMPUTED, alt1_hp_3p_mismatch_rate = NOT_COMPUTED;
+        int alt1_hp_min_mapq = NOT_COMPUTED, alt1_hp_max_mapq = NOT_COMPUTED;
+        double alt1_hp_avg_mapq = NOT_COMPUTED, alt1_hp_stddev_mapq = NOT_COMPUTED;
 
         int left_flanking_cov = 0, indel_left_cov = 0, indel_right_cov = 0, right_flanking_cov = 0;
         int left_anchor_cov = 0, right_anchor_cov = 0;

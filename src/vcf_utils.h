@@ -450,6 +450,42 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	const char* ar2c_occr_tag = "##FORMAT=<ID=AR2C_OCCR,Number=1,Type=Float,Description=\"Occupancy ratio of starts of reads supporting breakpoint 2 of the ALT allele, normalised by expected occupancy ratio.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar2c_occr_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1HPMODE");
+	const char* ar1m_tag = "##FORMAT=<ID=AR1HPMODE,Number=1,Type=Integer,Description=\"Mode of homopolymer length among all reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1m_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPMODE");
+	const char* ar1cm_tag = "##FORMAT=<ID=AR1CHPMODE,Number=1,Type=Integer,Description=\"Mode of homopolymer length among consistent reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1cm_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPIQR");
+	const char* ar1hpiqr_tag = "##FORMAT=<ID=AR1CHPIQR,Number=1,Type=Float,Description=\"Interquartile range of observed homopolymer lengths among good homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hpiqr_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPmQ");
+	const char* ar1hpminmq_tag = "##FORMAT=<ID=AR1CHPmQ,Number=1,Type=Integer,Description=\"Minimum read mapping quality among good homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hpminmq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPMQ");
+	const char* ar1hpmaxmq_tag = "##FORMAT=<ID=AR1CHPMQ,Number=1,Type=Integer,Description=\"Maximum read mapping quality among good homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hpmaxmq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPAQ");
+	const char* ar1hpavgmq_tag = "##FORMAT=<ID=AR1CHPAQ,Number=1,Type=Float,Description=\"Average read mapping quality among good homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hpavgmq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1CHPSQ");
+	const char* ar1hpstdmq_tag = "##FORMAT=<ID=AR1CHPSQ,Number=1,Type=Float,Description=\"Standard deviation of read mapping quality among good homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hpstdmq_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1HP5PMR");
+	const char* ar1hp5pmr_tag = "##FORMAT=<ID=AR1HP5PMR,Number=1,Type=Float,Description=\"Average 5' tail mismatch rate among homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hp5pmr_tag, &len));
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "AR1HP3PMR");
+	const char* ar1hp3pmr_tag = "##FORMAT=<ID=AR1HP3PMR,Number=1,Type=Float,Description=\"Average 3' tail mismatch rate among homopolymer reads assigned to breakpoint 1 of the ALT allele.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ar1hp3pmr_tag, &len));
+
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EPR");
 	const char* epr_tag = "##FORMAT=<ID=EPR,Number=1,Type=Float,Description=\"Probability of the SV existing in the sample, according to the ML model.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, epr_tag, &len));

@@ -425,6 +425,42 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
         bcf_update_format_float(out_hdr, sv->vcf_entry, "AR2C_OCCR", NULL, 0);
     }
 
+    if (sv->sample_info.alt1_hp_len_mode != sv_t::sample_info_t::NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1HPMODE", &(sv->sample_info.alt1_hp_len_mode), 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1HPMODE", NULL, 0);
+    }
+    if (sv->sample_info.alt1_consistent_hp_len_mode != sv_t::sample_info_t::NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPMODE", &(sv->sample_info.alt1_consistent_hp_len_mode), 1);
+        float ar1_hp_iqr = sv->sample_info.alt1_consistent_hp_len_iqr;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPIQR", &ar1_hp_iqr, 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPMODE", NULL, 0);
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPIQR", NULL, 0);
+    }
+    if (sv->sample_info.alt1_hp_min_mapq != sv_t::sample_info_t::NOT_COMPUTED) {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPmQ", &(sv->sample_info.alt1_hp_min_mapq), 1);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPMQ", &(sv->sample_info.alt1_hp_max_mapq), 1);
+        float ar1_hp_avg_mapq = sv->sample_info.alt1_hp_avg_mapq;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPAQ", &ar1_hp_avg_mapq, 1);
+        float ar1_hp_stddev_mapq = sv->sample_info.alt1_hp_stddev_mapq;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPSQ", &ar1_hp_stddev_mapq, 1);
+    } else {
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPmQ", NULL, 0);
+        bcf_update_format_int32(out_hdr, sv->vcf_entry, "AR1CHPMQ", NULL, 0);
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPAQ", NULL, 0);
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1CHPSQ", NULL, 0);
+    }
+    if (sv->sample_info.alt1_hp_5p_mismatch_rate != sv_t::sample_info_t::NOT_COMPUTED) {
+        float ar1_hp_5p_mismatch_rate = sv->sample_info.alt1_hp_5p_mismatch_rate;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1HP5PMR", &ar1_hp_5p_mismatch_rate, 1);
+        float ar1_hp_3p_mismatch_rate = sv->sample_info.alt1_hp_3p_mismatch_rate;
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1HP3PMR", &ar1_hp_3p_mismatch_rate, 1);
+    } else {
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1HP5PMR", NULL, 0);
+        bcf_update_format_float(out_hdr, sv->vcf_entry, "AR1HP3PMR", NULL, 0);
+    }
+
     std::string filters;
     for (size_t i = 0; i < sv->sample_info.filters.size(); ++i) {
         filters += sv->sample_info.filters[i];
