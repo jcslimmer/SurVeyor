@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
 
     std::sort(vcf_records.begin(), vcf_records.end(),
         [](const bcf1_t* b1, const bcf1_t* b2) { return std::tie(b1->rid, b1->pos) < std::tie(b2->rid, b2->pos); });
-
+    
     for (int i = 0; i < vcf_records.size(); i++) {
         bcf_unpack(vcf_records[i], BCF_UN_STR);
         for (int j = i+1; j < vcf_records.size(); j++) {
@@ -127,17 +127,26 @@ int main(int argc, char* argv[]) {
             if (vcf_records[i]->rid != vcf_records[j]->rid || vcf_records[i]->pos != vcf_records[j]->pos) break;
 
             if (same_record_identity(in_vcf_hdr, vcf_records[i], vcf_records[j])) {
-                // if both 1/1
+                // If both records have ALT, keep the first by default.
+                // Only override that choice when both carry EPR and one is higher.
                 std::vector<int> gt1 = get_bcf_gt(in_vcf_hdr, vcf_records[i]);
                 std::vector<int> gt2 = get_bcf_gt(in_vcf_hdr, vcf_records[j]);
                 if (gt1.size() == 2 && gt2.size() == 2 && (bcf_gt_allele(gt1[0])+bcf_gt_allele(gt1[1]) >= 1 && bcf_gt_allele(gt2[0])+bcf_gt_allele(gt2[1]) >= 1)) {
-                    // set vcf_records[j] to ./.
-                    int missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
-                    bcf_update_genotypes(in_vcf_hdr, vcf_records[j], missing_gt, 2);
+                    int winner_idx = i, loser_idx = j;
+                    float epr1 = get_sv_epr(in_vcf_hdr, vcf_records[i]);
+                    float epr2 = get_sv_epr(in_vcf_hdr, vcf_records[j]);
+                    if (epr1 >= 0.0f && epr2 >= 0.0f && epr2 > epr1) {
+                        winner_idx = j;
+                        loser_idx = i;
+                    }
 
-                    // set vcf_records[i] to 1/1
+                    // set the loser to ./.
+                    int missing_gt[2] = { bcf_gt_missing, bcf_gt_missing };
+                    bcf_update_genotypes(in_vcf_hdr, vcf_records[loser_idx], missing_gt, 2);
+
+                    // set the winner to 1/1
                     int hom_gt[2] = { bcf_gt_unphased(1), bcf_gt_unphased(1) };
-                    bcf_update_genotypes(in_vcf_hdr, vcf_records[i], hom_gt, 2);
+                    bcf_update_genotypes(in_vcf_hdr, vcf_records[winner_idx], hom_gt, 2);
                 }
             }
         }
