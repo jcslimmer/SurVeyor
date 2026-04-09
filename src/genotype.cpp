@@ -1247,7 +1247,12 @@ int main(int argc, char* argv[]) {
 		for (auto& sv : contig_svs) {
 			bcf_update_info_int32(out_vcf_header, vcf_record, "AC", NULL, 0);
 			bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
-            if (!reassign_evidence || sv->sample_info.epr >= MIN_EPR) {
+            // 1) If not reassigning evidence, update all records
+            // 2) If reassigning evidence, only update records that may have changed: currently, they are
+            // - records with EPR >= MIN_EPR 
+            // - homopolymer indels (note: we currently do not reassign evidence for homopolymer indels, but when multiple indels with identical HP ALT len are present,
+            //   the first one in the list is selected. For this reason, the evidence may shift between homopolymer indels with identical HP ALT len)
+            if (!reassign_evidence || sv->sample_info.epr >= MIN_EPR || sv->hp_genotyped) {
                 update_record(in_vcf_header, out_vcf_header, sv.get(), chr_seqs.get_seq(contig_name), chr_seqs.get_len(contig_name), imap[0]);
             }
 			if (bcf_write(out_vcf_file, out_vcf_header, sv->vcf_entry) != 0) {
