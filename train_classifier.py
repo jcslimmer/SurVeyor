@@ -22,6 +22,22 @@ def write_features_file(model_fname, features_names):
         for feature_name in features_names:
             f.write(feature_name + "\n")
 
+def compute_keep_indices(X):
+    keep_indices = []
+    for i in range(X.shape[1]):
+        col = X[:, i]
+        finite = np.isfinite(col)
+        if finite.sum() == 0:
+            continue
+
+        finite_vals = col[finite]
+        values_constant = np.all(finite_vals == finite_vals[0])
+        missingness_constant = np.all(finite) or np.all(~finite)
+        if not (values_constant and missingness_constant):
+            keep_indices.append(i)
+
+    return np.array(keep_indices, dtype=np.int32)
+
 def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
@@ -64,6 +80,18 @@ if __name__ == '__main__':
         if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
             continue
 
+        start_time = time.time()
+
+        features_names = features.Features.get_feature_names(model_name)
+        keep_indices = compute_keep_indices(training_data[model_name])
+        if len(keep_indices) == 0:
+            raise RuntimeError(f"Model {model_name} has no usable features after pruning.")
+        training_data[model_name] = training_data[model_name][:, keep_indices]
+        features_names = [features_names[i] for i in keep_indices]
+
+        end_time = time.time()
+        print(f"Preprocessing for model {model_name} took {end_time - start_time} seconds")
+
         training_labels = np.array([0 if x == "0/0" else 1 for x in training_gts[model_name]])
         unique_labels = np.unique(training_labels)
         if len(unique_labels) == 1:
@@ -77,7 +105,6 @@ if __name__ == '__main__':
         start_time = time.time()
         classifier.fit(training_data[model_name], training_labels)
 
-        features_names = features.Features.get_feature_names(model_name)
         importances = classifier.feature_importances_
         indices = np.argsort(importances)[::-1]
         with open(os.path.join(yes_or_no_outdir, model_name + ".importance.txt"), 'w') as f:
