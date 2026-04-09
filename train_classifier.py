@@ -16,6 +16,12 @@ cmd_args = cmd_parser.parse_args()
 
 training_data, training_gts = defaultdict(list), defaultdict(list)
 
+def write_features_file(model_fname, features_names):
+    features_fname = os.path.splitext(model_fname)[0] + ".features"
+    with open(features_fname, "w") as f:
+        for feature_name in features_names:
+            f.write(feature_name + "\n")
+
 def process_vcf(training_prefix):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
@@ -80,6 +86,7 @@ if __name__ == '__main__':
 
         model_fname = os.path.join(yes_or_no_outdir, model_name + ".ubj")
         classifier.save_model(model_fname)
+        write_features_file(model_fname, features_names)
 
         positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
         positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
@@ -103,6 +110,7 @@ if __name__ == '__main__':
 
         model_fname = os.path.join(gts_outdir, model_name + ".ubj")
         classifier.save_model(model_fname)
+        write_features_file(model_fname, features_names)
 
         end_time = time.time()
         print(f"Training for model {model_name} took {end_time - start_time} seconds")

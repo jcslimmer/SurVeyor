@@ -25,6 +25,7 @@ class Features:
 
     reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1E', 'AR1E_RATIO', #'AR1C_OCCR',
                             'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2E', 'AR2E_RATIO', #'AR2C_OCCR',
+                            # 'AR1CHPmQ', 'AR1CHPMQ', 'AR1CHPAQ', 'AR1CHPSQ', 'AR1HP5PMR', 'AR1HP3PMR',
                             'MAXARCD', 'MAXARED',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ', 'RR1E', 'RR1E_RATIO',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'RR2E', 'RR2E_RATIO', 'MAXRRCD', 'MAXRRED',
@@ -217,7 +218,7 @@ class Features:
         z_score = (mean1 - mean2) / std_error
         return z_score
 
-    def record_to_features(record, stats):
+    def record_to_features(record, stats, feature_names = None):
         min_depth = get_stat(stats, 'min_depth', record.chrom)
         median_depth = get_stat(stats, 'median_depth', record.chrom)
         max_depth = get_stat(stats, 'max_depth', record.chrom)
@@ -340,6 +341,12 @@ class Features:
         features['AR1CMQ'] = Features.get_number_value(record.samples[0], 'AR1CMQ', Features.NAN)
         arc1hq = Features.get_number_value(record.samples[0], 'AR1CHQ', 0)
         features['AR1CHQ'] = Features.piecewise_normalise(arc1hq, min_depth, max_depth)
+        features['AR1CHPmQ'] = Features.get_number_value(record.samples[0], 'AR1CHPmQ', Features.NAN)
+        features['AR1CHPMQ'] = Features.get_number_value(record.samples[0], 'AR1CHPMQ', Features.NAN)
+        features['AR1CHPAQ'] = Features.get_number_value(record.samples[0], 'AR1CHPAQ', Features.NAN)
+        features['AR1CHPSQ'] = Features.get_number_value(record.samples[0], 'AR1CHPSQ', Features.NAN)
+        features['AR1HP5PMR'] = Features.get_number_value(record.samples[0], 'AR1HP5PMR', Features.NAN)
+        features['AR1HP3PMR'] = Features.get_number_value(record.samples[0], 'AR1HP3PMR', Features.NAN)
         features['AR1C_HQ_RATIO'] = arc1hq/max(1, ar1c)
         ar1e = Features.get_number_value(record.samples[0], 'AR1E', 0)
         features['AR1E'] = Features.piecewise_normalise(ar1e, min_depth, max_depth)
@@ -752,8 +759,15 @@ class Features:
         features['EXSSC1_IA_DIFF'] = (exsscia1_1+exsscia1_2-exssc1_1-exssc1_2)/max(1, exss1_1+exss1_2)
         features['EXSSC2_IA_DIFF'] = (exsscia2_1+exsscia2_2-exssc2_1-exssc2_2)/max(1, exss2_1+exss2_2)
 
+        if feature_names is None:
+            feature_names = Features.get_feature_names(model_name)
+
         feature_values = []
-        for feature_name in Features.get_feature_names(model_name):
+        for feature_name in feature_names:
+            if feature_name not in features:
+                raise RuntimeError(
+                    f"Feature '{feature_name}' required for model {model_name} is not produced by features.py."
+                )
             feature_values.append(features[feature_name])
         return feature_values
 
@@ -794,7 +808,7 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False):
+def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None):
     gts = None if ignore_gts else read_gts(fp_fname)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats = load_stats(stats_fname)
@@ -812,7 +826,8 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False):
                 raise RuntimeError(f"Missing GT label for record {record.id} in {fp_fname}")
             gt = gts[record.id]
         if gt != "./.": # if no genotype is available, skip the record
-            feature_values = Features.record_to_features(record, stats)
+            model_feature_names = None if feature_names_by_model is None else feature_names_by_model.get(model_name)
+            feature_values = Features.record_to_features(record, stats, model_feature_names)
             features_by_source[model_name].append(feature_values)
             gts_by_source[model_name].append(gt)
             variant_ids_by_source[model_name].append(Features.generate_id(record))

@@ -5,6 +5,20 @@ import os
 import numpy as np
 
 class Classifier:
+    def load_features_files(model_stage_dir):
+        feature_names_by_model = dict()
+        if not os.path.isdir(model_stage_dir):
+            return feature_names_by_model
+
+        for fname in os.listdir(model_stage_dir):
+            if not fname.endswith(".features"):
+                continue
+            model_name = fname[:-len(".features")]
+            features_fname = os.path.join(model_stage_dir, fname)
+            with open(features_fname) as f:
+                feature_names_by_model[model_name] = [line.strip() for line in f if line.strip()]
+        return feature_names_by_model
+
     def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_epr, svid_to_hopr, out_vcf_fname, stats_fname):
         stats = features.load_stats(stats_fname)
 
@@ -34,8 +48,9 @@ class Classifier:
         vcf_writer.close()
 
     def run_classifier(in_vcf, out_vcf, stats_fname, model_dir):
+        feature_names_by_model = Classifier.load_features_files(os.path.join(model_dir, "yes_or_no"))
         test_data, _, test_variant_ids = \
-            features.parse_vcf(in_vcf, stats_fname, "XXX", ignore_gts = True)
+            features.parse_vcf(in_vcf, stats_fname, "XXX", ignore_gts = True, feature_names_by_model = feature_names_by_model)
 
         svid_to_gt = dict()
         svid_to_epr, svid_to_hopr = dict(), dict()
