@@ -236,7 +236,8 @@ struct sv_t {
         bp_pairs_info_t neutral_bp1_pairs, neutral_bp2_pairs;
         bp_pairs_info_t bp1_stray_pairs, bp2_stray_pairs; // pairs that are discordant and yet do not support the SV
 
-        int assigned_to_other_sv_bp1_reads = 0, assigned_to_other_sv_bp1_consistent = 0, assigned_to_other_sv_bp1_consistent_highmq = 0;
+        int assigned_to_other_sv_bp1_reads = 0, assigned_to_other_sv_bp1_consistent = 0;
+        int assigned_to_other_sv_bp1_consistent_highmq = 0, assigned_to_other_sv_bp1_consistent_exact = 0;
         int assigned_to_other_sv_bp2_reads = 0, assigned_to_other_sv_bp2_consistent = 0, assigned_to_other_sv_bp2_consistent_highmq = 0;
         int alt_ref_equal_reads = 0, alt_ref_equal_reads_highmq = 0;
         int alt_lext_reads = 0, hq_alt_lext_reads = 0, alt_rext_reads = 0, hq_alt_rext_reads = 0;

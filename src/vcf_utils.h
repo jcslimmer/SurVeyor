@@ -362,6 +362,10 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 			"yet better support the ALT allele of a different SV, and are consistent reads.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or1chq_tag, &len));
 
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR1E");
+	const char* or1e_tag = "##FORMAT=<ID=OR1E,Number=1,Type=Integer,Description=\"Number of exact consistent reads supporting breakpoint 1 of a different SV that competes with this SV.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, or1e_tag, &len));
+
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "OR2CHQ");
 	const char* or2chq_tag = "##FORMAT=<ID=OR2CHQ,Number=1,Type=Integer,Description=\"Number of high-quality reads supporting the breakpoint 2 of the ALT allele of this SV, "
 			"yet better support the ALT allele of a different SV, and are consistent reads.\">";

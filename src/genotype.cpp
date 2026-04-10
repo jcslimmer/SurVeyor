@@ -319,10 +319,13 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
     int or1c = sv->sample_info.assigned_to_other_sv_bp1_consistent;
     bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1C", &or1c, 1);
     
-    int or1chq = sv->sample_info.assigned_to_other_sv_bp1_consistent_highmq;
-    bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1CHQ", &or1chq, 1);
+	int or1chq = sv->sample_info.assigned_to_other_sv_bp1_consistent_highmq;
+	bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1CHQ", &or1chq, 1);
 
-    if (sv->sample_info.ref_bp2.reads_info.computed) { // OR2 is only relevant for SVs with RR2
+	int or1e = sv->sample_info.assigned_to_other_sv_bp1_consistent_exact;
+	bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR1E", &or1e, 1);
+
+	if (sv->sample_info.ref_bp2.reads_info.computed) { // OR2 is only relevant for SVs with RR2
         int or2 = sv->sample_info.assigned_to_other_sv_bp2_reads;
         bcf_update_format_int32(out_hdr, sv->vcf_entry, "OR2", &or2, 1);
     
@@ -1146,7 +1149,8 @@ int main(int argc, char* argv[]) {
             if ((i == hps.size()-1 && !block_hps.empty()) 
             || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
                 std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
-                        chr_seqs.get_len(contig_name), block_hps, stats, config, bam_pool, evidence_logger);
+                        chr_seqs.get_len(contig_name), block_hps, stats, config, contig_map, bam_pool,
+                        &mateseqs_w_mapq[contig_map.get_id(contig_name)], evidence_logger, reassign_evidence, evidence_map);
                 block_hps.clear();
             }
         }
@@ -1249,7 +1253,7 @@ int main(int argc, char* argv[]) {
 			bcf_update_info_int32(out_vcf_header, vcf_record, "AN", NULL, 0);
             // 1) If not reassigning evidence, update all records
             // 2) If reassigning evidence, only update records that may have changed: currently, they are
-            // - records with EPR >= MIN_EPR 
+            // - records with EPR >= MIN_EPR
             // - homopolymer indels (note: we currently do not reassign evidence for homopolymer indels, but when multiple indels with identical HP ALT len are present,
             //   the first one in the list is selected. For this reason, the evidence may shift between homopolymer indels with identical HP ALT len)
             if (!reassign_evidence || sv->sample_info.epr >= MIN_EPR || sv->hp_genotyped) {

@@ -44,6 +44,15 @@ bool is_first_read(bam1_t* r) {
     return r->core.flag & BAM_FREAD1;
 }
 
+std::string get_mate_lookup_qname(bam1_t* read) {
+    std::string qname = bam_get_qname(read);
+    if (is_samechr(read)) {
+        if (read->core.flag & BAM_FREAD1) qname += "_2";
+        else qname += "_1";
+    }
+    return qname;
+}
+
 int get_endpoint(bam1_t* r) {
     return bam_is_rev(r) ? r->core.pos : bam_endpos(r);
 }

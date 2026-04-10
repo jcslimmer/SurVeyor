@@ -793,14 +793,7 @@ void calculate_ptn_ratio(std::string contig_name, std::vector<insertion_t*>& ins
         while (curr_del_bystart_idx < insertions_by_start.size() && insertions_by_start[curr_del_bystart_idx]->start < read->core.pos) curr_del_bystart_idx++;
 		while (curr_del_byend_idx < insertions_by_end.size() && insertions_by_end[curr_del_byend_idx]->end < read->core.pos-stats.max_is) curr_del_byend_idx++;
 
-        std::string qname = bam_get_qname(read);
-        if (is_samechr(read)) {
-            if (read->core.flag & BAM_FREAD1) {
-                qname += "_2";
-            } else {
-                qname += "_1";
-            }
-        }
+        std::string qname = get_mate_lookup_qname(read);
 		
         if (mateseqs_w_mapq_chr.count(qname) > 0) {
 			std::string mate_seq = mateseqs_w_mapq_chr[qname].first;

@@ -77,11 +77,7 @@ struct insertion_cluster_t {
 };
 
 std::string get_mate_seq(bam1_t* read, std::unordered_map<std::string, std::string>& mateseqs) {
-    std::string qname = bam_get_qname(read);
-    if (is_samechr(read)) {
-        if (read->core.flag & BAM_FREAD1) qname += "_2";
-        else qname += "_1";
-    }
+    std::string qname = get_mate_lookup_qname(read);
     if (!mateseqs.count(qname)) {
     	std::cerr << "Warning: mate not found for " << qname << std::endl;
     	return "";
@@ -89,11 +85,7 @@ std::string get_mate_seq(bam1_t* read, std::unordered_map<std::string, std::stri
     return mateseqs[qname];
 }
 std::string get_mate_qual(bam1_t* read, std::unordered_map<std::string, std::string>& matequals) {
-    std::string qname = bam_get_qname(read);
-    if (is_samechr(read)) {
-        if (read->core.flag & BAM_FREAD1) qname += "_2";
-        else qname += "_1";
-    }
+    std::string qname = get_mate_lookup_qname(read);
     if (!matequals.count(qname)) {
     	std::cerr << "Warning: mate not found for " << qname << std::endl;
     	return "";

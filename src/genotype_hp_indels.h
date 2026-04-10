@@ -18,6 +18,14 @@ struct hp_read_info_t {
     int tail_5p_len, tail_3p_len;
     int tail_5p_mismatches, tail_3p_mismatches;
     std::shared_ptr<bam1_t> read;
+    bool rescued = false;
+
+    hp_read_info_t(int hp_len = 0, int tail_5p_len = 0, int tail_3p_len = 0,
+        int tail_5p_mismatches = 0, int tail_3p_mismatches = 0,
+        std::shared_ptr<bam1_t> read = nullptr, bool rescued = false) :
+        hp_len(hp_len), tail_5p_len(tail_5p_len), tail_3p_len(tail_3p_len),
+        tail_5p_mismatches(tail_5p_mismatches), tail_3p_mismatches(tail_3p_mismatches),
+        read(read), rescued(rescued) {}
 
     bool is_good_read(int min_tail_len, double max_mismatch_rate) const {
         return tail_5p_len >= min_tail_len && double(tail_5p_mismatches)/tail_5p_len <= max_mismatch_rate &&
@@ -232,13 +240,126 @@ int tail_mismatch_count_simple(bam1_t* read, const std::string& read_seq, const 
     return mismatches;
 }
 
+// Shared tail-mismatch helper for BAM-backed and SSW-backed HP interpretation.
+int tail_mismatch_count_from_mapping(const std::string& read_seq, const std::vector<hts_pos_t>& qpos_to_rpos,
+    char* contig_seq, hts_pos_t contig_len, int q_lo, int q_hi, bool left_side,
+    bool left_clipped, bool right_clipped, int leeway, hts_pos_t ref_boundary) {
+
+    if (q_hi <= q_lo || read_seq.empty()) return 0;
+
+    if (left_side && left_clipped && q_lo == 0) {
+        hts_pos_t ref_hi = std::min(ref_boundary, contig_len);
+        hts_pos_t ref_lo = std::max((hts_pos_t) 0, ref_hi - (q_hi - q_lo) - leeway);
+        return best_ungapped_mismatch_count(read_seq.substr(q_lo, q_hi - q_lo), contig_seq+ref_lo, ref_hi-ref_lo);
+    }
+    if (!left_side && right_clipped && q_hi == (int) read_seq.length()) {
+        hts_pos_t ref_lo = std::max((hts_pos_t) 0, std::min(ref_boundary, contig_len));
+        hts_pos_t ref_hi = std::min(contig_len, ref_lo + (q_hi - q_lo) + leeway);
+        return best_ungapped_mismatch_count(read_seq.substr(q_lo, q_hi - q_lo), contig_seq+ref_lo, ref_hi-ref_lo);
+    }
+
+    int mismatches = 0;
+    for (int qpos = q_lo; qpos < q_hi; qpos++) {
+        hts_pos_t rpos = qpos_to_rpos[qpos];
+        if (rpos == -1 || rpos >= contig_len) continue;
+        if (std::toupper(read_seq[qpos]) != std::toupper(contig_seq[rpos])) {
+            mismatches++;
+        }
+    }
+    return mismatches;
+}
+
+// Shared interpretation core. Callers are responsible for providing the
+// query-to-reference mapping summary in the coordinate space of the sequence
+// used for HP evaluation.
+hp_read_info_t calculate_hp_read_info_core(const std::string& read_seq, const std::vector<hts_pos_t>& qpos_to_rpos,
+    const std::vector<int>& anchors, hts_pos_t last_qpos_before_ref_hp, hts_pos_t first_qpos_after_ref_hp,
+    hts_pair_pos_t ref_hp_range, char hp_base, char* contig_seq, hts_pos_t contig_len,
+    bool is_rev, bool left_clipped, bool right_clipped, std::shared_ptr<bam1_t> read_ptr = nullptr) {
+
+    const int tail_align_leeway = 10;
+
+    if (read_seq.empty()) {
+        return hp_read_info_t();
+    }
+
+    // If no query base lands inside the reference HP, treat this as a 0-bp run
+    // and derive the tails from the nearest mapped flanks on each side.
+    if (anchors.empty()) {
+        int left_tail_len, right_tail_len;
+        if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp == -1) {
+            left_tail_len = last_qpos_before_ref_hp + 1;
+            right_tail_len = read_seq.length() - left_tail_len;
+        } else if (last_qpos_before_ref_hp == -1 && first_qpos_after_ref_hp != -1) {
+            left_tail_len = first_qpos_after_ref_hp;
+            right_tail_len = read_seq.length() - first_qpos_after_ref_hp;
+        } else if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp != -1) {
+            left_tail_len = last_qpos_before_ref_hp + 1;
+            right_tail_len = read_seq.length() - first_qpos_after_ref_hp;
+        } else {
+            return hp_read_info_t();
+        }
+
+        int left_mismatches = tail_mismatch_count_from_mapping(read_seq, qpos_to_rpos,
+            contig_seq, contig_len, 0, left_tail_len, true, left_clipped, right_clipped, tail_align_leeway, ref_hp_range.beg);
+        int right_mismatches = tail_mismatch_count_from_mapping(read_seq, qpos_to_rpos,
+            contig_seq, contig_len, read_seq.length() - right_tail_len, read_seq.length(), false,
+            left_clipped, right_clipped, tail_align_leeway, ref_hp_range.end);
+
+        if (!is_rev) {
+            return hp_read_info_t(0, left_tail_len, right_tail_len, left_mismatches, right_mismatches, read_ptr);
+        } else {
+            return hp_read_info_t(0, right_tail_len, left_tail_len, right_mismatches, left_mismatches, read_ptr);
+        }
+    }
+
+    // Start from the aligned bases inside the reference HP and expand through
+    // adjacent query bases that still look like part of the same HP run.
+    int left = anchors.front();
+    while (left > 0 && read_seq[left-1] == hp_base) {
+        hts_pos_t mapped_rpos = qpos_to_rpos[left-1];
+        if (mapped_rpos != -1 && mapped_rpos < ref_hp_range.beg) break;
+        left--;
+    }
+
+    int right = anchors.back() + 1;
+    while (right < (int) read_seq.length() && read_seq[right] == hp_base) {
+        hts_pos_t mapped_rpos = qpos_to_rpos[right];
+        if (mapped_rpos != -1 && mapped_rpos >= ref_hp_range.end) break;
+        right++;
+    }
+
+    int left_len = left;
+    int right_len = read_seq.length() - right;
+
+    hp_read_info_t hp_read_info;
+    hp_read_info.hp_len = right - left;
+    int left_mismatches = tail_mismatch_count_from_mapping(read_seq, qpos_to_rpos,
+        contig_seq, contig_len, 0, left, true, left_clipped, right_clipped, tail_align_leeway, ref_hp_range.beg);
+    int right_mismatches = tail_mismatch_count_from_mapping(read_seq, qpos_to_rpos,
+        contig_seq, contig_len, right, read_seq.length(), false, left_clipped, right_clipped, tail_align_leeway, ref_hp_range.end);
+    if (is_rev) {
+        hp_read_info.tail_5p_len = right_len;
+        hp_read_info.tail_3p_len = left_len;
+        hp_read_info.tail_5p_mismatches = right_mismatches;
+        hp_read_info.tail_3p_mismatches = left_mismatches;
+    } else {
+        hp_read_info.tail_5p_len = left_len;
+        hp_read_info.tail_3p_len = right_len;
+        hp_read_info.tail_5p_mismatches = left_mismatches;
+        hp_read_info.tail_3p_mismatches = right_mismatches;
+    }
+    hp_read_info.read = read_ptr;
+
+    return hp_read_info;
+}
+
 
 hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range, char hp_base, char* contig_seq, hts_pos_t contig_len) {
     if (read == NULL || is_unmapped(read) || !is_primary(read) || read->core.l_qseq <= 0) {
-        return {0, 0, 0, 0, 0, nullptr};
+        return hp_read_info_t();
     }
 
-    const int tail_align_leeway = 10;
     std::string read_seq = get_sequence(read);
     std::vector<hts_pos_t> qpos_to_rpos(read->core.l_qseq, -1);
     std::vector<int> anchors;
@@ -277,80 +398,103 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
             rpos += oplen;
         }
     }
+    return calculate_hp_read_info_core(read_seq, qpos_to_rpos, anchors, last_qpos_before_ref_hp, first_qpos_after_ref_hp,
+        ref_hp_range, hp_base, contig_seq, contig_len, bam_is_rev(read),
+        get_left_clip_size(read) > 0, get_right_clip_size(read) > 0,
+        std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1));
+}
 
-    // If no query base lands inside the reference HP, treat this as a 0-bp run
-    // and derive the tails from the nearest mapped flanks on each side.
-    if (anchors.empty()) {
-        int left_tail_len, right_tail_len;
-        if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp == -1) {
-            left_tail_len = last_qpos_before_ref_hp + 1;
-            right_tail_len = read->core.l_qseq - left_tail_len;
-        } else if (last_qpos_before_ref_hp == -1 && first_qpos_after_ref_hp != -1) {
-            left_tail_len = first_qpos_after_ref_hp;
-            right_tail_len = read->core.l_qseq - first_qpos_after_ref_hp;
-        } else if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp != -1) {
-            left_tail_len = last_qpos_before_ref_hp + 1;
-            right_tail_len = read->core.l_qseq - first_qpos_after_ref_hp;
-        } else {
-            return {0, 0, 0, 0, 0, nullptr};
+hp_read_info_t calculate_hp_read_info(StripedSmithWaterman::Alignment& aln, const std::string& read_seq,
+    hts_pair_pos_t ref_hp_range, char hp_base, char* contig_seq, hts_pos_t contig_len, bool is_rev) {
+    if (read_seq.empty() || aln.cigar.empty()) {
+        return hp_read_info_t();
+    }
+
+    std::vector<hts_pos_t> qpos_to_rpos(read_seq.length(), -1);
+    std::vector<int> anchors;
+
+    int qpos = 0;
+    hts_pos_t rpos = aln.ref_begin;
+    hts_pos_t last_qpos_before_ref_hp = -1, first_qpos_after_ref_hp = -1;
+    for (uint32_t cigar_op : aln.cigar) {
+        char opchar = cigar_int_to_op(cigar_op);
+        int oplen = cigar_int_to_len(cigar_op);
+
+        if (opchar == 'M' || opchar == '=' || opchar == 'X') {
+            for (int j = 0; j < oplen; j++) {
+                qpos_to_rpos[qpos] = rpos;
+                if (rpos < ref_hp_range.beg) {
+                    last_qpos_before_ref_hp = qpos;
+                } else if (rpos >= ref_hp_range.end && first_qpos_after_ref_hp == -1) {
+                    first_qpos_after_ref_hp = qpos;
+                } else if (ref_hp_range.beg <= rpos && rpos < ref_hp_range.end) {
+                    anchors.push_back(qpos);
+                }
+                qpos++;
+                rpos++;
+            }
+        } else if (opchar == 'I') {
+            if (rpos < ref_hp_range.beg) {
+                last_qpos_before_ref_hp = qpos + oplen - 1;
+            } else if (rpos >= ref_hp_range.end && first_qpos_after_ref_hp == -1) {
+                first_qpos_after_ref_hp = qpos;
+            }
+            qpos += oplen;
+        } else if (opchar == 'S') {
+            qpos += oplen;
+        } else if (opchar == 'D' || opchar == 'N') {
+            rpos += oplen;
         }
-
-        int left_mismatches = tail_mismatch_count_simple(read, read_seq, qpos_to_rpos,
-            contig_seq, contig_len, 0, left_tail_len, true, tail_align_leeway, ref_hp_range.beg);
-        int right_mismatches = tail_mismatch_count_simple(read, read_seq, qpos_to_rpos,
-            contig_seq, contig_len, read->core.l_qseq - right_tail_len, read->core.l_qseq, false, tail_align_leeway, ref_hp_range.end);
-
-        if (!bam_is_rev(read)) {
-            return {0, left_tail_len, right_tail_len, left_mismatches, right_mismatches, std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1)};
-        } else {
-            return {0, right_tail_len, left_tail_len, right_mismatches, left_mismatches, std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1)};
-        }
     }
 
-    // Start from the aligned bases inside the reference HP and expand through
-    // adjacent query bases that still look like part of the same HP run.
-    int left = anchors.front();
-    while (left > 0 && read_seq[left-1] == hp_base) {
-        hts_pos_t mapped_rpos = qpos_to_rpos[left-1];
-        if (mapped_rpos != -1 && mapped_rpos < ref_hp_range.beg) break;
-        left--;
-    }
+    return calculate_hp_read_info_core(read_seq, qpos_to_rpos, anchors, last_qpos_before_ref_hp, first_qpos_after_ref_hp,
+        ref_hp_range, hp_base, contig_seq, contig_len, is_rev,
+        get_left_clip_size(aln) > 0, get_right_clip_size(aln) > 0);
+}
 
-    int right = anchors.back() + 1;
-    while (right < read->core.l_qseq && read_seq[right] == hp_base) {
-        hts_pos_t mapped_rpos = qpos_to_rpos[right];
-        if (mapped_rpos != -1 && mapped_rpos >= ref_hp_range.end) break;
-        right++;
-    }
+std::shared_ptr<bam1_t> make_rescued_hp_read(bam1_t* anchor_read, StripedSmithWaterman::Alignment& mate_aln,
+    int remapped_tid, hts_pos_t remapped_ref_offset, int remapped_mapq, bool remapped_rev) {
+    bam1_t* rescued_read = bam_dup1(anchor_read);
+    rescued_read->core.tid = remapped_tid;
+    rescued_read->core.pos = remapped_ref_offset + mate_aln.ref_begin;
+    rescued_read->core.qual = remapped_mapq;
 
-    int left_len = left;
-    int right_len = read->core.l_qseq - right;
+    rescued_read->core.mtid = anchor_read->core.tid;
+    rescued_read->core.mpos = anchor_read->core.pos;
 
-    hp_read_info_t hp_read_info;
-    hp_read_info.hp_len = right - left;
-    int left_mismatches = tail_mismatch_count_simple(read, read_seq, qpos_to_rpos,
-        contig_seq, contig_len, 0, left, true, tail_align_leeway, ref_hp_range.beg);
-    int right_mismatches = tail_mismatch_count_simple(read, read_seq, qpos_to_rpos,
-        contig_seq, contig_len, right, read->core.l_qseq, false, tail_align_leeway, ref_hp_range.end);
-    if (bam_is_rev(read)) {
-        hp_read_info.tail_5p_len = right_len;
-        hp_read_info.tail_3p_len = left_len;
-        hp_read_info.tail_5p_mismatches = right_mismatches;
-        hp_read_info.tail_3p_mismatches = left_mismatches;
+    rescued_read->core.flag |= BAM_FPAIRED;
+    rescued_read->core.flag &= ~BAM_FUNMAP;
+    rescued_read->core.flag &= ~BAM_FMUNMAP;
+    if (remapped_rev) {
+        rescued_read->core.flag |= BAM_FREVERSE;
     } else {
-        hp_read_info.tail_5p_len = left_len;
-        hp_read_info.tail_3p_len = right_len;
-        hp_read_info.tail_5p_mismatches = left_mismatches;
-        hp_read_info.tail_3p_mismatches = right_mismatches;
+        rescued_read->core.flag &= ~BAM_FREVERSE;
     }
-    hp_read_info.read = std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1);
+    if (bam_is_rev(anchor_read)) {
+        rescued_read->core.flag |= BAM_FMREVERSE;
+    } else {
+        rescued_read->core.flag &= ~BAM_FMREVERSE;
+    }
+    if (anchor_read->core.flag & BAM_FREAD1) {
+        rescued_read->core.flag &= ~BAM_FREAD1;
+        rescued_read->core.flag |= BAM_FREAD2;
+    } else if (anchor_read->core.flag & BAM_FREAD2) {
+        rescued_read->core.flag &= ~BAM_FREAD2;
+        rescued_read->core.flag |= BAM_FREAD1;
+    }
 
-    return hp_read_info;
+    bam_aux_update_int(rescued_read, "MQ", anchor_read->core.qual);
+    std::string anchor_cigar = get_cigar_string(anchor_read);
+    bam_aux_update_str(rescued_read, "MC", anchor_cigar.length() + 1, anchor_cigar.c_str());
+
+    return std::shared_ptr<bam1_t>(rescued_read, bam_destroy1);
 }
 
 
-void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_hp_range, open_samFile_t* bam_file, char* contig_seq, hts_pos_t contig_len, 
-    stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner, evidence_logger_t* evidence_logger) {
+void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_hp_range, open_samFile_t* bam_file, char* contig_seq, hts_pos_t contig_len,
+    stats_t& stats, config_t& config, StripedSmithWaterman::Aligner& aligner,
+    std::unordered_map<std::string, std::pair<std::string, int> >& mateseqs_w_mapq_chr, evidence_logger_t* evidence_logger,
+    bool reassign_evidence, evidence_map_t* evidence_map) {
 
     if (hp_indels.empty()) return;
     for (sv_t* hp_indel : hp_indels) {
@@ -374,6 +518,14 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     hts_pos_t alt_end = std::min(contig_len, ref_hp_range.end + extend);
     hts_pos_t left_flank_len = ref_hp_range.beg - alt_start;
     hts_pos_t right_flank_len = alt_end - ref_hp_range.end;
+    hts_pos_t ref_len = left_flank_len + ref_hp_len + right_flank_len;
+
+    char* ref_allele = new char[ref_len + 1];
+    strncpy(ref_allele, contig_seq + alt_start, left_flank_len);
+    memset(ref_allele + left_flank_len, hp_base, ref_hp_len);
+    strncpy(ref_allele + left_flank_len + ref_hp_len, contig_seq + ref_hp_range.end, right_flank_len);
+    ref_allele[ref_len] = '\0';
+    hts_pair_pos_t ref_allele_hp_range = {left_flank_len, left_flank_len + ref_hp_len};
 
     std::vector<char*> alt_alleles;
     std::vector<int> alt_allele_lens;
@@ -393,18 +545,35 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     // 5'/3' tail lengths and 5'/3' tail mismatch counts.
     StripedSmithWaterman::Alignment alt_aln;
     StripedSmithWaterman::Filter filter_score_only(false, false, 0, 32767);
+    StripedSmithWaterman::Filter filter_default;
 
     bam1_t* read = bam_init1();
     while (sam_itr_next(bam_file->file, iter, read) >= 0) {
         if (is_unmapped(read) || !is_primary(read)) continue;
         if (!is_proper_pair(read, stats.min_is, stats.max_is)) continue;
 
+        bool discard_read = true;
+        for (int i = 0; i < hp_indels.size(); i++) {
+             if (!evidence_map->is_read_assigned_to_different_sv(read, hp_indels[i]->id)) {
+                discard_read = false;
+                break;
+            }
+        }
+        if (discard_read) {
+            for (sv_t* hp_indel : hp_indels) {
+                hp_indel->sample_info.assigned_to_other_sv_bp1_reads++;
+            }
+            continue;
+        }
+        
         hp_read_info_t hp_read_info = calculate_hp_read_info(read, ref_hp_range, hp_base, contig_seq, contig_len);
         if (hp_read_info.tail_3p_len < config.min_clip_len || hp_read_info.tail_5p_len < config.min_clip_len) {
             // Even if we are discarding this reads because the tails are too short, we still want to prevent it from being used as evidence for non-HP indels
             // when they are aligned better to one of the HP indels
             std::string seq = get_sequence(read);
             for (int i = 0; i < hp_indels.size(); i++) {
+                // if the read is assigned to a different SV, no need to align it, just count and continue
+
                 aligner.Align(seq.c_str(), alt_alleles[i], alt_allele_lens[i], filter_score_only, &alt_aln, 0);
                 std::vector<std::shared_ptr<bam1_t>> read_v = { std::shared_ptr<bam1_t>(bam_dup1(read), bam_destroy1) };
                 std::vector<int> alt_aln_scores = { alt_aln.sw_score };
@@ -414,12 +583,63 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
         }
         hp_read_infos.push_back(hp_read_info);
     }
+    hts_itr_destroy(iter);
+
+    StripedSmithWaterman::Alignment ref_aln;
+    std::stringstream possible_mates_ss;
+    possible_mates_ss << hp_indels[0]->chr << ":" << std::max(hts_pos_t(0), ref_hp_range.beg - stats.max_is)
+        << "-" << std::min(contig_len, ref_hp_range.end + stats.max_is);
+    iter = sam_itr_querys(bam_file->idx, bam_file->header, possible_mates_ss.str().c_str());
+    while (sam_itr_next(bam_file->file, iter, read) >= 0) {
+        if (is_unmapped(read) || !is_primary(read)) continue;
+        if (!is_dc_pair(read)) continue;
+
+        std::string mate_seq;
+        int mate_mapq;
+        hts_pos_t endpos = bam_endpos(read);
+        if (!bam_is_rev(read) && read->core.pos >= ref_hp_range.beg-stats.max_is && read->core.pos <= ref_hp_range.beg-stats.read_len/2) {
+            std::string qname = get_mate_lookup_qname(read);
+            if (!mateseqs_w_mapq_chr.count(qname)) continue;
+            mate_seq = mateseqs_w_mapq_chr[qname].first;
+            mate_mapq = mateseqs_w_mapq_chr[qname].second;
+            rc(mate_seq);
+        } else if (bam_is_rev(read) && endpos >= ref_hp_range.end+stats.read_len/2 && endpos <= ref_hp_range.end+stats.max_is) {
+            std::string qname = get_mate_lookup_qname(read);
+            if (!mateseqs_w_mapq_chr.count(qname)) continue;
+            mate_seq = mateseqs_w_mapq_chr[qname].first;
+            mate_mapq = mateseqs_w_mapq_chr[qname].second;
+        } else {
+            continue;
+        }
+
+        aligner.Align(mate_seq.c_str(), ref_allele, ref_len, filter_default, &ref_aln, 0);
+
+        bool aln_as_rev = !bam_is_rev(read);
+        if ((!aln_as_rev && get_left_clip_size(ref_aln) > 0) ||
+             (aln_as_rev && get_right_clip_size(ref_aln) > 0)) {
+            continue;
+        }
+
+        hp_read_info_t hp_read_info = calculate_hp_read_info(ref_aln, mate_seq, ref_allele_hp_range, hp_base, ref_allele, ref_len, aln_as_rev);
+
+        if (hp_read_info.tail_3p_len < config.min_clip_len || hp_read_info.tail_5p_len < config.min_clip_len) {
+            continue;
+        }
+
+        // We need this to feed into set_bp_consensus_info
+        // However, we don't want to feed it to set_hp_read_mapq_stats
+        hp_read_info.read = make_rescued_hp_read(read, ref_aln, read->core.tid, alt_start, mate_mapq, aln_as_rev);
+        hp_read_info.rescued = true;
+        hp_read_infos.push_back(hp_read_info);
+    }
+
     bam_destroy1(read);
     hts_itr_destroy(iter);
 
     for (char* alt_seq : alt_alleles) {
         delete[] alt_seq;
     }
+    delete[] ref_allele;
 
     if (hp_read_infos.empty()) return;
 
@@ -438,7 +658,7 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
  
     std::vector<int> alt_reads(hp_indels.size(), 0);
     std::vector<std::vector<hp_read_info_t>> alt_assigned_hp_read_infos(hp_indels.size());
-    std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_good_reads(hp_indels.size()); 
+    std::vector<std::vector<std::shared_ptr<bam1_t>>> alt_good_reads(hp_indels.size()), alt_good_reads_non_rescued(hp_indels.size()); 
     std::vector<std::vector<bool>> alt_is_exact_match(hp_indels.size());
 
     // Associate each cluster to the most likely allele based on its mode HP length
@@ -459,11 +679,14 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
             }
         }
 
-        std::vector<std::shared_ptr<bam1_t>> good_reads, garbage_reads;
+        std::vector<std::shared_ptr<bam1_t>> good_reads, good_reads_non_rescued, garbage_reads;
         std::vector<bool> is_exact_match;
         for (const hp_read_info_t& hp_read_info : cluster) {
             if (hp_read_info.is_good_read(config.min_clip_len, MAX_TAIL_MISMATCH_RATE)) {
                 good_reads.push_back(hp_read_info.read);
+                if (!hp_read_info.rescued) {
+                    good_reads_non_rescued.push_back(hp_read_info.read);
+                }
                 is_exact_match.push_back(hp_read_info.hp_len == allele_lens[best_allele_idx]);
             } else {
                 garbage_reads.push_back(hp_read_info.read);
@@ -481,6 +704,7 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
             alt_reads[best_allele_idx] += cluster.size();
             alt_assigned_hp_read_infos[best_allele_idx].insert(alt_assigned_hp_read_infos[best_allele_idx].end(), cluster.begin(), cluster.end());
             alt_good_reads[best_allele_idx].insert(alt_good_reads[best_allele_idx].end(), good_reads.begin(), good_reads.end());
+            alt_good_reads_non_rescued[best_allele_idx].insert(alt_good_reads_non_rescued[best_allele_idx].end(), good_reads_non_rescued.begin(), good_reads_non_rescued.end());
             alt_is_exact_match[best_allele_idx].insert(alt_is_exact_match[best_allele_idx].end(), is_exact_match.begin(), is_exact_match.end());
             std::vector<int> dummy_scores(good_reads.size(), stats.read_len+1); // forcibly assign an impossibly high score to prevent other reads from using them
             if (evidence_logger) evidence_logger->log_reads_associations(hp_indels[best_allele_idx]->id, 1, good_reads, dummy_scores); 
@@ -490,13 +714,34 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     std::vector<std::shared_ptr<bam1_t>> consistent_reads; // dummy consistent reads 
     std::vector<bool> is_exact_match; // dummy exact match flags
     for (int i = 0; i < hp_indels.size(); i++) {
+        // set OR* reads for other indels
+        int or1hq = 0, or1e = 0;
+        for (int j = 0; j < alt_good_reads[i].size(); j++) {
+            if (alt_good_reads[i][j]->core.qual >= config.high_confidence_mapq) {
+                or1hq++;
+            }
+            if (alt_is_exact_match[i][j]) {
+                or1e++;
+            }
+        }
+        for (int j = 0; j < hp_indels.size(); j++) {
+            if (i == j) continue;
+            hp_indels[j]->sample_info.assigned_to_other_sv_bp1_reads += alt_reads[i];
+            hp_indels[j]->sample_info.assigned_to_other_sv_bp1_consistent += alt_good_reads[i].size();
+            hp_indels[j]->sample_info.assigned_to_other_sv_bp1_consistent_highmq += or1hq;
+            hp_indels[j]->sample_info.assigned_to_other_sv_bp1_consistent_exact += or1e;
+        }
+
         set_bp_consensus_info(hp_indels[i]->sample_info.alt_bp1.reads_info, alt_reads[i], alt_good_reads[i], alt_is_exact_match[i], 0.0, 0.0);
         hp_indels[i]->sample_info.alt1_hp_len_mode = find_hp_len_mode(alt_assigned_hp_read_infos[i], config.min_clip_len, MAX_TAIL_MISMATCH_RATE, false);
         hp_indels[i]->sample_info.alt1_consistent_hp_len_mode = find_hp_len_mode(alt_assigned_hp_read_infos[i], config.min_clip_len, MAX_TAIL_MISMATCH_RATE, true);
         hp_indels[i]->sample_info.alt1_consistent_hp_len_iqr = find_hp_len_iqr(alt_assigned_hp_read_infos[i], config.min_clip_len, MAX_TAIL_MISMATCH_RATE, true);
         set_hp_tail_mismatch_rates(alt_assigned_hp_read_infos[i], config.min_clip_len, MAX_TAIL_MISMATCH_RATE, false, 
             hp_indels[i]->sample_info.alt1_hp_5p_mismatch_rate, hp_indels[i]->sample_info.alt1_hp_3p_mismatch_rate);
-        set_hp_read_mapq_stats(alt_good_reads[i], hp_indels[i]->sample_info.alt1_hp_min_mapq, hp_indels[i]->sample_info.alt1_hp_max_mapq, 
+
+        // We shouldn't use the mapping qualities of rescued reads since they reflect the confidence 
+        // of the original mapping rather than the remapping to the HP alleles
+        set_hp_read_mapq_stats(alt_good_reads_non_rescued[i], hp_indels[i]->sample_info.alt1_hp_min_mapq, hp_indels[i]->sample_info.alt1_hp_max_mapq, 
             hp_indels[i]->sample_info.alt1_hp_avg_mapq, hp_indels[i]->sample_info.alt1_hp_stddev_mapq);
         if (hp_indels[i]->sample_info.alt_bp1.reads_info.exact_reads() > 0 && alt_reads[i] > 0 && ref_reads == 0) {
             hp_indels[i]->sample_info.gt = {bcf_gt_unphased(1), bcf_gt_unphased(1)};
@@ -505,15 +750,20 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
         } else {
             hp_indels[i]->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(0)};
         }
+        set_bp_consensus_info(hp_indels[i]->sample_info.ref_bp1.reads_info, ref_reads, ref_good_reads, ref_is_exact_match, 0.0, 0.0);
     }
-    set_bp_consensus_info(hp_indels[0]->sample_info.ref_bp1.reads_info, ref_reads, ref_good_reads, ref_is_exact_match, 0.0, 0.0);
 }
 
 // hp_indels are guaranteed to be on the same chromosome
-void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<sv_t*> hp_indels, 
-    stats_t stats, config_t config, bam_pool_t* bam_pool, evidence_logger_t* evidence_logger) {
+void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<sv_t*> hp_indels,
+    stats_t stats, config_t config, contig_map_t& contig_map, bam_pool_t* bam_pool,
+    std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
+    evidence_logger_t* evidence_logger, bool reassign_evidence, evidence_map_t* evidence_map) {
 
     StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+    
+    int contig_id = contig_map.get_id(contig_name);
+    read_mates(contig_id);
 
     std::unordered_map<std::string, std::vector<sv_t*>> hp_indels_by_ref_hp_range;
     for (sv_t* hp_indel : hp_indels) {
@@ -527,8 +777,11 @@ void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int c
     for (auto& kv : hp_indels_by_ref_hp_range) {
         std::vector<sv_t*>& hp_indels_in_range = kv.second;
         hts_pair_pos_t ref_hp_range = find_ref_hp_range_for_indel(hp_indels_in_range[0], contig_seq, contig_len);
-        genotype_hp_indels_group(hp_indels_in_range, ref_hp_range, bam_file, contig_seq, contig_len, stats, config, aligner, evidence_logger);
+        genotype_hp_indels_group(hp_indels_in_range, ref_hp_range, bam_file, contig_seq, contig_len, stats, config, aligner,
+            *mateseqs_w_mapq_chr, evidence_logger, reassign_evidence, evidence_map);
     }
+
+    release_mates(contig_id);
 }
 
 #endif // GENOTYPE_HP_INDELS_H
