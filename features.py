@@ -25,7 +25,7 @@ class Features:
 
     reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1E', 'AR1E_RATIO', #'AR1C_OCCR',
                             'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2E', 'AR2E_RATIO', #'AR2C_OCCR',
-                            # 'AR1CHPmQ', 'AR1CHPMQ', 'AR1CHPAQ', 'AR1CHPSQ', 'AR1HP5PMR', 'AR1HP3PMR',
+                            'AR1CHPmQ', 'AR1CHPMQ', 'AR1CHPAQ', 'AR1CHPSQ', 'AR1HP5PMR', 'AR1HP3PMR',
                             'MAXARCD', 'MAXARED',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ', 'RR1E', 'RR1E_RATIO',
                             'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'RR2E', 'RR2E_RATIO', 'MAXRRCD', 'MAXRRED',
@@ -808,7 +808,7 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None):
+def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None, restrict_to_model_name = None):
     gts = None if ignore_gts else read_gts(fp_fname)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats = load_stats(stats_fname)
@@ -819,6 +819,8 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_name
             continue
 
         model_name = Features.get_model_name(record, get_stat(stats, 'max_is', record.chrom), get_stat(stats, 'read_len', record.chrom))
+        if restrict_to_model_name not in (None, "ALL") and model_name != restrict_to_model_name:
+            continue
         if ignore_gts:
             gt = "NA"
         else:

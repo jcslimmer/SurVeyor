@@ -38,18 +38,19 @@ def compute_keep_indices(X):
 
     return np.array(keep_indices, dtype=np.int32)
 
-def process_vcf(training_prefix):
+def process_vcf(training_prefix, restrict_to_model_name = None):
     vcf_training_data, vcf_training_gts, _ = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
-                           ignore_gts = False)
-    ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
-        features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
-                            training_prefix + ".gts", ignore_gts = False)
+                           ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
+    if restrict_to_model_name in (None, "ALL", "INS_TO_DUP", "INS_TO_DUP_LARGE"):
+        ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
+            features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
+                                training_prefix + ".gts", ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
 
-    for model_name in ("INS_TO_DUP", "INS_TO_DUP_LARGE"):
-        if model_name in ins_to_dup_vcf_training_data:
-            vcf_training_data[model_name] = ins_to_dup_vcf_training_data[model_name]
-            vcf_training_gts[model_name] = ins_to_dup_vcf_training_gts[model_name]
+        for model_name in ("INS_TO_DUP", "INS_TO_DUP_LARGE"):
+            if model_name in ins_to_dup_vcf_training_data:
+                vcf_training_data[model_name] = ins_to_dup_vcf_training_data[model_name]
+                vcf_training_gts[model_name] = ins_to_dup_vcf_training_gts[model_name]
 
     return vcf_training_data, vcf_training_gts
 
@@ -58,8 +59,9 @@ if __name__ == '__main__':
     multiprocessing.set_start_method("spawn", force=True)  # optional but recommended
 
     training_prefixes = cmd_args.training_prefixes.split(",")
+    restrict_to_model_name = None if cmd_args.model_name == "ALL" else cmd_args.model_name
     with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
-        future_to_prefix = {executor.submit(process_vcf, prefix): prefix for prefix in training_prefixes}
+        future_to_prefix = {executor.submit(process_vcf, prefix, restrict_to_model_name): prefix for prefix in training_prefixes}
         for future in as_completed(future_to_prefix):
             vcf_training_data, vcf_training_gts = future.result()
             for model in vcf_training_data:
