@@ -640,9 +640,9 @@ char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t h
     return hap_seq;
 }
 
-void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads, 
+void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bp_support_read_t>& consistent_reads,
     std::vector<bool>& is_exact_read, double consistent_avg_score, double consistent_stddev_score) {
-    
+
     bp_reads_info.computed = true;
     bp_reads_info.reads = n_reads;
 
@@ -652,21 +652,21 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
 
     double sum_mq = 0;
     for (size_t i = 0; i < consistent_reads.size(); ++i) {
-        std::shared_ptr<bam1_t> read = consistent_reads[i];
-        int mq = get_mq(read.get());
-        if (bam_is_mrev(read)) {
+        const bp_support_read_t& read = consistent_reads[i];
+        int mq = read.mate_mapq;
+        if (read.mate_is_reverse) {
             bp_reads_info.consistent_fwd++;
             if (is_exact_read[i]) bp_reads_info.exact_fwd++;
-            rev_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
+            rev_mate_positions.push_back({read.mate_pos, read.mate_endpos});
             if (mq >= config.high_confidence_mapq) {
-                rev_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
+                rev_hq_mate_positions.push_back({read.mate_pos, read.mate_endpos});
             }
         } else {
             bp_reads_info.consistent_rev++;
             if (is_exact_read[i]) bp_reads_info.exact_rev++;
-            fwd_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
+            fwd_mate_positions.push_back({read.mate_pos, read.mate_endpos});
             if (mq >= config.high_confidence_mapq) {
-                fwd_hq_mate_positions.push_back({read->core.mpos, get_mate_endpos(read.get())});
+                fwd_hq_mate_positions.push_back({read.mate_pos, read.mate_endpos});
             }
         }
         bp_reads_info.consistent_min_mq = std::min(bp_reads_info.consistent_min_mq, mq);
@@ -688,6 +688,17 @@ void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, st
     bp_reads_info.rev_mate_cov_bps = get_covered_bps(rev_mate_positions);
     bp_reads_info.fwd_hq_mate_cov_bps = get_covered_bps(fwd_hq_mate_positions);
     bp_reads_info.rev_hq_mate_cov_bps = get_covered_bps(rev_hq_mate_positions);
+}
+
+void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads,
+    std::vector<bool>& is_exact_read, double consistent_avg_score, double consistent_stddev_score) {
+
+    std::vector<bp_support_read_t> bp_support_reads;
+    bp_support_reads.reserve(consistent_reads.size());
+    for (const std::shared_ptr<bam1_t>& read : consistent_reads) {
+        bp_support_reads.emplace_back(read.get());
+    }
+    set_bp_consensus_info(bp_reads_info, n_reads, bp_support_reads, is_exact_read, consistent_avg_score, consistent_stddev_score);
 }
 
 std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std::string>& seqs) {
@@ -1150,7 +1161,8 @@ int main(int argc, char* argv[]) {
             || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
                 std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
                         chr_seqs.get_len(contig_name), block_hps, stats, config, contig_map, bam_pool,
-                        &mateseqs_w_mapq[contig_map.get_id(contig_name)], evidence_logger, reassign_evidence, evidence_map);
+                        &mateseqs_w_mapq[contig_map.get_id(contig_name)], evidence_logger, reassign_evidence, evidence_map,
+                        &sv_map);
                 block_hps.clear();
             }
         }

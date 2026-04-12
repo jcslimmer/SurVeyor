@@ -12,10 +12,36 @@
 #include "types.h"
 #include "vcf_utils.h"
 
+
+struct bp_support_read_t {
+    std::string read_name;
+    int64_t mapq, mate_mapq;
+    std::string seq;
+    bool mate_is_reverse;
+    hts_pos_t mate_pos;
+    hts_pos_t mate_endpos;
+    bool is_first_in_pair;
+
+    bp_support_read_t() : mapq(0), mate_mapq(0), mate_is_reverse(false), mate_pos(-1), mate_endpos(-1), is_first_in_pair(false) {}
+
+    explicit bp_support_read_t(bam1_t* read) :
+        read_name(bam_get_qname(read)),
+        mapq(read->core.qual),
+        mate_mapq(get_mq(read)),
+        seq(get_sequence(read)),
+        mate_is_reverse(bam_is_mrev(read)),
+        mate_pos(read->core.mpos),
+        mate_endpos(get_mate_endpos(read)),
+        is_first_in_pair(is_first_read(read))
+     {}
+};
+
+
+std::string read_name_with_suffix(bp_support_read_t& read) {
+    return read.read_name + (read.is_first_in_pair ? "/1" : "/2");
+}
 std::string read_name_with_suffix(bam1_t* read) {
-    std::string read_name = bam_get_qname(read);
-    read_name += (is_first_read(read) ? "/1" : "/2");
-    return read_name;
+    return std::string(bam_get_qname(read)) + ((is_first_read(read)) ? "/1" : "/2");
 }
 
 std::string remove_svid_dup_suffix(const std::string& sv_id) {
@@ -43,8 +69,13 @@ struct evidence_logger_t {
     void log_reads_associations(std::string sv_id, int bp_n, std::vector<std::shared_ptr<bam1_t>>& reads, std::vector<int>& scores) {
         std::lock_guard<std::mutex> lock(mtx);
         for (size_t i = 0; i < reads.size(); i++) {
-            bam1_t* read = reads[i].get();
-            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << read_name_with_suffix(read) << " " << scores[i] << std::endl;
+            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << read_name_with_suffix(reads[i].get()) << " " << scores[i] << std::endl;
+        }
+    }
+    void log_reads_associations(std::string sv_id, int bp_n, std::vector<bp_support_read_t>& reads, std::vector<int>& scores) {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (size_t i = 0; i < reads.size(); i++) {
+            alt_reads_to_sv_associations << sv_id << " " << bp_n << " " << read_name_with_suffix(reads[i]) << " " << scores[i] << std::endl;
         }
     }
 
@@ -132,6 +163,12 @@ struct evidence_map_t {
         if (!read_to_non_chosen_svs_map.count(read_name)) return {};
         return read_to_non_chosen_svs_map[read_name];
     }
+
+    std::vector<std::pair<std::string, int>> get_non_chosen_svs_for_read(const bp_support_read_t& read) {
+        std::string read_name = read.read_name + (read.is_first_in_pair ? "/1" : "/2");
+        if (!read_to_non_chosen_svs_map.count(read_name)) return {};
+        return read_to_non_chosen_svs_map[read_name];
+    }
 };
 
 std::mutex orc_mtx;
@@ -165,6 +202,9 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
     std::vector<bool> revcomp_read, std::string& consensus_seq, double& avg_score, double& stddev_score, std::vector<bool>& is_exact_read);
 std::vector<std::shared_ptr<bam1_t>> find_seqs_consistent_with_ref_seq(std::string ref_seq, std::vector<std::shared_ptr<bam1_t>>& reads, 
     double& avg_score, double& stddev_score, std::vector<bool>& is_exact_read);
+
+void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<bp_support_read_t>& consistent_reads,
+    std::vector<bool>& is_exact_read, double consistent_avg_score, double consistent_stddev_score);
 
 void set_bp_consensus_info(sv_t::bp_reads_info_t& bp_reads_info, int n_reads, std::vector<std::shared_ptr<bam1_t>>& consistent_reads, 
     std::vector<bool>& is_exact_read, double consistent_avg_score, double consistent_stddev_score);
