@@ -25,6 +25,7 @@ class Features:
 
     reads_features_names = ['AR1', 'AR1_ADJ', 'AR1C', 'AR1C_ADJ', 'AR1CmQ', 'AR1CMQ', 'AR1CHQ', 'AR1C_HQ_RATIO', 'AR1E', 'AR1E_RATIO', #'AR1C_OCCR',
                             'AR2', 'AR2_ADJ', 'AR2C', 'AR2C_ADJ', 'AR2CmQ', 'AR2CMQ', 'AR2CHQ', 'AR2C_HQ_RATIO', 'AR2E', 'AR2E_RATIO', #'AR2C_OCCR',
+                            'AR1HPMODE', 'AR1CHPMODE', 'AR1CHPIQR', 'AR1HPMODE_AR1CHPMODE_DIFF', 'AR1HPMODE_ALTLEN_DIFF', 'AR1CHPMODE_ALTLEN_DIFF',
                             'AR1CHPmQ', 'AR1CHPMQ', 'AR1CHPAQ', 'AR1CHPSQ', 'AR1HP5PMR', 'AR1HP3PMR',
                             'MAXARCD', 'MAXARED',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ', 'RR1E', 'RR1E_RATIO',
@@ -341,12 +342,6 @@ class Features:
         features['AR1CMQ'] = Features.get_number_value(record.samples[0], 'AR1CMQ', Features.NAN)
         arc1hq = Features.get_number_value(record.samples[0], 'AR1CHQ', 0)
         features['AR1CHQ'] = Features.piecewise_normalise(arc1hq, min_depth, max_depth)
-        features['AR1CHPmQ'] = Features.get_number_value(record.samples[0], 'AR1CHPmQ', Features.NAN)
-        features['AR1CHPMQ'] = Features.get_number_value(record.samples[0], 'AR1CHPMQ', Features.NAN)
-        features['AR1CHPAQ'] = Features.get_number_value(record.samples[0], 'AR1CHPAQ', Features.NAN)
-        features['AR1CHPSQ'] = Features.get_number_value(record.samples[0], 'AR1CHPSQ', Features.NAN)
-        features['AR1HP5PMR'] = Features.get_number_value(record.samples[0], 'AR1HP5PMR', Features.NAN)
-        features['AR1HP3PMR'] = Features.get_number_value(record.samples[0], 'AR1HP3PMR', Features.NAN)
         features['AR1C_HQ_RATIO'] = arc1hq/max(1, ar1c)
         ar1e = Features.get_number_value(record.samples[0], 'AR1E', 0)
         features['AR1E'] = Features.piecewise_normalise(ar1e, min_depth, max_depth)
@@ -354,6 +349,19 @@ class Features:
         features['AR1CMSPAN_1'], features['AR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMSPAN', [0, 0], max_is)
         features['AR1CMHQSPAN_1'], features['AR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMHQSPAN', [0, 0], max_is)
         features['AR1C_OCCR'] = Features.get_number_value(record.samples[0], 'AR1C_OCCR', Features.NAN)
+
+        features['AR1HPMODE'] = Features.get_number_value(record.samples[0], 'AR1HPMODE', Features.NAN)
+        features['AR1CHPMODE'] = Features.get_number_value(record.samples[0], 'AR1CHPMODE', Features.NAN)
+        features['AR1HPMODE_AR1CHPMODE_DIFF'] = features['AR1HPMODE'] - features['AR1CHPMODE']
+        features['AR1HPMODE_ALTLEN_DIFF'] = features['AR1HPMODE'] - features['HP_ALT_LEN']
+        features['AR1CHPMODE_ALTLEN_DIFF'] = features['AR1CHPMODE'] - features['HP_ALT_LEN']
+        features['AR1CHPIQR'] = Features.get_number_value(record.samples[0], 'AR1CHPIQR', Features.NAN)
+        features['AR1CHPmQ'] = Features.get_number_value(record.samples[0], 'AR1CHPmQ', Features.NAN)
+        features['AR1CHPMQ'] = Features.get_number_value(record.samples[0], 'AR1CHPMQ', Features.NAN)
+        features['AR1CHPAQ'] = Features.get_number_value(record.samples[0], 'AR1CHPAQ', Features.NAN)
+        features['AR1CHPSQ'] = Features.get_number_value(record.samples[0], 'AR1CHPSQ', Features.NAN)
+        features['AR1HP5PMR'] = Features.get_number_value(record.samples[0], 'AR1HP5PMR', Features.NAN)
+        features['AR1HP3PMR'] = Features.get_number_value(record.samples[0], 'AR1HP3PMR', Features.NAN)
 
         ar2 = Features.get_number_value(record.samples[0], 'AR2', 0)
         ar2c = Features.get_number_value(record.samples[0], 'AR2C', 0)
@@ -411,9 +419,10 @@ class Features:
         features['RR1CmQ'] = Features.get_number_value(record.samples[0], 'RR1CmQ', Features.NAN)
         features['RR1CMQ'] = Features.get_number_value(record.samples[0], 'RR1CMQ', Features.NAN)
         features['RR1CHQ'] = rr1chq/max(1, rr1c)
-        rr1e = Features.get_number_value(record.samples[0], 'RR1E', 0)
+        rr1e_direct = Features.get_number_value(record.samples[0], 'RR1E', 0)
+        rr1e = rr1e_direct + Features.get_number_value(record.samples[0], 'OR1E', 0)
         features['RR1E'] = Features.piecewise_normalise(rr1e, min_depth, max_depth)
-        features['RR1E_RATIO'] = rr1e/max(1, rr1c_direct)
+        features['RR1E_RATIO'] = rr1e_direct/max(1, rr1c_direct)
         features['RR1CMSPAN_1'], features['RR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMSPAN', [0, 0], max_is)
         features['RR1CMHQSPAN_1'], features['RR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMHQSPAN', [0, 0], max_is)
 
