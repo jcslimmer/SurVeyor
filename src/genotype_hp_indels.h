@@ -558,7 +558,7 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
             }
             continue;
         }
-        
+
         hp_read_info_t hp_read_info = calculate_hp_read_info(read, ref_hp_range, hp_base, contig_seq, contig_len);
         if (hp_read_info.tail_3p_len < config.min_clip_len || hp_read_info.tail_5p_len < config.min_clip_len) {
             // Even if we are discarding this reads because the tails are too short, we still want to prevent it from being used as evidence for non-HP indels
@@ -638,8 +638,6 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
 
     bam_destroy1(read);
     hts_itr_destroy(iter);
-
-    if (hp_read_infos.empty()) return;
 
     // Cluster reads into up to two clusters by their observed HP lengths
     std::vector<std::vector<hp_read_info_t>> clusters = cluster_reads_by_two_modes(hp_read_infos);
@@ -751,13 +749,6 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
         // of the original mapping rather than the remapping to the HP alleles
         set_hp_read_mapq_stats(alt_good_reads_non_rescued[i], hp_indels[i]->sample_info.alt1_hp_min_mapq, hp_indels[i]->sample_info.alt1_hp_max_mapq, 
             hp_indels[i]->sample_info.alt1_hp_avg_mapq, hp_indels[i]->sample_info.alt1_hp_stddev_mapq);
-        if (hp_indels[i]->sample_info.alt_bp1.reads_info.exact_reads() > 0 && alt_reads[i] > 0 && ref_reads == 0) {
-            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(1), bcf_gt_unphased(1)};
-        } else if (hp_indels[i]->sample_info.alt_bp1.reads_info.exact_reads() > 0 && alt_reads[i] > 0 && ref_reads > 0) {
-            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(1)};
-        } else {
-            hp_indels[i]->sample_info.gt = {bcf_gt_unphased(0), bcf_gt_unphased(0)};
-        }
         set_bp_consensus_info(hp_indels[i]->sample_info.ref_bp1.reads_info, ref_reads, ref_good_reads, ref_is_exact_match, 0.0, 0.0);
     }
 }
