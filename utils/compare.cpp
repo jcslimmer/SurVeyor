@@ -24,6 +24,7 @@ std::unordered_set<std::string> bdup_ids, cdup_ids;
 std::vector<std::shared_ptr<sv_t>> benchmark_svs;
 std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> called_dels_by_chr, called_inss_by_chr, called_invs_by_chr;
 std::unordered_map<std::string, IntervalTree<repeat_t>*> reps_i;
+std::unordered_map<std::string, IntervalTree<std::shared_ptr<sv_t>>*> dels_csv_i, inss_csv_i, invs_csv_i;
 
 StripedSmithWaterman::Aligner edit_distance_aligner(1, 0, 1, 1, false);
 bool ignore_seq = false;
@@ -368,22 +369,25 @@ std::vector<sv_match_t> matches;
 void find_match(int id, int start_idx, int end_idx) {
 
 	StripedSmithWaterman::Aligner aligner(1, 4, 6, 1, false);
+	int query_dist = std::max({max_prec_dist, max_imprec_dist, max_repeat_dist});
 
 	for (int i = start_idx; i < end_idx; i++) {
 		std::shared_ptr<sv_t> bsv = benchmark_svs[i];
 
-		std::vector<std::shared_ptr<sv_t>>* called_svs_chr_type;
-		mtx.lock();
+		IntervalTree<std::shared_ptr<sv_t>>* called_svs_chr_type = nullptr;
 		if (bsv->svtype() == "DEL") {
-			called_svs_chr_type = &called_dels_by_chr[bsv->chr];
+			auto it = dels_csv_i.find(bsv->chr);
+			if (it != dels_csv_i.end()) called_svs_chr_type = it->second;
 		} else if (bsv->svtype() == "INS" || bsv->svtype() == "DUP") {
-			called_svs_chr_type = &called_inss_by_chr[bsv->chr];
+			auto it = inss_csv_i.find(bsv->chr);
+			if (it != inss_csv_i.end()) called_svs_chr_type = it->second;
 		} else if (bsv->svtype() == "INV") {
-			called_svs_chr_type = &called_invs_by_chr[bsv->chr];
+			auto it = invs_csv_i.find(bsv->chr);
+			if (it != invs_csv_i.end()) called_svs_chr_type = it->second;
 		} else {
 			continue;
 		}
-		mtx.unlock();
+		if (called_svs_chr_type == nullptr) continue;
 
 		std::vector<repeat_t> reps_containing_bsv;
 		auto it = reps_i.find(bsv->chr);
@@ -397,7 +401,11 @@ void find_match(int id, int start_idx, int end_idx) {
 			}
 		}
 
-		for (const std::shared_ptr<sv_t>& csv : *called_svs_chr_type) {
+		hts_pos_t query_start = std::max(hts_pos_t(0), bsv->start-query_dist);
+		hts_pos_t query_end = bsv->end + query_dist;
+		std::vector<Interval<std::shared_ptr<sv_t>>> candidate_intervals = called_svs_chr_type->findOverlapping(query_start, query_end);
+		for (const Interval<std::shared_ptr<sv_t>>& candidate_interval : candidate_intervals) {
+			const std::shared_ptr<sv_t>& csv = candidate_interval.value;
 			if (is_compatible(bsv.get(), csv.get(), aligner, false)) {
 				sv_match_t match(bsv, csv, false, aligner);
 				mtx.lock();
@@ -663,10 +671,27 @@ int main(int argc, char* argv[]) {
 		}
     }
 
+	std::unordered_map<std::string, std::vector<Interval<std::shared_ptr<sv_t>>>> dels_csv_iv, inss_csv_iv, invs_csv_iv;
 	for (const std::shared_ptr<sv_t>& sv : called_svs) {
-		if (sv->svtype() == "DEL") called_dels_by_chr[sv->chr].push_back(sv);
-		else if (sv->svtype() == "INS" || sv->svtype() == "DUP") called_inss_by_chr[sv->chr].push_back(sv);
-		else if (sv->svtype() == "INV") called_invs_by_chr[sv->chr].push_back(sv);
+		if (sv->svtype() == "DEL") {
+			called_dels_by_chr[sv->chr].push_back(sv);
+			dels_csv_iv[sv->chr].push_back(Interval<std::shared_ptr<sv_t>>(sv->start, sv->end, sv));
+		} else if (sv->svtype() == "INS" || sv->svtype() == "DUP") {
+			called_inss_by_chr[sv->chr].push_back(sv);
+			inss_csv_iv[sv->chr].push_back(Interval<std::shared_ptr<sv_t>>(sv->start, sv->end, sv));
+		} else if (sv->svtype() == "INV") {
+			called_invs_by_chr[sv->chr].push_back(sv);
+			invs_csv_iv[sv->chr].push_back(Interval<std::shared_ptr<sv_t>>(sv->start, sv->end, sv));
+		}
+	}
+	for (auto it = dels_csv_iv.begin(); it != dels_csv_iv.end(); it++) {
+		dels_csv_i[it->first] = new IntervalTree<std::shared_ptr<sv_t>>(it->second);
+	}
+	for (auto it = inss_csv_iv.begin(); it != inss_csv_iv.end(); it++) {
+		inss_csv_i[it->first] = new IntervalTree<std::shared_ptr<sv_t>>(it->second);
+	}
+	for (auto it = invs_csv_iv.begin(); it != invs_csv_iv.end(); it++) {
+		invs_csv_i[it->first] = new IntervalTree<std::shared_ptr<sv_t>>(it->second);
 	}
 
 	ctpl::thread_pool thread_pool(threads);
