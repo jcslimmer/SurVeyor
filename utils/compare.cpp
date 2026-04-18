@@ -474,6 +474,8 @@ int main(int argc, char* argv[]) {
 		("max-repeat-dist", "Maximum distance between two variant in the same tandem repeat.", cxxopts::value<int>()->default_value("1000"))
 		("r,report", "Print report only", cxxopts::value<bool>()->default_value("false"))
 		("f,fps", "Print false positive SVs to file.", cxxopts::value<std::string>())
+		("tp", "Print true positive called SVs to file.", cxxopts::value<std::string>())
+		("fn", "Print false negative benchmark SVs to file.", cxxopts::value<std::string>())
 		("I,ignore-seq", "Only compare insertions by position.", cxxopts::value<bool>()->default_value("false"))
 		("a,all-imprecise", "Treat all deletions as imprecise.", cxxopts::value<bool>()->default_value("false"))
 		("bdup-ids", "ID of benchmark SVs to be considered duplicatons. Note this only affects the final report, not how SVs are compared.", cxxopts::value<std::string>())
@@ -554,6 +556,38 @@ int main(int argc, char* argv[]) {
 			exit(1);
 		}
 		bcf_close(called_file);
+	}
+
+	htsFile* tp_fout = NULL;
+	bcf_hdr_t* tp_hdr = NULL;
+	if (parsed_args.count("tp")) {
+		std::string tp_fname = parsed_args["tp"].as<std::string>();
+		tp_fout = hts_open(tp_fname.c_str(), "wz");
+		// read header from called file
+		htsFile* called_file = bcf_open(called_fname.c_str(), "r");
+		tp_hdr = bcf_hdr_read(called_file);
+		tp_hdr = bcf_hdr_dup(tp_hdr);
+		if (bcf_hdr_write(tp_fout, tp_hdr) != 0) {
+			std::cerr << "Error writing header to file " << tp_fname << std::endl;
+			exit(1);
+		}
+		bcf_close(called_file);
+	}
+
+	htsFile* fn_fout = NULL;
+	bcf_hdr_t* fn_hdr = NULL;
+	if (parsed_args.count("fn")) {
+		std::string fn_fname = parsed_args["fn"].as<std::string>();
+		fn_fout = hts_open(fn_fname.c_str(), "wz");
+		// read header from benchmark file
+		htsFile* benchmark_file = bcf_open(benchmark_fname.c_str(), "r");
+		fn_hdr = bcf_hdr_read(benchmark_file);
+		fn_hdr = bcf_hdr_dup(fn_hdr);
+		if (bcf_hdr_write(fn_fout, fn_hdr) != 0) {
+			std::cerr << "Error writing header to file " << fn_fname << std::endl;
+			exit(1);
+		}
+		bcf_close(benchmark_file);
 	}
 
 	std::ofstream called_to_benchmark_gts_fout;
@@ -873,5 +907,29 @@ int main(int argc, char* argv[]) {
 		}
 		bcf_close(fps_fout);
 		bcf_hdr_destroy(fps_hdr);
+	}
+	if (tp_fout != NULL) {
+		for (const std::shared_ptr<sv_t>& csv : called_svs) {
+			if (c_tps.count(csv->id)) {
+				if (bcf_write(tp_fout, tp_hdr, csv->vcf_entry) != 0) {
+					std::cerr << "Error writing variant to file." << std::endl;
+					exit(1);
+				}
+			}
+		}
+		bcf_close(tp_fout);
+		bcf_hdr_destroy(tp_hdr);
+	}
+	if (fn_fout != NULL) {
+		for (const std::shared_ptr<sv_t>& bsv : benchmark_svs) {
+			if (bsv->allele_count(1) > 0 && !b_tps.count(bsv->id)) {
+				if (bcf_write(fn_fout, fn_hdr, bsv->vcf_entry) != 0) {
+					std::cerr << "Error writing variant to file." << std::endl;
+					exit(1);
+				}
+			}
+		}
+		bcf_close(fn_fout);
+		bcf_hdr_destroy(fn_hdr);
 	}
 }
