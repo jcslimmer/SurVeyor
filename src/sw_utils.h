@@ -566,46 +566,52 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(std::vector<uint32_t>& ci
 		}
     }
 
-	std::vector<std::shared_ptr<sv_t>> main_svs; // SVs that are at least min_sv_size
-	std::vector<std::shared_ptr<sv_t>> aux_svs;  // SVs that are smaller than min_sv_size
+	// Initially, all SVs are in aux.
+	// Then, iteratively pick the largest SV >= min_sv_size among the remaining aux SVs as main, 
+	// and assign nearby aux SVs to it.
+	// Repeat until no aux SV is left or the largest remaining aux SV is smaller than min_sv_size.
+	std::vector<std::shared_ptr<sv_t>> aux_svs;
 	for (auto& sv : svs) {
-		if (sv->svsize() >= config.min_sv_size) {
-			main_svs.push_back(sv);
-		} else {
-			aux_svs.push_back(sv);
-		}
+		if (main_sv != nullptr && sv->unique_key() == main_sv->unique_key()) continue;
+		aux_svs.push_back(sv); // keep main_svs as AUX as well, since it makes genotyping more accurate
 	}
-	if (main_sv != nullptr) main_svs.push_back(main_sv); // add the provided main SV, if any
 
-	// associate small SVs to the closest main SV within readlen-2*min_clip_len bp
-	for (auto& sv : aux_svs) {
-		int min_dist = INT32_MAX;
-		sv_t* best_sv = nullptr;
-		for (auto& main_sv : main_svs) {
+	std::vector<std::shared_ptr<sv_t>> main_svs;
+	if (main_sv != nullptr) main_svs.push_back(main_sv);
+	while (!aux_svs.empty()) {
+		if (main_sv == nullptr) {
+			// main_sv = the largest SV among aux_svs
+			auto it = std::max_element(aux_svs.begin(), aux_svs.end(), [](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) {
+				return a->svsize() < b->svsize();
+			});
+			main_sv = *it;
+			*it = nullptr;
+			if (main_sv->svsize() < config.min_sv_size) {
+				break; // stop if the largest remaining SV is smaller than min_sv_size
+			}
+			main_svs.push_back(main_sv);
+		}
+
+		for (auto& sv : aux_svs) {
+			if (sv == nullptr) continue;
 			int dist = std::min(abs((int)sv->start - (int)main_sv->end), abs((int)sv->end - (int)main_sv->start));
-			if (dist < min_dist) {
-				min_dist = dist;
-				best_sv = main_sv.get();
+			if (dist < stats.read_len - 2*config.min_clip_len) {
+				main_sv->aux_indels.push_back(sv);
+				sv = nullptr; // mark as assigned
 			}
 		}
-		if (best_sv && min_dist <= stats.read_len - 2*config.min_clip_len) {
-			best_sv->aux_indels.push_back(sv);
-		}
+		aux_svs.erase(std::remove(aux_svs.begin(), aux_svs.end(), nullptr), aux_svs.end());	
+
+		main_sv = nullptr; // reset main_sv to pick the next largest SV in the next iteration
 	}
 
 	// associate SNPs to the closest main SV within readlen-2*min_clip_len bp
 	for (snp_t& snp : snps) {
-		int min_dist = INT32_MAX;
-		sv_t* best_sv = nullptr;
 		for (auto& sv : main_svs) {
 			int dist = std::min(abs((int)snp.pos - (int)sv->start), abs((int)snp.pos - (int)sv->end));
-			if (dist < min_dist) {
-				min_dist = dist;
-				best_sv = sv.get();
+			if (dist < stats.read_len - 2*config.min_clip_len) {
+				sv->aux_snps.push_back(snp);
 			}
-		}
-		if (best_sv && min_dist <= stats.read_len - 2*config.min_clip_len) {
-			best_sv->aux_snps.push_back(snp);
 		}
 	}
 
@@ -772,7 +778,20 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 	}
 
     if (svs.empty()) { // we haven't already called a duplication
-		if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
+		if (right_bp - left_bp > middle_part.length() && overlap(ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end) > 0) { // length of ALT < REF, deletion
+			// // For small deletions with non empty middle part, we may be able to obtain a simpler representation by realigning the whole junction sequence
+			if (right_bp - left_bp <= 50 && !middle_part.empty()) {
+				hts_pos_t remap_start = std::min(ref_remap_lh_start, ref_remap_rh_start);
+				hts_pos_t remap_end = std::max(ref_remap_lh_end, ref_remap_rh_end);
+				hts_pos_t remap_len = remap_end - remap_start;
+				StripedSmithWaterman::Filter filter;
+				StripedSmithWaterman::Alignment aln;
+				aligner.Align(junction_seq.c_str(), contig_seq + remap_start, remap_len, filter, &aln, 0);
+				if (!is_clipped(aln, config.min_clip_len)) {
+					return detect_svs_from_aln(aln, contig_name, remap_start, junction_seq, nullptr, lowq_junction_prefix, lowq_junction_suffix, stats, config);
+				}
+			}
+
 			std::shared_ptr<sv_t> sv = std::make_shared<deletion_t>(contig_name, left_bp, right_bp, middle_part, nullptr, nullptr, left_part_anchor_aln, right_part_anchor_aln);
 			svs.push_back(sv);
 		} else { // length of ALT > REF, insertion
