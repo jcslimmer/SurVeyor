@@ -1143,8 +1143,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::future<void> > futures;
     const int BLOCK_SIZE = 20;
 
-    const double MIN_EPR = 0.30;
-
     for (int contig_id = 0; contig_id < contig_map.size(); contig_id++) {
     	std::string contig_name = contig_map.get_name(contig_id);
 
