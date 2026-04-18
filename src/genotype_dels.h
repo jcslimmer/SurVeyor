@@ -166,6 +166,8 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
         }
     }
 
+    if (evidence_logger) evidence_logger->log_reads_associations(del->id, 1, alt_better_reads, alt_better_read_scores);
+
     std::string alt_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
@@ -184,8 +186,6 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
             }
         }
     }
-
-    if (evidence_logger) evidence_logger->log_reads_associations(del->id, 1, alt_better_reads, alt_better_read_scores);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence
@@ -221,12 +221,14 @@ void genotype_del(deletion_t* del, open_samFile_t* bam_file, IntervalTree<ext_re
 
         // length of the left and right flanking regions of the deletion covered by alt_consensus_seq
         int lf_aln_rlen = std::max(hts_pos_t(0), lh_len - alt_aln.ref_begin);
-        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end - lh_len - hts_pos_t(del->ins_seq.length()));
+        int rf_aln_rlen = std::max(hts_pos_t(0), alt_aln.ref_end + 1 - lh_len - hts_pos_t(del->ins_seq.length()));
 
         // length of the alt_consensus_seq covering left and right flanking regions of the deletion
         // note that this may be different from lf_aln_rlen and rf_aln_rlen, since the aln can include indels
         auto query_lh_aln_score = find_aln_prefix_score(alt_aln.cigar, lf_aln_rlen, 1, -4, -6, -1);
         auto query_rh_aln_score = find_aln_suffix_score(alt_aln.cigar, rf_aln_rlen, 1, -4, -6, -1);
+        int split_query_covered = query_lh_aln_score.second + query_rh_aln_score.second;
+
         del->sample_info.alt_consensus1_split_size1 = query_lh_aln_score.second;
         del->sample_info.alt_consensus1_split_size2 = query_rh_aln_score.second;
         del->sample_info.alt_consensus1_split_score1 = query_lh_aln_score.first;

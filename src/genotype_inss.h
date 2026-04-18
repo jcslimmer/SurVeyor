@@ -175,6 +175,9 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
         }
     }
 
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 1, alt_bp1_better_reads, alt_bp1_better_scores);
+    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 2, alt_bp2_better_reads, alt_bp2_better_scores);
+
     std::string alt_bp1_consensus_seq, alt_bp2_consensus_seq, ref_bp1_consensus_seq, ref_bp2_consensus_seq;
     double alt_bp1_avg_score, alt_bp2_avg_score, ref_bp1_avg_score, ref_bp2_avg_score;
     double alt_bp1_stddev_score, alt_bp2_stddev_score, ref_bp1_stddev_score, ref_bp2_stddev_score;
@@ -223,9 +226,6 @@ void genotype_ins(insertion_t* ins, open_samFile_t* bam_file, IntervalTree<ext_r
     ref_bp2_seq[ref_bp2_len] = 0;
     auto ref_bp2_better_reads_consistent = gen_consensus_and_find_consistent_seqs_subset(ref_bp2_seq, ref_bp2_better_reads, std::vector<bool>(), ref_bp2_consensus_seq, ref_bp2_avg_score, ref_bp2_stddev_score, ref_bp2_is_exact_read);
     delete[] ref_bp2_seq;
-
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 1, alt_bp1_better_reads, alt_bp1_better_scores);
-    if (evidence_logger) evidence_logger->log_reads_associations(ins->id, 2, alt_bp2_better_reads, alt_bp2_better_scores);
 
     if (alt_bp1_consensus_seq.length() >= 2*config.min_clip_len) {
         // all we care about is the consensus sequence

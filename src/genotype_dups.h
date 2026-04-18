@@ -133,6 +133,8 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         dup->sample_info.too_deep = true;
     }
 
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads[alt_with_most_reads], alt_better_reads_scores[alt_with_most_reads]);
+
     std::vector<char*> ref_seqs = {ref_seq};
     std::vector<hts_pos_t> ref_lens = {ref_len};
     int alt_len = strlen(alt_seqs[alt_with_most_reads]);
@@ -229,8 +231,6 @@ void genotype_small_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             }
         }
     }
-
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads[alt_with_most_reads], alt_better_reads_scores[alt_with_most_reads]);
 
     set_bp_consensus_info(dup->sample_info.alt_bp1.reads_info, alt_better_reads[alt_with_most_reads].size(), alt_better_reads_consistent, alt_is_exact_read, alt_avg_score, alt_stddev_score);
     set_bp_consensus_info(dup->sample_info.ref_bp1.reads_info, ref_better_reads.size(), ref_better_reads_consistent, ref_is_exact_read, ref_avg_score, ref_stddev_score);
@@ -380,6 +380,8 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
         }
     }
 
+    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads, alt_better_reads_scores);
+
     char* ref_bp1_seq = new char[ref_bp1_len+1];
     strncpy(ref_bp1_seq, contig_seq+ref_bp1_start, ref_bp1_len);
     ref_bp1_seq[ref_bp1_len] = 0;
@@ -408,8 +410,6 @@ void genotype_large_dup(duplication_t* dup, open_samFile_t* bam_file, IntervalTr
             }
         }
     }
-
-    if (evidence_logger) evidence_logger->log_reads_associations(dup->id, 1, alt_better_reads, alt_better_reads_scores);
 
     if (alt_consensus_seq.length() >= 2*config.min_clip_len) {
        // all we care about is the consensus sequence
