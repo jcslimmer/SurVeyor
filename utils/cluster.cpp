@@ -305,14 +305,19 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 
         int cluster_id = glob_cluster_id++;
 
-        // set basic info
-        vcf_sv->rid = bcf_hdr_name2id(out_hdr, chosen_sv.chr.c_str());
-        vcf_sv->pos = chosen_sv.start;
-        std::string id = "CLUSTER_" + std::to_string(cluster_id);
-        bcf_update_id(out_hdr, vcf_sv, id.c_str());
-        char* chr_seq = chr_seqs.get_seq(chosen_sv.chr);
-        std::string alleles = std::string(1, chr_seq[chosen_sv.start]) + ",<" + chosen_sv.svtype + ">";
-		bcf_update_alleles_str(out_hdr, vcf_sv, alleles.c_str());
+		// set basic info
+		vcf_sv->rid = bcf_hdr_name2id(out_hdr, chosen_sv.chr.c_str());
+		vcf_sv->pos = chosen_sv.start;
+		std::string id = "CLUSTER_" + std::to_string(cluster_id);
+		bcf_update_id(out_hdr, vcf_sv, id.c_str());
+		char* chr_seq = chr_seqs.get_seq(chosen_sv.chr);
+		if (!chosen_sv.incomplete_ins_seq) {
+			update_alleles_info(out_hdr, vcf_sv, chr_seq, chosen_sv.start, chosen_sv.end,
+				chosen_sv.svtype, chosen_sv.svlen, chosen_sv.ins_seq);
+		} else {
+			std::string alleles = std::string(1, chr_seq[chosen_sv.start]) + ",<" + chosen_sv.svtype + ">";
+			bcf_update_alleles_str(out_hdr, vcf_sv, alleles.c_str());
+		}
 
 		// set INFO
 		int int_conv = chosen_sv.end+1;
