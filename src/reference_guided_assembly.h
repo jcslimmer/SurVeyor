@@ -33,7 +33,9 @@ void build_aln_guided_graph(std::vector<std::pair<std::string, StripedSmithWater
 				min_overlap = std::max(min_overlap, unclipped_i_end - unclipped_j_start);
 			}
 			suffix_prefix_aln_t spa = aln_suffix_prefix(alns[i].first, alns[j].first, 1, -4, config.max_seq_error, min_overlap);
-			if (spa.overlap) {
+			bool spa_i_homopolymer = is_homopolymer(alns[i].first.c_str()+alns[i].first.length()-spa.overlap, spa.overlap);
+			bool spa_j_homopolymer = is_homopolymer(alns[j].first.c_str(), spa.overlap);
+			if (spa.overlap && !spa_i_homopolymer && !spa_j_homopolymer) {
 				out_edges[i]++;
 				l_adj[i].push_back({j, spa.score, spa.overlap});
 				l_adj_rev[j].push_back({i, spa.score, spa.overlap});
