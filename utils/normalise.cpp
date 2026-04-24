@@ -326,17 +326,19 @@ int main(int argc, char* argv[]) {
 			std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
 			continue;
 		}
-			sv->vcf_entry = bcf_dup(vcf_record);
-			sv = simplify(sv);
-			if (sv == nullptr) continue;
-			
-			sv = atomize(0, sv);
-			if (sv == nullptr) continue;
-			
-			left_align(sv);
-			canonicalize_aux(sv);
-			svs.push_back(sv);
-		}
+		
+		sv->vcf_entry = bcf_dup(vcf_record);
+		sv = simplify(sv);
+		if (sv == nullptr) continue;
+		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svlen() == 0) continue;
+		
+		sv = atomize(0, sv);
+		if (sv == nullptr) continue;
+		
+		left_align(sv);
+		canonicalize_aux(sv);
+		svs.push_back(sv);
+	}
 
 	for (const auto& sv : svs) {
 		bcf1_t* vcf_record_norm = bcf_init();
