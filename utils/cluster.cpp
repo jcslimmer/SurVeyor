@@ -292,18 +292,18 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 		int clique_idx = clique_sv_idx.second;
 		std::vector<int>& clique = cliques[clique_idx];
 
-        std::set<std::string> unique_samples;
-        std::vector<sv_w_samplename_t> clique_svs;
-        for (int idx : clique) {
-            unique_samples.insert(svs[idx].sample);
-            clique_svs.push_back(svs[idx]);
-        }
+		std::set<std::string> unique_samples;
+		std::vector<sv_w_samplename_t> clique_svs;
+		for (int idx : clique) {
+			unique_samples.insert(svs[idx].sample);
+			clique_svs.push_back(svs[idx]);
+		}
 
-        sv_w_samplename_t& chosen_sv = clique_sv_idx.first;
+		sv_w_samplename_t& chosen_sv = clique_sv_idx.first;
 
-        bcf_clear(vcf_sv);
+		bcf_clear(vcf_sv);
 
-        int cluster_id = glob_cluster_id++;
+		int cluster_id = glob_cluster_id++;
 
 		// set basic info
 		vcf_sv->rid = bcf_hdr_name2id(out_hdr, chosen_sv.chr.c_str());
@@ -397,7 +397,7 @@ void print_cliques(std::vector<std::vector<int>>& cliques, std::vector<sv_w_samp
 
 		append_svs.push_back(std::shared_ptr<bcf1_t>(bcf_dup(vcf_sv), bcf_destroy));
 
-        cluster_id++;
+		cluster_id++;
     }
     bcf_destroy(vcf_sv);
 
