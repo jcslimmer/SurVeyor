@@ -8,7 +8,7 @@ Structural variant discovery and genotyping pipeline from paired-end NGS data. S
 
 In order to compile the code, the following are required:
 - A C and a C++ compiler are required. If the GCC suite is used, version 4.9.3 or above is required.
-- CMake (2.8 or above)
+- CMake (3.5 or above)
 
 Downloaded the latest release from https://github.com/Mesh89/SurVeyor/releases , uncompress it and enter the directory.
 The following commands should be sufficient
