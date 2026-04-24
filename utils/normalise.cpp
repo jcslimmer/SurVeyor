@@ -330,8 +330,8 @@ int main(int argc, char* argv[]) {
 		sv->vcf_entry = bcf_dup(vcf_record);
 		sv = simplify(sv);
 		if (sv == nullptr) continue;
-		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svlen() == 0) continue;
-		
+		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svlen() == 0 && sv->aux_indels.empty()) continue;
+
 		sv = atomize(0, sv);
 		if (sv == nullptr) continue;
 		
