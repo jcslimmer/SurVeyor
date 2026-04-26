@@ -47,7 +47,7 @@ class Classifier:
                 vcf_writer.write(record)
         vcf_writer.close()
 
-    def run_classifier(in_vcf, out_vcf, stats_fname, model_dir):
+    def run_classifier(in_vcf, out_vcf, stats_fname, model_dir, threads=1):
         feature_names_by_model = Classifier.load_features_files(os.path.join(model_dir, "yes_or_no"))
         test_data, _, test_variant_ids = \
             features.parse_vcf(in_vcf, stats_fname, "XXX", ignore_gts = True, feature_names_by_model = feature_names_by_model)
@@ -60,7 +60,7 @@ class Classifier:
             if model_name.startswith("INV"):
                 continue
 
-            classifier = xgb.XGBClassifier()
+            classifier = xgb.XGBClassifier(n_jobs=threads)
             classifier.load_model(model_file)
             predictions = classifier.predict(test_data[model_name])
             eprs = classifier.predict_proba(test_data[model_name])
@@ -101,5 +101,6 @@ if __name__ == "__main__":
     cmd_parser.add_argument('out_vcf', help='Output VCF file.')
     cmd_parser.add_argument('stats', help='Stats of the test VCF file.')
     cmd_parser.add_argument('model_dir', help='Directory containing the trained model.')
+    cmd_parser.add_argument('--threads', type=int, default=1, help='Number of threads to use during prediction.')
     cmd_args = cmd_parser.parse_args()
-    Classifier.run_classifier(cmd_args.in_vcf, cmd_args.out_vcf, cmd_args.stats, cmd_args.model_dir)
+    Classifier.run_classifier(cmd_args.in_vcf, cmd_args.out_vcf, cmd_args.stats, cmd_args.model_dir, threads=cmd_args.threads)
