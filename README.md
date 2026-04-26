@@ -8,7 +8,7 @@ Structural variant discovery and genotyping pipeline from paired-end NGS data. S
 
 In order to compile the code, the following are required:
 - A C and a C++ compiler are required. If the GCC suite is used, version 4.9.3 or above is required.
-- CMake (2.8 or above)
+- CMake (3.5 or above)
 
 Downloaded the latest release from https://github.com/Mesh89/SurVeyor/releases , uncompress it and enter the directory.
 The following commands should be sufficient
@@ -52,21 +52,21 @@ Recent versions of BWA MEM will automatically add all the necessary tags. If you
 ## Denovo calling of structural variants
 
 The basic command to call structural variants 
-```
+```bash
 python surveyor.py call --threads N_THREADS BAM_FILE WORKDIR REFERENCE_FASTA --ml-model TRAINED_MODEL
 ```
 TRAINED_MODEL should be the location of the uncompressed trained-model.zip
 
 For other parameters, please see the help with
-```
+```bash
 python surveyor.py call -h
 ```
 
 ## Genotyping a set of structural variants
 
 The basic command to genotype a set of structural variants in VCF format (IN_VCF) is
-```
-python surveyor.py genotype --threads N_THREADS IN_VCF BAM_FILE WORKDIR REFERENCE_FASTA TRAINED_MODEL
+```bash
+python surveyor.py genotype --threads N_THREADS IN_VCF BAM_FILE WORKDIR REFERENCE_FASTA --ml-model TRAINED_MODEL
 ```
 The genotyped variants will be reported in genotyped.vcf.gz (version with all of the original calls) and genotyped.deduped.vcf.gz (version with duplicate calls removed).
 
@@ -84,20 +84,68 @@ Cohort-aware SV detection consists of three steps:
 2) Next, calls from all samples must be clustered. This produces a non-redundant catalogue of SVs within the cohort
 3) Finally, the catalogue must be genotyped on the sample(s) of interest
 
-For clustering, a text file FILELIST should be produced where each line is a sample, expressed as
-SAMPLE_NAME /path/to/sample/calls.vcf.gz
+Let us assume we have $n$ samples, called $S_1$ to $S_n$.
 
-Then, the command
+### Denovo calling for all samples
+
+First, we perform denovo calling for each sample, i.e., for each $i = 1,\dots,n$:
+```bash
+python surveyor.py call --threads N_THREADS BAM_FILE_S_i WORKDIR_S_i REFERENCE_FASTA --ml-model TRAINED_MODEL
 ```
+where `BAM_FILE_S_i` is the BAM or CRAM file relative to sample $S_i$.
+
+### Clustering individual calls into a unified catalogue
+
+A text file `FILELIST` should be produced where each line contains a sample name and the corresponding SurVeyor VCF:
+
+For our example, `FILELIST` should look like this
+```text
+SAMPLE_1 WORKDIR_S_1/calls-genotyped.vcf.gz
+SAMPLE_2 WORKDIR_S_2/calls-genotyped.vcf.gz
+...
+SAMPLE_n WORKDIR_S_n/calls-genotyped.vcf.gz
+```
+
+Then, run the command
+```bash
 ./bin/cluster FILELIST REFERENCE_FASTA -o OUT_PREFIX -t N_THREADS
 ```
-A file OUT_PREFIX.vcf.gz will be produced.
+A file `OUT_PREFIX.vcf.gz` will be produced.
 
-If using many of samples and you notice that the cohort-aware calls tend to have many duplicate SVs, add the following flag to the genotype command
+For the sake of our example, let `OUT_PREFIX=catalogue`, meaning the output of the clustering step is `catalogue.vcf.gz`
+
+### Re-genotyping the catalogue on all samples
+
+We re-genotype `catalogue.vcf.gz` produced by the clustering step on each sample individually.
+
+If you are genotyping a catalogue generated from many samples and you notice that the cohort-aware calls tend to contain many duplicate SVs, add the following flag to the genotype command
 ```
 --tr-bed SIMPLE_REPEATS_BED
 ```
-where SIMPLE_REPEATS_BED is a list of repetitive regions for the reference, in BED format. We recommend using the simpleRepeats table from UCSC Table browser.
+where `SIMPLE_REPEATS_BED` is a list of repetitive regions for the reference, in BED format. We recommend using the simpleRepeats table from UCSC Table browser.
+
+Concretely, for each $i = 1,\dots,n$:
+```bash
+python surveyor.py genotype --threads N_THREADS catalogue.vcf.gz BAM_FILE_S_i WORKDIR_S_i-regt REFERENCE_FASTA --ml-model TRAINED_MODEL
+```
+where `BAM_FILE_S_i` is the BAM or CRAM file relative to sample $S_i$.
+
+For each $i$, final calls for sample $S_i$ will be in `WORKDIR_S_i-regt/genotyped.deduped.vcf.gz`
+
+### Genotyping a precomputed cohort catalogue
+
+If a clustered cohort catalogue is already available, users do not need to repeat denovo calling and clustering. The clustered VCF can be used directly as input to the `genotype` command.
+
+For example, if `catalogue.vcf.gz` is a precomputed clustered cohort catalogue, run:
+```bash
+python surveyor.py genotype --threads N_THREADS catalogue.vcf.gz BAM_FILE WORKDIR REFERENCE_FASTA --ml-model TRAINED_MODEL
+```
+
+The genotyped calls will be written to:
+```text
+WORKDIR/genotyped.vcf.gz
+WORKDIR/genotyped.deduped.vcf.gz
+```
 
 ## Citation
 
