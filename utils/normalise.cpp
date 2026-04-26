@@ -177,12 +177,12 @@ std::shared_ptr<sv_t> atomize_ins(std::shared_ptr<sv_t> sv) {
 
 std::shared_ptr<sv_t> atomize(int id, std::shared_ptr<sv_t> sv) {
 	std::string svtype = sv->svtype();
-	if (svtype == "DEL" && sv->svsize() <= 50) { 
+	if (svtype == "DEL" && sv->svsize() <= 70) { 
 		// only atomize small deletions
 		// splitting large deletions can create problems to the current genotyping algorithm
 		// especially when calculating features like discordant pairs or read depth
 		return atomize_del(sv);
-	} else if (svtype == "INS" && sv->ins_seq.length() <= 50) {
+	} else if (svtype == "INS" && sv->ins_seq.length() <= 70) {
 		return atomize_ins(sv);
 	} else {
 		return sv;
