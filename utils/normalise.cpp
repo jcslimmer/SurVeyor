@@ -46,10 +46,6 @@ std::shared_ptr<sv_t> atomize_del(std::shared_ptr<sv_t> sv) {
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 
-	char* deleted_seq = new char[sv->end - sv->start + 1];
-	strncpy(deleted_seq, chr_seq + sv->start+1, sv->end - sv->start);
-	deleted_seq[sv->end - sv->start] = '\0';
-
 	if (sv->ins_seq.length() == 1) { // DEL + SNP. Mark last base as SNP and shorten deletion by 1 bp
 		hts_pos_t snp_pos = sv->end;
 		char ref_base = chr_seq[snp_pos];
@@ -63,10 +59,9 @@ std::shared_ptr<sv_t> atomize_del(std::shared_ptr<sv_t> sv) {
 		sv->ins_seq = "";
 	} else {
 		// transform DEL + INS into (possibly two) DELs + SNPs (as few as possible)
-		int most_similar_pos = find_most_similar_substring(deleted_seq, sv->end - sv->start, (char*) sv->ins_seq.c_str());
+		int most_similar_pos = find_most_similar_substring(chr_seq + sv->start+1, sv->end - sv->start, (char*) sv->ins_seq.c_str());
 		if (most_similar_pos == -1) {
 			// inserted sequence is longer than the deleted sequence (probably due to a malformed variant)
-			delete[] deleted_seq;
 			return sv;
 		}
 
@@ -107,12 +102,77 @@ std::shared_ptr<sv_t> atomize_del(std::shared_ptr<sv_t> sv) {
 
 		sv->ins_seq = "";
 	}
-	delete[] deleted_seq;
 
 	if (sv->start >= sv->end) {
 		return nullptr;
 	}
 	return sv;
+}
+
+std::shared_ptr<sv_t> atomize_ins(std::shared_ptr<sv_t> sv) {
+	if (sv->start == sv->end) return sv;
+
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
+
+	char* deleted_seq = new char[sv->end - sv->start + 1];
+	strncpy(deleted_seq, chr_seq + sv->start+1, sv->end - sv->start);
+	deleted_seq[sv->end - sv->start] = '\0';
+
+	// Find where the replaced reference sequence best fits within the inserted sequence.
+	int most_similar_pos = find_most_similar_substring((char*) sv->ins_seq.c_str(), sv->ins_seq.length(), deleted_seq);
+	if (most_similar_pos == -1) {
+		// Deleted sequence is longer than the inserted sequence; leave the variant unchanged for now.
+		delete[] deleted_seq;
+		return sv;
+	}
+
+	int deleted_seq_len = sv->end - sv->start;
+	hts_pos_t left_ins_pos = sv->start;
+	hts_pos_t right_ins_pos = sv->end;
+	hts_pos_t snp_start = sv->start+1;
+	std::string left_ins = sv->ins_seq.substr(0, most_similar_pos);
+	std::string matched_ins = sv->ins_seq.substr(most_similar_pos, deleted_seq_len);
+	std::string right_ins = sv->ins_seq.substr(most_similar_pos + deleted_seq_len);
+
+	if (left_ins.length() >= right_ins.length()) {
+		sv->end = left_ins_pos;
+		sv->ins_seq = left_ins;
+		if (!right_ins.empty()) {
+			std::shared_ptr<sv_t> right_ins_sv = std::make_shared<insertion_t>(sv->chr, right_ins_pos, right_ins_pos, right_ins, nullptr, nullptr, nullptr, nullptr);
+			sv->aux_indels.push_back(right_ins_sv);
+		}
+	} else {
+		sv->start = right_ins_pos;
+		sv->ins_seq = right_ins;
+		if (!left_ins.empty()) {
+			std::shared_ptr<sv_t> left_ins_sv = std::make_shared<insertion_t>(sv->chr, left_ins_pos, left_ins_pos, left_ins, nullptr, nullptr, nullptr, nullptr);
+			sv->aux_indels.push_back(left_ins_sv);
+		}
+	}
+
+	// Create SNPs for the mismatched bases in the reference-like middle.
+	for (int i = 0; i < deleted_seq_len; i++) {
+		char ref_base = chr_seq[snp_start + i];
+		char alt_base = matched_ins[i];
+		if (toupper(ref_base) != toupper(alt_base)) {
+			hts_pos_t snp_pos = snp_start + i;
+			snp_t snp(snp_pos, alt_base);
+			sv->aux_snps.push_back(snp);
+		}
+	}
+
+	std::sort(sv->aux_snps.begin(), sv->aux_snps.end(),
+		[](const snp_t& a, const snp_t& b) {
+			return a.pos < b.pos;
+		});
+
+	if (sv->ins_seq.empty() && sv->aux_indels.empty()) {
+		delete[] deleted_seq;
+		return nullptr;
+	}
+
+	delete[] deleted_seq;
+	return sv; 
 }
 
 std::shared_ptr<sv_t> atomize(int id, std::shared_ptr<sv_t> sv) {
@@ -123,11 +183,46 @@ std::shared_ptr<sv_t> atomize(int id, std::shared_ptr<sv_t> sv) {
 		// especially when calculating features like discordant pairs or read depth
 		return atomize_del(sv);
 	} else if (svtype == "INS" && sv->ins_seq.length() <= 50) {
-		// atomize_ins(sv);
-		return sv; // we currently do not atomize insertions
+		return atomize_ins(sv);
 	} else {
 		return sv;
 	}
+}
+
+std::shared_ptr<sv_t> promote_largest_indel(std::shared_ptr<sv_t> sv) {
+	if (sv->aux_indels.empty()) return sv;
+
+	int promoted_idx = 0;
+	for (int i = 1; i < sv->aux_indels.size(); i++) {
+		if (sv->aux_indels[i]->svsize() > sv->aux_indels[promoted_idx]->svsize()) {
+			promoted_idx = i;
+		}
+	}
+	if (sv->aux_indels[promoted_idx]->svsize() <= sv->svsize()) return sv;
+
+	std::shared_ptr<sv_t> promoted = sv->aux_indels[promoted_idx];
+	std::vector<std::shared_ptr<sv_t>> aux_indels;
+	for (int i = 0; i < sv->aux_indels.size(); i++) {
+		if (i != promoted_idx) aux_indels.push_back(sv->aux_indels[i]);
+	}
+
+	promoted->id = sv->id;
+	promoted->source = sv->source;
+	promoted->sample_info = sv->sample_info;
+	promoted->imprecise = sv->imprecise;
+	promoted->inferred_ins_seq = sv->inferred_ins_seq;
+	promoted->vcf_entry = sv->vcf_entry;
+	sv->vcf_entry = nullptr;
+
+	promoted->aux_snps.insert(promoted->aux_snps.end(), sv->aux_snps.begin(), sv->aux_snps.end());
+	promoted->aux_indels = aux_indels;
+	if (sv->svsize() > 0) {
+		sv->aux_snps.clear();
+		sv->aux_indels.clear();
+		promoted->aux_indels.push_back(sv);
+	}
+
+	return promoted;
 }
 
 std::shared_ptr<sv_t> simplify_del(std::shared_ptr<sv_t> sv) {
@@ -313,6 +408,11 @@ int main(int argc, char* argv[]) {
 	std::string out_vcf_fname = argv[2];
 	std::string reference_fname = argv[3];
 
+	int min_indel_size = 0;
+	if (argc >= 5) {
+		min_indel_size = std::stoi(argv[4]);
+	}
+
 	chr_seqs.read_fasta_into_map(reference_fname);
 
 	htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
@@ -326,14 +426,17 @@ int main(int argc, char* argv[]) {
 			std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
 			continue;
 		}
-		
+
 		sv->vcf_entry = bcf_dup(vcf_record);
 		sv = simplify(sv);
 		if (sv == nullptr) continue;
-		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svlen() == 0 && sv->aux_indels.empty()) continue;
-
+		
 		sv = atomize(0, sv);
 		if (sv == nullptr) continue;
+		
+		sv = promote_largest_indel(sv);
+		
+		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svsize() < min_indel_size) continue;
 		
 		left_align(sv);
 		canonicalize_aux(sv);
