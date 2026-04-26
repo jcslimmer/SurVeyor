@@ -716,6 +716,7 @@ std::vector<std::string> gen_consensus_seqs(std::string ref_seq, std::vector<std
     }
     std::vector<std::string> consensus_seqs2 = assemble_reads(temp3, seqs_w_pp, temp4, config, stats);
     consensus_seqs.insert(consensus_seqs.end(), consensus_seqs2.begin(), consensus_seqs2.end());
+
     return consensus_seqs;
 }
 
@@ -775,10 +776,8 @@ std::vector<std::shared_ptr<bam1_t>> gen_consensus_and_find_consistent_seqs_subs
 
             ungapped_aln_t ungapped_aln = best_ungapped_aln(read_seq.c_str(), read_seq.length(), cseq.c_str(), cseq.length(),
             std::max(0, config.min_clip_len - 1));
-            if (ungapped_aln.query_end - ungapped_aln.query_begin <= 0) continue; 
-            
-            double mismatch_rate = double(ungapped_aln.mismatches)/(ungapped_aln.query_end-ungapped_aln.query_begin);
-            if (mismatch_rate <= config.max_seq_error) {
+
+            if (ungapped_aln.mismatch_rate() <= config.max_seq_error) {
                 curr_seqs_idxs.push_back(j);
                 curr_consistent_reads.push_back(read);
                 curr_is_exact_match.push_back(ungapped_aln.mismatches == 0);

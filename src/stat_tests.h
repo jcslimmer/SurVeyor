@@ -390,7 +390,7 @@ void count_stray_pairs(std::string contig_name, std::vector<duplication_t*>& dup
 
 void calculate_confidence_interval_size(std::string contig_name, std::vector<double>& global_crossing_isize_dist,
 										std::vector<sv_t*>& svs, open_samFile_t* bam_file, 
-										config_t& config, stats_t& stats, int min_sv_size) {
+										config_t& config, stats_t& stats) {
 
 	if (svs.empty()) return;
 
