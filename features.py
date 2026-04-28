@@ -12,13 +12,13 @@ class Features:
                             'SV_REF_PREFIX_A_RATIO', 'SV_REF_PREFIX_C_RATIO', 'SV_REF_PREFIX_G_RATIO', 'SV_REF_PREFIX_T_RATIO', 'MAX_SV_REF_PREFIX_BASE_RATIO',
                             'SV_REF_SUFFIX_A_RATIO', 'SV_REF_SUFFIX_C_RATIO', 'SV_REF_SUFFIX_G_RATIO', 'SV_REF_SUFFIX_T_RATIO', 'MAX_SV_REF_SUFFIX_BASE_RATIO',
                             'LEFT_ANCHOR_A_RATIO', 'LEFT_ANCHOR_C_RATIO', 'LEFT_ANCHOR_G_RATIO', 'LEFT_ANCHOR_T_RATIO', 'MAX_LEFT_ANCHOR_BASE_RATIO',
-                            'LEFT_ANCHOR_A_RATIO_50', 'LEFT_ANCHOR_C_RATIO_50', 'LEFT_ANCHOR_G_RATIO_50', 'LEFT_ANCHOR_T_RATIO_50', 'MAX_LEFT_ANCHOR_BASE_RATIO_50',
-                            'LEFT_ANCHOR_A_RATIO_100', 'LEFT_ANCHOR_C_RATIO_100', 'LEFT_ANCHOR_G_RATIO_100', 'LEFT_ANCHOR_T_RATIO_100', 'MAX_LEFT_ANCHOR_BASE_RATIO_100',
-                            'LEFT_ANCHOR_A_RATIO_500', 'LEFT_ANCHOR_C_RATIO_500', 'LEFT_ANCHOR_G_RATIO_500', 'LEFT_ANCHOR_T_RATIO_500', 'MAX_LEFT_ANCHOR_BASE_RATIO_500',
+                            'LEFT_FLANKING_A_RATIO_50', 'LEFT_FLANKING_C_RATIO_50', 'LEFT_FLANKING_G_RATIO_50', 'LEFT_FLANKING_T_RATIO_50', 'MAX_LEFT_FLANKING_BASE_RATIO_50',
+                            'LEFT_FLANKING_A_RATIO_100', 'LEFT_FLANKING_C_RATIO_100', 'LEFT_FLANKING_G_RATIO_100', 'LEFT_FLANKING_T_RATIO_100', 'MAX_LEFT_FLANKING_BASE_RATIO_100',
+                            'LEFT_FLANKING_A_RATIO_500', 'LEFT_FLANKING_C_RATIO_500', 'LEFT_FLANKING_G_RATIO_500', 'LEFT_FLANKING_T_RATIO_500', 'MAX_LEFT_FLANKING_BASE_RATIO_500',
                             'RIGHT_ANCHOR_A_RATIO', 'RIGHT_ANCHOR_C_RATIO', 'RIGHT_ANCHOR_G_RATIO', 'RIGHT_ANCHOR_T_RATIO', 'MAX_RIGHT_ANCHOR_BASE_RATIO',
-                            'RIGHT_ANCHOR_A_RATIO_50', 'RIGHT_ANCHOR_C_RATIO_50', 'RIGHT_ANCHOR_G_RATIO_50', 'RIGHT_ANCHOR_T_RATIO_50', 'MAX_RIGHT_ANCHOR_BASE_RATIO_50',
-                            'RIGHT_ANCHOR_A_RATIO_100', 'RIGHT_ANCHOR_C_RATIO_100', 'RIGHT_ANCHOR_G_RATIO_100', 'RIGHT_ANCHOR_T_RATIO_100', 'MAX_RIGHT_ANCHOR_BASE_RATIO_100',
-                            'RIGHT_ANCHOR_A_RATIO_500', 'RIGHT_ANCHOR_C_RATIO_500', 'RIGHT_ANCHOR_G_RATIO_500', 'RIGHT_ANCHOR_T_RATIO_500', 'MAX_RIGHT_ANCHOR_BASE_RATIO_500',
+                            'RIGHT_FLANKING_A_RATIO_50', 'RIGHT_FLANKING_C_RATIO_50', 'RIGHT_FLANKING_G_RATIO_50', 'RIGHT_FLANKING_T_RATIO_50', 'MAX_RIGHT_FLANKING_BASE_RATIO_50',
+                            'RIGHT_FLANKING_A_RATIO_100', 'RIGHT_FLANKING_C_RATIO_100', 'RIGHT_FLANKING_G_RATIO_100', 'RIGHT_FLANKING_T_RATIO_100', 'MAX_RIGHT_FLANKING_BASE_RATIO_100',
+                            'RIGHT_FLANKING_A_RATIO_500', 'RIGHT_FLANKING_C_RATIO_500', 'RIGHT_FLANKING_G_RATIO_500', 'RIGHT_FLANKING_T_RATIO_500', 'MAX_RIGHT_FLANKING_BASE_RATIO_500',
                             'INS_PREFIX_A_RATIO', 'INS_PREFIX_C_RATIO', 'INS_PREFIX_G_RATIO', 'INS_PREFIX_T_RATIO', 'MAX_INS_PREFIX_BASE_COUNT_RATIO',
                             'INS_SUFFIX_A_RATIO', 'INS_SUFFIX_C_RATIO', 'INS_SUFFIX_G_RATIO', 'INS_SUFFIX_T_RATIO', 'MAX_INS_SUFFIX_BASE_COUNT_RATIO',
                             'INS_SEQ_COV_PREFIX_LEN', 'INS_SEQ_COV_SUFFIX_LEN', 'EXP_ALT_READS_FREQ1', 'EXP_ALT_READS_FREQ2', 'HP_REF_LEN', 'HP_ALT_LEN' ]
@@ -271,40 +271,40 @@ class Features:
         features['MAX_LEFT_ANCHOR_BASE_RATIO'] = max(left_anchor_base_count_ratio)
         features['LEFT_ANCHOR_A_RATIO'], features['LEFT_ANCHOR_C_RATIO'], features['LEFT_ANCHOR_G_RATIO'], features['LEFT_ANCHOR_T_RATIO'] = left_anchor_base_count_ratio
 
-        left_anchor_base_count_50 = Features.get_number_value(info, 'LEFT_ANCHOR_BASE_COUNT_50', [0, 0, 0, 0])
-        left_anchor_base_count_ratio_50 = [x/max(1, sum(left_anchor_base_count_50)) for x in left_anchor_base_count_50]
-        features['MAX_LEFT_ANCHOR_BASE_RATIO_50'] = max(left_anchor_base_count_ratio_50)
-        features['LEFT_ANCHOR_A_RATIO_50'], features['LEFT_ANCHOR_C_RATIO_50'], features['LEFT_ANCHOR_G_RATIO_50'], features['LEFT_ANCHOR_T_RATIO_50'] = left_anchor_base_count_ratio_50
+        left_flanking_base_count_50 = Features.get_number_value(info, 'LEFT_FLANKING_BASE_COUNT_50', [0, 0, 0, 0])
+        left_flanking_base_count_ratio_50 = [x/max(1, sum(left_flanking_base_count_50)) for x in left_flanking_base_count_50]
+        features['MAX_LEFT_FLANKING_BASE_RATIO_50'] = max(left_flanking_base_count_ratio_50)
+        features['LEFT_FLANKING_A_RATIO_50'], features['LEFT_FLANKING_C_RATIO_50'], features['LEFT_FLANKING_G_RATIO_50'], features['LEFT_FLANKING_T_RATIO_50'] = left_flanking_base_count_ratio_50
 
-        left_anchor_base_count_100 = Features.get_number_value(info, 'LEFT_ANCHOR_BASE_COUNT_100', [0, 0, 0, 0])
-        left_anchor_base_count_ratio_100 = [x/max(1, sum(left_anchor_base_count_100)) for x in left_anchor_base_count_100]
-        features['MAX_LEFT_ANCHOR_BASE_RATIO_100'] = max(left_anchor_base_count_ratio_100)
-        features['LEFT_ANCHOR_A_RATIO_100'], features['LEFT_ANCHOR_C_RATIO_100'], features['LEFT_ANCHOR_G_RATIO_100'], features['LEFT_ANCHOR_T_RATIO_100'] = left_anchor_base_count_ratio_100
+        left_flanking_base_count_100 = Features.get_number_value(info, 'LEFT_FLANKING_BASE_COUNT_100', [0, 0, 0, 0])
+        left_flanking_base_count_ratio_100 = [x/max(1, sum(left_flanking_base_count_100)) for x in left_flanking_base_count_100]
+        features['MAX_LEFT_FLANKING_BASE_RATIO_100'] = max(left_flanking_base_count_ratio_100)
+        features['LEFT_FLANKING_A_RATIO_100'], features['LEFT_FLANKING_C_RATIO_100'], features['LEFT_FLANKING_G_RATIO_100'], features['LEFT_FLANKING_T_RATIO_100'] = left_flanking_base_count_ratio_100
 
-        left_anchor_base_count_500 = Features.get_number_value(info, 'LEFT_ANCHOR_BASE_COUNT_500', [0, 0, 0, 0])
-        left_anchor_base_count_ratio_500 = [x/max(1, sum(left_anchor_base_count_500)) for x in left_anchor_base_count_500]
-        features['MAX_LEFT_ANCHOR_BASE_RATIO_500'] = max(left_anchor_base_count_ratio_500)
-        features['LEFT_ANCHOR_A_RATIO_500'], features['LEFT_ANCHOR_C_RATIO_500'], features['LEFT_ANCHOR_G_RATIO_500'], features['LEFT_ANCHOR_T_RATIO_500'] = left_anchor_base_count_ratio_500
+        left_flanking_base_count_500 = Features.get_number_value(info, 'LEFT_FLANKING_BASE_COUNT_500', [0, 0, 0, 0])
+        left_flanking_base_count_ratio_500 = [x/max(1, sum(left_flanking_base_count_500)) for x in left_flanking_base_count_500]
+        features['MAX_LEFT_FLANKING_BASE_RATIO_500'] = max(left_flanking_base_count_ratio_500)
+        features['LEFT_FLANKING_A_RATIO_500'], features['LEFT_FLANKING_C_RATIO_500'], features['LEFT_FLANKING_G_RATIO_500'], features['LEFT_FLANKING_T_RATIO_500'] = left_flanking_base_count_ratio_500
 
         right_anchor_base_count = Features.get_number_value(info, 'RIGHT_ANCHOR_BASE_COUNT', [0, 0, 0, 0])
         right_anchor_base_count_ratio = [x/max(1, sum(right_anchor_base_count)) for x in right_anchor_base_count]
         features['MAX_RIGHT_ANCHOR_BASE_RATIO'] = max(right_anchor_base_count_ratio)
         features['RIGHT_ANCHOR_A_RATIO'], features['RIGHT_ANCHOR_C_RATIO'], features['RIGHT_ANCHOR_G_RATIO'], features['RIGHT_ANCHOR_T_RATIO'] = right_anchor_base_count_ratio
 
-        right_anchor_base_count_50 = Features.get_number_value(info, 'RIGHT_ANCHOR_BASE_COUNT_50', [0, 0, 0, 0])
-        right_anchor_base_count_ratio_50 = [x/max(1, sum(right_anchor_base_count_50)) for x in right_anchor_base_count_50]
-        features['MAX_RIGHT_ANCHOR_BASE_RATIO_50'] = max(right_anchor_base_count_ratio_50)
-        features['RIGHT_ANCHOR_A_RATIO_50'], features['RIGHT_ANCHOR_C_RATIO_50'], features['RIGHT_ANCHOR_G_RATIO_50'], features['RIGHT_ANCHOR_T_RATIO_50'] = right_anchor_base_count_ratio_50
+        right_flanking_base_count_50 = Features.get_number_value(info, 'RIGHT_FLANKING_BASE_COUNT_50', [0, 0, 0, 0])
+        right_flanking_base_count_ratio_50 = [x/max(1, sum(right_flanking_base_count_50)) for x in right_flanking_base_count_50]
+        features['MAX_RIGHT_FLANKING_BASE_RATIO_50'] = max(right_flanking_base_count_ratio_50)
+        features['RIGHT_FLANKING_A_RATIO_50'], features['RIGHT_FLANKING_C_RATIO_50'], features['RIGHT_FLANKING_G_RATIO_50'], features['RIGHT_FLANKING_T_RATIO_50'] = right_flanking_base_count_ratio_50
 
-        right_anchor_base_count_100 = Features.get_number_value(info, 'RIGHT_ANCHOR_BASE_COUNT_100', [0, 0, 0, 0])
-        right_anchor_base_count_ratio_100 = [x/max(1, sum(right_anchor_base_count_100)) for x in right_anchor_base_count_100]
-        features['MAX_RIGHT_ANCHOR_BASE_RATIO_100'] = max(right_anchor_base_count_ratio_100)
-        features['RIGHT_ANCHOR_A_RATIO_100'], features['RIGHT_ANCHOR_C_RATIO_100'], features['RIGHT_ANCHOR_G_RATIO_100'], features['RIGHT_ANCHOR_T_RATIO_100'] = right_anchor_base_count_ratio_100
+        right_flanking_base_count_100 = Features.get_number_value(info, 'RIGHT_FLANKING_BASE_COUNT_100', [0, 0, 0, 0])
+        right_flanking_base_count_ratio_100 = [x/max(1, sum(right_flanking_base_count_100)) for x in right_flanking_base_count_100]
+        features['MAX_RIGHT_FLANKING_BASE_RATIO_100'] = max(right_flanking_base_count_ratio_100)
+        features['RIGHT_FLANKING_A_RATIO_100'], features['RIGHT_FLANKING_C_RATIO_100'], features['RIGHT_FLANKING_G_RATIO_100'], features['RIGHT_FLANKING_T_RATIO_100'] = right_flanking_base_count_ratio_100
 
-        right_anchor_base_count_500 = Features.get_number_value(info, 'RIGHT_ANCHOR_BASE_COUNT_500', [0, 0, 0, 0])
-        right_anchor_base_count_ratio_500 = [x/max(1, sum(right_anchor_base_count_500)) for x in right_anchor_base_count_500]
-        features['MAX_RIGHT_ANCHOR_BASE_RATIO_500'] = max(right_anchor_base_count_ratio_500)
-        features['RIGHT_ANCHOR_A_RATIO_500'], features['RIGHT_ANCHOR_C_RATIO_500'], features['RIGHT_ANCHOR_G_RATIO_500'], features['RIGHT_ANCHOR_T_RATIO_500'] = right_anchor_base_count_ratio_500
+        right_flanking_base_count_500 = Features.get_number_value(info, 'RIGHT_FLANKING_BASE_COUNT_500', [0, 0, 0, 0])
+        right_flanking_base_count_ratio_500 = [x/max(1, sum(right_flanking_base_count_500)) for x in right_flanking_base_count_500]
+        features['MAX_RIGHT_FLANKING_BASE_RATIO_500'] = max(right_flanking_base_count_ratio_500)
+        features['RIGHT_FLANKING_A_RATIO_500'], features['RIGHT_FLANKING_C_RATIO_500'], features['RIGHT_FLANKING_G_RATIO_500'], features['RIGHT_FLANKING_T_RATIO_500'] = right_flanking_base_count_ratio_500
 
         sv_ref_prefix_base_count = Features.get_number_value(info, 'SV_REF_PREFIX_BASE_COUNT', [0, 0, 0, 0])
         sv_ref_prefix_base_count_ratio = [x/max(1, sum(sv_ref_prefix_base_count)) for x in sv_ref_prefix_base_count]

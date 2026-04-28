@@ -304,27 +304,51 @@ base_frequencies_t get_base_frequencies(const char* seq, int len) {
     return base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
 }
 
-std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> get_base_frequencies_50_100_500(const char* seq, int len) {
+std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> get_left_flanking_base_frequencies_50_100_500(const char* contig_seq, hts_pos_t pos) {
     int counts[5] = {0,0,0,0,0};
 
-    int end = std::min(len, 50);
-    for (int i = 0; i < end; i++) {
-        counts[nt_map[(uint8_t)seq[i]]]++;
+    hts_pos_t start50 = std::max(hts_pos_t(0), pos - 50);
+    for (hts_pos_t i = start50; i < pos; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
     }
     base_frequencies_t bf50 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
-    
-    int end100 = std::min(len, 100);
-    for (int i = 50; i < end100; i++) {
-        counts[nt_map[(uint8_t)seq[i]]]++;
+
+    hts_pos_t start100 = std::max(hts_pos_t(0), pos - 100);
+    for (hts_pos_t i = start100; i < start50; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
     }
     base_frequencies_t bf100 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
-    
-    int end500 = std::min(len, 500);
-    for (int i = 100; i < end500; i++) {
-        counts[nt_map[(uint8_t)seq[i]]]++;
+
+    hts_pos_t start500 = std::max(hts_pos_t(0), pos - 500);
+    for (hts_pos_t i = start500; i < start100; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
     }
     base_frequencies_t bf500 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
-    
+
+    return std::make_tuple(bf50, bf100, bf500);
+}
+
+std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> get_right_flanking_base_frequencies_50_100_500(const char* contig_seq, hts_pos_t pos, hts_pos_t contig_len) {
+    int counts[5] = {0,0,0,0,0};
+
+    hts_pos_t end = std::min(contig_len, pos + 50);
+    for (hts_pos_t i = pos; i < end; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
+    }
+    base_frequencies_t bf50 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+
+    hts_pos_t end100 = std::min(contig_len, pos + 100);
+    for (hts_pos_t i = end; i < end100; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
+    }
+    base_frequencies_t bf100 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+
+    hts_pos_t end500 = std::min(contig_len, pos + 500);
+    for (hts_pos_t i = end100; i < end500; i++) {
+        counts[nt_map[(uint8_t)contig_seq[i]]]++;
+    }
+    base_frequencies_t bf500 = base_frequencies_t(counts[0], counts[1], counts[2], counts[3]);
+
     return std::make_tuple(bf50, bf100, bf500);
 }
 

@@ -232,25 +232,25 @@ void update_record(bcf_hdr_t* in_hdr, bcf_hdr_t* out_hdr, sv_t* sv, char* chr_se
 	int labc[] = {left_anchor_base_freqs.a, left_anchor_base_freqs.c, left_anchor_base_freqs.g, left_anchor_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_ANCHOR_BASE_COUNT", labc, 4);
     
-    std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> left_anchor_bfs = get_base_frequencies_50_100_500(chr_seq+la_aln_start, la_aln_end-la_aln_start);
-    int labc50[] = {std::get<0>(left_anchor_bfs).a, std::get<0>(left_anchor_bfs).c, std::get<0>(left_anchor_bfs).g, std::get<0>(left_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_ANCHOR_BASE_COUNT_50", labc50, 4);
-    int labc100[] = {std::get<1>(left_anchor_bfs).a, std::get<1>(left_anchor_bfs).c, std::get<1>(left_anchor_bfs).g, std::get<1>(left_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_ANCHOR_BASE_COUNT_100", labc100, 4);
-    int labc500[] = {std::get<2>(left_anchor_bfs).a, std::get<2>(left_anchor_bfs).c, std::get<2>(left_anchor_bfs).g, std::get<2>(left_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_ANCHOR_BASE_COUNT_500", labc500, 4);
+	std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> left_flanking_bfs = get_left_flanking_base_frequencies_50_100_500(chr_seq, sv->start);
+	int labc50[] = {std::get<0>(left_flanking_bfs).a, std::get<0>(left_flanking_bfs).c, std::get<0>(left_flanking_bfs).g, std::get<0>(left_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_FLANKING_BASE_COUNT_50", labc50, 4);
+	int labc100[] = {std::get<1>(left_flanking_bfs).a, std::get<1>(left_flanking_bfs).c, std::get<1>(left_flanking_bfs).g, std::get<1>(left_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_FLANKING_BASE_COUNT_100", labc100, 4);
+	int labc500[] = {std::get<2>(left_flanking_bfs).a, std::get<2>(left_flanking_bfs).c, std::get<2>(left_flanking_bfs).g, std::get<2>(left_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "LEFT_FLANKING_BASE_COUNT_500", labc500, 4);
 
 	base_frequencies_t right_anchor_base_freqs = get_base_frequencies(chr_seq+ra_aln_start, ra_aln_end-ra_aln_start);
 	int rabc[] = {right_anchor_base_freqs.a, right_anchor_base_freqs.c, right_anchor_base_freqs.g, right_anchor_base_freqs.t};
 	bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_ANCHOR_BASE_COUNT", rabc, 4);
 
-    std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> right_anchor_bfs = get_base_frequencies_50_100_500(chr_seq+ra_aln_start, ra_aln_end-ra_aln_start);
-    int rabc50[] = {std::get<0>(right_anchor_bfs).a, std::get<0>(right_anchor_bfs).c, std::get<0>(right_anchor_bfs).g, std::get<0>(right_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_ANCHOR_BASE_COUNT_50", rabc50, 4);
-    int rabc100[] = {std::get<1>(right_anchor_bfs).a, std::get<1>(right_anchor_bfs).c, std::get<1>(right_anchor_bfs).g, std::get<1>(right_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_ANCHOR_BASE_COUNT_100", rabc100, 4);
-    int rabc500[] = {std::get<2>(right_anchor_bfs).a, std::get<2>(right_anchor_bfs).c, std::get<2>(right_anchor_bfs).g, std::get<2>(right_anchor_bfs).t};
-    bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_ANCHOR_BASE_COUNT_500", rabc500, 4);
+	std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> right_flanking_bfs = get_right_flanking_base_frequencies_50_100_500(chr_seq, sv->end, chr_len);
+	int rabc50[] = {std::get<0>(right_flanking_bfs).a, std::get<0>(right_flanking_bfs).c, std::get<0>(right_flanking_bfs).g, std::get<0>(right_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_FLANKING_BASE_COUNT_50", rabc50, 4);
+	int rabc100[] = {std::get<1>(right_flanking_bfs).a, std::get<1>(right_flanking_bfs).c, std::get<1>(right_flanking_bfs).g, std::get<1>(right_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_FLANKING_BASE_COUNT_100", rabc100, 4);
+	int rabc500[] = {std::get<2>(right_flanking_bfs).a, std::get<2>(right_flanking_bfs).c, std::get<2>(right_flanking_bfs).g, std::get<2>(right_flanking_bfs).t};
+	bcf_update_info_int32(out_hdr, sv->vcf_entry, "RIGHT_FLANKING_BASE_COUNT_500", rabc500, 4);
 
 	base_frequencies_t prefix_ref_base_freqs = get_base_frequencies(chr_seq+sv->start, std::min(sv->end-sv->start, hts_pos_t(5000)));
 	int svrefpbc[] = {prefix_ref_base_freqs.a, prefix_ref_base_freqs.c, prefix_ref_base_freqs.g, prefix_ref_base_freqs.t};
