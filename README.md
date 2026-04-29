@@ -147,6 +147,21 @@ WORKDIR/genotyped.vcf.gz
 WORKDIR/genotyped.deduped.vcf.gz
 ```
 
+### Tandem duplications with unresolved copy number (to appear in 0.13)
+Some tandem duplications reported by SurVeyor have an unresolved copy number. In these cases, SurVeyor can identify the reference interval involved in the duplication, but cannot determine from short-read evidence how additional copies are present. Such records are annotated with the INFO flag DUP_CN_UNRESOLVED.
+
+For example:
+
+```bash
+SVTYPE=DUP;END=100500;SVLEN=500;DUP_CN_UNRESOLVED
+````
+
+When DUP_CN_UNRESOLVED is present, END and SVLEN describe the duplicated reference interval. They should not be interpreted as the total inserted allele length. The event may correspond to a larger inserted sequence containing one or more copies of the reported reference interval.
+
+When DUP_CN_UNRESOLVED is absent from a DUP record, SurVeyor found evidence consistent with a single additional tandem copy of the reported interval.
+
+This annotation is intended to make tandem duplication calls easier to interpret, especially in repetitive regions where short reads may identify the duplicated sequence but not resolve the number of copied units.
+
 ## Citation
 
 Currently, there is no manuscript for SurVeyor.
