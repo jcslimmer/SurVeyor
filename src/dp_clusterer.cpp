@@ -60,9 +60,9 @@ std::vector<std::shared_ptr<cluster_t>> cluster_dps_support(int contig_id, std::
 		std::shared_ptr<cluster_t> cluster = std::make_shared<cluster_t>(read, config.high_confidence_mapq);
 		clusters.push_back(cluster);
 	}
-	delete dp_bam_file;
 	hts_itr_destroy(iter);
 	bam_destroy1(read);
+	delete dp_bam_file;
 
 	int min_cluster_size = std::max(3, int(stats.get_median_depth(contig_name)+5)/10);
 	int max_cluster_size = (stats.get_max_depth(contig_name) * stats.max_is)/stats.read_len;
@@ -136,6 +136,7 @@ void cluster_ow_dps(int contig_id, std::string contig_name, std::vector<std::sha
 			auto right_anchor_aln = std::make_shared<sv_t::anchor_aln_t>(c->ra_start, c->ra_end, c->ra_end-c->ra_start, 0);
 			dup = std::make_shared<duplication_t>(contig_name, c->la_start, c->ra_end, "", nullptr, nullptr, left_anchor_aln, right_anchor_aln);
 			dup->imprecise = true;
+			dup->cn_unresolved = true;
 		}
 
 		if (dup && dup->svsize() >= config.min_sv_size) {
