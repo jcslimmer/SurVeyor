@@ -241,7 +241,7 @@ void find_indels_from_rc_lc_pairs(std::string contig_name,
 			std::shared_ptr<consensus_t> la_consensus = (c->la_rev ? lc_consensuses[la_iv.value] : rc_consensuses[la_iv.value]);
 			for (Interval<int>& ra_iv : compatible_ra_idxs) {
 				if (la_iv.value == ra_iv.value) continue;
-				
+
 				std::shared_ptr<consensus_t> ra_consensus = (c->la_rev ? lc_consensuses[ra_iv.value] : rc_consensuses[ra_iv.value]);
 				std::shared_ptr<consensus_t> leftmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? la_consensus : ra_consensus;
 				std::shared_ptr<consensus_t> rightmost_consensus = la_consensus->breakpoint < ra_consensus->breakpoint ? ra_consensus : la_consensus;
@@ -860,6 +860,9 @@ int main(int argc, char* argv[]) {
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sv_vcf_file, sv_vcf_header, bcf_entry) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(sv_vcf_header, bcf_entry);
+		if (sv == nullptr) {
+			throw std::runtime_error("Unexpected unsupported variant in internal VCF " + sv_vcf_fname + ": " + std::string(bcf_entry->d.id ? bcf_entry->d.id : "<no-id>"));
+		}
 		read_svs_by_chr[sv->chr].push_back(sv);
 	}
 	bcf_hdr_destroy(sv_vcf_header);

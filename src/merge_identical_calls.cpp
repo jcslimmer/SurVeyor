@@ -46,6 +46,9 @@ int main(int argc, char* argv[]) {
 	bcf1_t* b = bcf_init();
 	while (bcf_read(in_vcf_file, in_vcf_hdr, b) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(in_vcf_hdr, b);
+		if (sv == nullptr) {
+			throw std::runtime_error("Unexpected unsupported variant in internal VCF " + in_vcf_fname + ": " + std::string(b->d.id ? b->d.id : "<no-id>"));
+		}
 		std::string unique_id = sv->unique_key();
 		if (sv_entries.count(unique_id)) {
 			std::shared_ptr<sv_t> prev_sv = sv_entries[unique_id];

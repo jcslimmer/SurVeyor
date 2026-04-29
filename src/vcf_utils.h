@@ -823,8 +823,9 @@ std::string get_sv_type(bcf_hdr_t* hdr, bcf1_t* sv) {
 		} else {
 			int ref_len = strlen(sv->d.allele[0]);
 			int alt_len = strlen(sv->d.allele[1]);
-			// TODO: alt_len == ref_len should not be a deletion
-			return alt_len <= ref_len ? "DEL" : "INS";
+			if (alt_len < ref_len) return "DEL";
+			if (alt_len > ref_len) return "INS";
+			return ref_len == 1 ? "SNP" : "MNP";
 		}
 		std::cerr << "Failed to determine SVTYPE for sv " << std::string(sv->d.id) << std::endl;
 		return "";

@@ -261,6 +261,9 @@ int main(int argc, char* argv[]) {
 	bcf1_t* bcf_entry = bcf_init();
 	while (bcf_read(sr_vcf_file, hdr, bcf_entry) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, bcf_entry);
+		if (sv == nullptr) {
+			throw std::runtime_error("Unexpected unsupported variant in internal VCF " + sr_vcf_fname + ": " + std::string(bcf_entry->d.id ? bcf_entry->d.id : "<no-id>"));
+		}
 		if (sv->svtype() == "DEL" && sv->is_pass()) {
 			del_sr_entries_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
 		} else if (sv->svtype() == "DUP" && sv->is_pass()) {
@@ -300,6 +303,9 @@ int main(int argc, char* argv[]) {
 	std::unordered_map<std::string, std::vector<std::shared_ptr<sv_t>>> dp_svs_by_chr;
 	while (bcf_read(dp_inv_vcf_file, hdr_inv, bcf_entry) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(hdr_inv, bcf_entry);
+		if (sv == nullptr) {
+			throw std::runtime_error("Unexpected unsupported variant in internal VCF " + dp_inv_vcf_fname + ": " + std::string(bcf_entry->d.id ? bcf_entry->d.id : "<no-id>"));
+		}
 		dp_svs_by_chr[sv->chr].push_back(sv);
 	}
 
