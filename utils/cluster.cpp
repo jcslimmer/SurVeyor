@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <mutex>
+#include <atomic>
+#include <limits>
 
 #include "htslib/hts.h"
 #include "htslib/vcf.h"
@@ -16,6 +18,8 @@
 #include "../libs/cptl_stl.h"
 #include "../libs/cxxopts.h"
 #include "common.h"
+#include "../libs/ssw.h"
+#include "../libs/ssw_cpp.h"
 
 std::mutex mtx;
 
@@ -115,16 +119,46 @@ std::unordered_map<std::string, std::vector<std::shared_ptr<bcf1_t>> > clustered
 int max_prec_dist, max_imprec_dist, max_dist;
 double min_prec_frac_overlap, min_imprec_frac_overlap;
 int max_prec_len_diff, max_imprec_len_diff;
-double min_prec_len_ratio, min_imprec_len_ratio;
+double min_prec_len_ratio, min_imprec_len_ratio, min_ins_seq_sim;
 bool overlap_for_ins;
 
 std::unordered_set<std::string> called_by;
 std::mutex called_by_mtx;
+std::atomic<int> ignored_unsupported_svs(0);
+
+int aligned_matching_bases(StripedSmithWaterman::Alignment& alignment) {
+	int matches = 0;
+	for (uint32_t cigar_op : alignment.cigar) {
+		if (cigar_int_to_op(cigar_op) == '=') {
+			matches += cigar_int_to_len(cigar_op);
+		}
+	}
+	return matches;
+}
+
+double ins_seq_similarity(const std::string& seq1, const std::string& seq2) {
+	size_t total_len = seq1.length() + seq2.length();
+	if (total_len == 0) return 1.0;
+
+	const std::string& query = seq1.length() < seq2.length() ? seq1 : seq2;
+	const std::string& ref = seq1.length() < seq2.length() ? seq2 : seq1;
+	static thread_local StripedSmithWaterman::Aligner aligner(1, 1, 1, 1, false);
+	StripedSmithWaterman::Filter filter(true, true, 0, std::numeric_limits<uint16_t>::max());
+	StripedSmithWaterman::Alignment alignment;
+	if (!aligner.Align(query.c_str(), ref.c_str(), ref.length(), filter, &alignment, 0)) return 0.0;
+	return 2.0 * aligned_matching_bases(alignment) / total_len;
+}
+
+bool ins_seq_similar_enough(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
+	if (min_ins_seq_sim == 0.0 || sv1.svtype != "INS" || sv2.svtype != "INS") return true;
+	if (sv1.incomplete_ins_seq || sv2.incomplete_ins_seq || sv1.ins_seq.empty() || sv2.ins_seq.empty()) return true;
+	return ins_seq_similarity(sv1.ins_seq, sv2.ins_seq) >= min_ins_seq_sim;
+}
 
 bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 	if (sv1.svtype != sv2.svtype) return false;
 
-	bool distance_ok, overlap_ok, len_diff_ok, len_ratio_ok;
+	bool distance_ok, overlap_ok, len_diff_ok, len_ratio_ok, ins_seq_sim_ok;
 	
 	if (sv1.imprecise || sv2.imprecise) {
 		distance_ok = distance(sv1, sv2) <= max_imprec_dist;
@@ -138,7 +172,9 @@ bool is_compatible(sv_w_samplename_t& sv1, sv_w_samplename_t& sv2) {
 		len_ratio_ok = len_ratio(sv1, sv2) >= min_prec_len_ratio;
 	}
 
-	return distance_ok && overlap_ok && len_diff_ok && len_ratio_ok;
+	ins_seq_sim_ok = ins_seq_similar_enough(sv1, sv2);
+
+	return distance_ok && overlap_ok && len_diff_ok && len_ratio_ok && ins_seq_sim_ok;
 }
 
 bool can_join_clique(std::vector<int>& neighbor_clique, std::vector<sv_w_samplename_t>& svs, int curr_idx) {
@@ -493,6 +529,7 @@ bcf_hdr_t* generate_clustered_vcf_header(std::string command, std::unordered_set
 	clustered_by_ss << "max-len-diff-precise: " << max_prec_len_diff << "; ";
 	clustered_by_ss << "max-len-diff-imprecise: " << max_imprec_len_diff << "; ";
 	clustered_by_ss << "overlap-for-ins: " << (overlap_for_ins ? "true" : "false") << "; ";
+	clustered_by_ss << "min-ins-seq-sim: " << min_ins_seq_sim << "; ";
 	bcf_hdr_add_hrec(out_hdr, bcf_hdr_parse_line(out_hdr, clustered_by_ss.str().c_str(), &len));
 
 	int i = 0;
@@ -563,8 +600,6 @@ void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
 		}
 	}
 
-	auto is_unsupported_func = [](sv_t* sv) {return sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV";};
-
 	bcf1_t* vcf_record = bcf_init();
 	std::unordered_map<std::string, std::vector<sv_w_samplename_t> > local_svs_by_chr;
 	while (bcf_read(sample_sv_file, vcf_header, vcf_record) == 0) {
@@ -572,9 +607,10 @@ void read_svs(int id, std::string sample_sv_fpath, std::string sample_name) {
 		
 		auto sv = std::shared_ptr<sv_t>(bcf_to_sv(vcf_header, vcf_record));
 		if (sv == nullptr) {
-			std::cerr << "Ignored unsupported SV " << vcf_record->d.id << " from file " << sample_sv_fpath << std::endl;
+			ignored_unsupported_svs++;
 			continue;
 		} else if (sv->svtype() != "DEL" && sv->svtype() != "INS" && sv->svtype() != "DUP" && sv->svtype() != "INV") {
+			ignored_unsupported_svs++;
 			continue;
 		}
 
@@ -625,6 +661,8 @@ int main(int argc, char* argv[]) {
 					cxxopts::value<int>()->default_value("500"))
 			("l,min-len-ratio-precise", "Minimum length ratio allowed (smallest variant length / largest variant length) between two precise variants.", cxxopts::value<double>()->default_value("0.8"))
 			("L,min-len-ratio-imprecise", "Minimum length ratio allowed (smallest variant length / largest variant length) when at least one variant is imprecise.", cxxopts::value<double>()->default_value("0.5"))
+			("q,min-ins-seq-sim", "Minimum inserted-sequence similarity required between two complete insertions. Similarity is 2 * aligned matching bases / (len(S1) + len(S2)); 0 disables sequence comparison.",
+					cxxopts::value<double>()->default_value("0"))
 			("i,overlap-for-ins", "Require overlap for insertions.", cxxopts::value<bool>()->default_value("false"))
 			("k,keep-all-called", "Keep all SVs, even if they have no alt alleles.", cxxopts::value<bool>()->default_value("false"))
 			("t,threads", "Maximum number of threads used.", cxxopts::value<int>()->default_value("1"))
@@ -661,6 +699,11 @@ int main(int argc, char* argv[]) {
     max_imprec_len_diff = parsed_args["max-len-diff-imprecise"].as<int>();
 	min_prec_len_ratio = parsed_args["min-len-ratio-precise"].as<double>();
 	min_imprec_len_ratio = parsed_args["min-len-ratio-imprecise"].as<double>();
+	min_ins_seq_sim = parsed_args["min-ins-seq-sim"].as<double>();
+	if (min_ins_seq_sim < 0.0 || min_ins_seq_sim > 1.0) {
+		std::cerr << "--min-ins-seq-sim must be between 0.0 and 1.0." << std::endl;
+		exit(1);
+	}
     overlap_for_ins = parsed_args["overlap-for-ins"].as<bool>();
     std::string out_prefix = parsed_args["out-prefix"].as<std::string>();
     int n_threads = parsed_args["threads"].as<int>();
@@ -716,5 +759,6 @@ int main(int argc, char* argv[]) {
     bcf_hdr_destroy(out_hdr);
     hts_close(out_vcf_file);
 
+    std::cout << ignored_unsupported_svs << " unsupported SVs were ignored." << std::endl;
     std::cout << "Finished." << std::endl;
 }
