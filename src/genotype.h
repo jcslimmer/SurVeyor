@@ -10,6 +10,7 @@
 #include "htslib/sam.h"
 #include "sam_utils.h"
 #include "types.h"
+#include "var_utils.h"
 #include "vcf_utils.h"
 
 constexpr double MIN_EPR = 0.10;
@@ -126,7 +127,7 @@ struct evidence_map_t {
         std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
         while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
             float epr = sv_epr_map[sv_id];
-            if (epr < MIN_EPR && epr != -1.0) continue; // only consider SVs predicted as existing
+            if (epr < MIN_EPR && epr != -1.0) continue; // do not assign reads to SVs that are very unlikely to be real
             std::pair<int, float> p = {score, epr};
             sv_id = remove_svid_dup_suffix(sv_id); // we avoid INS and INS_TO_DUP from stealing each other's reads
             if (p > read_to_score_epr_map[read_name]) {
@@ -216,11 +217,6 @@ void release_mates(int contig_id);
 IntervalTree<ext_read_t*> get_candidate_reads_for_extension_itree(std::string contig_name, hts_pos_t contig_len, std::vector<hts_pair_pos_t> target_ivals, open_samFile_t* bam_file,
                                                                   std::vector<ext_read_t*>& candidate_reads_for_extension);
 
-
-char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_len, 
-    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps);
-char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t hap_start, hts_pos_t hap_len,
-    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps);
 
 // Given a sequence alt_seq, a series of sequences ref_seqs and a read length read_len,
 // return all the positions in alt_seq where a read of length read_len that is not present 

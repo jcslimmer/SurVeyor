@@ -1,9 +1,11 @@
 #ifndef VAR_UTILS_H
 #define VAR_UTILS_H
 
+#include <algorithm>
+#include <cstring>
 #include "types.h"
 
-bool is_homopolymer_indel(sv_t* sv, char* chr_seq) {
+inline bool is_homopolymer_indel(sv_t* sv, char* chr_seq) {
 	if (sv->svtype() == "DEL") {
 		// for deletions, we need
 		// 1) empty inserted sequence
@@ -42,7 +44,7 @@ bool is_homopolymer_indel(sv_t* sv, char* chr_seq) {
 	return false;
 }
 
-char get_homopolymer_base(sv_t* sv, char* chr_seq) {
+inline char get_homopolymer_base(sv_t* sv, char* chr_seq) {
 	if (!is_homopolymer_indel(sv, chr_seq)) {
 		return '\0';
 	}
@@ -55,7 +57,7 @@ char get_homopolymer_base(sv_t* sv, char* chr_seq) {
 }
 
 // The returned range is 0-based, half-open [beg, end)
-hts_pair_pos_t find_ref_hp_range_for_indel(sv_t* sv, char* chr_seq, hts_pos_t chr_len) {
+inline hts_pair_pos_t find_ref_hp_range_for_indel(sv_t* sv, char* chr_seq, hts_pos_t chr_len) {
 	char hp_base = get_homopolymer_base(sv, chr_seq);
 	if (hp_base == '\0') {
 		throw std::runtime_error("SV " + sv->id + " is not a homopolymer indel.");
@@ -74,6 +76,140 @@ hts_pair_pos_t find_ref_hp_range_for_indel(sv_t* sv, char* chr_seq, hts_pos_t ch
 	}
 
 	return hp_range;
+}
+
+inline char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_len, 
+    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps) {
+    
+    std::sort(aux_indels.begin(), aux_indels.end(), [](std::shared_ptr<sv_t>& a, std::shared_ptr<sv_t>& b) {
+        return a->start < b->start;
+    });
+    std::sort(aux_snps.begin(), aux_snps.end(), [](snp_t& a, snp_t& b) {
+        return a.pos < b.pos;
+    });
+
+    // Find last SNP / indel strictly to the left of hap_end (i.e., with pos / end < hap_end)
+    int curr_snp_idx = aux_snps.size()-1, curr_indel_idx = aux_indels.size()-1;
+    while (curr_snp_idx >= 0 && aux_snps[curr_snp_idx].pos >= hap_end) curr_snp_idx--;
+    while (curr_indel_idx >= 0 && aux_indels[curr_indel_idx]->end >= hap_end) curr_indel_idx--;
+        
+    // Output buffer
+    char* hap_seq = new char[hap_len + 1];
+    std::fill(hap_seq, hap_seq + hap_len, 'N');
+    hap_seq[hap_len] = '\0';
+    
+    hts_pos_t remaining_hap_len = hap_len;
+    while (hap_end > 0 && remaining_hap_len > 0) {
+        const hts_pos_t next_snp_pos = (curr_snp_idx >= 0) ? aux_snps[curr_snp_idx].pos : -10;
+        const hts_pos_t next_indel_end = (curr_indel_idx >= 0) ? aux_indels[curr_indel_idx]->end : -10;
+        
+        hts_pos_t copy_start = hap_end - remaining_hap_len + 1;
+        if (copy_start < 0) copy_start = 0;
+        copy_start = max(copy_start, next_snp_pos+1, next_indel_end+1);
+        hts_pos_t copy_len = hap_end - copy_start + 1;
+
+        strncpy(hap_seq + remaining_hap_len - copy_len, chrom_seq + copy_start, copy_len);
+        remaining_hap_len -= copy_len;
+        hap_end -= copy_len;
+
+        if (next_indel_end+1 == copy_start) { // we insert the indel
+            std::shared_ptr<sv_t> indel = aux_indels[curr_indel_idx];
+            if (indel->svtype() == "DEL") {
+                hap_end = indel->start;
+            } else if (indel->svtype() == "INS") {
+                int ins_len = indel->ins_seq.length();
+                if (ins_len > remaining_hap_len) ins_len = remaining_hap_len;
+                strncpy(hap_seq + (remaining_hap_len - ins_len), indel->ins_seq.c_str() + (indel->ins_seq.length() - ins_len), ins_len);
+                remaining_hap_len -= ins_len;
+            }
+            curr_indel_idx--;
+        } else if (next_snp_pos+1 == copy_start && remaining_hap_len > 0) { // we insert the SNP
+            hap_seq[remaining_hap_len-1] = aux_snps[curr_snp_idx].alt_base;
+            remaining_hap_len--;
+            hap_end--;
+            curr_snp_idx--;
+        }
+    }
+    if (remaining_hap_len > 0) {
+        // move the sequence to the start
+        for (hts_pos_t i = 0; i < hap_len-remaining_hap_len; i++) {
+            hap_seq[i] = hap_seq[i+remaining_hap_len];
+        }
+        hap_seq[hap_len-remaining_hap_len] = '\0';
+    }
+    return hap_seq;
+}
+
+inline char* generate_haplotype_right(char* chrom_seq, hts_pos_t chrom_len, hts_pos_t hap_start, hts_pos_t hap_len,
+    std::vector<std::shared_ptr<sv_t>>& aux_indels, std::vector<snp_t>& aux_snps) {
+
+    // Note that aux_indels coordinates are in VCF format
+
+    std::sort(aux_indels.begin(), aux_indels.end(),
+              [](const std::shared_ptr<sv_t>& a, const std::shared_ptr<sv_t>& b) {
+                  return a->start < b->start;
+              });
+    std::sort(aux_snps.begin(), aux_snps.end(),
+              [](const snp_t& a, const snp_t& b) {
+                  return a.pos < b.pos;
+              });
+
+    // Find first SNP / indel strictly to the right of hap_start (mirror of left's >= hap_end skip)
+    int curr_snp_idx = 0, curr_indel_idx = 0;
+    while (curr_snp_idx < (int)aux_snps.size() && aux_snps[curr_snp_idx].pos < hap_start) curr_snp_idx++;
+    while (curr_indel_idx < (int)aux_indels.size() && aux_indels[curr_indel_idx]->start < hap_start-1) curr_indel_idx++;
+
+    // Output buffer
+    char* hap_seq = new char[hap_len + 1];
+    std::fill(hap_seq, hap_seq + hap_len, 'N');
+    hap_seq[hap_len] = '\0';
+
+    hts_pos_t remaining_hap_len = hap_len;
+    hts_pos_t out_pos = 0; // next write position in hap_seq (left-to-right)
+
+    while (remaining_hap_len > 0 && hap_start < chrom_len) {
+        const hts_pos_t next_snp_pos =
+            (curr_snp_idx < aux_snps.size()) ? aux_snps[curr_snp_idx].pos : chrom_len + 10; // make sure we don't trigger SNP/indel logic when at the end of chromosome
+        const hts_pos_t next_indel_start =
+            (curr_indel_idx < aux_indels.size()) ? aux_indels[curr_indel_idx]->start : chrom_len + 10;
+
+        // Copy reference until just before the next event (SNP or indel anchor).
+        // copye_end is exclusive, i.e., the first base we do NOT copy
+        hts_pos_t copy_end = hap_start + remaining_hap_len;
+        copy_end = std::min(copy_end, next_snp_pos);
+        copy_end = std::min(copy_end, next_indel_start+1); // indel start is the position *BEFORE* the indel
+        copy_end = std::min(copy_end, chrom_len);
+        hts_pos_t copy_len = copy_end - hap_start;
+
+        strncpy(hap_seq + out_pos, chrom_seq + hap_start, copy_len);
+        out_pos += copy_len;
+        remaining_hap_len -= copy_len;
+        hap_start = copy_end;
+
+        if (hap_start == next_indel_start+1) {
+            std::shared_ptr<sv_t> indel = aux_indels[curr_indel_idx];
+            if (indel->svtype() == "DEL") {
+                hap_start = indel->end + 1;
+            } else if (indel->svtype() == "INS") {
+                int ins_len = indel->ins_seq.length();
+                if (ins_len > remaining_hap_len) ins_len = remaining_hap_len;
+                strncpy(hap_seq + out_pos, indel->ins_seq.c_str(), ins_len);
+                out_pos += ins_len;
+                remaining_hap_len -= ins_len;
+            }
+            curr_indel_idx++;
+        } else if (hap_start == next_snp_pos && remaining_hap_len > 0) {
+            hap_seq[out_pos] = aux_snps[curr_snp_idx].alt_base;
+            out_pos++;
+            remaining_hap_len--;
+            hap_start++;       // consume this reference base
+            curr_snp_idx++;
+        } 
+   }
+
+    // If we couldn't fill the requested length (ran off chromosome), truncate to actual length
+    hap_seq[out_pos] = '\0';
+    return hap_seq;
 }
 
 #endif // VAR_UTILS_H

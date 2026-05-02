@@ -1,5 +1,6 @@
 #include <string>
 #include <algorithm>
+#include <iostream>
 #include <vector>
 #include <memory>
 #include <mutex>
@@ -7,11 +8,14 @@
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
 #include "../src/sam_utils.h"
+#include "../src/sw_utils.h"
+#include "../src/var_utils.h"
 #include "../src/vcf_utils.h"
 #include "../libs/cptl_stl.h"
 
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
+StripedSmithWaterman::Aligner realign_aligner(1, 4, 6, 1, false);
 
 std::vector<bcf1_t*> normalised_vcf_records;
 std::mutex mtx;
@@ -402,6 +406,113 @@ void canonicalize_aux(std::shared_ptr<sv_t> sv) {
 		});
 }
 
+std::vector<std::shared_ptr<sv_t>> vars_from_alignment(StripedSmithWaterman::Alignment& aln, std::string chr, hts_pos_t ref_start, char* alt_seq, std::vector<snp_t>& snps) {
+	std::vector<std::shared_ptr<sv_t>> vars;
+	hts_pos_t current_pos = ref_start + aln.ref_begin, query_pos = aln.query_begin;
+	for (int i = 0; i < aln.cigar.size(); i++) {
+		uint32_t c = aln.cigar[i];
+		int op_length = cigar_int_to_len(c);
+		char op = cigar_int_to_op(c);
+		if (op == 'D') {
+			vars.push_back(std::make_shared<deletion_t>(chr, current_pos-1, current_pos+op_length-1, "", nullptr, nullptr, nullptr, nullptr));
+		} else if (op == 'I') {
+			vars.push_back(std::make_shared<insertion_t>(chr, current_pos-1, current_pos-1, std::string(alt_seq+query_pos, op_length), nullptr, nullptr, nullptr, nullptr));
+		} else if (op == 'X') {
+			for (int j = 0; j < op_length; j++) snps.push_back(snp_t(current_pos+j, alt_seq[query_pos+j]));
+		}
+
+		if (op != 'I' && op != 'S') current_pos += op_length;
+		if (op != 'D') query_pos += op_length;
+	}
+	return vars;
+}
+
+std::shared_ptr<sv_t> update_main_var_from_realigned_vars(std::shared_ptr<sv_t> var, std::vector<std::shared_ptr<sv_t>>& vars, std::vector<snp_t>& snps) {
+	if (vars.empty()) return nullptr;
+
+	if (vars[0]->svtype() != var->svtype()) return var;
+
+	var->start = vars[0]->start;
+	var->end = vars[0]->end;
+	var->ins_seq = vars[0]->ins_seq;
+	var->aux_indels.clear();
+	for (int i = 1; i < vars.size(); i++) var->aux_indels.push_back(vars[i]);
+	var->aux_snps = snps;
+	return var;
+}
+
+std::shared_ptr<sv_t> realign_ins(std::shared_ptr<sv_t> sv) {
+	if (sv->incomplete_ins_seq() || sv->aux_indels.empty()) return sv;
+
+	char* chr_seq = chr_seqs.get_seq(sv->chr);
+	hts_pos_t chr_len = chr_seqs.get_len(sv->chr);
+	hts_pos_t ins_start = sv->start, ins_end = sv->end;
+
+	hts_pos_t extend = 50;
+	std::vector<std::shared_ptr<sv_t>> aux_indels = sv->aux_indels;
+	std::vector<snp_t> aux_snps = sv->aux_snps;
+	char* lf_seq = generate_haplotype_left(chr_seq, ins_start, extend, aux_indels, aux_snps);
+	char* rf_seq = generate_haplotype_right(chr_seq, chr_len, ins_end+1, extend, aux_indels, aux_snps);
+
+	hts_pos_t lf_len = strlen(lf_seq), rf_len = strlen(rf_seq), alt_len = lf_len + sv->ins_seq.length() + rf_len;
+	char* putative_alt_allele = new char[alt_len + 1];
+	memcpy(putative_alt_allele, lf_seq, lf_len);
+	memcpy(putative_alt_allele + lf_len, sv->ins_seq.c_str(), sv->ins_seq.length());
+	memcpy(putative_alt_allele + lf_len + sv->ins_seq.length(), rf_seq, rf_len);
+	putative_alt_allele[alt_len] = '\0';
+
+	hts_pos_t ref_start = std::max(hts_pos_t(0), ins_start - extend + 1);
+	hts_pos_t ref_end = std::min(chr_len, ins_end + extend + 1);
+	StripedSmithWaterman::Filter filter;
+	StripedSmithWaterman::Alignment aln;
+	// keep extending the reference window until we find an alignment without soft clipping at either end (up to 10 times)
+	for (int i = 0; i <= 10; i++) {
+		realign_aligner.Align(putative_alt_allele, chr_seq + ref_start, ref_end-ref_start, filter, &aln, 0);
+		bool left_clipped = get_left_clip_size(aln) > 0;
+		bool right_clipped = get_right_clip_size(aln) > 0;
+		if ((!left_clipped && !right_clipped) || i == 10) break; // avoid expanding in the last loop
+
+		bool changed = false;
+		if (left_clipped && ref_start > 0) {
+			ref_start = std::max(hts_pos_t(0), ref_start-50);
+			changed = true;
+		}
+		if (right_clipped && ref_end < chr_len) {
+			ref_end = std::min(chr_len, ref_end+50);
+			changed = true;
+		}
+		if (!changed) break;
+	}
+
+	if (!is_left_clipped(aln) && !is_right_clipped(aln)) {
+		std::vector<snp_t> snps;
+		std::vector<std::shared_ptr<sv_t>> realigned_svs = vars_from_alignment(aln, sv->chr, ref_start, putative_alt_allele, snps);
+		sv = update_main_var_from_realigned_vars(sv, realigned_svs, snps);
+	}
+
+	delete[] lf_seq;
+	delete[] rf_seq;
+
+	delete[] putative_alt_allele;
+
+	return sv;
+}
+
+std::shared_ptr<sv_t> realign_del(std::shared_ptr<sv_t> sv) {
+	return sv;
+}
+
+std::shared_ptr<sv_t> realign(std::shared_ptr<sv_t> sv) {
+	std::string svtype = sv->svtype();
+	if (svtype == "INS") {
+		return realign_ins(sv);
+	} else if (svtype == "DEL") {
+		return realign_del(sv);
+	} else {
+		return sv;
+	}
+}
+
 int main(int argc, char* argv[]) {
 
 	std::string in_vcf_fname = argv[1];
@@ -429,6 +540,9 @@ int main(int argc, char* argv[]) {
 
 		sv->vcf_entry = bcf_dup(vcf_record);
 		sv = simplify(sv);
+		if (sv == nullptr) continue;
+
+		sv = realign(sv);
 		if (sv == nullptr) continue;
 		
 		sv = atomize(0, sv);
