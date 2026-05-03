@@ -483,6 +483,9 @@ if cmd_args.command == 'call':
     n_iters = 1
     genotype_variants(cmd_args.bam_file, cmd_args.workdir, cmd_args.reference, sample_name, cmd_args.ml_model, n_iters, cmd_args.generate_training_data)
 
+    if not cmd_args.ml_model:
+        exit(0)
+
     deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
