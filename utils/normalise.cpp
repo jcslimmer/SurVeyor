@@ -16,6 +16,7 @@
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
 StripedSmithWaterman::Aligner realign_aligner(1, 4, 6, 1, false);
+int normalise_max_is = 1000;
 
 std::vector<bcf1_t*> normalised_vcf_records;
 std::mutex mtx;
@@ -442,13 +443,13 @@ std::shared_ptr<sv_t> update_main_var_from_realigned_vars(std::shared_ptr<sv_t> 
 }
 
 std::shared_ptr<sv_t> realign_ins(std::shared_ptr<sv_t> sv) {
-	if (sv->incomplete_ins_seq() || sv->aux_indels.empty()) return sv;
+	if (sv->incomplete_ins_seq() || sv->aux_indels.empty() || sv->ins_seq.length() > 100) return sv;
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 	hts_pos_t chr_len = chr_seqs.get_len(sv->chr);
 	hts_pos_t ins_start = sv->start, ins_end = sv->end;
 
-	hts_pos_t extend = 50;
+	hts_pos_t extend = normalise_max_is;
 	std::vector<std::shared_ptr<sv_t>> aux_indels = sv->aux_indels;
 	std::vector<snp_t> aux_snps = sv->aux_snps;
 	char* lf_seq = generate_haplotype_left(chr_seq, ins_start, extend, aux_indels, aux_snps);
@@ -522,6 +523,9 @@ int main(int argc, char* argv[]) {
 	int min_indel_size = 0;
 	if (argc >= 5) {
 		min_indel_size = std::stoi(argv[4]);
+	}
+	if (argc >= 6) {
+		normalise_max_is = std::stoi(argv[5]);
 	}
 
 	chr_seqs.read_fasta_into_map(reference_fname);

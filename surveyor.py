@@ -109,6 +109,14 @@ def fail(message):
     print(message)
     exit(1)
 
+def get_max_is_from_stats(stats_fname, default=1000):
+    with open(stats_fname) as stats_file:
+        for line in stats_file:
+            tokens = line.strip().split()
+            if len(tokens) >= 3 and tokens[0] == "max_is" and tokens[1] == ".":
+                return int(tokens[2])
+    return default
+
 def validate_workdir_for_execution(workdir, force_workdir):
     if not os.path.exists(workdir):
         return
@@ -370,6 +378,7 @@ def separate_ins_to_dup(in_vcf_fname, ins_to_dup_vcf_fname, remaining_vcf_fname)
 
 def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     reads_categorizer(workdir)
+    max_is = get_max_is_from_stats(workdir + "/stats.txt")
     with open(workdir + "/config.txt", "a") as config_file:
         config_file.write("max_trans_size %d\n" % cmd_args.max_trans_size)
 
@@ -380,7 +389,7 @@ def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (bam_fname, workdir, reference_fname, sample_name)
     run_cmd(find_svs_from_sr_consensuses_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.norm.vcf.gz %s %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.norm.vcf.gz %s %d %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size, max_is)
     run_cmd(normalise_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.norm.vcf.gz %s/intermediate_results/sr.norm.dedup.vcf.gz %s" % (workdir, workdir, reference_fname)
@@ -395,7 +404,7 @@ def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (workdir, workdir, workdir)
     run_cmd(concat_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s %d %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size, max_is)
     run_cmd(normalise_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (workdir, workdir, reference_fname)
