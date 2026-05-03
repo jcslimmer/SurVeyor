@@ -780,9 +780,9 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_junction(std::string& contig_
 	}
 
     if (svs.empty()) { // we haven't already called a duplication
-		if (right_bp - left_bp > middle_part.length() && overlap(ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end) > 0) { // length of ALT < REF, deletion
+		if (right_bp - left_bp > middle_part.length()) { // length of ALT < REF, deletion
 			// // For small deletions with non empty middle part, we may be able to obtain a simpler representation by realigning the whole junction sequence
-			if (right_bp - left_bp <= 50 && !middle_part.empty()) {
+			if (right_bp - left_bp <= 50 && !middle_part.empty() && overlap(ref_remap_lh_start, ref_remap_lh_end, ref_remap_rh_start, ref_remap_rh_end) > 0) {
 				hts_pos_t remap_start = std::min(ref_remap_lh_start, ref_remap_rh_start);
 				hts_pos_t remap_end = std::max(ref_remap_lh_end, ref_remap_rh_end);
 				hts_pos_t remap_len = remap_end - remap_start;
