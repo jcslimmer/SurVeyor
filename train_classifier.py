@@ -63,7 +63,11 @@ if __name__ == '__main__':
     with ProcessPoolExecutor(max_workers=cmd_args.threads) as executor:
         future_to_prefix = {executor.submit(process_vcf, prefix, restrict_to_model_name): prefix for prefix in training_prefixes}
         for future in as_completed(future_to_prefix):
-            vcf_training_data, vcf_training_gts = future.result()
+            prefix = future_to_prefix[future]
+            try:
+                vcf_training_data, vcf_training_gts = future.result()
+            except Exception as e:
+                raise RuntimeError(f"Failed while processing training prefix: {prefix}") from e
             for model in vcf_training_data:
                 training_data[model].append(vcf_training_data[model])
                 training_gts[model].append(vcf_training_gts[model])
