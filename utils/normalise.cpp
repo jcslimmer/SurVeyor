@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <functional>
 
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
@@ -15,7 +16,7 @@
 
 chr_seqs_map_t chr_seqs;
 bcf_hdr_t* hdr;
-StripedSmithWaterman::Aligner realign_aligner(1, 4, 6, 1, false);
+thread_local StripedSmithWaterman::Aligner realign_aligner(1, 4, 6, 1, false);
 int normalise_max_is = 1000;
 
 std::vector<bcf1_t*> normalised_vcf_records;
@@ -293,6 +294,17 @@ std::shared_ptr<sv_t> simplify(std::shared_ptr<sv_t> sv) {
 	}
 }
 
+std::shared_ptr<sv_t> realign(std::shared_ptr<sv_t> sv);
+
+void simplify_and_realign_svs(int id, std::vector<std::shared_ptr<sv_t>>& svs, int start, int end) {
+	for (int i = start; i < end; i++) {
+		svs[i] = simplify(svs[i]);
+		if (svs[i] != nullptr) {
+			svs[i] = realign(svs[i]);
+		}
+	}
+}
+
 void left_align_del(std::shared_ptr<sv_t> sv) {
 
 	if (!sv->ins_seq.empty()) return;
@@ -442,8 +454,10 @@ std::shared_ptr<sv_t> update_main_var_from_realigned_vars(std::shared_ptr<sv_t> 
 	return var;
 }
 
-std::shared_ptr<sv_t> realign_ins(std::shared_ptr<sv_t> sv) {
-	if (sv->incomplete_ins_seq() || sv->aux_indels.empty() || sv->ins_seq.length() > 100) return sv;
+std::shared_ptr<sv_t> realign_indel_haplotype(std::shared_ptr<sv_t> sv) {
+	bool has_replaced_ref = sv->start != sv->end && !sv->ins_seq.empty();
+	bool has_aux_indels = !sv->aux_indels.empty();
+	if (sv->incomplete_ins_seq() || (!has_replaced_ref && !has_aux_indels) || sv->svsize() > 100) return sv;
 
 	char* chr_seq = chr_seqs.get_seq(sv->chr);
 	hts_pos_t chr_len = chr_seqs.get_len(sv->chr);
@@ -499,16 +513,12 @@ std::shared_ptr<sv_t> realign_ins(std::shared_ptr<sv_t> sv) {
 	return sv;
 }
 
-std::shared_ptr<sv_t> realign_del(std::shared_ptr<sv_t> sv) {
-	return sv;
-}
-
 std::shared_ptr<sv_t> realign(std::shared_ptr<sv_t> sv) {
 	std::string svtype = sv->svtype();
 	if (svtype == "INS") {
-		return realign_ins(sv);
+		return realign_indel_haplotype(sv);
 	} else if (svtype == "DEL") {
-		return realign_del(sv);
+		return realign_indel_haplotype(sv);
 	} else {
 		return sv;
 	}
@@ -520,12 +530,16 @@ int main(int argc, char* argv[]) {
 	std::string out_vcf_fname = argv[2];
 	std::string reference_fname = argv[3];
 
-	int min_indel_size = 0;
+	int n_threads = 1;
 	if (argc >= 5) {
-		min_indel_size = std::stoi(argv[4]);
+		n_threads = std::max(1, std::stoi(argv[4]));
 	}
+	int min_indel_size = 0;
 	if (argc >= 6) {
-		normalise_max_is = std::stoi(argv[5]);
+		min_indel_size = std::stoi(argv[5]);
+	}
+	if (argc >= 7) {
+		normalise_max_is = std::stoi(argv[6]);
 	}
 
 	chr_seqs.read_fasta_into_map(reference_fname);
@@ -534,24 +548,37 @@ int main(int argc, char* argv[]) {
 	hdr = bcf_hdr_read(in_vcf_file);
 	bcf1_t* vcf_record = bcf_init();
 
-	std::vector<std::shared_ptr<sv_t>> svs;
+	std::vector<std::shared_ptr<sv_t>> input_svs;
 	while (bcf_read(in_vcf_file, hdr, vcf_record) == 0) {
 		std::shared_ptr<sv_t> sv = bcf_to_sv(hdr, vcf_record);
-		if (sv == nullptr) {
-			std::cout << "Ignoring SV of unsupported type: " << vcf_record->d.id << std::endl; 
-			continue;
-		}
+		if (sv == nullptr) continue;
 
 		sv->vcf_entry = bcf_dup(vcf_record);
-		sv = simplify(sv);
+		input_svs.push_back(sv);
+	}
+
+	const int block_size = 1000;
+	ctpl::thread_pool simplify_realign_thread_pool(n_threads);
+	std::vector<std::future<void> > futures;
+	for (int i = 0; i < input_svs.size(); i += block_size) {
+		int start = i, end = std::min(i+block_size, (int) input_svs.size());
+		std::future<void> future = simplify_realign_thread_pool.push(simplify_and_realign_svs, std::ref(input_svs), start, end);
+		futures.push_back(std::move(future));
+	}
+	simplify_realign_thread_pool.stop(true);
+	for (int i = 0; i < futures.size(); i++) {
+		futures[i].get();
+	}
+	futures.clear();
+
+	std::vector<std::shared_ptr<sv_t>> svs;
+	for (std::shared_ptr<sv_t> sv : input_svs) {
 		if (sv == nullptr) continue;
 
-		sv = realign(sv);
-		if (sv == nullptr) continue;
-		
+		// TODO: it's possible that since we perform realignment, atomization is not really necessary. Verify
 		sv = atomize(0, sv);
 		if (sv == nullptr) continue;
-		
+
 		sv = promote_largest_indel(sv);
 		
 		if ((sv->svtype() == "DEL" || sv->svtype() == "INS") && sv->svsize() < min_indel_size) continue;
