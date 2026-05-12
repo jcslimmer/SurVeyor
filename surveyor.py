@@ -389,7 +389,7 @@ def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     find_svs_from_sr_consensuses_cmd = SURVEYOR_PATH + "/bin/find_svs_from_sr_consensuses %s %s %s %s" % (bam_fname, workdir, reference_fname, sample_name)
     run_cmd(find_svs_from_sr_consensuses_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.norm.vcf.gz %s %d %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size, max_is)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/sr.vcf.gz %s/intermediate_results/sr.norm.vcf.gz %s %d %d %d" % (workdir, workdir, reference_fname, cmd_args.threads, cmd_args.min_sv_size, max_is)
     run_cmd(normalise_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/sr.norm.vcf.gz %s/intermediate_results/sr.norm.dedup.vcf.gz %s" % (workdir, workdir, reference_fname)
@@ -404,7 +404,7 @@ def call_candidate_variants(bam_fname, workdir, reference_fname, sample_name):
     concat_cmd = SURVEYOR_PATH + "/bin/concat_vcf %s/intermediate_results/sr_dp.vcf.gz %s/intermediate_results/assembled_ins.vcf.gz %s/intermediate_results/out.vcf.gz" % (workdir, workdir, workdir)
     run_cmd(concat_cmd)
 
-    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s %d %d" % (workdir, workdir, reference_fname, cmd_args.min_sv_size, max_is)
+    normalise_cmd = SURVEYOR_PATH + "/bin/normalise %s/intermediate_results/out.vcf.gz %s/intermediate_results/out.norm.vcf.gz %s %d %d %d" % (workdir, workdir, reference_fname, cmd_args.threads, cmd_args.min_sv_size, max_is)
     run_cmd(normalise_cmd)
 
     merge_identical_calls_cmd = SURVEYOR_PATH + "/bin/merge_identical_calls %s/intermediate_results/out.norm.vcf.gz %s/intermediate_results/calls-raw.vcf.gz %s" % (workdir, workdir, reference_fname)
