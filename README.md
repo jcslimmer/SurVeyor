@@ -122,7 +122,7 @@ If you are genotyping a catalogue generated from many samples and you notice tha
 ```
 --tr-bed SIMPLE_REPEATS_BED
 ```
-where `SIMPLE_REPEATS_BED` is a list of repetitive regions for the reference, in BED format. We recommend using the simpleRepeats table from UCSC Table browser.
+where `SIMPLE_REPEATS_BED` is a list of repetitive regions for the reference, in BED format. We recommend using the simpleRepeats table from UCSC Table browser. For convenience, the list for GRCh38 is provided in `simple_repeats_bed/`.
 
 Concretely, for each $i = 1,\dots,n$:
 ```bash
