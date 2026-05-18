@@ -147,6 +147,12 @@ WORKDIR/genotyped.vcf.gz
 WORKDIR/genotyped.deduped.vcf.gz
 ```
 
+As mentioned previously, if the catalogue was generated from many samples and you notice an excessive number of duplicate calls, we recommend using the option 
+```
+--tr-bed SIMPLE_REPEATS_BED
+```
+where `SIMPLE_REPEATS_BED` is a list of repetitive regions for the reference in BED format, and using the `genotyped.deduped.vcf.gz` file.
+
 ### Tandem duplications with unresolved copy number (to appear in 0.13)
 Some tandem duplications reported by SurVeyor have an unresolved copy number. In these cases, SurVeyor can identify the reference interval involved in the duplication, but cannot determine from short-read evidence how additional copies are present. Such records are annotated with the INFO flag DUP_CN_UNRESOLVED.
 
