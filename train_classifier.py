@@ -14,7 +14,7 @@ cmd_parser.add_argument('--threads', type=int, default=1, help='Number of thread
 cmd_parser.add_argument('--cross-species', action='store_true', help='Use cross-species model.')
 cmd_args = cmd_parser.parse_args()
 
-training_data, training_gts = defaultdict(list), defaultdict(list)
+training_data, training_gts, training_exact = defaultdict(list), defaultdict(list), defaultdict(list)
 
 def write_features_file(model_fname, features_names):
     features_fname = os.path.splitext(model_fname)[0] + ".features"
@@ -39,11 +39,11 @@ def compute_keep_indices(X):
     return np.array(keep_indices, dtype=np.int32)
 
 def process_vcf(training_prefix, restrict_to_model_name = None):
-    vcf_training_data, vcf_training_gts, _ = \
+    vcf_training_data, vcf_training_gts, _, vcf_training_exact = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
                            ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
     if restrict_to_model_name in (None, "ALL", "INS_TO_DUP", "INS_TO_DUP_LARGE"):
-        ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _ = \
+        ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _, ins_to_dup_vcf_training_exact = \
             features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
                                 training_prefix + ".gts", ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
 
@@ -51,8 +51,9 @@ def process_vcf(training_prefix, restrict_to_model_name = None):
             if model_name in ins_to_dup_vcf_training_data:
                 vcf_training_data[model_name] = ins_to_dup_vcf_training_data[model_name]
                 vcf_training_gts[model_name] = ins_to_dup_vcf_training_gts[model_name]
+                vcf_training_exact[model_name] = ins_to_dup_vcf_training_exact[model_name]
 
-    return vcf_training_data, vcf_training_gts
+    return vcf_training_data, vcf_training_gts, vcf_training_exact
 
 if __name__ == '__main__':
     import multiprocessing
@@ -65,22 +66,27 @@ if __name__ == '__main__':
         for future in as_completed(future_to_prefix):
             prefix = future_to_prefix[future]
             try:
-                vcf_training_data, vcf_training_gts = future.result()
+                vcf_training_data, vcf_training_gts, vcf_training_exact = future.result()
             except Exception as e:
                 raise RuntimeError(f"Failed while processing training prefix: {prefix}") from e
             for model in vcf_training_data:
                 training_data[model].append(vcf_training_data[model])
                 training_gts[model].append(vcf_training_gts[model])
+                training_exact[model].append(vcf_training_exact[model])
 
     for model in training_data:
         training_data[model] = np.concatenate(training_data[model])
         training_gts[model] = np.concatenate(training_gts[model])
+        training_exact[model] = np.concatenate(training_exact[model])
 
     yes_or_no_outdir = os.path.join(cmd_args.outdir, "yes_or_no")
     os.makedirs(yes_or_no_outdir, exist_ok=True)
 
     gts_outdir = os.path.join(cmd_args.outdir, "gts")
     os.makedirs(gts_outdir, exist_ok=True)
+
+    exact_outdir = os.path.join(cmd_args.outdir, "exact")
+    os.makedirs(exact_outdir, exist_ok=True)
 
     for model_name in training_data:
         if cmd_args.model_name != "ALL" and model_name != cmd_args.model_name:
@@ -121,8 +127,9 @@ if __name__ == '__main__':
         classifier.save_model(model_fname)
         write_features_file(model_fname, features_names)
 
-        positive_training_data = training_data[model_name][(training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")]
-        positive_training_labels = np.array([1 if x == "1/1" else 0 for x in training_gts[model_name] if x == "0/1" or x == "1/1"])
+        positive_mask = (training_gts[model_name] == "0/1") | (training_gts[model_name] == "1/1")
+        positive_training_data = training_data[model_name][positive_mask]
+        positive_training_labels = (training_gts[model_name][positive_mask] == "1/1").astype(int)
 
         if len(positive_training_data) == 0:
             raise RuntimeError(f"No positive (0/1 or 1/1) training examples found for model {model_name}. Cannot train the GT-stage classifier.")
@@ -145,5 +152,31 @@ if __name__ == '__main__':
         classifier.save_model(model_fname)
         write_features_file(model_fname, features_names)
 
+        if model_name == "HP":
+            exact_training_data = training_data[model_name][positive_mask]
+            exact_training_labels = training_exact[model_name][positive_mask].astype(int)
+
+            if len(exact_training_data) == 0:
+                raise RuntimeError("No positive HP examples found. Cannot train exact-stage classifier.")
+
+            unique_labels = np.unique(exact_training_labels)
+            if len(unique_labels) == 1:
+                raise RuntimeError(
+                    f"Only one exact label ({unique_labels[0]}) present in HP training data. "
+                    "Cannot train the exact-stage classifier."
+                )
+            
+            classifier.fit(exact_training_data, exact_training_labels)
+
+            importances = classifier.feature_importances_
+            indices = np.argsort(importances)[::-1]
+            with open(os.path.join(exact_outdir, "HP.importance.txt"), "w") as f:
+                for i in range(len(features_names)):
+                    f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
+
+            model_fname = os.path.join(exact_outdir, "HP.ubj")
+            classifier.save_model(model_fname)
+            write_features_file(model_fname, features_names)
+            
         end_time = time.time()
         print(f"Training for model {model_name} took {end_time - start_time} seconds")

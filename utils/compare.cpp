@@ -150,8 +150,9 @@ bool is_compatible_del_del(sv_t* sv1, sv_t* sv2, bool repeat_mode) {
 	bool imprecise_mode = sv1->imprecise || sv2->imprecise;
 	int max_dist = imprecise_mode ? max_imprec_dist : max_prec_dist;
 	double min_len_ratio = imprecise_mode ? min_imprec_len_ratio : min_prec_len_ratio;
+	int max_len_diff = imprecise_mode ? max_imprec_len_diff : max_prec_len_diff;
 	int max_svlen = std::max(std::abs(sv1->svlen()), std::abs(sv2->svlen()));
-	int max_score_loss = std::min(int(max_svlen * (1-min_len_ratio)), max_dist);
+	int max_score_loss = std::min({int(max_svlen * (1-min_len_ratio)), max_dist, max_len_diff});
 	if (sv1->svsize() <= 50) { // for small deletions, only check that they produce similar alt alleles
 		return alt_allele_match(sv1, sv2, max_score_loss);
 	} else { // for large deletions, perform interval-based comparison first since alt allele generation is expensive
@@ -331,17 +332,29 @@ bool is_compatible(sv_t* sv1, sv_t* sv2, StripedSmithWaterman::Aligner& aligner,
 	}
 }
 
+bool is_exact_match(sv_t* sv1, sv_t* sv2) {
+	if (sv1 == NULL || sv2 == NULL) return false;
+	
+	if (sv1->svtype() != sv2->svtype()) return false;
+	if (sv1->chr != sv2->chr || sv1->start != sv2->start || sv1->end != sv2->end) return false;
+	if (sv1->ins_seq != sv2->ins_seq) return false;
+	return true;
+}
+
 struct sv_match_t {
 	std::shared_ptr<sv_t> b_sv, c_sv;
 	double score = 0;
-	bool rep;
+	bool rep, exact;
 
 	sv_match_t(std::shared_ptr<sv_t> b_sv, std::shared_ptr<sv_t> c_sv, bool rep, StripedSmithWaterman::Aligner& aligner) : b_sv(b_sv), c_sv(c_sv) {
 		if (b_sv == NULL || c_sv == NULL) {
 			this->score = 0;
 			this->rep = rep;
+			this->exact = false;
 			return;
 		}
+
+		this->exact = is_exact_match(b_sv.get(), c_sv.get());
 
 		StripedSmithWaterman::Alignment alignment;
 		alignment.Clear();
@@ -744,20 +757,27 @@ int main(int argc, char* argv[]) {
 
 	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps, c_unknown;
 
-	// sort matches by 
-	// 1. missing gt in the benchmark (less missing alleles first)
-	// 2. rep (false first) 
-	// 3. score in descending order
-	// 4. consistent ALT reads, in descending order
-	// 5. extended ALT consensus score, in descending order
-	// 6. benchmark id, called id (to make sort stable)
-	std::vector<sv_match_t> accepted_matches;
-	std::sort(matches.begin(), matches.end(), [](sv_match_t& a, sv_match_t& b) {
-		if (a.b_sv->missing_alleles() != b.b_sv->missing_alleles()) 
+	auto match_for_called_cmp = [](const sv_match_t& a, const sv_match_t& b) {
+		if (a.exact != b.exact) return a.exact;
+		if (a.b_sv->missing_alleles() != b.b_sv->missing_alleles())
 			return a.b_sv->missing_alleles() < b.b_sv->missing_alleles();
-		if (a.rep && !b.rep) return false;
-		if (!a.rep && b.rep) return true;
+		if (a.rep != b.rep) return !a.rep;
 		if (a.score != b.score) return a.score > b.score;
+		return false;
+	};
+
+	// sort matches by 
+	// 1. exact matches first
+	// 2. missing gt in the benchmark (less missing alleles first)
+	// 3. rep (false first) 
+	// 4. score in descending order
+	// 5. consistent ALT reads, in descending order
+	// 6. extended ALT consensus score, in descending order
+	// 7. benchmark id, called id (to make sort stable)
+	std::vector<sv_match_t> accepted_matches;
+	std::sort(matches.begin(), matches.end(), [&](sv_match_t& a, sv_match_t& b) {
+		if (match_for_called_cmp(a, b)) return true;
+		if (match_for_called_cmp(b, a)) return false;
 		int a_consistent_reads = a.c_sv->sample_info.alt_bp1.reads_info.consistent_reads() + a.c_sv->sample_info.alt_bp2.reads_info.consistent_reads();
 		int b_consistent_reads = b.c_sv->sample_info.alt_bp1.reads_info.consistent_reads() + b.c_sv->sample_info.alt_bp2.reads_info.consistent_reads();
 		if (a_consistent_reads != b_consistent_reads) {
@@ -771,21 +791,43 @@ int main(int argc, char* argv[]) {
 		return std::tie(a.b_sv->id, a.c_sv->id) < std::tie(b.b_sv->id, b.c_sv->id); // to make sort stable
 	});
 
+	// for each called SV, we only keep optimal matches, as defined by match_for_called_cmp
+	std::vector<sv_match_t> optimal_matches_for_called;
+	std::unordered_map<std::string, sv_match_t*> optimal_match_by_called; // we need one example of optimal match for each called SV
+	for (sv_match_t& match : matches) {
+		std::string c_id = match.c_sv->id;
+		if (!optimal_match_by_called.count(c_id)) {
+			optimal_match_by_called[c_id] = &match;
+			optimal_matches_for_called.push_back(match);
+		} else {
+			sv_match_t& optimal_match = *optimal_match_by_called[c_id];
+			if (!match_for_called_cmp(optimal_match, match)) {
+				optimal_matches_for_called.push_back(match);
+			}
+		}
+	}
+	matches.swap(optimal_matches_for_called);
+
 	// count tps (both in benchmark and called) from matches
 	// in exclusive mode, each sv can only be used in one match
 	// for matches where the benchmark sv has missing alleles, since the benchmark does not tell us whether the variant 
 	// is present or not, we do count the called SV it as neither a tp nor a fp, based on this match
 	// (if the called SV is matched to another benchmark SV with known genotype, it will be counted based on that match)
+	std::unordered_set<std::string> used_b_sv_ids, used_c_sv_ids;
 	for (sv_match_t& match : matches) {
-		if (exclusive && (b_tps.count(match.b_sv->id) || c_tps.count(match.c_sv->id))) continue;
+		if (exclusive && (used_b_sv_ids.count(match.b_sv->id) || used_c_sv_ids.count(match.c_sv->id))) continue;
 
 		if (match.b_sv->allele_count(1) == 0 && match.b_sv->missing_alleles() > 0) {
 			c_unknown.insert(match.c_sv->id);
+			used_b_sv_ids.insert(match.b_sv->id);
+			used_c_sv_ids.insert(match.c_sv->id);
 			continue;
 		}
 
 		b_tps.insert(match.b_sv->id);
+		used_b_sv_ids.insert(match.b_sv->id);
 		c_tps.insert(match.c_sv->id);
+		used_c_sv_ids.insert(match.c_sv->id);
 		accepted_matches.push_back(match);
 		if (compatible_gts(match.b_sv.get(), match.c_sv.get())) {
 			b_gt_tps.insert(match.b_sv->id);
@@ -818,13 +860,13 @@ int main(int argc, char* argv[]) {
 		// this is good, because these SVs are less confident, and will be ignored when training our model
 		for (sv_match_t& match : accepted_matches) {
 			if (match.c_sv != NULL) {
-				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << std::endl;
+				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << " " << match.exact << std::endl;
 				written_ids.insert(match.c_sv->id);
 			}
 		}
 		std::set<std::string> c_unchoosen_ids;
 		for (sv_match_t& match : matches) {
-			if (match.c_sv != NULL && !c_tps.count(match.c_sv->id)) {
+			if (match.c_sv != NULL && !used_c_sv_ids.count(match.c_sv->id)) {
 				c_unchoosen_ids.insert(match.c_sv->id);
 			}
 		}
@@ -832,18 +874,18 @@ int main(int argc, char* argv[]) {
 		// these SVs matched to a benchmark SV, but another match for the benchmark SV was chosen instead
 		// let us reported them with ./. since they are less confident, and will be ignored when training our model
 		for (std::string id : c_unchoosen_ids) {
-			called_to_benchmark_gts_fout << id << " " << "./." << std::endl;
+			called_to_benchmark_gts_fout << id << " " << "./. 0" << std::endl;
 			written_ids.insert(id);
 		}
 
-		// not yet written SVs, mark them as ./. if they matched to a benchmark SV such as ./0, 
+		// not yet written SVs, mark them as ./. if they matched to a benchmark SV such as ./0 or ./., 
 		// otherwise as 0/0
 		for (const std::shared_ptr<sv_t>& csv : called_svs) {
 			if (written_ids.count(csv->id)) continue;
 			if (c_unknown.count(csv->id)) {
-				called_to_benchmark_gts_fout << csv->id << " " << "./." << std::endl;
+				called_to_benchmark_gts_fout << csv->id << " " << "./. 0" << std::endl;
 			} else {
-				called_to_benchmark_gts_fout << csv->id << " " << "0/0" << std::endl;
+				called_to_benchmark_gts_fout << csv->id << " " << "0/0 0" << std::endl;
 			}
 		}
 	}
@@ -898,7 +940,7 @@ int main(int argc, char* argv[]) {
 
 	if (fps_fout != NULL) {
 		for (const std::shared_ptr<sv_t>& csv : called_svs) {
-			if (!c_tps.count(csv->id)) {
+			if (!c_tps.count(csv->id) && !c_unknown.count(csv->id)) {
 				if (bcf_write(fps_fout, fps_hdr, csv->vcf_entry) != 0) {
 					std::cerr << "Error writing variant to file." << std::endl;
 					exit(1);

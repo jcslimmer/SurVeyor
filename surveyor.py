@@ -618,9 +618,12 @@ elif cmd_args.command == 'generate-training-data':
     with open(os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts.tmp")) as tmp_gts_file, \
          open(final_gts_path, 'w') as final_gts_file:
         for line in tmp_gts_file:
-            id, gt = line.strip().split()
+            fields = line.strip().split()
+            id, gt = fields[0], fields[1]
+            perfect = fields[2] if len(fields) > 2 else "0"
             if id in unreliable_cids and "1" in gt:
                 gt = "./."
-            final_gts_file.write("%s %s\n" % (id, gt))
+                perfect = "0"
+            final_gts_file.write("%s %s %s\n" % (id, gt, perfect))
 
     os.remove(os.path.join(cmd_args.outdir, cmd_args.samplename + ".gts.tmp"))
