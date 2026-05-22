@@ -143,38 +143,39 @@ void set_hp_read_mapq_stats(const std::vector<std::shared_ptr<bam1_t>>& reads, i
     set_hp_read_mapq_stats(support_reads, min_mapq, max_mapq, avg_mapq, stddev_mapq);
 }
 
-std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::vector<hp_read_info_t>& hp_read_infos) {
+std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::vector<hp_read_info_t>& hp_read_infos,
+    int min_tail_len, double max_mismatch_rate) {
     int n = hp_read_infos.size();
     if (n == 0) {
-        return {{}, {}};
+        return {};
     }
 
-    if (n == 1) { // Return a single cluster with the one read
-        return {{hp_read_infos[0]}};
-    }
-
-    std::unordered_map<int, int> counts;
+    std::unordered_map<int, int> good_counts;
     for (const hp_read_info_t& hp_read_info : hp_read_infos) {
-        counts[hp_read_info.hp_len]++;
+        if (hp_read_info.is_good_read(min_tail_len, max_mismatch_rate)) {
+            good_counts[hp_read_info.hp_len]++;
+        }
     }
 
-    if (counts.size() == 1) { // All reads have the same HP length, so we form a single cluster
-        return {hp_read_infos};
+    if (good_counts.empty()) {
+        return {};
     }
-    
-    std::vector<std::vector<hp_read_info_t>> clusters;
 
-    // Pick the two most common observed HP lengths, breaking count ties toward the smaller length.
-    std::vector<std::pair<int, int>> count_items(counts.begin(), counts.end());
+    // Pick seed modes from good reads only, breaking count ties toward the smaller length.
+    std::vector<std::pair<int, int>> count_items(good_counts.begin(), good_counts.end());
     std::sort(count_items.begin(), count_items.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
         if (a.second != b.second) return a.second > b.second;
         return a.first < b.first;
     });
 
+    if (count_items.size() == 1) {
+        return {hp_read_infos};
+    }
+
     int a_mode = count_items[0].first, b_mode = count_items[1].first;
     if (a_mode > b_mode) std::swap(a_mode, b_mode);
 
-    // Absorb every read into the nearest mode; distance ties go to the larger cluster.
+    // Absorb every read into the nearest good-read mode; distance ties go to the larger good-read seed.
     std::vector<int> a_idx, b_idx;
     for (int i = 0; i < n; i++) {
         int x = hp_read_infos[i].hp_len;
@@ -184,7 +185,7 @@ std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::v
             a_idx.push_back(i);
         } else if (b_dist < a_dist) {
             b_idx.push_back(i);
-        } else if (counts[a_mode] >= counts[b_mode]) {
+        } else if (good_counts[a_mode] >= good_counts[b_mode]) {
             a_idx.push_back(i);
         } else {
             b_idx.push_back(i);
@@ -195,6 +196,86 @@ std::vector<std::vector<hp_read_info_t>> cluster_reads_by_two_modes(const std::v
     for (int i : a_idx) a_reads.push_back(hp_read_infos[i]);
     for (int i : b_idx) b_reads.push_back(hp_read_infos[i]);
     return {a_reads, b_reads};
+}
+
+struct hp_allele_cluster_t {
+    int allele_idx;
+    int allele_len;
+    std::vector<hp_read_info_t> reads;
+
+    hp_allele_cluster_t(int allele_idx, int allele_len) : allele_idx(allele_idx), allele_len(allele_len) {}
+};
+
+int nearest_hp_allele_idx(int hp_len, const std::vector<int>& allele_lens, const std::vector<int>* allowed_allele_idxs = NULL) {
+    int best_idx = -1;
+    int best_dist = INT32_MAX;
+
+    std::vector<int> all_allele_idxs;
+    if (allowed_allele_idxs == NULL) {
+        for (int i = 0; i < allele_lens.size(); i++) all_allele_idxs.push_back(i);
+        allowed_allele_idxs = &all_allele_idxs;
+    }
+
+    for (int idx : *allowed_allele_idxs) {
+        int dist = abs(hp_len - allele_lens[idx]);
+        if (dist < best_dist ||
+            (dist == best_dist && (best_idx == -1 || allele_lens[idx] < allele_lens[best_idx])) ||
+            (dist == best_dist && allele_lens[idx] == allele_lens[best_idx] && idx < best_idx)) {
+            best_idx = idx;
+            best_dist = dist;
+        }
+    }
+
+    return best_idx;
+}
+
+std::vector<hp_allele_cluster_t> cluster_reads_by_nearest_allele_len(const std::vector<hp_read_info_t>& hp_read_infos,
+    const std::vector<int>& allele_lens) {
+
+    if (hp_read_infos.empty() || allele_lens.empty()) return {};
+
+    // First, assign each read to its nearest allele length
+    std::vector<int> allele_counts(allele_lens.size(), 0);
+    std::vector<long long> allele_dist_sums(allele_lens.size(), 0);
+    for (const hp_read_info_t& hp_read_info : hp_read_infos) {
+        int allele_idx = nearest_hp_allele_idx(hp_read_info.hp_len, allele_lens);
+        allele_counts[allele_idx]++;
+        allele_dist_sums[allele_idx] += abs(hp_read_info.hp_len - allele_lens[allele_idx]);
+    }
+
+    // Then pick the (max 2) alleles with the most assigned reads, breaking count ties toward smaller total distance, then smaller length
+    std::vector<int> allele_idxs;
+    for (int i = 0; i < allele_lens.size(); i++) {
+        if (allele_counts[i] > 0) allele_idxs.push_back(i);
+    }
+    std::sort(allele_idxs.begin(), allele_idxs.end(), [&](int a, int b) {
+        if (allele_counts[a] != allele_counts[b]) return allele_counts[a] > allele_counts[b];
+        if (allele_dist_sums[a] != allele_dist_sums[b]) return allele_dist_sums[a] < allele_dist_sums[b];
+        if (allele_lens[a] != allele_lens[b]) return allele_lens[a] < allele_lens[b];
+        return a < b;
+    });
+    if (allele_idxs.size() > 2) allele_idxs.resize(2);
+    std::sort(allele_idxs.begin(), allele_idxs.end(), [&](int a, int b) {
+        if (allele_lens[a] != allele_lens[b]) return allele_lens[a] < allele_lens[b];
+        return a < b;
+    });
+
+    // Finally, form max 2 clusters of reads by assigning reads to the max 2 retained alleles
+    std::vector<hp_allele_cluster_t> clusters;
+    for (int allele_idx : allele_idxs) {
+        clusters.push_back(hp_allele_cluster_t(allele_idx, allele_lens[allele_idx]));
+    }
+    for (const hp_read_info_t& hp_read_info : hp_read_infos) {
+        int allele_idx = nearest_hp_allele_idx(hp_read_info.hp_len, allele_lens, &allele_idxs);
+        for (hp_allele_cluster_t& cluster : clusters) {
+            if (cluster.allele_idx == allele_idx) {
+                cluster.reads.push_back(hp_read_info);
+                break;
+            }
+        }
+    }
+
+    return clusters;
 }
 
 
@@ -294,9 +375,10 @@ hp_read_info_t calculate_hp_read_info_core(const std::string& read_seq, const st
         return hp_read_info_t();
     }
 
-    // If no query base lands inside the reference HP, treat this as a 0-bp run
-    // and derive the tails from the nearest mapped flanks on each side.
+    // If no query base lands inside the reference HP, derive the run from the
+    // query gap between the nearest mapped flanks.
     if (anchors.empty()) {
+        int hp_len = 0;
         int left_tail_len, right_tail_len;
         if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp == -1) {
             left_tail_len = last_qpos_before_ref_hp + 1;
@@ -305,6 +387,7 @@ hp_read_info_t calculate_hp_read_info_core(const std::string& read_seq, const st
             left_tail_len = first_qpos_after_ref_hp;
             right_tail_len = read_seq.length() - first_qpos_after_ref_hp;
         } else if (last_qpos_before_ref_hp != -1 && first_qpos_after_ref_hp != -1) {
+            hp_len = std::max<hts_pos_t>(0, first_qpos_after_ref_hp - last_qpos_before_ref_hp - 1);
             left_tail_len = last_qpos_before_ref_hp + 1;
             right_tail_len = read_seq.length() - first_qpos_after_ref_hp;
         } else {
@@ -318,9 +401,9 @@ hp_read_info_t calculate_hp_read_info_core(const std::string& read_seq, const st
             left_clipped, right_clipped, tail_align_leeway, ref_hp_range.end);
 
         if (!is_rev) {
-            return hp_read_info_t(0, left_tail_len, right_tail_len, left_mismatches, right_mismatches, read);
+            return hp_read_info_t(hp_len, left_tail_len, right_tail_len, left_mismatches, right_mismatches, read);
         } else {
-            return hp_read_info_t(0, right_tail_len, left_tail_len, right_mismatches, left_mismatches, read);
+            return hp_read_info_t(hp_len, right_tail_len, left_tail_len, right_mismatches, left_mismatches, read);
         }
     }
 
@@ -365,7 +448,6 @@ hp_read_info_t calculate_hp_read_info_core(const std::string& read_seq, const st
     return hp_read_info;
 }
 
-
 hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range, char hp_base, char* contig_seq, hts_pos_t contig_len) {
     if (read == NULL || is_unmapped(read) || !is_primary(read) || read->core.l_qseq <= 0) {
         return hp_read_info_t();
@@ -400,7 +482,7 @@ hp_read_info_t calculate_hp_read_info(bam1_t* read, hts_pair_pos_t ref_hp_range,
             if (rpos < ref_hp_range.beg) {
                 last_qpos_before_ref_hp = qpos + oplen - 1;
             } else if (rpos >= ref_hp_range.end && first_qpos_after_ref_hp == -1) {
-                first_qpos_after_ref_hp = qpos;
+                first_qpos_after_ref_hp = (ref_hp_range.beg == ref_hp_range.end && rpos == ref_hp_range.beg) ? qpos + oplen : qpos;
             }
             qpos += oplen;
         } else if (opchar == 'S') {
@@ -639,14 +721,14 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     bam_destroy1(read);
     hts_itr_destroy(iter);
 
-    // Cluster reads into up to two clusters by their observed HP lengths
-    std::vector<std::vector<hp_read_info_t>> clusters = cluster_reads_by_two_modes(hp_read_infos);
-
     std::vector<int> allele_lens;
     for (sv_t* hp_indel : hp_indels) {
         allele_lens.push_back(ref_hp_range.end - ref_hp_range.beg + hp_indel->svlen());
     }
     allele_lens.push_back(ref_hp_range.end - ref_hp_range.beg); // allele_lens[hp_indels.size()] corresponds to the reference allele
+
+    // Cluster reads into up to two clusters around the candidate allele HP lengths
+    std::vector<hp_allele_cluster_t> clusters = cluster_reads_by_nearest_allele_len(hp_read_infos, allele_lens);
 
     int ref_reads = 0;
     std::vector<bp_support_read_t> ref_good_reads;
@@ -661,23 +743,10 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
         hp_indel_ids.insert(remove_svid_dup_suffix(hp_indel->id));
     }
 
-    // Associate each cluster to the most likely allele based on its mode HP length
-    for (const std::vector<hp_read_info_t>& cluster : clusters) {
-        int mode_hp_len = find_hp_len_mode(cluster, config.min_clip_len, MAX_TAIL_MISMATCH_RATE, true);
-        if (mode_hp_len == -1) continue; // no good reads in this cluster, so skip it for genotyping
-
-        int best_allele_idx = -1;
-        int best_allele_len_diff = INT32_MAX;
-        for (int i = 0; i < allele_lens.size(); i++) {
-            int allele_len_diff = abs(mode_hp_len - allele_lens[i]);
-            if (allele_len_diff < best_allele_len_diff) {
-                best_allele_idx = i;
-                best_allele_len_diff = allele_len_diff;
-            } else if (allele_len_diff == best_allele_len_diff && allele_lens[i] < allele_lens[best_allele_idx]) {
-                // break ties toward smaller allele, since HP read runs are more likely to be overestimated than underestimated
-                best_allele_idx = i;
-            }
-        }
+    // Associate each allele-aware cluster to its selected allele
+    for (const hp_allele_cluster_t& allele_cluster : clusters) {
+        const std::vector<hp_read_info_t>& cluster = allele_cluster.reads;
+        int best_allele_idx = allele_cluster.allele_idx;
 
         std::vector<hp_read_info_t> good_hp_read_infos;
         std::vector<bp_support_read_t> good_reads, good_reads_non_rescued;

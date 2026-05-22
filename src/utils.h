@@ -352,11 +352,11 @@ std::tuple<base_frequencies_t, base_frequencies_t, base_frequencies_t> get_right
     return std::make_tuple(bf50, bf100, bf500);
 }
 
-bool is_homopolymer(const char* seq, int len) {
-    return get_base_frequencies(seq, len).max_freq() >= 0.8;
+bool is_homopolymer(const char* seq, int len, double threshold = 0.8) {
+    return get_base_frequencies(seq, len).max_freq() >= threshold;
 }
-bool is_homopolymer(std::string seq) {
-	return is_homopolymer(seq.data(), seq.length());
+bool is_homopolymer(std::string seq, double threshold = 0.8) {
+	return is_homopolymer(seq.data(), seq.length(), threshold);
 }
 
 // hp_prefix must be allocated and of size (at least) len
