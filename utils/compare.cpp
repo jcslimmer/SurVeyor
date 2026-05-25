@@ -496,7 +496,7 @@ int main(int argc, char* argv[]) {
 		("wrong-gts", "Print pairs of matching SVs that have discordant genotypes.", cxxopts::value<std::string>())
 		("keep-all-benchmark", "Keep all variants in the benchmark file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
 		("keep-all-called", "Keep all variants in the called file, even if no alternative allele", cxxopts::value<bool>()->default_value("false"))
-		("c,called-to-benchmark-gts", "For each called SV matching a benchmark SV, report their genotype according to the benchmark dataset.", cxxopts::value<std::string>())
+		("c,called-to-benchmark-gts", "For each called SV, report benchmark GT, exact-match status, and whether this is the primary assignment.", cxxopts::value<std::string>())
 		("e,exclusive", "SV cannot be used in multiple matches.", cxxopts::value<bool>()->default_value("false"))
 		("ignore-ft", "Ignore the FT field, if present. Without this option, only SVs with FT=PASS or absent are considered.", cxxopts::value<bool>()->default_value("false"))
 		("t,threads", "Number of threads to use.", cxxopts::value<int>()->default_value("1"))
@@ -756,6 +756,7 @@ int main(int argc, char* argv[]) {
     futures.clear();
 
 	std::set<std::string> b_tps, c_tps, b_gt_tps, c_gt_tps, c_unknown;
+	std::unordered_map<std::string, sv_match_t*> unknown_match_by_called;
 
 	auto match_for_called_cmp = [](const sv_match_t& a, const sv_match_t& b) {
 		if (a.exact != b.exact) return a.exact;
@@ -819,6 +820,7 @@ int main(int argc, char* argv[]) {
 
 		if (match.b_sv->allele_count(1) == 0 && match.b_sv->missing_alleles() > 0) {
 			c_unknown.insert(match.c_sv->id);
+			unknown_match_by_called[match.c_sv->id] = &match;
 			used_b_sv_ids.insert(match.b_sv->id);
 			used_c_sv_ids.insert(match.c_sv->id);
 			continue;
@@ -856,36 +858,44 @@ int main(int argc, char* argv[]) {
 	if (called_to_benchmark_gts_fout.is_open()) {
 		std::unordered_set<std::string> written_ids;
 
-		// note that this reports called SVs that matched to a benchmark SV with missing genotype as ./.
-		// this is good, because these SVs are less confident, and will be ignored when training our model
+		// Selected non-missing benchmark matches are primary labels.
 		for (sv_match_t& match : accepted_matches) {
 			if (match.c_sv != NULL) {
-				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << " " << match.exact << std::endl;
+				called_to_benchmark_gts_fout << match.c_sv->id << " " << match.b_sv->print_gt() << " " << match.exact << " 1" << std::endl;
 				written_ids.insert(match.c_sv->id);
 			}
 		}
 		std::set<std::string> c_unchoosen_ids;
+		std::unordered_map<std::string, sv_match_t*> unchoosen_match_by_called;
 		for (sv_match_t& match : matches) {
 			if (match.c_sv != NULL && !used_c_sv_ids.count(match.c_sv->id)) {
-				c_unchoosen_ids.insert(match.c_sv->id);
+				std::string c_id = match.c_sv->id;
+				if (!c_unchoosen_ids.count(c_id)) {
+					c_unchoosen_ids.insert(c_id);
+					unchoosen_match_by_called[c_id] = &match;
+				}
 			}
 		}
 
 		// these SVs matched to a benchmark SV, but another match for the benchmark SV was chosen instead
-		// let us reported them with ./. since they are less confident, and will be ignored when training our model
+		// report non-exact matches with the benchmark GT, but keep exact non-primary matches ignored
 		for (std::string id : c_unchoosen_ids) {
-			called_to_benchmark_gts_fout << id << " " << "./. 0" << std::endl;
+			sv_match_t* match = unchoosen_match_by_called[id];
+			if (match->exact) {
+				called_to_benchmark_gts_fout << id << " " << "./. 0 0" << std::endl;
+			} else {
+				called_to_benchmark_gts_fout << id << " " << match->b_sv->print_gt() << " " << match->exact << " 0" << std::endl;
+			}
 			written_ids.insert(id);
 		}
 
-		// not yet written SVs, mark them as ./. if they matched to a benchmark SV such as ./0 or ./., 
-		// otherwise as 0/0
+		// Not yet written SVs are either selected missing-GT matches or primary negatives.
 		for (const std::shared_ptr<sv_t>& csv : called_svs) {
 			if (written_ids.count(csv->id)) continue;
 			if (c_unknown.count(csv->id)) {
-				called_to_benchmark_gts_fout << csv->id << " " << "./. 0" << std::endl;
+				called_to_benchmark_gts_fout << csv->id << " " << "./. " << unknown_match_by_called[csv->id]->exact << " 1" << std::endl;
 			} else {
-				called_to_benchmark_gts_fout << csv->id << " " << "0/0 0" << std::endl;
+				called_to_benchmark_gts_fout << csv->id << " " << "0/0 0 1" << std::endl;
 			}
 		}
 	}

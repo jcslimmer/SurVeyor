@@ -747,9 +747,11 @@ def read_gts(file_path):
             if not line.strip():
                 continue
             fields = line.strip().split()
-            if len(fields) < 3:
+            if len(fields) < 4:
                 raise RuntimeError(f"Malformed genotype labels line in {file_path}: {line.strip()}")
-            id, gt, exact = fields[0], fields[1], int(fields[2])
+            id, gt, exact, primary = fields[0], fields[1], int(fields[2]), int(fields[3])
+            if primary == 0:
+                gt = "./."
             if id not in gts:
                 gts[id] = gt
                 exacts[id] = exact
