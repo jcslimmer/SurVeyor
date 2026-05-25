@@ -738,10 +738,33 @@ def select_gt(gt1, gt2):
     else:
         return "./."
 
+def gt_alleles(gt):
+    return gt.replace("|", "/").split("/")
+
+def gt_has_alt(gt):
+    return "1" in gt_alleles(gt)
+
+def gt_is_known_positive(gt):
+    alleles = gt_alleles(gt)
+    return "1" in alleles and "." not in alleles
+
+def gt_is_hom_alt(gt):
+    alleles = gt_alleles(gt)
+    return len(alleles) > 0 and all(allele == "1" for allele in alleles)
+
+def gt_has_alt_array(gts):
+    return np.array([gt_has_alt(gt) for gt in gts])
+
+def gt_is_known_positive_array(gts):
+    return np.array([gt_is_known_positive(gt) for gt in gts])
+
+def gt_is_hom_alt_array(gts):
+    return np.array([gt_is_hom_alt(gt) for gt in gts])
+
 def read_gts(file_path):
     if not os.path.exists(file_path):
         raise RuntimeError(f"Genotype labels file not found: {file_path}")
-    gts, exacts = dict(), dict()
+    gts, exacts, primaries = dict(), dict(), dict()
     with open(file_path, 'r') as file:
         for line in file:
             if not line.strip():
@@ -750,15 +773,25 @@ def read_gts(file_path):
             if len(fields) < 4:
                 raise RuntimeError(f"Malformed genotype labels line in {file_path}: {line.strip()}")
             id, gt, exact, primary = fields[0], fields[1], int(fields[2]), int(fields[3])
-            if primary == 0:
-                gt = "./."
             if id not in gts:
                 gts[id] = gt
                 exacts[id] = exact
+                primaries[id] = primary
             else:
                 gts[id] = select_gt(gts[id], gt)
                 exacts[id] = max(exacts[id], exact)
-    return gts, exacts
+                primaries[id] = max(primaries[id], primary)
+    return gts, exacts, primaries
+
+def keep_primary(data_by_source, primary_by_source, *label_by_source):
+    for source in list(data_by_source):
+        mask = primary_by_source[source].astype(int) == 1
+        if label_by_source:
+            mask &= label_by_source[0][source] != "./."
+        data_by_source[source] = data_by_source[source][mask]
+        for labels in label_by_source:
+            labels[source] = labels[source][mask]
+    return (data_by_source, *label_by_source)
 
 def load_stats(stats_fname):
     stats = defaultdict(dict)
@@ -775,11 +808,11 @@ def get_stat(stats, stat_name, chrom):
 
 # Function to parse the VCF file and extract relevant features using pysam
 def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None, restrict_to_model_name = None):
-    gts, exacts = (None, None) if ignore_gts else read_gts(fp_fname)
+    gts, exacts, primaries = (None, None, None) if ignore_gts else read_gts(fp_fname)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats = load_stats(stats_fname)
 
-    features_by_source, gts_by_source, variant_ids_by_source, exacts_by_source = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
+    features_by_source, gts_by_source, variant_ids_by_source, exacts_by_source, primaries_by_source = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     for record in vcf_reader.fetch():
         if Features.skips_ml_genotyping(record):
             continue
@@ -790,25 +823,30 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_name
         if ignore_gts:
             gt = "NA"
             exact = "NA"
+            primary = "NA"
         else:
             if record.id not in gts:
                 raise RuntimeError(f"Missing GT label for record {record.id} in {fp_fname}")
             if record.id not in exacts:
                 raise RuntimeError(f"Missing exact label for record {record.id} in {fp_fname}")
+            if record.id not in primaries:
+                raise RuntimeError(f"Missing primary label for record {record.id} in {fp_fname}")
             gt = gts[record.id]
             exact = exacts[record.id]
-        if gt != "./.": # if no genotype is available, skip the record
-            model_feature_names = None if feature_names_by_model is None else feature_names_by_model.get(model_name)
-            feature_values = Features.record_to_features(record, stats, model_feature_names)
-            features_by_source[model_name].append(feature_values)
-            gts_by_source[model_name].append(gt)
-            variant_ids_by_source[model_name].append(Features.generate_id(record))
-            exacts_by_source[model_name].append(exact)
+            primary = primaries[record.id]
+        model_feature_names = None if feature_names_by_model is None else feature_names_by_model.get(model_name)
+        feature_values = Features.record_to_features(record, stats, model_feature_names)
+        features_by_source[model_name].append(feature_values)
+        gts_by_source[model_name].append(gt)
+        variant_ids_by_source[model_name].append(Features.generate_id(record))
+        exacts_by_source[model_name].append(exact)
+        primaries_by_source[model_name].append(primary)
 
     for model_name in features_by_source:
         features_by_source[model_name] = np.array(features_by_source[model_name])
         gts_by_source[model_name] = np.array(gts_by_source[model_name])
         variant_ids_by_source[model_name] = np.array(variant_ids_by_source[model_name])
         exacts_by_source[model_name] = np.array(exacts_by_source[model_name])
+        primaries_by_source[model_name] = np.array(primaries_by_source[model_name])
     
-    return features_by_source, gts_by_source, variant_ids_by_source, exacts_by_source
+    return features_by_source, gts_by_source, variant_ids_by_source, exacts_by_source, primaries_by_source

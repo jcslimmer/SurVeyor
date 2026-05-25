@@ -503,9 +503,13 @@ void add_fmt_tags(bcf_hdr_t* hdr) {
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, hopr_tag, &len));
 
 	bcf_hdr_remove(hdr, BCF_HL_FMT, "EXPR");
-	const char* expr_tag = "##FORMAT=<ID=EXPR,Number=1,Type=Float,Description=\"Probability that an existing SV has an exact representation, according to the ML model.\">";
+	const char* expr_tag = "##FORMAT=<ID=EXPR,Number=1,Type=Float,Description=\"Probability of the SV to be represented exactly, according to the ML model.\">";
 	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, expr_tag, &len));
-	}
+
+	bcf_hdr_remove(hdr, BCF_HL_FMT, "PPR");
+	const char* ppr_tag = "##FORMAT=<ID=PPR,Number=1,Type=Float,Description=\"Probability of the SV to be the primary call, according to the ML model.\">";
+	bcf_hdr_add_hrec(hdr, bcf_hdr_parse_line(hdr, ppr_tag, &len));
+}
 
 bcf_hdr_t* generate_vcf_header(chr_seqs_map_t& contigs, std::string sample_name, config_t config, std::string command) {
 	bcf_hdr_t* header = bcf_hdr_init("w");

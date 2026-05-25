@@ -19,7 +19,7 @@ class Classifier:
                 feature_names_by_model[model_name] = [line.strip() for line in f if line.strip()]
         return feature_names_by_model
 
-    def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_epr, svid_to_hopr, svid_to_expr, out_vcf_fname, stats_fname):
+    def write_vcf(vcf_reader, vcf_header, svid_to_gt, svid_to_epr, svid_to_hopr, svid_to_expr, svid_to_ppr, out_vcf_fname, stats_fname):
         stats = features.load_stats(stats_fname)
 
         vcf_writer = pysam.VariantFile(out_vcf_fname, 'wz', header=vcf_header)
@@ -29,6 +29,7 @@ class Classifier:
                 record.samples[0]['EPR'] = None
                 record.samples[0]['HOPR'] = None
                 record.samples[0]['EXPR'] = None
+                record.samples[0]['PPR'] = None
                 record_id = features.Features.generate_id(record)
                 if record_id in svid_to_gt:
                     gt = (svid_to_gt[record_id]//2, 1 if svid_to_gt[record_id] >= 1 else 0)
@@ -43,6 +44,8 @@ class Classifier:
                         record.samples[0]['HOPR'] = float(svid_to_hopr[record_id])
                     if record_id in svid_to_expr:
                         record.samples[0]['EXPR'] = float(svid_to_expr[record_id])
+                    if record_id in svid_to_ppr:
+                        record.samples[0]['PPR'] = float(svid_to_ppr[record_id])
                 else:
                     record.samples[0]['GT'] = (None, None)
                 vcf_writer.write(record)
@@ -52,11 +55,11 @@ class Classifier:
 
     def run_classifier(in_vcf, out_vcf, stats_fname, model_dir, threads=1):
         feature_names_by_model = Classifier.load_features_files(os.path.join(model_dir, "yes_or_no"))
-        test_data, _, test_variant_ids, _ = \
+        test_data, _, test_variant_ids, _, _ = \
             features.parse_vcf(in_vcf, stats_fname, "XXX", ignore_gts = True, feature_names_by_model = feature_names_by_model)
 
         svid_to_gt = dict()
-        svid_to_epr, svid_to_hopr, svid_to_expr = dict(), dict(), dict()
+        svid_to_epr, svid_to_hopr, svid_to_expr, svid_to_ppr = dict(), dict(), dict(), dict()
         for model_name in test_data:
             model_file = os.path.join(model_dir, "yes_or_no", model_name + '.ubj')
 
@@ -97,6 +100,13 @@ class Classifier:
                     for i in range(len(positive_variant_ids)):
                         svid_to_expr[positive_variant_ids[i]] = exprs[i][1]
 
+                model_file = os.path.join(model_dir, "primary", "HP.ubj")
+                if os.path.exists(model_file):
+                    classifier.load_model(model_file)
+                    pprs = classifier.predict_proba(positive_data)
+                    for i in range(len(positive_variant_ids)):
+                        svid_to_ppr[positive_variant_ids[i]] = pprs[i][1]
+
         # write the predictions to a VCF file
         vcf_reader = pysam.VariantFile(in_vcf)
         header = vcf_reader.header
@@ -106,7 +116,9 @@ class Classifier:
             header.add_line('##FORMAT=<ID=HOPR,Number=1,Type=Float,Description="Probability of an existing SV to be homozygous, according to the ML model.">')
         if 'EXPR' not in header.formats:
             header.add_line('##FORMAT=<ID=EXPR,Number=1,Type=Float,Description="Probability of the SV to be represented exactly, according to the ML model.">')
-        Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_epr, svid_to_hopr, svid_to_expr, out_vcf, stats_fname)
+        if 'PPR' not in header.formats:
+            header.add_line('##FORMAT=<ID=PPR,Number=1,Type=Float,Description="Probability of the SV to be the primary call, according to the ML model.">')
+        Classifier.write_vcf(vcf_reader, header, svid_to_gt, svid_to_epr, svid_to_hopr, svid_to_expr, svid_to_ppr, out_vcf, stats_fname)
 
 if __name__ == "__main__":
     cmd_parser = argparse.ArgumentParser(description='Classify SVs using a built ML model.')

@@ -72,6 +72,7 @@ int main(int argc, char* argv[]) {
                 std::vector<int> gt = get_bcf_gt(in_vcf_hdr, b);
                 bcf1_t* snp_record = generate_snp(in_vcf_hdr, bcf_seqname(in_vcf_hdr, b), snp.pos,
                     chr_seq[snp.pos], snp.alt_base, id, gt);
+                copy_all_fmt(in_vcf_hdr, b, snp_record);
                 vcf_records.push_back(snp_record);
             }
             // remove INFO/AUX_SNPS from the original record
@@ -109,6 +110,7 @@ int main(int argc, char* argv[]) {
                 indel->sample_info.gt = gt;
                 bcf1_t* indel_record = bcf_init();
                 sv2bcf(in_vcf_hdr, indel_record, indel.get(), chr_seqs.get_seq(contig_name));
+                copy_all_fmt(in_vcf_hdr, b, indel_record);
                 vcf_records.push_back(indel_record);
             }
             // remove INFO/AUX_INDELS from the original record
