@@ -92,20 +92,19 @@ class Classifier:
                 svid_to_gt[positive_variant_ids[i]] = predictions[i] + 1
                 svid_to_hopr[positive_variant_ids[i]] = hoprs[i][1]
 
-            if model_name == "HP":
-                model_file = os.path.join(model_dir, "exact", "HP.ubj")
-                if os.path.exists(model_file):
-                    classifier.load_model(model_file)
-                    exprs = classifier.predict_proba(positive_data)
-                    for i in range(len(positive_variant_ids)):
-                        svid_to_expr[positive_variant_ids[i]] = exprs[i][1]
+            model_file = os.path.join(model_dir, "exact", model_name + ".ubj")
+            if os.path.exists(model_file):
+                classifier.load_model(model_file)
+                exprs = classifier.predict_proba(positive_data)
+                for i in range(len(positive_variant_ids)):
+                    svid_to_expr[positive_variant_ids[i]] = exprs[i][1]
 
-                model_file = os.path.join(model_dir, "primary", "HP.ubj")
-                if os.path.exists(model_file):
-                    classifier.load_model(model_file)
-                    pprs = classifier.predict_proba(positive_data)
-                    for i in range(len(positive_variant_ids)):
-                        svid_to_ppr[positive_variant_ids[i]] = pprs[i][1]
+            model_file = os.path.join(model_dir, "primary", model_name + ".ubj")
+            if os.path.exists(model_file):
+                classifier.load_model(model_file)
+                pprs = classifier.predict_proba(positive_data)
+                for i in range(len(positive_variant_ids)):
+                    svid_to_ppr[positive_variant_ids[i]] = pprs[i][1]
 
         # write the predictions to a VCF file
         vcf_reader = pysam.VariantFile(in_vcf)

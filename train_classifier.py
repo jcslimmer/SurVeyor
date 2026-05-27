@@ -169,19 +169,19 @@ if __name__ == '__main__':
         classifier.save_model(model_fname)
         write_features_file(model_fname, features_names)
 
-        if model_name == "HP":
+        if model_name == "HP" or model_name.startswith("DEL") or model_name.startswith("INS"):
             exact_start_time = time.time()
             positive_mask = features.gt_has_alt_array(training_gts[model_name])
             exact_training_data = training_data[model_name][positive_mask]
             exact_training_labels = training_exact[model_name][positive_mask].astype(int)
 
             if len(exact_training_data) == 0:
-                raise RuntimeError("No positive HP examples found. Cannot train exact-stage classifier.")
+                raise RuntimeError(f"No positive {model_name} examples found. Cannot train exact-stage classifier.")
 
             unique_labels = np.unique(exact_training_labels)
             if len(unique_labels) == 1:
                 raise RuntimeError(
-                    f"Only one exact label ({unique_labels[0]}) present in HP training data. "
+                    f"Only one exact label ({unique_labels[0]}) present in {model_name} training data. "
                     "Cannot train the exact-stage classifier."
                 )
 
@@ -192,27 +192,28 @@ if __name__ == '__main__':
 
             importances = classifier.feature_importances_
             indices = np.argsort(importances)[::-1]
-            with open(os.path.join(exact_outdir, "HP.importance.txt"), "w") as f:
+            with open(os.path.join(exact_outdir, model_name + ".importance.txt"), "w") as f:
                 for i in range(len(features_names)):
                     f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
 
-            model_fname = os.path.join(exact_outdir, "HP.ubj")
+            model_fname = os.path.join(exact_outdir, model_name + ".ubj")
             classifier.save_model(model_fname)
             write_features_file(model_fname, features_names)
             exact_end_time = time.time()
 
+        if model_name == "HP" or model_name.startswith("DEL") or model_name.startswith("INS"):
             primary_start_time = time.time()
             primary_training_mask = features.gt_has_alt_array(all_training_gts)
             primary_training_data = all_training_data[primary_training_mask][:, keep_indices]
             primary_training_labels = all_training_primary[primary_training_mask].astype(int)
 
             if len(primary_training_data) == 0:
-                raise RuntimeError("No benchmark-associated HP examples found. Cannot train primary-stage classifier.")
+                raise RuntimeError(f"No benchmark-associated {model_name} examples found. Cannot train primary-stage classifier.")
 
             unique_labels = np.unique(primary_training_labels)
             if len(unique_labels) == 1:
                 raise RuntimeError(
-                    f"Only one primary label ({unique_labels[0]}) present in HP training data. "
+                    f"Only one primary label ({unique_labels[0]}) present in {model_name} training data. "
                     "Cannot train the primary-stage classifier."
                 )
 
@@ -220,11 +221,11 @@ if __name__ == '__main__':
 
             importances = classifier.feature_importances_
             indices = np.argsort(importances)[::-1]
-            with open(os.path.join(primary_outdir, "HP.importance.txt"), "w") as f:
+            with open(os.path.join(primary_outdir, model_name + ".importance.txt"), "w") as f:
                 for i in range(len(features_names)):
                     f.write("%d. %s (%f)\n" % (i + 1, features_names[indices[i]], importances[indices[i]]))
 
-            model_fname = os.path.join(primary_outdir, "HP.ubj")
+            model_fname = os.path.join(primary_outdir, model_name + ".ubj")
             classifier.save_model(model_fname)
             write_features_file(model_fname, features_names)
             primary_end_time = time.time()
