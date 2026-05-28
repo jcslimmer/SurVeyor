@@ -594,6 +594,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs_from_aln(std::vector<uint32_t>& ci
 
 		for (auto& sv : aux_svs) {
 			if (sv == nullptr) continue;
+			if (sv->svtype() == "INS" && sv->incomplete_ins_seq()) continue; // do not assign incomplete insertions as aux indels
 			int dist = std::min(abs((int)sv->start - (int)main_sv->end), abs((int)sv->end - (int)main_sv->start));
 			if (dist < stats.read_len - 2*config.min_clip_len) {
 				main_sv->aux_indels.push_back(sv);

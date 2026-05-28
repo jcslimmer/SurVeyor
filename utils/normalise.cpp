@@ -188,7 +188,7 @@ std::shared_ptr<sv_t> atomize(int id, std::shared_ptr<sv_t> sv) {
 		// splitting large deletions can create problems to the current genotyping algorithm
 		// especially when calculating features like discordant pairs or read depth
 		return atomize_del(sv);
-	} else if (svtype == "INS" && sv->ins_seq.length() <= 70) {
+	} else if (svtype == "INS" && !sv->incomplete_ins_seq() && sv->ins_seq.length() <= 70) {
 		return atomize_ins(sv);
 	} else {
 		return sv;
