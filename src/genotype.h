@@ -92,7 +92,7 @@ struct evidence_map_t {
 
     evidence_map_t() {}
 
-    void load(std::string workdir, std::string vcf_fname) {
+    void load(std::string workdir, std::string vcf_fname, config_t& config) {
         
         htsFile* vcf_file = bcf_open(vcf_fname.c_str(), "r");
         if (vcf_file == NULL) {
@@ -111,6 +111,7 @@ struct evidence_map_t {
             bcf_unpack(vcf_record, BCF_UN_ALL);
 
             std::string id = vcf_record->d.id;
+            id = remove_svid_dup_suffix(id);
             float epr = get_sv_epr(vcf_header, vcf_record);
             sv_epr_map[id] = epr;
         }
@@ -122,34 +123,116 @@ struct evidence_map_t {
         std::ifstream alt_reads_association_fin(alt_reads_association_fname);
         std::string sv_id, read_name;
         int bp, score;
-        // For each read, keep only the best association
-        // Criteria for best: predicted as existing, highest score, highest EPR
-        std::unordered_map<std::string, std::pair<int, float>> read_to_score_epr_map;
+
+        // tuple fields are: score of the first best association found, sv_id of that association, 
+        // whether the association is unique or not
+        std::unordered_map<std::string, std::tuple<int, std::string, bool>> read_to_best_assoc_map;
+
+        // For each read, find the best association. Furthermore, flag reads that have a "best" association to multiple SVs
         while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
-            float epr = sv_epr_map[sv_id];
-            if (epr < MIN_EPR && epr != -1.0) continue; // do not assign reads to SVs that are very unlikely to be real
-            std::pair<int, float> p = {score, epr};
-            sv_id = remove_svid_dup_suffix(sv_id); // we avoid INS and INS_TO_DUP from stealing each other's reads
-            if (p > read_to_score_epr_map[read_name]) {
-                read_to_score_epr_map[read_name] = p; // Store the highest score and EPR for the read
-                if (read_to_sv_map.count(read_name)) {
-                    read_to_non_chosen_svs_map[read_name].push_back({read_to_sv_map[read_name], read_to_bp_map[read_name]});
+            sv_id = remove_svid_dup_suffix(sv_id);
+            if (!read_to_best_assoc_map.count(read_name)) {
+                read_to_best_assoc_map[read_name] = {score, sv_id, true};
+            } else {
+                auto& curr_best_assoc = read_to_best_assoc_map[read_name];
+                int& best_score = std::get<0>(curr_best_assoc);
+                std::string& best_sv_id = std::get<1>(curr_best_assoc);
+                bool& unique = std::get<2>(curr_best_assoc);
+                if (score > best_score) {
+                    best_score = score;
+                    best_sv_id = sv_id;
+                    unique = true;
+                } else if (score == best_score && sv_id != best_sv_id) {
+                    unique = false;
                 }
-                read_to_sv_map[read_name] = sv_id;
-                read_to_bp_map[read_name] = bp;
+            }
+        }
+
+
+        alt_reads_association_fin.clear();
+        alt_reads_association_fin.seekg(0, std::ios::beg);
+
+        // Now, for each SV, we calculate a score S that is the sum of scores of reads that have A (not necessarily unique) 
+        // best association to that SV
+        // Then, we assign reads as follows: 
+        // - we assign each read with a unique best association to that SV (let us call their number U)
+        // - when a read has multiple equally good best associations, we keep the best two in terms of S. Then,
+        //   we assign the read to one of the two randomly, with probability proportional to the number U of each SV
+        //   (e.g., if SV1 has U=6 and SV2 has U=4, then the read is assigned to SV1 with probability 0.6 and to SV2 with probability 0.4)
+
+        using sv_with_bp_t = std::pair<std::string, int>;
+        std::unordered_map<std::string, int> sv_to_S_map;
+        std::unordered_map<std::string, int> sv_to_U_map;
+        std::unordered_map<std::string, std::vector<sv_with_bp_t>> read_to_multiple_svs; // only for reads with multiple best associations
+        while (alt_reads_association_fin >> sv_id >> bp >> read_name >> score) {
+            sv_id = remove_svid_dup_suffix(sv_id);
+            auto& best_assoc = read_to_best_assoc_map[read_name];
+            int best_score = std::get<0>(best_assoc);
+            if (score == best_score) {
+                sv_to_S_map[sv_id] += score;
+            }
+
+            if (score == best_score) {
+                bool unique = std::get<2>(best_assoc);
+                if (unique) {
+                    sv_to_U_map[sv_id] += 1;
+                    read_to_sv_map[read_name] = sv_id;
+                    read_to_bp_map[read_name] = bp;
+                } else {
+                    read_to_multiple_svs[read_name].push_back({sv_id, bp});
+                }
             } else {
                 read_to_non_chosen_svs_map[read_name].push_back({sv_id, bp});
             }
         }
 
-        for (auto& kv : read_to_sv_map) {
+        // Now, assign non-uniquely assigned reads
+        std::mt19937 gen(config.seed);
+        for (auto& kv : read_to_multiple_svs) {
             std::string read_name = kv.first;
-            std::string sv_id = kv.second;
-            // remove sv_id from non-chosen svs if it is there
-            auto& vec = read_to_non_chosen_svs_map[read_name];
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const std::pair<std::string, int>& p) {
-                return p.first == sv_id;
-            }), vec.end());
+            std::vector<sv_with_bp_t>& sv_w_bps = kv.second;
+            // find top two svs in terms of S
+            std::vector<std::pair<int, sv_with_bp_t>> sv_S_vec;
+            for (const auto& sv_w_bp : sv_w_bps) {
+                sv_S_vec.push_back({sv_to_S_map[sv_w_bp.first], sv_w_bp});
+            }
+            std::sort(sv_S_vec.begin(), sv_S_vec.end(), std::greater<std::pair<int, sv_with_bp_t>>());
+            sv_with_bp_t sv1 = sv_S_vec[0].second;
+            sv_with_bp_t sv2 = sv_S_vec[1].second;
+
+            int U1 = sv_to_U_map[sv1.first];
+            int U2 = sv_to_U_map[sv2.first];
+            if (U1 < 3) U1 = 0; // we require a minimum number of 3 uniquely assigned reads
+            if (U2 < 3) U2 = 0;
+            int total_U = U1 + U2;
+            if (total_U == 0) {
+                // assign to the highest EPR SV
+                float epr1 = sv_epr_map[sv1.first];
+                float epr2 = sv_epr_map[sv2.first];
+                if (epr1 >= epr2) {
+                    read_to_sv_map[read_name] = sv1.first;
+                    read_to_bp_map[read_name] = sv1.second;
+                } else {
+                    read_to_sv_map[read_name] = sv2.first;
+                    read_to_bp_map[read_name] = sv2.second;
+                }
+            } else {
+                std::uniform_int_distribution<> dis(1, total_U);
+                int r = dis(gen);
+                if (r <= U1) {
+                    read_to_sv_map[read_name] = sv1.first;
+                    read_to_bp_map[read_name] = sv1.second;
+                } else {
+                    read_to_sv_map[read_name] = sv2.first;
+                    read_to_bp_map[read_name] = sv2.second;
+                }
+            }
+
+            for (const auto& sv_w_bp : sv_w_bps) {
+                if (sv_w_bp.first != read_to_sv_map[read_name]) {
+                    read_to_non_chosen_svs_map[read_name].push_back(sv_w_bp);
+                }
+            }
         }
     }
 

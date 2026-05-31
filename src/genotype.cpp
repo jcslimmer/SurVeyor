@@ -916,7 +916,7 @@ int main(int argc, char* argv[]) {
     evidence_map_t* evidence_map = new evidence_map_t();
     bool reassign_evidence = false;
     if (argc > 7 && std::string(argv[7]) == "--reassign-evidence") {
-        evidence_map->load(workdir, in_vcf_fname);
+        evidence_map->load(workdir, in_vcf_fname, config);
         reassign_evidence = true;
     }
 

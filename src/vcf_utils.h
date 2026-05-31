@@ -1026,6 +1026,30 @@ float get_sv_epr(bcf_hdr_t *hdr, bcf1_t *b) {
     return -1.0;
 }
 
+float get_sv_hopr(bcf_hdr_t *hdr, bcf1_t *b) {
+    int ngt = 0;
+    float *hopr = NULL;
+    if (bcf_get_format_float(hdr, b, "HOPR", &hopr, &ngt) > 0) {
+        float value = hopr[0];
+        free(hopr);
+        return value;
+    }
+    free(hopr);
+    return -1.0;
+}
+
+float get_sv_ppr(bcf_hdr_t *hdr, bcf1_t *b) {
+    int ngt = 0;
+    float *ppr = NULL;
+    if (bcf_get_format_float(hdr, b, "PPR", &ppr, &ngt) > 0) {
+        float value = ppr[0];
+        free(ppr);
+        return value;
+    }
+    free(ppr);
+    return -1.0;
+}
+
 std::vector<int> get_bcf_gt(bcf_hdr_t *hdr, bcf1_t *b) {
 	int ngt = 0;
 	int* gt_arr = NULL;
