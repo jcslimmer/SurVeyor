@@ -8,8 +8,8 @@ def valid_min_sv_size(arg):
         sv_size = int(arg)
     except ValueError:
         raise argparse.ArgumentTypeError("Value must be an integer.")
-    if sv_size < 4:
-        raise argparse.ArgumentTypeError("Value must be at least 4.")
+    if sv_size < 5:
+        raise argparse.ArgumentTypeError("Value must be at least 5.")
     return sv_size
 
 parser = argparse.ArgumentParser(description='SurVeyor, an SV caller.')
@@ -430,7 +430,7 @@ def genotype_variants(bam_fname, workdir, reference_fname, sample_name, ml_model
     reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (workdir + "/intermediate_results/calls-raw.vcf.gz", workdir + "/intermediate_results/calls-with-gt.vcf.gz", workdir + "/intermediate_results/calls-with-gt.reconciled.vcf.gz", sample_name)
     run_cmd(reconcile_vcf_gt_cmd)
 
-    write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s/intermediate_results/calls-with-gt.reconciled.vcf.gz %s/calls-genotyped.vcf.gz %s" % (workdir, workdir, reference_fname)
+    write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s/intermediate_results/calls-with-gt.reconciled.vcf.gz %s/calls-genotyped.smvars %s/calls-genotyped.stvars %s" % (workdir, workdir, workdir, reference_fname)
     run_cmd(write_aux_snps_cmd)
 
     if cmd_args.two_pass:
@@ -455,7 +455,7 @@ def genotype_variants(bam_fname, workdir, reference_fname, sample_name, ml_model
         reconcile_vcf_gt_cmd = SURVEYOR_PATH + "/bin/reconcile_vcf_gt %s %s %s %s" % (workdir + "/intermediate_results/calls-raw.vcf.gz", final_iter_gt_file, reconciled_file, sample_name)
         run_cmd(reconcile_vcf_gt_cmd)
 
-        write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s %s/calls-genotyped.reassigned.vcf.gz %s" % (reconciled_file, workdir, reference_fname)
+        write_aux_snps_cmd = SURVEYOR_PATH + "/bin/write_aux_snps %s %s/calls-genotyped.reassigned.smvars %s/calls-genotyped.reassigned.stvars %s" % (reconciled_file, workdir, workdir, reference_fname)
         run_cmd(write_aux_snps_cmd)
 
 
