@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -201,38 +200,34 @@ void add_star_alleles_for_overlapping_del_ins(bcf_hdr_t* hdr, std::vector<bcf1_t
 }
 
 // The group is already sorted by decreasing EPR. Keep at most two ALT alleles at
-// each exact position for same-type INS or DEL groups. The best call is always kept. If the first two
+// each exact position for INS/DEL groups. The best call is always kept. If the first two
 // calls are identical hets, merge them into a single 1/1 call. Otherwise, if the
 // best call is already 1/1, let the second call replace one allele only when its
 // EPR is stronger than the best call's homozygous probability. All later ALT
 // calls are suppressed. Accepted second alleles are folded into the first record
 // as ALT2, and a 0/0 record ends the group because no later record can add an
 // ALT allele.
-void apply_multiallelic_logic_to_group(bcf_hdr_t* hdr, std::vector<bcf1_t*>& insertion_group,
-                                       std::vector<bcf1_t*>& records_to_remove,
-                                       std::ofstream& suppressed_by_hom, std::ofstream& suppressed_by_two_hets) {
+void apply_multiallelic_logic_to_group(bcf_hdr_t* hdr, std::vector<bcf1_t*>& indel_group,
+                                       std::vector<bcf1_t*>& records_to_remove) {
     
-    if (insertion_group.empty()) return;
+    if (indel_group.empty()) return;
 
-    bcf1_t* first = insertion_group[0];
+    bcf1_t* first = indel_group[0];
     int first_alt_alleles = count_alt_alleles(hdr, first);
     if (first_alt_alleles == 0) return;
 
-    if (insertion_group.size() == 1) return;
+    if (indel_group.size() == 1) return;
 
-    bcf1_t* second = insertion_group[1];
+    bcf1_t* second = indel_group[1];
     int second_alt_alleles = count_alt_alleles(hdr, second);
     if (second_alt_alleles == 0) return;
 
-    std::vector<std::string> suppressing_ids = { get_record_id(first) };
     size_t suppress_from = 2;
 
     if (first_alt_alleles > 0 && second_alt_alleles > 0 && same_record_identity(hdr, first, second)) {
         if (first_alt_alleles == 1) concat_record_ids(hdr, first, second);
         set_gt(hdr, first, 1, 1);
         set_gt(hdr, second, 0, 0);
-        suppressing_ids[0] = get_record_id(first);
-        suppressed_by_hom << get_record_id(second) << "\t" << suppressing_ids[0] << "\n";
         records_to_remove.push_back(second);
     } else if (first_alt_alleles >= 2) {
         float second_epr = get_sv_epr(hdr, second);
@@ -242,12 +237,10 @@ void apply_multiallelic_logic_to_group(bcf_hdr_t* hdr, std::vector<bcf1_t*>& ins
             if (second_alt_alleles > 1) {
                 set_gt(hdr, second, 0, 1);
             }
-            suppressing_ids.push_back(get_record_id(second));
             make_record_multiallelic(hdr, first, second);
             records_to_remove.push_back(second);
         } else {
             set_gt(hdr, second, 0, 0);
-            suppressed_by_hom << get_record_id(second) << "\t" << suppressing_ids[0] << "\n";
             records_to_remove.push_back(second);
             suppress_from = 2;
         }
@@ -255,13 +248,12 @@ void apply_multiallelic_logic_to_group(bcf_hdr_t* hdr, std::vector<bcf1_t*>& ins
         if (second_alt_alleles > 1) {
             set_gt(hdr, second, 0, 1);
         }
-        suppressing_ids.push_back(get_record_id(second));
         make_record_multiallelic(hdr, first, second);
         records_to_remove.push_back(second);
     }
 
-    for (size_t i = suppress_from; i < insertion_group.size(); i++) {
-        bcf1_t* record = insertion_group[i];
+    for (size_t i = suppress_from; i < indel_group.size(); i++) {
+        bcf1_t* record = indel_group[i];
         int alt_alleles = count_alt_alleles(hdr, record);
         if (alt_alleles == 0) {
             return;
@@ -269,71 +261,33 @@ void apply_multiallelic_logic_to_group(bcf_hdr_t* hdr, std::vector<bcf1_t*>& ins
 
         set_gt(hdr, record, 0, 0);
         records_to_remove.push_back(record);
-        if (suppressing_ids.size() == 1) {
-            suppressed_by_hom << get_record_id(record) << "\t" << suppressing_ids[0] << "\n";
-        } else {
-            suppressed_by_two_hets << get_record_id(record) << "\t" << suppressing_ids[0] << "\t" << suppressing_ids[1] << "\n";
-        }
     }
 }
 
-void make_multiallelic(bcf_hdr_t* hdr, std::vector<bcf1_t*>& small_variants,
-                       const std::string& ins_suppressed_by_hom_fname,
-                       const std::string& ins_suppressed_by_two_hets_fname,
-                       const std::string& del_suppressed_by_hom_fname,
-                       const std::string& del_suppressed_by_two_hets_fname) {
-    std::ofstream ins_suppressed_by_hom(ins_suppressed_by_hom_fname);
-    if (!ins_suppressed_by_hom) {
-        throw std::runtime_error("Failed to open " + ins_suppressed_by_hom_fname + " for writing.");
-    }
-
-    std::ofstream ins_suppressed_by_two_hets(ins_suppressed_by_two_hets_fname);
-    if (!ins_suppressed_by_two_hets) {
-        throw std::runtime_error("Failed to open " + ins_suppressed_by_two_hets_fname + " for writing.");
-    }
-
-    std::ofstream del_suppressed_by_hom(del_suppressed_by_hom_fname);
-    if (!del_suppressed_by_hom) {
-        throw std::runtime_error("Failed to open " + del_suppressed_by_hom_fname + " for writing.");
-    }
-
-    std::ofstream del_suppressed_by_two_hets(del_suppressed_by_two_hets_fname);
-    if (!del_suppressed_by_two_hets) {
-        throw std::runtime_error("Failed to open " + del_suppressed_by_two_hets_fname + " for writing.");
-    }
-
+void make_multiallelic(bcf_hdr_t* hdr, std::vector<bcf1_t*>& small_variants) {
     int curr_rid = -1;
     hts_pos_t curr_pos = -1;
-    std::vector<bcf1_t*> ins_group, del_group;
+    std::vector<bcf1_t*> indel_group;
     std::vector<bcf1_t*> records_to_remove;
 
     for (bcf1_t* record : small_variants) {
-        if ((!ins_group.empty() || !del_group.empty()) && (record->rid != curr_rid || record->pos != curr_pos)) {
-            apply_multiallelic_logic_to_group(hdr, ins_group, records_to_remove,
-                ins_suppressed_by_hom, ins_suppressed_by_two_hets);
-            apply_multiallelic_logic_to_group(hdr, del_group, records_to_remove,
-                del_suppressed_by_hom, del_suppressed_by_two_hets);
-            ins_group.clear();
-            del_group.clear();
+        if (!indel_group.empty() && (record->rid != curr_rid || record->pos != curr_pos)) {
+            apply_multiallelic_logic_to_group(hdr, indel_group, records_to_remove);
+            indel_group.clear();
         }
 
-        if (ins_group.empty() && del_group.empty()) {
+        if (indel_group.empty()) {
             curr_rid = record->rid;
             curr_pos = record->pos;
         }
 
         std::string svtype = get_sv_type(hdr, record);
-        if (svtype == "INS") {
-            ins_group.push_back(record);
-        } else if (svtype == "DEL") {
-            del_group.push_back(record);
+        if (svtype == "INS" || svtype == "DEL") {
+            indel_group.push_back(record);
         }
     }
 
-    apply_multiallelic_logic_to_group(hdr, ins_group, records_to_remove,
-        ins_suppressed_by_hom, ins_suppressed_by_two_hets);
-    apply_multiallelic_logic_to_group(hdr, del_group, records_to_remove,
-        del_suppressed_by_hom, del_suppressed_by_two_hets);
+    apply_multiallelic_logic_to_group(hdr, indel_group, records_to_remove);
 
     std::unordered_set<bcf1_t*> remove_set(records_to_remove.begin(), records_to_remove.end());
     for (bcf1_t*& record : small_variants) {
@@ -353,10 +307,6 @@ int main(int argc, char* argv[]) {
     std::string out_stvars_vcf_fname = out_stvars_prefix + ".vcf.gz";
     std::string out_smvars_non_primary_vcf_fname = out_smvars_prefix + ".non-primary.vcf.gz";
     std::string out_stvars_non_primary_vcf_fname = out_stvars_prefix + ".non-primary.vcf.gz";
-    std::string out_smvars_ins_suppressed_by_hom_fname = out_smvars_prefix + ".ins.suppressed-by-1-1.log";
-    std::string out_smvars_ins_suppressed_by_two_hets_fname = out_smvars_prefix + ".ins.suppressed-by-two-0-1.log";
-    std::string out_smvars_del_suppressed_by_hom_fname = out_smvars_prefix + ".del.suppressed-by-1-1.log";
-    std::string out_smvars_del_suppressed_by_two_hets_fname = out_smvars_prefix + ".del.suppressed-by-two-0-1.log";
 
     chr_seqs_map_t chr_seqs;
     chr_seqs.read_fasta_into_map(reference_fname);
@@ -459,9 +409,7 @@ int main(int argc, char* argv[]) {
     write_and_remove_non_primary(in_vcf_hdr, small_variants, out_smvars_non_primary_vcf_fname);
     write_and_remove_non_primary(in_vcf_hdr, svs, out_stvars_non_primary_vcf_fname);
 
-    make_multiallelic(in_vcf_hdr, small_variants,
-        out_smvars_ins_suppressed_by_hom_fname, out_smvars_ins_suppressed_by_two_hets_fname,
-        out_smvars_del_suppressed_by_hom_fname, out_smvars_del_suppressed_by_two_hets_fname);
+    make_multiallelic(in_vcf_hdr, small_variants);
     add_star_alleles_for_overlapping_del_ins(in_vcf_hdr, small_variants);
 
     htsFile* out_smvars_vcf_file = bcf_open(out_smvars_vcf_fname.c_str(), "wz");
