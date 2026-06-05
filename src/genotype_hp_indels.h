@@ -744,8 +744,12 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     }
 
     // Associate each allele-aware cluster to its selected allele
+    // std::cout << ref_hp_range.beg << "-" << ref_hp_range.end << std::endl;
     for (const hp_allele_cluster_t& allele_cluster : clusters) {
         const std::vector<hp_read_info_t>& cluster = allele_cluster.reads;
+        // for (const hp_read_info_t& hp_read_info : cluster) {
+        //     std::cout << hp_read_info.read.read_name << " " << hp_read_info.hp_len << " " << hp_read_info.is_good_read(config.min_clip_len, MAX_TAIL_MISMATCH_RATE) << "\t";
+        // } std::cout << std::endl;
         int best_allele_idx = allele_cluster.allele_idx;
 
         std::vector<hp_read_info_t> good_hp_read_infos;
@@ -825,7 +829,8 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
 // hp_indels are guaranteed to be on the same chromosome
 void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int contig_len, std::vector<sv_t*> hp_indels,
     stats_t stats, config_t config, contig_map_t& contig_map, bam_pool_t* bam_pool,
-    std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr,
+    std::unordered_map<std::string, std::pair<std::string, int> >* mateseqs_w_mapq_chr, 
+    std::vector<double>* global_crossing_isize_dist,
     evidence_logger_t* evidence_logger, bool reassign_evidence, evidence_map_t* evidence_map,
     std::unordered_map<std::string, std::shared_ptr<sv_t>>* sv_map) {
 
@@ -849,6 +854,8 @@ void genotype_hp_indels(int id, std::string contig_name, char* contig_seq, int c
         genotype_hp_indels_group(hp_indels_in_range, ref_hp_range, bam_file, contig_seq, contig_len, stats, config, aligner,
             *mateseqs_w_mapq_chr, evidence_logger, reassign_evidence, evidence_map, *sv_map);
     }
+    depth_filter_indel(contig_name, hp_indels, bam_file, config, stats);
+    calculate_confidence_interval_size(contig_name, *global_crossing_isize_dist, hp_indels, bam_file, config, stats);
 
     release_mates(contig_id);
 }

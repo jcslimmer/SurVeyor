@@ -977,7 +977,7 @@ int main(int argc, char* argv[]) {
         }
 
         sv->vcf_entry = bcf_dup(vcf_record);
-        if (is_homopolymer_indel(sv.get(), chr_seqs.get_seq(sv->chr))) {
+        if (should_genotype_as_hp_indel(sv.get(), chr_seqs.get_seq(sv->chr), chr_seqs.get_len(sv->chr))) {
             hp_by_chr[sv->chr].push_back(sv);
         } else if (sv->svtype() == "DEL") {
             dels_by_chr[sv->chr].push_back(std::dynamic_pointer_cast<deletion_t>(sv));
@@ -1024,7 +1024,8 @@ int main(int argc, char* argv[]) {
             || (block_hps.size() == BLOCK_SIZE && ref_hp_ranges[i].beg != ref_hp_ranges[i+1].beg)) {
                 std::future<void> future = thread_pool.push(genotype_hp_indels, contig_name, chr_seqs.get_seq(contig_name),
                         chr_seqs.get_len(contig_name), block_hps, stats, config, contig_map, bam_pool,
-                        &mateseqs_w_mapq[contig_map.get_id(contig_name)], evidence_logger, reassign_evidence, evidence_map,
+                        &mateseqs_w_mapq[contig_map.get_id(contig_name)], 
+                        &global_crossing_isize_dist, evidence_logger, reassign_evidence, evidence_map,
                         &sv_map);
                 block_hps.clear();
             }

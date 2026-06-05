@@ -5,6 +5,8 @@
 #include <cstring>
 #include "types.h"
 
+const int MIN_HP_LEN_FOR_HP_GENOTYPING = 3;
+
 inline bool is_homopolymer_indel(sv_t* sv, char* chr_seq) {
 	if (sv->svtype() == "DEL") {
 		// for deletions, we need
@@ -76,6 +78,18 @@ inline hts_pair_pos_t find_ref_hp_range_for_indel(sv_t* sv, char* chr_seq, hts_p
 	}
 
 	return hp_range;
+}
+
+inline bool should_genotype_as_hp_indel(sv_t* sv, char* chr_seq, hts_pos_t chr_len) {
+	if (!is_homopolymer_indel(sv, chr_seq)) {
+		return false;
+	}
+	hts_pair_pos_t hp_range = find_ref_hp_range_for_indel(sv, chr_seq, chr_len);
+	hts_pos_t ref_hp_len = hp_range.end - hp_range.beg;
+	if (sv->svtype() == "INS") {
+		return ref_hp_len + sv->ins_seq.length() >= MIN_HP_LEN_FOR_HP_GENOTYPING;
+	}
+	return ref_hp_len >= MIN_HP_LEN_FOR_HP_GENOTYPING;
 }
 
 inline char* generate_haplotype_left(char* chrom_seq, hts_pos_t hap_end, hts_pos_t hap_len, 
