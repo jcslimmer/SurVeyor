@@ -1,15 +1,15 @@
 import sys, os, argparse, hashlib, pysam, timeit, shutil
 from run_classifier import Classifier
 
-VERSION = "0.12"
+VERSION = "0.13"
 
 def valid_min_sv_size(arg):
     try:
         sv_size = int(arg)
     except ValueError:
         raise argparse.ArgumentTypeError("Value must be an integer.")
-    if sv_size < 5:
-        raise argparse.ArgumentTypeError("Value must be at least 5.")
+    if sv_size < 1:
+        raise argparse.ArgumentTypeError("Value must be at least 1.")
     return sv_size
 
 parser = argparse.ArgumentParser(description='SurVeyor, an SV caller.')
@@ -486,7 +486,8 @@ if cmd_args.command == 'call':
     if not cmd_args.ml_model:
         exit(0)
 
-    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.smvars.vcf.gz", cmd_args.workdir + "/calls-genotyped.smvars.deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.stvars.vcf.gz", cmd_args.workdir + "/calls-genotyped.stvars.deduped.vcf.gz")
 
 elif cmd_args.command == 'genotype':
 
@@ -514,7 +515,8 @@ elif cmd_args.command == 'genotype':
     if not cmd_args.ml_model:
         exit(0)
 
-    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.vcf.gz", cmd_args.workdir + "/calls-genotyped-deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.smvars.vcf.gz", cmd_args.workdir + "/calls-genotyped.smvars.deduped.vcf.gz")
+    deduplicate_vcf(cmd_args.workdir + "/calls-genotyped.stvars.vcf.gz", cmd_args.workdir + "/calls-genotyped.stvars.deduped.vcf.gz")
 
 elif cmd_args.command == 'generate-training-data':
 
