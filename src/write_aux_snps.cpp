@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <sstream>
@@ -123,13 +124,34 @@ std::string bcf_record_unique_key(bcf_hdr_t* hdr, bcf1_t* record) {
         get_ins_seq(hdr, record);
 }
 
-void remove_aux_indels_matching_primary(bcf_hdr_t* hdr, std::vector<bcf1_t*>& vcf_records,
-                                        const std::unordered_set<bcf1_t*>& aux_indel_records,
-                                        const std::unordered_set<std::string>& non_aux_variant_keys) {
-    for (bcf1_t*& record : vcf_records) {
-        if (aux_indel_records.count(record) == 0) continue;
+int duplicate_priority(bcf_hdr_t* hdr, bcf1_t* record,
+                       const std::unordered_set<bcf1_t*>& aux_records) {
+    if (aux_records.count(record) > 0) return 1;
 
-        if (non_aux_variant_keys.count(bcf_record_unique_key(hdr, record)) > 0) {
+    std::string source = get_sv_info_str(hdr, record, "SOURCE");
+    if (source == "READ") return 0;
+
+    return 2;
+}
+
+void remove_lower_priority_duplicates(bcf_hdr_t* hdr, std::vector<bcf1_t*>& vcf_records,
+                                        const std::unordered_set<bcf1_t*>& aux_records) {
+    std::unordered_map<std::string, int> max_priority_by_key;
+    for (bcf1_t* record : vcf_records) {
+        if (count_alt_alleles(hdr, record) == 0) {
+            continue;
+        }
+        std::string key = bcf_record_unique_key(hdr, record);
+        int priority = duplicate_priority(hdr, record, aux_records);
+        max_priority_by_key[key] = std::max(max_priority_by_key[key], priority);
+    }
+
+    for (bcf1_t*& record : vcf_records) {
+        if (count_alt_alleles(hdr, record) == 0) {
+            continue;
+        }
+        std::string key = bcf_record_unique_key(hdr, record);
+        if (duplicate_priority(hdr, record, aux_records) < max_priority_by_key[key]) {
             bcf_destroy(record);
             record = nullptr;
         }
@@ -146,6 +168,19 @@ std::string get_record_id(bcf1_t* record) {
 void set_gt(bcf_hdr_t* hdr, bcf1_t* record, int allele1, int allele2) {
     int gt[2] = { bcf_gt_unphased(allele1), bcf_gt_unphased(allele2) };
     bcf_update_genotypes(hdr, record, gt, 2);
+}
+
+bool is_hom_alt(bcf_hdr_t* hdr, bcf1_t* record) {
+    int* gt = nullptr;
+    int ngt = 0;
+    if (bcf_get_genotypes(hdr, record, &gt, &ngt) < 0 || ngt < 2) {
+        free(gt);
+        return false;
+    }
+    int allele1 = bcf_gt_allele(gt[0]);
+    int allele2 = bcf_gt_allele(gt[1]);
+    free(gt);
+    return allele1 > 0 && allele1 == allele2;
 }
 
 void concat_record_ids(bcf_hdr_t* hdr, bcf1_t* record, bcf1_t* other_record) {
@@ -202,24 +237,58 @@ void add_star_allele(bcf_hdr_t* hdr, bcf1_t* record) {
 }
 
 void add_star_alleles_for_overlapping(bcf_hdr_t* hdr, std::vector<bcf1_t*>& small_variants) {
+    std::unordered_set<bcf1_t*> read_records_to_remove;
     int curr_rid = -1;
     hts_pos_t max_del_end = -1;
+    hts_pos_t max_read_hom_del_end = -1;
+    bcf1_t* max_read_hom_del_record = nullptr;
+    hts_pos_t max_non_read_hom_del_end = -1;
+    bcf1_t* max_non_read_hom_del_record = nullptr;
 
     for (bcf1_t* record : small_variants) {
         if (record->rid != curr_rid) {
             curr_rid = record->rid;
             max_del_end = -1;
+            max_read_hom_del_end = -1;
+            max_read_hom_del_record = nullptr;
+            max_non_read_hom_del_end = -1;
+            max_non_read_hom_del_record = nullptr;
         }
 
         std::string svtype = get_sv_type(hdr, record);
+        std::string source = get_sv_info_str(hdr, record, "SOURCE");
         int alt_alleles = count_alt_alleles(hdr, record);
+        if (is_hom_alt(hdr, record)) {
+            if (source == "READ" && record->pos <= max_non_read_hom_del_end &&
+                    max_non_read_hom_del_record != nullptr) {
+                read_records_to_remove.insert(record);
+            } else if (source != "READ" && record->pos <= max_read_hom_del_end &&
+                    max_read_hom_del_record != nullptr) {
+                read_records_to_remove.insert(max_read_hom_del_record);
+            }
+        }
         if (alt_alleles == 1 && record->pos <= max_del_end) {
             add_star_allele(hdr, record);
         }
         if (svtype == "DEL" && alt_alleles > 0) {
-            max_del_end = std::max(max_del_end, (hts_pos_t) get_sv_end(hdr, record));
+            hts_pos_t del_end = get_sv_end(hdr, record);
+            max_del_end = std::max(max_del_end, del_end);
+            if (is_hom_alt(hdr, record) && source == "READ" && del_end > max_read_hom_del_end) {
+                max_read_hom_del_end = del_end;
+                max_read_hom_del_record = record;
+            } else if (is_hom_alt(hdr, record) && source != "READ" && del_end > max_non_read_hom_del_end) {
+                max_non_read_hom_del_end = del_end;
+                max_non_read_hom_del_record = record;
+            }
         }
     }
+
+    for (bcf1_t*& record : small_variants) {
+        if (read_records_to_remove.count(record) > 0) {
+            record = nullptr;
+        }
+    }
+    small_variants.erase(std::remove(small_variants.begin(), small_variants.end(), nullptr), small_variants.end());
 }
 
 // The group is already sorted by decreasing EPR. Keep at most two ALT alleles at
@@ -335,10 +404,10 @@ int main(int argc, char* argv[]) {
     chr_seqs.read_fasta_into_map(reference_fname);
 
     htsFile* in_vcf_file = bcf_open(in_vcf_fname.c_str(), "r");
-	bcf_hdr_t* in_vcf_hdr = bcf_hdr_read(in_vcf_file);
+    bcf_hdr_t* in_vcf_hdr = bcf_hdr_read(in_vcf_file);
 
     std::vector<bcf1_t*> vcf_records;
-    std::unordered_set<bcf1_t*> aux_indel_records;
+    std::unordered_set<bcf1_t*> aux_records;
 	bcf1_t* r = bcf_init();
 	while (bcf_read(in_vcf_file, in_vcf_hdr, r) == 0) {
         bcf1_t* b = bcf_dup(r);
@@ -362,6 +431,7 @@ int main(int argc, char* argv[]) {
                     chr_seq[snp.pos], snp.alt_base, id, gt);
                 copy_all_fmt(in_vcf_hdr, b, snp_record);
                 vcf_records.push_back(snp_record);
+                aux_records.insert(snp_record);
             }
             // remove INFO/AUX_SNPS from the original record
             bcf_update_info_string(in_vcf_hdr, b, "AUX_SNPS", NULL);
@@ -401,14 +471,14 @@ int main(int argc, char* argv[]) {
                 copy_all_fmt(in_vcf_hdr, b, indel_record);
                 copy_hp_info(in_vcf_hdr, b, indel_record);
                 vcf_records.push_back(indel_record);
-                aux_indel_records.insert(indel_record);
+                aux_records.insert(indel_record);
             }
             // remove INFO/AUX_INDELS from the original record
             bcf_update_info_string(in_vcf_hdr, b, "AUX_INDELS", NULL);
         }
         free(s_data);
     }
-    
+
     // sort by pos and then by non-ascending EPR
     std::stable_sort(vcf_records.begin(), vcf_records.end(),
         [in_vcf_hdr](bcf1_t* b1, bcf1_t* b2) {
@@ -418,15 +488,8 @@ int main(int argc, char* argv[]) {
             return get_sv_epr(in_vcf_hdr, b1) > get_sv_epr(in_vcf_hdr, b2);
         });
 
-    std::unordered_set<std::string> non_aux_variant_keys;
-    for (int i = 0; i < vcf_records.size(); i++) {
-        if (aux_indel_records.count(vcf_records[i]) || count_alt_alleles(in_vcf_hdr, vcf_records[i]) == 0) {
-            continue;
-        }
-        non_aux_variant_keys.insert(bcf_record_unique_key(in_vcf_hdr, vcf_records[i]));
-    }
-    remove_aux_indels_matching_primary(in_vcf_hdr, vcf_records, aux_indel_records, non_aux_variant_keys);
-    
+    remove_lower_priority_duplicates(in_vcf_hdr, vcf_records, aux_records);
+
     std::vector<bcf1_t*> small_variants, svs;
     divide_variants_by_svsize(in_vcf_hdr, vcf_records, small_variants, svs);
 
