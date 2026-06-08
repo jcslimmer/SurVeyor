@@ -29,14 +29,16 @@ class Features:
                             'AR1CHPmQ', 'AR1CHPMQ', 'AR1CHPAQ', 'AR1CHPSQ', 'AR1HP5PMR', 'AR1HP3PMR',
                             'MAXARCD', 'MAXARED',
                             'RR1', 'RR1C', 'RR1CmQ', 'RR1CMQ', 'RR1CHQ', 'RR1E', 'RR1E_RATIO',
-                            'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'RR2E', 'RR2E_RATIO', 'MAXRRCD', 'MAXRRED',
-                            'ER',
+	                            'RR2', 'RR2C', 'RR2CmQ', 'RR2CMQ', 'RR2CHQ', 'RR2E', 'RR2E_RATIO', 'MAXRRCD', 'MAXRRED',
+	                            'OR1', 'OR2', 'OR1C', 'OR2C', 'OR1E', 'OR2E',
+	                            'ER',
                             'AR1CMSPAN_1', 'AR1CMSPAN_2', 'AR1CMHQSPAN_1', 'AR1CMHQSPAN_2',
                             'AR2CMSPAN_1', 'AR2CMSPAN_2', 'AR2CMHQSPAN_1', 'AR2CMHQSPAN_2',
-                            'RR1CMSPAN_1', 'RR1CMSPAN_2', 'RR1CMHQSPAN_1', 'RR1CMHQSPAN_2',
-                            'RR2CMSPAN_1', 'RR2CMSPAN_2', 'RR2CMHQSPAN_1', 'RR2CMHQSPAN_2',
-                            'AR1_RR1_CAS_Z_SCORE', 'AR2_RR2_CAS_Z_SCORE', 
-                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C', 'AR1E_OVER_RR1E', 'AR2E_OVER_RR2E']
+	                            'RR1CMSPAN_1', 'RR1CMSPAN_2', 'RR1CMHQSPAN_1', 'RR1CMHQSPAN_2',
+	                            'RR2CMSPAN_1', 'RR2CMSPAN_2', 'RR2CMHQSPAN_1', 'RR2CMHQSPAN_2',
+	                            'AR1_RR1_CAS_Z_SCORE', 'AR2_RR2_CAS_Z_SCORE', 
+	                            'AR1_OVER_RR1', 'AR2_OVER_RR2', 'AR1C_OVER_RR1C', 'AR2C_OVER_RR2C', 'AR1E_OVER_RR1E', 'AR2E_OVER_RR2E',
+	                            'AR1_OVER_OR1', 'AR2_OVER_OR2', 'AR1C_OVER_OR1C', 'AR2C_OVER_OR2C', 'AR1E_OVER_OR1E', 'AR2E_OVER_OR2E']
 
     fmt_features_names = [  'AXR1', 'AXR2', 'AXR1HQ', 'AXR2HQ',
                             'EXSS1_1', 'EXSS1_2', 'EXSS2_1', 'EXSS2_2',
@@ -330,6 +332,8 @@ class Features:
 
         ar1 = Features.get_number_value(record.samples[0], 'AR1', 0)
         ar1c = Features.get_number_value(record.samples[0], 'AR1C', 0)
+        arc1hq = Features.get_number_value(record.samples[0], 'AR1CHQ', 0)
+        ar1e = Features.get_number_value(record.samples[0], 'AR1E', 0)
         ar1_adj = ar1
         ar1c_adj = ar1c
         if exp_alt_reads_freq1 > 0:
@@ -343,10 +347,8 @@ class Features:
         features['AR1C_ADJ'] = Features.piecewise_normalise(ar1c_adj, min_depth, max_depth)
         features['AR1CmQ'] = Features.get_number_value(record.samples[0], 'AR1CmQ', Features.NAN)
         features['AR1CMQ'] = Features.get_number_value(record.samples[0], 'AR1CMQ', Features.NAN)
-        arc1hq = Features.get_number_value(record.samples[0], 'AR1CHQ', 0)
         features['AR1CHQ'] = Features.piecewise_normalise(arc1hq, min_depth, max_depth)
         features['AR1C_HQ_RATIO'] = arc1hq/max(1, ar1c)
-        ar1e = Features.get_number_value(record.samples[0], 'AR1E', 0)
         features['AR1E'] = Features.piecewise_normalise(ar1e, min_depth, max_depth)
         features['AR1E_RATIO'] = ar1e/max(1, ar1c)
         features['AR1CMSPAN_1'], features['AR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'AR1CMSPAN', [0, 0], max_is)
@@ -407,9 +409,22 @@ class Features:
         features['ARER'] = ar1er + ar2er
         features['MAXARED'] = max(features['AREF'], features['ARER'])
 
-        rr1 = Features.get_number_value(record.samples[0], 'RR1', 0) + Features.get_number_value(record.samples[0], 'OR1', 0)
+        or1 = Features.get_number_value(record.samples[0], 'OR1', 0)
+        or1c = Features.get_number_value(record.samples[0], 'OR1C', 0)
+        or1e = Features.get_number_value(record.samples[0], 'OR1E', 0)
+        or2 = Features.get_number_value(record.samples[0], 'OR2', 0)
+        or2c = Features.get_number_value(record.samples[0], 'OR2C', 0)
+        or2e = Features.get_number_value(record.samples[0], 'OR2E', 0)
+        features['OR1'] = Features.piecewise_normalise(or1, min_depth, max_depth)
+        features['OR1C'] = Features.piecewise_normalise(or1c, min_depth, max_depth)
+        features['OR1E'] = Features.piecewise_normalise(or1e, min_depth, max_depth)
+        features['OR2'] = Features.piecewise_normalise(or2, min_depth, max_depth)
+        features['OR2C'] = Features.piecewise_normalise(or2c, min_depth, max_depth)
+        features['OR2E'] = Features.piecewise_normalise(or2e, min_depth, max_depth)
+
+        rr1 = Features.get_number_value(record.samples[0], 'RR1', 0) + or1
         rr1c_direct = Features.get_number_value(record.samples[0], 'RR1C', 0)
-        rr1c = rr1c_direct + Features.get_number_value(record.samples[0], 'OR1C', 0)
+        rr1c = rr1c_direct + or1c
         rr1chq = Features.get_number_value(record.samples[0], 'RR1CHQ', 0) + Features.get_number_value(record.samples[0], 'OR1CHQ', 0)
         rr1cas = Features.get_number_value(record.samples[0], 'RR1CAS', Features.NAN)
         rr1css = Features.get_number_value(record.samples[0], 'RR1CSS', Features.NAN)
@@ -419,15 +434,15 @@ class Features:
         features['RR1CMQ'] = Features.get_number_value(record.samples[0], 'RR1CMQ', Features.NAN)
         features['RR1CHQ'] = rr1chq/max(1, rr1c)
         rr1e_direct = Features.get_number_value(record.samples[0], 'RR1E', 0)
-        rr1e = rr1e_direct + Features.get_number_value(record.samples[0], 'OR1E', 0)
+        rr1e = rr1e_direct + or1e
         features['RR1E'] = Features.piecewise_normalise(rr1e, min_depth, max_depth)
         features['RR1E_RATIO'] = rr1e_direct/max(1, rr1c_direct)
         features['RR1CMSPAN_1'], features['RR1CMSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMSPAN', [0, 0], max_is)
         features['RR1CMHQSPAN_1'], features['RR1CMHQSPAN_2'] = Features.get_number_value(record.samples[0], 'RR1CMHQSPAN', [0, 0], max_is)
 
-        rr2 = Features.get_number_value(record.samples[0], 'RR2', 0) + Features.get_number_value(record.samples[0], 'OR2', 0)
+        rr2 = Features.get_number_value(record.samples[0], 'RR2', 0) + or2
         rr2c_direct = Features.get_number_value(record.samples[0], 'RR2C', 0)
-        rr2c = rr2c_direct + Features.get_number_value(record.samples[0], 'OR2C', 0)
+        rr2c = rr2c_direct + or2c
         rr2chq = Features.get_number_value(record.samples[0], 'RR2CHQ', 0) + Features.get_number_value(record.samples[0], 'OR2CHQ', 0)
         rr2cas = Features.get_number_value(record.samples[0], 'RR2CAS', Features.NAN)
         rr2css = Features.get_number_value(record.samples[0], 'RR2CSS', Features.NAN)
@@ -488,6 +503,12 @@ class Features:
         features['AR2C_OVER_RR2C'] = ar2c/max(1, ar2c+rr2c)
         features['AR1E_OVER_RR1E'] = ar1e/max(1, ar1e+rr1e)
         features['AR2E_OVER_RR2E'] = ar2e/max(1, ar2e+rr2e)
+        features['AR1_OVER_OR1'] = ar1/max(1, ar1+or1)
+        features['AR2_OVER_OR2'] = ar2/max(1, ar2+or2)
+        features['AR1C_OVER_OR1C'] = ar1c/max(1, ar1c+or1c)
+        features['AR2C_OVER_OR2C'] = ar2c/max(1, ar2c+or2c)
+        features['AR1E_OVER_OR1E'] = ar1e/max(1, ar1e+or1e)
+        features['AR2E_OVER_OR2E'] = ar2e/max(1, ar2e+or2e)
 
         md = Features.get_number_value(record.samples[0], 'MD', [0, 0, 0, 0])
         features['MDLF'] = Features.piecewise_normalise(md[0], min_depth, max_depth)
