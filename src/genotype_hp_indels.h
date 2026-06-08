@@ -604,15 +604,23 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     std::vector<std::unique_ptr<char[]>> alt_alleles;
     std::vector<int> alt_allele_lens;
     for (sv_t* hp_indel : hp_indels) {
+        char* lh_seq = generate_haplotype_left(contig_seq, ref_hp_range.beg - 1, extend,
+            hp_indel->aux_indels, hp_indel->aux_snps);
+        char* rh_seq = generate_haplotype_right(contig_seq, contig_len, ref_hp_range.end, extend,
+            hp_indel->aux_indels, hp_indel->aux_snps);
+        hts_pos_t alt_lh_len = strlen(lh_seq);
+        hts_pos_t alt_rh_len = strlen(rh_seq);
         hts_pos_t alt_hp_len = ref_hp_len + hp_indel->svlen();
-        hts_pos_t alt_len = left_flank_len + alt_hp_len + right_flank_len;
+        hts_pos_t alt_len = alt_lh_len + alt_hp_len + alt_rh_len;
         std::unique_ptr<char[]> alt_seq(new char[alt_len + 1]);
-        strncpy(alt_seq.get(), contig_seq + alt_start, left_flank_len);
-        memset(alt_seq.get() + left_flank_len, hp_base, alt_hp_len);
-        strncpy(alt_seq.get() + left_flank_len + alt_hp_len, contig_seq + ref_hp_range.end, right_flank_len);
+        strncpy(alt_seq.get(), lh_seq, alt_lh_len);
+        memset(alt_seq.get() + alt_lh_len, hp_base, alt_hp_len);
+        strncpy(alt_seq.get() + alt_lh_len + alt_hp_len, rh_seq, alt_rh_len);
         alt_seq[alt_len] = '\0';
         alt_alleles.push_back(std::move(alt_seq));
         alt_allele_lens.push_back(alt_len);
+        delete[] lh_seq;
+        delete[] rh_seq;
     }
 
     // For each read overlapping the reference HP, calculate its observed HP length,
@@ -744,12 +752,8 @@ void genotype_hp_indels_group(std::vector<sv_t*>& hp_indels, hts_pair_pos_t ref_
     }
 
     // Associate each allele-aware cluster to its selected allele
-    // std::cout << ref_hp_range.beg << "-" << ref_hp_range.end << std::endl;
     for (const hp_allele_cluster_t& allele_cluster : clusters) {
         const std::vector<hp_read_info_t>& cluster = allele_cluster.reads;
-        // for (const hp_read_info_t& hp_read_info : cluster) {
-        //     std::cout << hp_read_info.read.read_name << " " << hp_read_info.hp_len << " " << hp_read_info.is_good_read(config.min_clip_len, MAX_TAIL_MISMATCH_RATE) << "\t";
-        // } std::cout << std::endl;
         int best_allele_idx = allele_cluster.allele_idx;
 
         std::vector<hp_read_info_t> good_hp_read_infos;
