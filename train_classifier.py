@@ -39,13 +39,15 @@ def compute_keep_indices(X):
     return np.array(keep_indices, dtype=np.int32)
 
 def process_vcf(training_prefix, restrict_to_model_name = None):
+    gt_labels = features.read_gt_labels(training_prefix + ".gts")
     vcf_training_data, vcf_training_gts, _, vcf_training_exact, vcf_training_primary = \
         features.parse_vcf(training_prefix + ".vcf.gz", training_prefix + ".stats", training_prefix + ".gts", 
-                           ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
+                           ignore_gts = False, restrict_to_model_name = restrict_to_model_name, gt_labels = gt_labels)
     if restrict_to_model_name in (None, "ALL", "INS_TO_DUP", "INS_TO_DUP_LARGE"):
         ins_to_dup_vcf_training_data, ins_to_dup_vcf_training_gts, _, ins_to_dup_vcf_training_exact, ins_to_dup_vcf_training_primary = \
             features.parse_vcf(training_prefix + ".INS_TO_DUP.vcf.gz", training_prefix + ".stats",
-                                training_prefix + ".gts", ignore_gts = False, restrict_to_model_name = restrict_to_model_name)
+                                training_prefix + ".gts", ignore_gts = False, restrict_to_model_name = restrict_to_model_name,
+                                gt_labels = gt_labels)
 
         for model_name in ("INS_TO_DUP", "INS_TO_DUP_LARGE"):
             if model_name in ins_to_dup_vcf_training_data:

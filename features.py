@@ -782,27 +782,28 @@ def gt_is_known_positive_array(gts):
 def gt_is_hom_alt_array(gts):
     return np.array([gt_is_hom_alt(gt) for gt in gts])
 
-def read_gts(file_path):
+def read_gt_labels(file_path):
     if not os.path.exists(file_path):
         raise RuntimeError(f"Genotype labels file not found: {file_path}")
-    gts, exacts, primaries = dict(), dict(), dict()
+    gt_labels = dict()
     with open(file_path, 'r') as file:
         for line in file:
-            if not line.strip():
+            fields = line.split()
+            if not fields:
                 continue
-            fields = line.strip().split()
-            if len(fields) < 4:
-                raise RuntimeError(f"Malformed genotype labels line in {file_path}: {line.strip()}")
+            if len(fields) != 4:
+                raise RuntimeError(f"Malformed genotype labels line in {file_path}: {' '.join(fields)}")
             id, gt, exact, primary = fields[0], fields[1], int(fields[2]), int(fields[3])
-            if id not in gts:
-                gts[id] = gt
-                exacts[id] = exact
-                primaries[id] = primary
+            if id not in gt_labels:
+                gt_labels[id] = (gt, exact, primary)
             else:
-                gts[id] = select_gt(gts[id], gt)
-                exacts[id] = max(exacts[id], exact)
-                primaries[id] = max(primaries[id], primary)
-    return gts, exacts, primaries
+                prev_gt, prev_exact, prev_primary = gt_labels[id]
+                gt_labels[id] = (
+                    select_gt(prev_gt, gt),
+                    max(prev_exact, exact),
+                    max(prev_primary, primary),
+                )
+    return gt_labels
 
 def keep_primary(data_by_source, primary_by_source, *label_by_source):
     for source in list(data_by_source):
@@ -828,8 +829,9 @@ def get_stat(stats, stat_name, chrom):
     return stats[stat_name]['.']
 
 # Function to parse the VCF file and extract relevant features using pysam
-def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None, restrict_to_model_name = None):
-    gts, exacts, primaries = (None, None, None) if ignore_gts else read_gts(fp_fname)
+def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_names_by_model = None, restrict_to_model_name = None, gt_labels = None):
+    if not ignore_gts and gt_labels is None:
+        gt_labels = read_gt_labels(fp_fname)
     vcf_reader = pysam.VariantFile(vcf_fname)
     stats = load_stats(stats_fname)
 
@@ -846,15 +848,10 @@ def parse_vcf(vcf_fname, stats_fname, fp_fname, ignore_gts = False, feature_name
             exact = "NA"
             primary = "NA"
         else:
-            if record.id not in gts:
+            label = gt_labels.get(record.id)
+            if label is None:
                 raise RuntimeError(f"Missing GT label for record {record.id} in {fp_fname}")
-            if record.id not in exacts:
-                raise RuntimeError(f"Missing exact label for record {record.id} in {fp_fname}")
-            if record.id not in primaries:
-                raise RuntimeError(f"Missing primary label for record {record.id} in {fp_fname}")
-            gt = gts[record.id]
-            exact = exacts[record.id]
-            primary = primaries[record.id]
+            gt, exact, primary = label
         model_feature_names = None if feature_names_by_model is None else feature_names_by_model.get(model_name)
         feature_values = Features.record_to_features(record, stats, model_feature_names)
         features_by_source[model_name].append(feature_values)
