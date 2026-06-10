@@ -637,11 +637,20 @@ void extend_consensus_to_right(std::shared_ptr<consensus_t> consensus, IntervalT
 	// 0 is the consensus, we start from there
 	edge_t e = best_edges[0];
 	std::string ext_consensus = consensus->sequence;
+	int last_appended_len = -1, second_last_appended_len = -1;
 	while (e.overlap) {
+		int appended_len = read_seqs[e.next].length()-e.overlap;
 		ext_consensus += read_seqs[e.next].substr(e.overlap);
+		second_last_appended_len = last_appended_len;
+		last_appended_len = appended_len;
 		consensus->right_ext_reads++;
 		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_right_ext_reads++;
 		e = best_edges[e.next];
+	}
+	if (second_last_appended_len >= 0) {
+		consensus->lowq_suffix = last_appended_len + second_last_appended_len;
+	} else if (last_appended_len >= 0) {
+		consensus->lowq_suffix += last_appended_len;
 	}
 
 	if (!consensus->left_clipped) {
@@ -705,13 +714,21 @@ void extend_consensus_to_left(std::shared_ptr<consensus_t> consensus, IntervalTr
 	edge_t e = best_edges[0];
 	std::string ext_consensus = consensus->sequence;
 	std::stringstream path_ss;
+	int last_prepended_len = -1, second_last_prepended_len = -1;
 	while (e.overlap) {
 		int prepended_len = read_seqs[e.next].length()-e.overlap;
 		std::string prepended_seq = read_seqs[e.next].substr(0, prepended_len);
 		ext_consensus = prepended_seq + ext_consensus;
+		second_last_prepended_len = last_prepended_len;
+		last_prepended_len = prepended_len;
 		consensus->left_ext_reads++;
 		if (read_mapqs[e.next] >= high_confidence_mapq) consensus->hq_left_ext_reads++;
 		e = best_edges[e.next];
+	}
+	if (second_last_prepended_len >= 0) {
+		consensus->lowq_prefix = last_prepended_len + second_last_prepended_len;
+	} else if (last_prepended_len >= 0) {
+		consensus->lowq_prefix += last_prepended_len;
 	}
 
 	if (consensus->left_clipped) {

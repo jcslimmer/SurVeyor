@@ -920,7 +920,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		if (ref_remap_rh_start < 0) ref_remap_rh_start = 0;
 		if (ref_remap_rh_end > contig_len) ref_remap_rh_end = contig_len;
 
-		lowq_junction_prefix = rc_consensus->lowq_prefix;;
+		lowq_junction_prefix = rc_consensus->lowq_prefix;
 		lowq_junction_suffix = lc_consensus->lowq_suffix;
 	} else if (rc_consensus != NULL) {
 		consensus_junction_seq = rc_consensus->sequence;
@@ -954,7 +954,7 @@ std::vector<std::shared_ptr<sv_t>> detect_svs(std::string& contig_name, char* co
 		ref_remap_rh_start = std::max(hts_pos_t(0), lc_consensus->start - (int) lc_consensus->sequence.length());
 		ref_remap_rh_end = std::min(lc_consensus->end + (int) lc_consensus->sequence.length(), contig_len);
 
-		lowq_junction_prefix = lc_consensus->lowq_prefix;;
+		lowq_junction_prefix = lc_consensus->lowq_prefix;
 		lowq_junction_suffix = lc_consensus->lowq_suffix;
 	} else {
 		return std::vector<std::shared_ptr<sv_t>>();
